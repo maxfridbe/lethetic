@@ -1,29 +1,13 @@
 use tokio::process::Command;
 use std::fs;
-use std::collections::HashMap;
-use once_cell::sync::Lazy;
-use std::sync::Mutex;
 use std::path::{Path, PathBuf};
-
-static SNIPPETS: Lazy<Mutex<HashMap<String, String>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-
-fn substitute_placeholders(input: &str) -> String {
-    let mut result = input.to_string();
-    let snippets = SNIPPETS.lock().unwrap();
-    for (name, content) in snippets.iter() {
-        let placeholder = format!("***{}***", name);
-        result = result.replace(&placeholder, content);
-    }
-    result
-}
+use reqwest::Client;
 
 pub async fn execute_shell(command: &str, cwd: &str) -> (String, String) {
-    let processed_command = substitute_placeholders(command);
-    
     // Check if the command starts with 'cd' to update the persistent state
     let mut final_cwd = PathBuf::from(cwd);
-    if processed_command.trim().starts_with("cd ") {
-        let parts: Vec<&str> = processed_command.trim().split_whitespace().collect();
+    if command.trim().starts_with("cd ") {
+        let parts: Vec<&str> = command.trim().split_whitespace().collect();
         if parts.len() > 1 {
             let target = parts[1];
             let new_path = if target == ".." {
@@ -39,7 +23,7 @@ pub async fn execute_shell(command: &str, cwd: &str) -> (String, String) {
 
     let output = Command::new("bash")
         .arg("-c")
-        .arg(&processed_command)
+        .arg(command)
         .current_dir(&final_cwd)
         .output()
         .await;
@@ -74,14 +58,13 @@ pub async fn execute_read_file_lines(path: &str, start: usize, end: usize, cwd: 
 }
 
 pub async fn execute_search_text(pattern: &str, path: &str, cwd: &str) -> String {
-    let processed_pattern = substitute_placeholders(pattern);
     let search_path = if path.is_empty() { "." } else { path };
 
     let output = Command::new("grep")
         .arg("-rn")
         .arg("--color=never")
         .arg("-I")
-        .arg(&processed_pattern)
+        .arg(pattern)
         .arg(search_path)
         .current_dir(cwd)
         .output()
@@ -102,9 +85,8 @@ pub async fn execute_search_text(pattern: &str, path: &str, cwd: &str) -> String
 }
 
 pub async fn execute_apply_patch(path: &str, patch: &str, cwd: &str) -> String {
-    let processed_patch = substitute_placeholders(patch);
     let patch_file = Path::new(cwd).join(".tmp.patch");
-    if let Err(e) = fs::write(&patch_file, &processed_patch) {
+    if let Err(e) = fs::write(&patch_file, patch) {
         return format!("ERROR: Failed to write temp patch file: {}", e);
     }
 
@@ -130,7 +112,6 @@ pub async fn execute_apply_patch(path: &str, patch: &str, cwd: &str) -> String {
 }
 
 pub async fn execute_write_file(path: &str, content: &str, cwd: &str) -> String {
-    let processed_content = substitute_placeholders(content);
     let full_path = Path::new(cwd).join(path);
     
     // Ensure parent directory exists
@@ -138,16 +119,23 @@ pub async fn execute_write_file(path: &str, content: &str, cwd: &str) -> String 
         let _ = fs::create_dir_all(parent);
     }
 
-    match fs::write(&full_path, processed_content) {
+    match fs::write(&full_path, content) {
         Ok(_) => format!("Successfully wrote to {}", full_path.display()),
         Err(e) => format!("ERROR: Failed to write to {}: {}", full_path.display(), e),
     }
 }
 
-pub async fn execute_code_snippet(name: &str, content: &str) -> String {
-    let mut snippets = SNIPPETS.lock().unwrap();
-    snippets.insert(name.to_string(), content.to_string());
-    format!("Successfully stored code snippet: {}", name)
+pub async fn execute_web_fetch(url: &str) -> String {
+    let client = Client::new();
+    match client.get(url).send().await {
+        Ok(res) => {
+            match res.text().await {
+                Ok(text) => text,
+                Err(e) => format!("ERROR: Failed to read response body: {}", e),
+            }
+        }
+        Err(e) => format!("ERROR: Failed to fetch URL {}: {}", url, e),
+    }
 }
 
 pub async fn get_git_info() -> String {

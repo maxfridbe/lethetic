@@ -154,10 +154,9 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                                     let content = tc.function.arguments["content"].as_str().unwrap_or("");
                                     (tool_executor::execute_write_file(path, content, &app.current_dir).await, app.current_dir.clone())
                                 },
-                                "code_snippet" => {
-                                    let name = tc.function.arguments["name"].as_str().unwrap_or("");
-                                    let content = tc.function.arguments["content"].as_str().unwrap_or("");
-                                    (tool_executor::execute_code_snippet(name, content).await, app.current_dir.clone())
+                                "web_fetch" => {
+                                    let url = tc.function.arguments["url"].as_str().unwrap_or("");
+                                    (tool_executor::execute_web_fetch(url).await, app.current_dir.clone())
                                 },
                                 "calculate" => (format!("Calculation result for: {}", tc.function.arguments["expression"]), app.current_dir.clone()),
                                 _ => (format!("Unknown tool: {}", tc.function.name), app.current_dir.clone()),
@@ -219,10 +218,9 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                                 let content = tc.function.arguments["content"].as_str().unwrap_or("");
                                 (tool_executor::execute_write_file(path, content, &app.current_dir).await, app.current_dir.clone())
                             },
-                            "code_snippet" => {
-                                let name = tc.function.arguments["name"].as_str().unwrap_or("");
-                                let content = tc.function.arguments["content"].as_str().unwrap_or("");
-                                (tool_executor::execute_code_snippet(name, content).await, app.current_dir.clone())
+                            "web_fetch" => {
+                                let url = tc.function.arguments["url"].as_str().unwrap_or("");
+                                (tool_executor::execute_web_fetch(url).await, app.current_dir.clone())
                             },
                             "calculate" => (format!("Calculation result for: {}", tc.function.arguments["expression"]), app.current_dir.clone()),
                             _ => (format!("Unknown tool: {}", tc.function.name), app.current_dir.clone()),
@@ -376,10 +374,9 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                                             let content = args["content"].as_str().unwrap_or("");
                                                             (tool_executor::execute_write_file(path, content, &current_dir).await, current_dir.clone())
                                                         },
-                                                        "code_snippet" => {
-                                                            let name = args["name"].as_str().unwrap_or("");
-                                                            let content = args["content"].as_str().unwrap_or("");
-                                                            (tool_executor::execute_code_snippet(name, content).await, current_dir.clone())
+                                                        "web_fetch" => {
+                                                            let url = args["url"].as_str().unwrap_or("");
+                                                            (tool_executor::execute_web_fetch(url).await, current_dir.clone())
                                                         },
                                                         "calculate" => (format!("Calculation result for: {}", args["expression"]), current_dir.clone()),
                                                         _ => (format!("Unknown tool: {}", func_name), current_dir.clone()),
@@ -461,6 +458,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                         let is_in_tool_call = full_response_content.contains("<|tool_call>") || full_response_content.contains("<tool_call>");
                         let is_in_thought = (full_response_content.contains("<|channel>thought") && !full_response_content.contains("<channel|>"))
                             || (full_response_content.contains("<thought>") && !full_response_content.contains("</thought>"))
+                            || (full_response_content.contains("<|think|>") && !full_response_content.contains("<|thought|>") && !full_response_content.contains("<|tool_call>"))
+                            || (full_response_content.contains("<|thought|>") && !full_response_content.contains("<channel|>") && !full_response_content.contains("<|tool_call>"))
                             || (full_response_content.contains("<|think|>") && !full_response_content.contains("<think|>"));
 
                         let b_type = if is_in_tool_call {
@@ -587,10 +586,9 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             let content = args["content"].as_str().unwrap_or("");
                                             (tool_executor::execute_write_file(path, content, &current_dir).await, current_dir.clone())
                                         },
-                                        "code_snippet" => {
-                                            let name = args["name"].as_str().unwrap_or("");
-                                            let content = args["content"].as_str().unwrap_or("");
-                                            (tool_executor::execute_code_snippet(name, content).await, current_dir.clone())
+                                        "web_fetch" => {
+                                            let url = args["url"].as_str().unwrap_or("");
+                                            (tool_executor::execute_web_fetch(url).await, current_dir.clone())
                                         },
                                         "calculate" => (format!("Calculation result for: {}", args["expression"]), current_dir.clone()),
                                         _ => (format!("Unknown tool: {}", func_name), current_dir.clone()),

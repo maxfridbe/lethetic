@@ -147,7 +147,8 @@ impl ContextManager {
                     prompt.push_str(&msg.content);
                     
                     // The tool response now ends with <turn|>, so the model turn is closed.
-                    current_turn_role = String::new();
+                    // Commented out as requested:
+                    // current_turn_role = String::new();
                 }
                 _ => {}
             }

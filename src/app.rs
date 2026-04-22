@@ -178,20 +178,24 @@ impl App {
         if b_type == BlockType::ToolCall && cleaned_content.contains("write_file") {
              if let Some(Ok((tc, _))) = crate::parser::find_tool_call(&content, true) {
                  if tc.function.name == "write_file" {
-                     let path = tc.function.arguments["path"].as_str().unwrap_or("unknown");
+                     let path = tc.function.arguments["path"].as_str();
                      let file_content = tc.function.arguments["content"].as_str().unwrap_or("");
-                     let ext = std::path::Path::new(path).extension().and_then(|e| e.to_str()).unwrap_or("txt");
-                     cleaned_content = format!("Writing to: {}\n```{}\n{}\n```", path, ext, file_content);
+                     
+                     if let Some(p) = path {
+                         let ext = std::path::Path::new(p).extension().and_then(|e| e.to_str()).unwrap_or("txt");
+                         cleaned_content = format!("Writing to: {}\n```{}\n{}\n```", p, ext, file_content);
+                     } else {
+                         cleaned_content = format!("Writing to: (streaming path...)\n```\n{}\n```", file_content);
+                     }
                  }
              }
         }
 
-        if b_type == BlockType::ToolCall && cleaned_content.contains("code_snippet") {
+        if b_type == BlockType::ToolCall && cleaned_content.contains("web_fetch") {
              if let Some(Ok((tc, _))) = crate::parser::find_tool_call(&content, true) {
-                 if tc.function.name == "code_snippet" {
-                     let name = tc.function.arguments["name"].as_str().unwrap_or("unknown");
-                     let file_content = tc.function.arguments["content"].as_str().unwrap_or("");
-                     cleaned_content = format!("Storing snippet: {}\n```\n{}\n```", name, file_content);
+                 if tc.function.name == "web_fetch" {
+                     let url = tc.function.arguments["url"].as_str().unwrap_or("unknown");
+                     cleaned_content = format!("Fetching URL: `{}`", url);
                  }
              }
         }
