@@ -4,6 +4,36 @@
 
 A sophisticated Rust Terminal User Interface (TUI) designed for high-performance interaction with the Gemma 4 26B model. Optimized for **TurboQuant** and native tool-calling, it provides a robust platform for autonomous system engineering tasks.
 
+## Server Setup
+
+The engine is specifically tuned for a **TurboQuant-optimized** server. To set up your remote server:
+
+1. **Automation**: Run `setup_gemma4_server.sh` on your target Linux machine. It automates:
+   - Cloning and building the `TheTom/llama-cpp-turboquant` fork with CUDA support.
+   - Downloading the `Gemma-4-26B` UD-Q4_K_M model.
+   - Setting up a systemd service (`gemma4.service`) on port `12345`.
+   - Configuring `turbo3` KV cache quantization for ultra-low memory overhead.
+2. **Server Requirements**:
+   - **Endpoint**: `http://<server-ip>:12345/completion` (SSE streaming format).
+   - **Context**: 262,144 tokens.
+   - **Native Reasoning**: Enabled via `--reasoning on` and custom Jinja templates.
+
+## Configuration
+
+Lethetic uses a `config.yml` file for server connection and UI settings.
+
+### Location Priority
+1. **Local**: `./config.yml` (checked first).
+2. **Global**: `~/.config/lethetic/config.yml` (fallback).
+
+### Example `config.yml`
+```yaml
+server_url: "http://brainiac-nvidia:12345/completion"
+model_name: "Gemma-4-26B-TurboQuant-262k"
+max_context_tokens: 262144
+shell_approval_mode: "Optional" # Always, Optional, or Never
+```
+
 ## Features
 
 - **Interactive TUI**: Powered by Ratatui, featuring full-width background styling, horizontal dividers, and a searchable/selectable output history.
@@ -16,7 +46,7 @@ A sophisticated Rust Terminal User Interface (TUI) designed for high-performance
 ## Prerequisites
 
 - [Rust & Cargo](https://rustup.rs/) (2024 edition)
-- A running `llama-server` instance (TurboQuant fork recommended) on port `7210`.
+- A running `llama-server` instance (TurboQuant fork recommended) on port `12345`.
 - The target model: `Gemma-4-26B-TurboQuant-262k`.
 
 ## Usage
