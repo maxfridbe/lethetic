@@ -71,12 +71,8 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
     let req_id = chrono::Local::now().format("%Y%m%d_%H%M%S_%f").to_string();
     let sep = format!("\n//-------------{}-------------------------------------------\n", req_id);
 
-    let prefix = if is_debug {
-        let _ = fs::create_dir_all(".lethetic");
-        ".lethetic/".to_string()
-    } else {
-        "".to_string()
-    };
+    let prefix = ".lethetic/".to_string();
+    let _ = fs::create_dir_all(&prefix);
 
     if let Ok(full_req_json) = serde_json::to_string_pretty(&req_body) {
         let _ = fs::write(format!("{}last_context", prefix), &full_req_json);

@@ -16,6 +16,9 @@ use ratatui::text::Line;
 
 static MARKER_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"<\|?/?(?:channel|thought|tool_call|tool_response|turn|bos|eos|think|\||\x22|')[^>]*>?").unwrap());
 
+// Safety limits to prevent UI freezes
+const MAX_TOTAL_BLOCKS: usize = 200;
+
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum ApprovalMode {
     None,
@@ -31,6 +34,7 @@ pub enum BlockType {
     ToolCall,
     ToolResult,
     Divider,
+    Formulating,
 }
 
 #[derive(Clone, Debug)]
@@ -53,6 +57,7 @@ pub enum AppEventOutcome {
 
 pub struct App {
     pub input: String,
+    pub cursor_pos: usize,
     pub blocks: Vec<RenderBlock>,
     pub output_state: ListState,
     pub is_output_focused: bool,
@@ -86,10 +91,12 @@ pub struct App {
     pub show_prompt_editor: bool,
     pub is_editing_prompt: bool,
     pub show_cleanup_prompt: bool,
+    pub show_hotkeys: bool,
     pub tool_call_pos: Option<usize>,
     pub last_rendered_width: usize,
     pub total_line_count: usize,
     pub mouse_enabled: bool,
+    pub current_dir: String,
 }
 
 impl App {
@@ -109,6 +116,7 @@ impl App {
 
         App {
             input: String::new(),
+            cursor_pos: 0,
             blocks: vec![RenderBlock { 
                 block_type: BlockType::Text, 
                 content: "Type a prompt to test tool calling (e.g. 'Run ls'). F12 for debugger.".to_string(),
@@ -120,6 +128,7 @@ impl App {
             show_palette: false,
             palette_state,
             palette_items: vec![
+                format!("{} Hotkeys", icons::COMMAND),
                 format!("{} Themes", icons::THEME),
                 format!("{} System Prompt", icons::MODEL),
                 format!("{} Clear Context", icons::TRASH),
@@ -154,18 +163,39 @@ impl App {
             show_prompt_editor: false,
             is_editing_prompt: false,
             show_cleanup_prompt,
+            show_hotkeys: false,
             tool_call_pos: None,
             last_rendered_width: 0,
             total_line_count: 0,
             mouse_enabled: true,
+            current_dir: env::current_dir().map(|p| p.display().to_string()).unwrap_or_else(|_| String::from(".")),
         }
     }
 
     pub fn add_segment(&mut self, content: String, b_type: BlockType) {
-        // Strip technical markers using regex
         let mut cleaned_content = MARKER_REGEX.replace_all(&content, "").to_string();
         
-        // Remove trailing 'thought' or other artifacts if they were left behind by partial tags
+        if b_type == BlockType::ToolCall && cleaned_content.contains("write_file") {
+             if let Some((tc, _)) = crate::parser::find_tool_call(&content, true) {
+                 if tc.function.name == "write_file" {
+                     let path = tc.function.arguments["path"].as_str().unwrap_or("unknown");
+                     let file_content = tc.function.arguments["content"].as_str().unwrap_or("");
+                     let ext = std::path::Path::new(path).extension().and_then(|e| e.to_str()).unwrap_or("txt");
+                     cleaned_content = format!("Writing to: {}\n```{}\n{}\n```", path, ext, file_content);
+                 }
+             }
+        }
+
+        if b_type == BlockType::ToolCall && cleaned_content.contains("code_snippet") {
+             if let Some((tc, _)) = crate::parser::find_tool_call(&content, true) {
+                 if tc.function.name == "code_snippet" {
+                     let name = tc.function.arguments["name"].as_str().unwrap_or("unknown");
+                     let file_content = tc.function.arguments["content"].as_str().unwrap_or("");
+                     cleaned_content = format!("Storing snippet: {}\n```\n{}\n```", name, file_content);
+                 }
+             }
+        }
+
         if b_type == BlockType::Thought && cleaned_content.trim() == "thought" {
             return;
         }
@@ -180,10 +210,20 @@ impl App {
         }
 
         if let Some(last) = self.blocks.last_mut() {
+            // Special handling for Formulating blocks: they get replaced once the tool call arrives
+            if last.block_type == BlockType::Formulating && b_type == BlockType::ToolCall {
+                last.block_type = BlockType::ToolCall;
+                last.content = cleaned_content;
+                last.cached_lines = None;
+                self.should_redraw = true;
+                return;
+            }
+
             if last.block_type == b_type && b_type != BlockType::Divider {
                 last.content.push_str(&cleaned_content);
                 last.cached_lines = None;
                 self.should_redraw = true;
+                if self.auto_scroll { self.sync_scroll_to_end(); }
                 return;
             }
         }
@@ -202,7 +242,18 @@ impl App {
             cached_lines: None,
         });
         
+        if self.blocks.len() > MAX_TOTAL_BLOCKS {
+            self.blocks.remove(0);
+        }
+
+        if self.auto_scroll { self.sync_scroll_to_end(); }
         self.should_redraw = true;
+    }
+
+    pub fn sync_scroll_to_end(&mut self) {
+        if self.total_line_count > 0 {
+            self.output_state.select(Some(self.total_line_count.saturating_sub(1)));
+        }
     }
 
     pub fn clear_output(&mut self) {
@@ -233,22 +284,18 @@ impl App {
 
     pub fn scroll_output_down(&mut self) {
         if self.total_line_count == 0 { return; }
-        let i = match self.output_state.selected() {
-            Some(i) => if i >= self.total_line_count.saturating_sub(1) { i } else { i + 1 }
-            None => 0,
-        };
-        self.output_state.select(Some(i));
-        self.auto_scroll = i >= self.total_line_count.saturating_sub(1);
+        let current = self.output_state.selected().unwrap_or(0);
+        let next = if current >= self.total_line_count.saturating_sub(1) { current } else { current + 1 };
+        self.output_state.select(Some(next));
+        self.auto_scroll = next >= self.total_line_count.saturating_sub(1);
         self.should_redraw = true;
     }
 
     pub fn scroll_output_up(&mut self) {
         if self.total_line_count == 0 { return; }
-        let i = match self.output_state.selected() {
-            Some(i) => if i == 0 { 0 } else { i - 1 }
-            None => 0,
-        };
-        self.output_state.select(Some(i));
+        let current = self.output_state.selected().unwrap_or(0);
+        let next = if current == 0 { 0 } else { current - 1 };
+        self.output_state.select(Some(next));
         self.auto_scroll = false;
         self.should_redraw = true;
     }
@@ -285,8 +332,17 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
         return AppEventOutcome::Continue;
     }
 
+    if app.show_hotkeys {
+        if key.code == KeyCode::Esc || key.code == KeyCode::Enter {
+            app.show_hotkeys = false;
+            app.should_redraw = true;
+        }
+        return AppEventOutcome::Continue;
+    }
+
     if app.show_palette {
         match key.code {
+            KeyCode::Char('h') => { app.show_palette = false; app.show_hotkeys = true; }
             KeyCode::Char('t') => { app.show_palette = false; app.show_theme_menu = true; }
             KeyCode::Char('c') => { app.show_palette = false; app.clear_output(); app.context_manager.clear(); }
             KeyCode::Char('d') => { app.show_palette = false; app.show_debug = !app.show_debug; }
@@ -297,12 +353,13 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
             KeyCode::Enter => {
                 let i = app.palette_state.selected().unwrap_or(0);
                 match i {
-                    0 => { app.show_palette = false; app.show_theme_menu = true; }
-                    1 => { app.show_palette = false; app.show_prompt_editor = true; }
-                    2 => { app.show_palette = false; app.clear_output(); app.context_manager.clear(); }
-                    3 => { app.show_palette = false; app.show_debug = !app.show_debug; }
-                    4 => { app.show_palette = false; return AppEventOutcome::ToggleMouse; }
-                    5 => return AppEventOutcome::Exit,
+                    0 => { app.show_palette = false; app.show_hotkeys = true; }
+                    1 => { app.show_palette = false; app.show_theme_menu = true; }
+                    2 => { app.show_palette = false; app.show_prompt_editor = true; }
+                    3 => { app.show_palette = false; app.clear_output(); app.context_manager.clear(); }
+                    4 => { app.show_palette = false; app.show_debug = !app.show_debug; }
+                    5 => { app.show_palette = false; return AppEventOutcome::ToggleMouse; }
+                    6 => return AppEventOutcome::Exit,
                     _ => app.show_palette = false,
                 }
             }
@@ -345,17 +402,25 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
         return AppEventOutcome::Continue;
     }
 
-    if key.code == KeyCode::Tab {
-        app.is_output_focused = !app.is_output_focused;
-        if app.is_output_focused && app.output_state.selected().is_none() && app.total_line_count > 0 {
-            app.output_state.select(Some(app.total_line_count.saturating_sub(1)));
+    // Global Toggles
+    match key.code {
+        KeyCode::Tab => {
+            app.is_output_focused = !app.is_output_focused;
+            if app.is_output_focused && app.output_state.selected().is_none() && app.total_line_count > 0 {
+                app.output_state.select(Some(app.total_line_count.saturating_sub(1)));
+            }
+            app.should_redraw = true;
+            return AppEventOutcome::Continue;
         }
-        app.should_redraw = true;
-        return AppEventOutcome::Continue;
-    }
-
-    if key.code == KeyCode::F(10) {
-        return AppEventOutcome::ToggleMouse;
+        KeyCode::F(12) => {
+            app.show_debug = !app.show_debug;
+            app.should_redraw = true;
+            return AppEventOutcome::Continue;
+        }
+        KeyCode::F(10) => {
+            return AppEventOutcome::ToggleMouse;
+        }
+        _ => {}
     }
 
     if app.is_output_focused {
@@ -374,6 +439,7 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
     match key.code {
         KeyCode::Enter => {
             let p = app.input.drain(..).collect::<String>();
+            app.cursor_pos = 0;
             if !p.trim().is_empty() {
                 app.should_redraw = true;
                 return AppEventOutcome::SendPrompt(p);
@@ -390,8 +456,56 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
             app.show_palette = true;
             app.should_redraw = true;
         }
-        KeyCode::Char(c) => { app.input.push(c); app.should_redraw = true; },
-        KeyCode::Backspace => { app.input.pop(); app.should_redraw = true; }
+        KeyCode::Left => {
+            if app.cursor_pos > 0 {
+                app.cursor_pos -= 1;
+                app.should_redraw = true;
+            }
+        }
+        KeyCode::Right => {
+            if app.cursor_pos < app.input.len() {
+                app.cursor_pos += 1;
+                app.should_redraw = true;
+            }
+        }
+        KeyCode::Home => {
+            app.cursor_pos = 0;
+            app.should_redraw = true;
+        }
+        KeyCode::End => {
+            app.cursor_pos = app.input.len();
+            app.should_redraw = true;
+        }
+        KeyCode::Char('h') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.cursor_pos = 0;
+            app.should_redraw = true;
+        }
+        _ if key.code == KeyCode::Home && key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.cursor_pos = 0;
+            app.should_redraw = true;
+        }
+        _ if key.code == KeyCode::End && key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.cursor_pos = app.input.len();
+            app.should_redraw = true;
+        }
+        KeyCode::Char(c) => { 
+            app.input.insert(app.cursor_pos, c);
+            app.cursor_pos += 1;
+            app.should_redraw = true; 
+        },
+        KeyCode::Backspace => { 
+            if app.cursor_pos > 0 {
+                app.input.remove(app.cursor_pos - 1);
+                app.cursor_pos -= 1;
+                app.should_redraw = true; 
+            }
+        }
+        KeyCode::Delete => {
+            if app.cursor_pos < app.input.len() {
+                app.input.remove(app.cursor_pos);
+                app.should_redraw = true;
+            }
+        }
         KeyCode::Esc => { 
             if app.is_processing {
                 return AppEventOutcome::Stop;
@@ -414,7 +528,8 @@ pub fn handle_tool_call(app: &mut App, calls: Vec<ToolCall>, pos: usize, _tx: mp
         
         app.context_manager.add_message("assistant", full_response_content);
 
-        app.add_segment(format!("\n{} [PROCESSING HALTED] Reason: Tool Call Intercepted\n", icons::WARNING), BlockType::Text);
+        let tool_call_str = &full_response_content[pos..];
+        app.add_segment(tool_call_str.to_string(), BlockType::ToolCall);
         
         let tool_call = calls[0].clone();
         app.pending_tool_call = Some(tool_call.clone()); 

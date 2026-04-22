@@ -1,0 +1,132 @@
+
+//-------------20260421_192426_519009841-------------------------------------------
+{
+  "model": "prutser/gemma-4-26B-A4B-it-ara-abliterated:Q5_K_M",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are an expert autonomous AI software engineer.\nYour Goal: Solve coding tasks precisely, iteratively, and securely.\nCapabilities: You have full tool access to achieve what is necessary on the local machine you are operating on, including reading/writing files and executing terminal commands.\n\nCRITICAL: Every tool call MUST include a `tool_call_id` parameter (e.g., \"call_abc123\"). This is essential for tracking. The result returned to you will ALWAYS have this ID on the very first line.\n\nGuidelines:\n\n1. Plan Before Acting: Before taking any action, outline your plan in a <planning> block.\n2. Iterative Development: Perform one change at a time, test it, and verify the output.\n3. Error Handling: If a command fails, analyze the error, amend the plan, and try again.\n4. Best Practices: Use modern syntax, write clean code, and add necessary comments.\n5. Tool Calls: You MUST output your tool calls strictly as a JSON object, wrapped in a `<tool_call>` block. \n   Example:\n   <tool_call>\n   { \"name\": \"run_shell_command\", \"arguments\": {\"command\": \"ls\", \"tool_call_id\": \"123\"} }\n   </tool_call>\n   CRITICAL: Do NOT use XML self-closing tags like `<run_shell_command />` or `<tool_call_id>...`. ONLY use the JSON format above.\n   CRITICAL: Your JSON strings CANNOT contain raw unescaped newlines. If you need a newline in your command, you MUST escape it as `\\n`. Do NOT output multi-line string values in JSON.\n6. Finalize: Once verified, provide the final code/summary in a <result> block."
+    },
+    {
+      "role": "user",
+      "content": "can you make 20 jokes in a jokes.txt and make a telljoke.sh wich picks a random line out of the txt file"
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "read_file_lines",
+        "description": "Read a specific range of lines from a file",
+        "parameters": {
+          "properties": {
+            "end_line": {
+              "description": "The last line to read (inclusive)",
+              "type": "integer"
+            },
+            "path": {
+              "description": "The path to the file",
+              "type": "string"
+            },
+            "start_line": {
+              "description": "The first line to read (1-indexed)",
+              "type": "integer"
+            },
+            "tool_call_id": {
+              "description": "Required tracking ID",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "start_line",
+            "end_line",
+            "tool_call_id"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "apply_patch",
+        "description": "Apply a unified diff patch to a file",
+        "parameters": {
+          "properties": {
+            "patch": {
+              "description": "The unified diff content to apply",
+              "type": "string"
+            },
+            "path": {
+              "description": "The path to the file to patch",
+              "type": "string"
+            },
+            "tool_call_id": {
+              "description": "Required tracking ID",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "patch",
+            "tool_call_id"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "run_shell_command",
+        "description": "Run a bash command on the local system and return the output",
+        "parameters": {
+          "properties": {
+            "command": {
+              "description": "The exact bash command to execute",
+              "type": "string"
+            },
+            "tool_call_id": {
+              "description": "Required tracking ID",
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "tool_call_id"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "calculate",
+        "description": "Perform a mathematical calculation",
+        "parameters": {
+          "properties": {
+            "expression": {
+              "description": "The math expression to evaluate, e.g. '2 + 2' or 'sin(pi/2)'",
+              "type": "string"
+            },
+            "tool_call_id": {
+              "description": "Required tracking ID",
+              "type": "string"
+            }
+          },
+          "required": [
+            "expression",
+            "tool_call_id"
+          ],
+          "type": "object"
+        }
+      }
+    }
+  ],
+  "stream": true,
+  "options": {
+    "num_ctx": 8000
+  }
+}

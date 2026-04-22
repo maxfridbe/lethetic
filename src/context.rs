@@ -43,9 +43,18 @@ impl ContextManager {
     }
 
     pub fn add_message(&mut self, role: &str, content: &str) {
+        let mut final_content = content.to_string();
+        
+        // Safety: Truncate extremely large messages in the CONTEXT as well to avoid model confusion
+        // 10k chars is plenty for most responses/data
+        if final_content.len() > 10000 {
+            final_content = format!("{}...\n\n[CONTENT TRUNCATED FOR CONTEXT STABILITY: Total {} characters]", 
+                &final_content[..8000], final_content.len());
+        }
+
         self.messages.push(Message {
             role: role.to_string(),
-            content: content.to_string(),
+            content: final_content,
             tool_calls: None,
         });
         self.trim_context();
@@ -61,9 +70,15 @@ impl ContextManager {
     }
 
     pub fn add_tool_message(&mut self, tool_call_id: String, function_name: &str, content: &str) {
+        let mut final_content = content.to_string();
+        if final_content.len() > 10000 {
+            final_content = format!("{}...\n\n[TOOL OUTPUT TRUNCATED: Total {} characters]", 
+                &final_content[..8000], final_content.len());
+        }
+
         let formatted_content = format!(
-            "<|tool_response|>response:{}{{result:<|\">{}<|\">,tool_call_id:<|\">{}<|\">}}<tool_response|>", 
-            function_name, content, tool_call_id
+            "<|tool_response|>response:{}{{result:<|\">{}<|\">,tool_call_id:<|\">{}<|\">}}<tool_response|><turn|>", 
+            function_name, final_content, tool_call_id
         );
         self.messages.push(Message {
             role: "tool".to_string(),

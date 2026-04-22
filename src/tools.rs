@@ -95,6 +95,56 @@ pub fn get_standard_tools() -> Vec<Tool> {
         Tool {
             tool_type: "function".to_string(),
             function: FunctionDefinition {
+                name: "write_file".to_string(),
+                description: "Write content to a file (overwrites existing)".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "The path to the file"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The full content to write"
+                        },
+                        "tool_call_id": {
+                            "type": "string",
+                            "description": "Required tracking ID"
+                        }
+                    },
+                    "required": ["path", "content", "tool_call_id"]
+                }),
+            },
+        },
+        Tool {
+            tool_type: "function".to_string(),
+            function: FunctionDefinition {
+                name: "code_snippet".to_string(),
+                description: "Store a code snippet for later use in other tools using the ***name*** placeholder".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "The unique name for this snippet"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The content of the snippet"
+                        },
+                        "tool_call_id": {
+                            "type": "string",
+                            "description": "Required tracking ID"
+                        }
+                    },
+                    "required": ["name", "content", "tool_call_id"]
+                }),
+            },
+        },
+        Tool {
+            tool_type: "function".to_string(),
+            function: FunctionDefinition {
                 name: "calculate".to_string(),
                 description: "Perform a mathematical calculation".to_string(),
                 parameters: json!({

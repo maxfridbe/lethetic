@@ -4,7 +4,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use futures_util::StreamExt;
+use futures_util::{StreamExt, FutureExt};
 use ratatui::{
     backend::CrosstermBackend,
     Terminal,
@@ -93,12 +93,10 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                 io::Write::flush(&mut io::stdout())?;
                 full_response_content.push_str(&chunk);
 
-                let has_start = full_response_content.contains("<|tool_call>") || full_response_content.contains("<tool_call>");
-                let has_end = full_response_content.contains("<|tool_call|>") 
-                    || full_response_content.contains("<tool_call|>")
-                    || (full_response_content.contains('}') && (full_response_content.contains("<|channel>") || full_response_content.contains("<channel|>")));
+                let is_complete = full_response_content.contains("<|tool_call|>") 
+                    || full_response_content.contains("<tool_call|>");
 
-                if has_start && has_end {
+                if is_complete {
                     if let Some((tc, _)) = parser::find_tool_call(&full_response_content, true) {
                         println!("\n\n{} [TOOL CALL: {}]", icons::COMMAND, tc.function.name);
                         println!("Arguments: {}", tc.function.arguments);
@@ -107,26 +105,37 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                         let assistant_content = full_response_content.clone();
                         app.context_manager.add_message("assistant", &assistant_content);
 
-                        let result = match tc.function.name.as_str() {
+                        let (result, new_dir) = match tc.function.name.as_str() {
                             "run_shell_command" => {
                                 let cmd = tc.function.arguments["command"].as_str().unwrap_or("");
-                                tool_executor::execute_shell(cmd).await
+                                tool_executor::execute_shell(cmd, &app.current_dir).await
                             },
                             "read_file_lines" => {
                                 let path = tc.function.arguments["path"].as_str().unwrap_or("");
                                 let start = tc.function.arguments["start_line"].as_u64().unwrap_or(1) as usize;
                                 let end = tc.function.arguments["end_line"].as_u64().unwrap_or(1) as usize;
-                                tool_executor::execute_read_file_lines(path, start, end).await
+                                (tool_executor::execute_read_file_lines(path, start, end, &app.current_dir).await, app.current_dir.clone())
                             },
                             "apply_patch" => {
                                 let path = tc.function.arguments["path"].as_str().unwrap_or("");
                                 let patch = tc.function.arguments["patch"].as_str().unwrap_or("");
-                                tool_executor::execute_apply_patch(path, patch).await
+                                (tool_executor::execute_apply_patch(path, patch, &app.current_dir).await, app.current_dir.clone())
                             },
-                            "calculate" => format!("Calculation result for: {}", tc.function.arguments["expression"]),
-                            _ => format!("Unknown tool: {}", tc.function.name),
+                            "write_file" => {
+                                let path = tc.function.arguments["path"].as_str().unwrap_or("");
+                                let content = tc.function.arguments["content"].as_str().unwrap_or("");
+                                (tool_executor::execute_write_file(path, content, &app.current_dir).await, app.current_dir.clone())
+                            },
+                            "code_snippet" => {
+                                let name = tc.function.arguments["name"].as_str().unwrap_or("");
+                                let content = tc.function.arguments["content"].as_str().unwrap_or("");
+                                (tool_executor::execute_code_snippet(name, content).await, app.current_dir.clone())
+                            },
+                            "calculate" => (format!("Calculation result for: {}", tc.function.arguments["expression"]), app.current_dir.clone()),
+                            _ => (format!("Unknown tool: {}", tc.function.name), app.current_dir.clone()),
                         };
                         
+                        app.current_dir = new_dir;
                         println!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, result);
                         app.context_manager.add_tool_message(tc.id.clone(), &tc.function.name, &result);
                         
@@ -145,26 +154,37 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                     let assistant_content = full_response_content.clone();
                     app.context_manager.add_message("assistant", &assistant_content);
 
-                    let result = match tc.function.name.as_str() {
+                    let (result, new_dir) = match tc.function.name.as_str() {
                         "run_shell_command" => {
                             let cmd = tc.function.arguments["command"].as_str().unwrap_or("");
-                            tool_executor::execute_shell(cmd).await
+                            tool_executor::execute_shell(cmd, &app.current_dir).await
                         },
                         "read_file_lines" => {
                             let path = tc.function.arguments["path"].as_str().unwrap_or("");
                             let start = tc.function.arguments["start_line"].as_u64().unwrap_or(1) as usize;
                             let end = tc.function.arguments["end_line"].as_u64().unwrap_or(1) as usize;
-                            tool_executor::execute_read_file_lines(path, start, end).await
+                            (tool_executor::execute_read_file_lines(path, start, end, &app.current_dir).await, app.current_dir.clone())
                         },
                         "apply_patch" => {
                             let path = tc.function.arguments["path"].as_str().unwrap_or("");
                             let patch = tc.function.arguments["patch"].as_str().unwrap_or("");
-                            tool_executor::execute_apply_patch(path, patch).await
+                            (tool_executor::execute_apply_patch(path, patch, &app.current_dir).await, app.current_dir.clone())
                         },
-                        "calculate" => format!("Calculation result for: {}", tc.function.arguments["expression"]),
-                        _ => format!("Unknown tool: {}", tc.function.name),
+                        "write_file" => {
+                            let path = tc.function.arguments["path"].as_str().unwrap_or("");
+                            let content = tc.function.arguments["content"].as_str().unwrap_or("");
+                            (tool_executor::execute_write_file(path, content, &app.current_dir).await, app.current_dir.clone())
+                        },
+                        "code_snippet" => {
+                            let name = tc.function.arguments["name"].as_str().unwrap_or("");
+                            let content = tc.function.arguments["content"].as_str().unwrap_or("");
+                            (tool_executor::execute_code_snippet(name, content).await, app.current_dir.clone())
+                        },
+                        "calculate" => (format!("Calculation result for: {}", tc.function.arguments["expression"]), app.current_dir.clone()),
+                        _ => (format!("Unknown tool: {}", tc.function.name), app.current_dir.clone()),
                     };
                     
+                    app.current_dir = new_dir;
                     println!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, result);
                     app.context_manager.add_tool_message(tc.id.clone(), &tc.function.name, &result);
                     
@@ -212,11 +232,16 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
     let stats_tx = tx.clone();
     tokio::spawn(async move {
         let mut sys = System::new_all();
+        let pid = sysinfo::get_current_pid().ok();
         loop {
-            sys.refresh_memory();
-            let mem = sys.used_memory() / 1024 / 1024;
+            sys.refresh_all();
+            let proc_mem = if let Some(p) = pid {
+                if let Some(process) = sys.process(p) {
+                    process.memory() / 1024 / 1024
+                } else { 0 }
+            } else { 0 };
             let git = get_git_info().await;
-            let _ = stats_tx.send(StreamEvent::DebugLog(format!("STATS|{}|{}", mem, git)));
+            let _ = stats_tx.send(StreamEvent::DebugLog(format!("STATS|{}|{}", proc_mem, git)));
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
     });
@@ -232,103 +257,107 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
         let timeout = Duration::from_millis(16);
         
         tokio::select! {
-            Some(event) = reader.next() => {
-                match event {
-                    Ok(Event::Key(key)) => {
-                        if key.kind == KeyEventKind::Press {
-                            match handle_key(app, key) {
-                                AppEventOutcome::Exit => return Ok(()),
-                                AppEventOutcome::ToggleMouse => {
-                                    app.mouse_enabled = !app.mouse_enabled;
-                                    if app.mouse_enabled {
-                                        execute!(io::stdout(), EnableMouseCapture)?;
-                                    } else {
-                                        execute!(io::stdout(), DisableMouseCapture)?;
+            Some(event_res) = reader.next() => {
+                let mut current_event = Some(event_res);
+                while let Some(Ok(event)) = current_event {
+                    match event {
+                        Event::Key(key) => {
+                            if key.kind == KeyEventKind::Press {
+                                match handle_key(app, key) {
+                                    AppEventOutcome::Exit => return Ok(()),
+                                    AppEventOutcome::ToggleMouse => {
+                                        app.mouse_enabled = !app.mouse_enabled;
+                                        if app.mouse_enabled { execute!(io::stdout(), EnableMouseCapture)?; }
+                                        else { execute!(io::stdout(), DisableMouseCapture)?; }
+                                        app.should_redraw = true;
                                     }
-                                    app.should_redraw = true;
-                                }
-                                AppEventOutcome::SendPrompt(prompt) => {
-                                    app.add_segment(prompt.clone(), BlockType::User);
-                                    app.context_manager.add_message("user", &prompt);
-                                    app.is_processing = true;
-                                    app.tool_calls_processed_this_request = false;
-                                    app.tool_call_pos = None;
-                                    full_response_content.clear();
-                                    cancellation_token = CancellationToken::new();
-                                    trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), app.show_debug);
-                                }
-                                AppEventOutcome::ToolApproved(approved, always) => {
-                                    if let Some(tool_call) = app.pending_tool_call.take() {
-                                        if approved {
-                                            if always { app.shell_approval_mode = ApprovalMode::Always; }
-                                            let tc_id = tool_call.id.clone();
-                                            let func_name = tool_call.function.name.clone();
-                                            let args = tool_call.function.arguments.clone();
-                                            app.log_debug(&format!("TOOL ALLOWED: {}", func_name));
-                                            
-                                            let ctx_tx = tx.clone();
-                                            let func_name_clone = func_name.clone();
-                                            tokio::spawn(async move {
-                                                let result = match func_name.as_str() {
-                                                    "run_shell_command" => {
-                                                        let cmd = args["command"].as_str().unwrap_or("");
-                                                        tool_executor::execute_shell(cmd).await
-                                                    },
-                                                    "read_file_lines" => {
-                                                        let path = args["path"].as_str().unwrap_or("");
-                                                        let start = args["start_line"].as_u64().unwrap_or(1) as usize;
-                                                        let end = args["end_line"].as_u64().unwrap_or(1) as usize;
-                                                        tool_executor::execute_read_file_lines(path, start, end).await
-                                                    },
-                                                    "apply_patch" => {
-                                                        let path = args["path"].as_str().unwrap_or("");
-                                                        let patch = args["patch"].as_str().unwrap_or("");
-                                                        tool_executor::execute_apply_patch(path, patch).await
-                                                    },
-                                                    "calculate" => format!("Calculation result for: {}", args["expression"]),
-                                                    _ => format!("Unknown tool: {}", func_name),
-                                                };
-                                                let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name_clone, result));
-                                            });
-                                            app.is_processing = true;
-                                        } else {
-                                            app.add_segment(format!("\n{} Tool execution denied by user.\n", icons::WARNING), BlockType::Text);
+                                    AppEventOutcome::SendPrompt(prompt) => {
+                                        app.add_segment(prompt.clone(), BlockType::User);
+                                        app.context_manager.add_message("user", &prompt);
+                                        app.is_processing = true;
+                                        app.tool_calls_processed_this_request = false;
+                                        app.tool_call_pos = None;
+                                        full_response_content.clear();
+                                        cancellation_token = CancellationToken::new();
+                                        trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), app.show_debug);
+                                    }
+                                    AppEventOutcome::ToolApproved(approved, always) => {
+                                        if let Some(tool_call) = app.pending_tool_call.take() {
+                                            if approved {
+                                                if always { app.shell_approval_mode = ApprovalMode::Always; }
+                                                let tc_id = tool_call.id.clone();
+                                                let func_name = tool_call.function.name.clone();
+                                                let args = tool_call.function.arguments.clone();
+                                                let current_dir = app.current_dir.clone();
+                                                
+                                                let ctx_tx = tx.clone();
+                                                tokio::spawn(async move {
+                                                    let (result, new_dir) = match func_name.as_str() {
+                                                        "run_shell_command" => {
+                                                            let cmd = args["command"].as_str().unwrap_or("");
+                                                            tool_executor::execute_shell(cmd, &current_dir).await
+                                                        },
+                                                        "read_file_lines" => {
+                                                            let path = args["path"].as_str().unwrap_or("");
+                                                            let start = args["start_line"].as_u64().unwrap_or(1) as usize;
+                                                            let end = args["end_line"].as_u64().unwrap_or(1) as usize;
+                                                            (tool_executor::execute_read_file_lines(path, start, end, &current_dir).await, current_dir.clone())
+                                                        },
+                                                        "apply_patch" => {
+                                                            let path = args["path"].as_str().unwrap_or("");
+                                                            let patch = args["patch"].as_str().unwrap_or("");
+                                                            (tool_executor::execute_apply_patch(path, patch, &current_dir).await, current_dir.clone())
+                                                        },
+                                                        "write_file" => {
+                                                            let path = args["path"].as_str().unwrap_or("");
+                                                            let content = args["content"].as_str().unwrap_or("");
+                                                            (tool_executor::execute_write_file(path, content, &current_dir).await, current_dir.clone())
+                                                        },
+                                                        "code_snippet" => {
+                                                            let name = args["name"].as_str().unwrap_or("");
+                                                            let content = args["content"].as_str().unwrap_or("");
+                                                            (tool_executor::execute_code_snippet(name, content).await, current_dir.clone())
+                                                        },
+                                                        "calculate" => (format!("Calculation result for: {}", args["expression"]), current_dir.clone()),
+                                                        _ => (format!("Unknown tool: {}", func_name), current_dir.clone()),
+                                                    };
+                                                    let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, result));
+                                                    let _ = ctx_tx.send(StreamEvent::DebugLog(format!("DIR_UPDATE|{}", new_dir)));
+                                                });
+                                                app.is_processing = true;
+                                            } else {
+                                                app.add_segment(format!("\n{} Tool execution denied by user.\n", icons::WARNING), BlockType::Text);
+                                            }
                                         }
+                                        app.show_approval_prompt = false;
+                                        app.should_redraw = true;
                                     }
-                                    app.show_approval_prompt = false;
-                                    app.should_redraw = true;
-                                }
-                                AppEventOutcome::Stop => {
-                                    cancellation_token.cancel();
-                                    app.is_processing = false;
-                                    app.add_segment(format!("\n{} [STOPPED]\n", icons::WARNING), BlockType::Text);
-                                    while let Ok(_) = rx.try_recv() {}
-                                    app.should_redraw = true;
-                                }
-                                AppEventOutcome::Continue => {
-                                    app.should_redraw = true;
+                                    AppEventOutcome::Stop => {
+                                        cancellation_token.cancel();
+                                        app.is_processing = false;
+                                        app.add_segment(format!("\n{} [STOPPED]\n", icons::WARNING), BlockType::Text);
+                                        while let Ok(_) = rx.try_recv() {}
+                                        app.should_redraw = true;
+                                    }
+                                    AppEventOutcome::Continue => { app.should_redraw = true; }
                                 }
                             }
                         }
-                    }
-                    Ok(Event::Mouse(mouse)) => {
-                        if app.mouse_enabled {
-                            match mouse.kind {
-                                MouseEventKind::ScrollDown => {
-                                    app.scroll_output_down();
-                                    app.should_redraw = true;
+                        Event::Mouse(mouse) => {
+                            if app.mouse_enabled {
+                                match mouse.kind {
+                                    MouseEventKind::ScrollDown => { app.scroll_output_down(); app.should_redraw = true; }
+                                    MouseEventKind::ScrollUp => { app.scroll_output_up(); app.should_redraw = true; }
+                                    _ => {}
                                 }
-                                MouseEventKind::ScrollUp => {
-                                    app.scroll_output_up();
-                                    app.should_redraw = true;
-                                }
-                                _ => {}
                             }
                         }
+                        _ => {}
                     }
-                    _ => {}
+                    current_event = reader.next().now_or_never().and_then(|e| e);
                 }
             }
+
             Some(stream_event) = rx.recv() => {
                 match stream_event {
                     StreamEvent::DebugLog(msg) => {
@@ -339,6 +368,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 app.git_status = parts[2].to_string();
                                 app.should_redraw = true;
                             }
+                        } else if msg.starts_with("DIR_UPDATE|") {
+                            app.current_dir = msg[11..].to_string();
                         } else {
                             app.log_debug(&msg);
                         }
@@ -347,10 +378,17 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                         if !app.is_processing { continue; }
                         full_response_content.push_str(&chunk);
                         
+                        let is_in_tool_call = full_response_content.contains("<|tool_call>") || full_response_content.contains("<tool_call>");
                         let is_in_thought = (full_response_content.contains("<thought>") && !full_response_content.contains("</thought>"))
                             || (full_response_content.contains("<|channel>thought") && !full_response_content.contains("<channel|>"));
 
-                        let b_type = if is_in_thought || chunk.contains("<thought>") || chunk.contains("<|channel>thought") {
+                        let b_type = if is_in_tool_call {
+                            if !full_response_content.contains("<|tool_call|>") && !full_response_content.contains("<tool_call|>") {
+                                BlockType::Formulating
+                            } else {
+                                BlockType::ToolCall
+                            }
+                        } else if is_in_thought || chunk.contains("<thought>") || chunk.contains("<|channel>thought") {
                             BlockType::Thought
                         } else if full_response_content.contains("```") {
                             BlockType::Markdown
@@ -359,20 +397,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                         };
                         app.add_segment(chunk, b_type);
 
-                        let is_complete = full_response_content.contains("<|tool_call|>") 
-                            || full_response_content.contains("<tool_call|>");
-
+                        let is_complete = full_response_content.contains("<|tool_call|>") || full_response_content.contains("<tool_call|>");
                         if is_complete && !app.tool_calls_processed_this_request {
                             if let Some((tc, pos)) = parser::find_tool_call(&full_response_content, true) {
-                                app.log_debug(&format!("Found complete manual tool call at pos {}!", pos));
                                 handle_tool_call(app, vec![tc], pos, tx.clone(), &mut cancellation_token, &full_response_content, false);
-                            }
-                        } else if full_response_content.contains("<tool_call|>") || full_response_content.contains("<|tool_call|>") {
-                            if full_response_content.matches("<tool_call|>").count() > 3 || full_response_content.matches("<|tool_call|>").count() > 3 {
-                                app.log_debug("Panic stop: excessive control tokens detected.");
-                                cancellation_token.cancel();
-                                app.is_processing = false;
-                                app.add_segment("\n[PANIC STOP] Model is looping control tokens.\n".to_string(), BlockType::Text);
                             }
                         }
                     }
@@ -382,20 +410,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                         }
                     }
                     StreamEvent::ToolResult(id, func_name, result) => {
-                        let success = if result.contains("EXIT_CODE: ") {
-                            result.contains("EXIT_CODE: 0")
-                        } else {
-                            true
-                        };
-
+                        let success = if result.contains("EXIT_CODE: ") { result.contains("EXIT_CODE: 0") } else { true };
                         app.add_segment(format!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, result), BlockType::ToolResult);
-                        if let Some(last) = app.blocks.last_mut() {
-                            last.success = Some(success);
-                        }
-                        
-                        if let Some(tc_id) = id {
-                            app.context_manager.add_tool_message(tc_id, &func_name, &result);
-                        }
+                        if let Some(last) = app.blocks.last_mut() { last.success = Some(success); }
+                        if let Some(tc_id) = id { app.context_manager.add_tool_message(tc_id, &func_name, &result); }
                         
                         app.is_processing = true;
                         app.tool_calls_processed_this_request = false;
@@ -406,18 +424,15 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                     }
                     StreamEvent::Done(eval_count, eval_duration) => {
                         app.is_processing = false;
-                        
                         if !app.tool_calls_processed_this_request {
                             if let Some((tc, pos)) = parser::find_tool_call(&full_response_content, true) {
-                                app.log_debug(&format!("Found manual tool call on Done at pos {}!", pos));
                                 handle_tool_call(app, vec![tc], pos, tx.clone(), &mut cancellation_token, &full_response_content, false);
                             }
                         }
 
                         if !app.tool_calls_processed_this_request {
                             let messages = app.context_manager.get_messages();
-                            let last_role = messages.last().map(|m| m.role.as_str());
-                            if last_role != Some("assistant") {
+                            if messages.last().map_or(true, |m| m.role != "assistant") {
                                 app.context_manager.add_message("assistant", &full_response_content);
                             }
                         }
@@ -425,7 +440,6 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                         if let (Some(count), Some(duration)) = (eval_count, eval_duration) {
                             app.tokens_per_s = (count as f64 / (duration as f64 / 1_000_000_000.0)).max(0.0);
                         }
-                        app.log_debug("LLM Response Done.");
                         app.should_redraw = true;
 
                         if app.tool_calls_processed_this_request && app.shell_approval_mode == ApprovalMode::Always {
@@ -433,37 +447,46 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 let tc_id = tool_call.id.clone();
                                 let func_name = tool_call.function.name.clone();
                                 let args = tool_call.function.arguments.clone();
-                                app.log_debug(&format!("TOOL ALLOWED (AUTO): {}", func_name));
+                                let current_dir = app.current_dir.clone();
                                 
                                 let messages = app.context_manager.get_messages();
-                                let last_role = messages.last().map(|m| m.role.as_str());
-                                if last_role != Some("assistant") {
+                                if messages.last().map_or(true, |m| m.role != "assistant") {
                                     app.context_manager.add_message("assistant", &full_response_content);
                                 }
 
                                 let ctx_tx = tx.clone();
-                                let func_name_clone = func_name.clone();
                                 tokio::spawn(async move {
-                                    let result = match func_name.as_str() {
+                                    let (result, new_dir) = match func_name.as_str() {
                                         "run_shell_command" => {
                                             let cmd = args["command"].as_str().unwrap_or("");
-                                            tool_executor::execute_shell(cmd).await
+                                            tool_executor::execute_shell(cmd, &current_dir).await
                                         },
                                         "read_file_lines" => {
                                             let path = args["path"].as_str().unwrap_or("");
                                             let start = args["start_line"].as_u64().unwrap_or(1) as usize;
                                             let end = args["end_line"].as_u64().unwrap_or(1) as usize;
-                                            tool_executor::execute_read_file_lines(path, start, end).await
+                                            (tool_executor::execute_read_file_lines(path, start, end, &current_dir).await, current_dir.clone())
                                         },
                                         "apply_patch" => {
                                             let path = args["path"].as_str().unwrap_or("");
                                             let patch = args["patch"].as_str().unwrap_or("");
-                                            tool_executor::execute_apply_patch(path, patch).await
+                                            (tool_executor::execute_apply_patch(path, patch, &current_dir).await, current_dir.clone())
                                         },
-                                        "calculate" => format!("Calculation result for: {}", args["expression"]),
-                                        _ => format!("Unknown tool: {}", func_name),
+                                        "write_file" => {
+                                            let path = args["path"].as_str().unwrap_or("");
+                                            let content = args["content"].as_str().unwrap_or("");
+                                            (tool_executor::execute_write_file(path, content, &current_dir).await, current_dir.clone())
+                                        },
+                                        "code_snippet" => {
+                                            let name = args["name"].as_str().unwrap_or("");
+                                            let content = args["content"].as_str().unwrap_or("");
+                                            (tool_executor::execute_code_snippet(name, content).await, current_dir.clone())
+                                        },
+                                        "calculate" => (format!("Calculation result for: {}", args["expression"]), current_dir.clone()),
+                                        _ => (format!("Unknown tool: {}", func_name), current_dir.clone()),
                                     };
-                                    let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name_clone, result));
+                                    let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, result));
+                                    let _ = ctx_tx.send(StreamEvent::DebugLog(format!("DIR_UPDATE|{}", new_dir)));
                                 });
                                 app.is_processing = true;
                             }

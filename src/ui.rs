@@ -6,6 +6,7 @@ use ratatui::{
 };
 use crate::app::{App, BlockType, RenderBlock};
 use crate::icons;
+use crate::markdown;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Theme {
@@ -60,7 +61,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         .split(main_layout[0]);
 
     let title = if app.show_approval_prompt { format!("{} Approval Required", icons::WARNING) } 
-                else if app.is_processing { format!("{} {} Lethetic Engine Processing...", icons::SPINNER[app.spinner_index], icons::PROCESSING) } 
+                else if app.is_processing { format!("{} {} Lethetic Intelligence Engine Processing...", icons::SPINNER[app.spinner_index], icons::PROCESSING) } 
                 else { format!("{} Output", icons::OUTPUT) };
 
     let terminal_width = left_layout[0].width.saturating_sub(2) as usize;
@@ -118,8 +119,8 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     f.render_widget(Paragraph::new(input_text).block(input_block).wrap(Wrap { trim: false }), left_layout[1]);
 
     if !app.is_output_focused {
-        let cursor_x = left_layout[1].x + 1 + prefix_len as u16 + (app.input.len() as u16 % inner_width.max(1));
-        let cursor_y = left_layout[1].y + 1 + (app.input.len() as u16 / inner_width.max(1));
+        let cursor_x = left_layout[1].x + 1 + prefix_len as u16 + (app.cursor_pos as u16 % inner_width.max(1));
+        let cursor_y = left_layout[1].y + 1 + (app.cursor_pos as u16 / inner_width.max(1));
         f.set_cursor_position((cursor_x, cursor_y));
     }
 
@@ -138,7 +139,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         ]),
         Line::from(vec![
             Span::styled(format!("{} Path: ", icons::PATH), Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{} ", app.cwd), Style::default().fg(Color::LightBlue)),
+            Span::styled(format!("{} ", app.current_dir), Style::default().fg(Color::LightBlue)),
             Span::styled(format!("| {} Git: ", icons::GIT), Style::default().fg(Color::DarkGray)),
             Span::styled(format!("{} ", app.git_status), Style::default().fg(if app.git_status.contains("dirty") { Color::Red } else { Color::Green })),
             Span::styled(format!(" | (TAB/F10) Mouse: {} ", if app.mouse_enabled { "ON" } else { "OFF" }), Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
@@ -166,11 +167,18 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     }
 
     if app.show_approval_prompt {
-        let area = centered_rect(60, 40, f.area());
+        let area = centered_rect(70, 50, f.area());
         f.render_widget(Clear, area);
         if let Some(tc) = &app.pending_tool_call {
-            let text = format!("Tool: {}\nParams: {}\n\n(A)lways Allow | (O)nce | (D)eny", tc.function.name, tc.function.arguments);
-            f.render_widget(Paragraph::new(text).block(UIBlock::default().title(format!("{} Security Confirmation", icons::WARNING)).borders(Borders::ALL)).style(Style::default().fg(Color::Red)), area);
+            let args_str = format!("{}", tc.function.arguments);
+            let display_args = if args_str.len() > 500 {
+                format!("{}... [Truncated for display]", &args_str[..500])
+            } else {
+                args_str
+            };
+            
+            let text = format!("Tool: {}\nParams:\n{}\n\n(A)lways Allow | (O)nce | (D)eny", tc.function.name, display_args);
+            f.render_widget(Paragraph::new(text).block(UIBlock::default().title(format!("{} Security Confirmation", icons::WARNING)).borders(Borders::ALL)).style(Style::default().fg(Color::Red)).wrap(Wrap { trim: false }), area);
         } else {
             app.show_approval_prompt = false;
         }
@@ -196,6 +204,30 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         let text = format!("{} Found existing debug files in .lethetic/\nWould you like to clear them?\n\n(Y)es | (N)o", icons::DEBUG);
         f.render_widget(Paragraph::new(text).block(UIBlock::default().title("Startup Cleanup").borders(Borders::ALL)).style(Style::default().fg(Color::Yellow)), area);
     }
+
+    if app.show_hotkeys {
+        let area = centered_rect(70, 70, f.area());
+        f.render_widget(Clear, area);
+        let hotkeys_text = vec![
+            Line::from(vec![Span::styled("Navigation", Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan))]),
+            Line::from(vec![Span::raw("  TAB       : Toggle Focus between Input and Output")]),
+            Line::from(vec![Span::raw("  UP / DOWN : Scroll Output (when focused)")]),
+            Line::from(vec![Span::raw("  PGUP/PGDN : Fast Scroll Output")]),
+            Line::from(vec![Span::raw("  ESC       : Open Command Palette / Stop Output")]),
+            Line::from(vec![]),
+            Line::from(vec![Span::styled("Global Toggles", Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan))]),
+            Line::from(vec![Span::raw("  F12       : Toggle Debugger Pane")]),
+            Line::from(vec![Span::raw("  F10       : Toggle Mouse (for terminal selection)")]),
+            Line::from(vec![Span::raw("  CTRL + P  : Command Palette")]),
+            Line::from(vec![]),
+            Line::from(vec![Span::styled("General", Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan))]),
+            Line::from(vec![Span::raw("  ENTER     : Send Prompt / Confirm Selection")]),
+            Line::from(vec![Span::raw("  CTRL + C  : Stop Output (1st) / Quit (2nd)")]),
+            Line::from(vec![]),
+            Line::from(vec![Span::styled("Press ESC or ENTER to close", Style::default().add_modifier(Modifier::ITALIC).fg(Color::DarkGray))]),
+        ];
+        f.render_widget(Paragraph::new(hotkeys_text).block(UIBlock::default().title(format!("{} Hotkeys Reference", icons::COMMAND)).borders(Borders::ALL)).wrap(Wrap { trim: false }), area);
+    }
 }
 
 fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme) -> Vec<Line<'static>> {
@@ -215,6 +247,7 @@ fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme) -> Ve
     let (bg_color, header) = match block.block_type {
         BlockType::User => (Color::Rgb(30, 35, 45), Some(format!("{} User Request", icons::INPUT))),
         BlockType::Thought => (Color::Rgb(25, 45, 45), Some(format!("{} Engine Thinking...", icons::PROCESSING))),
+        BlockType::Formulating => (Color::Rgb(45, 35, 25), Some(format!("{} Formulating tool request...", icons::SPINNER[0]))),
         BlockType::ToolCall => (Color::Rgb(45, 45, 30), Some(format!("{} Engine Tool Request", icons::COMMAND))),
         BlockType::ToolResult => (Color::Rgb(35, 35, 35), Some(format!("{} Tool Output", icons::SUCCESS))),
         BlockType::Divider => (Color::Reset, None),
@@ -242,29 +275,40 @@ fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme) -> Ve
         lines.push(Line::from(header_spans));
     }
 
-    for line_content in block.content.lines() {
-        if line_content.trim().is_empty() { continue; }
-        
-        let mut spans = vec![status_block.clone()];
-        let mut style = base_style;
-        if block.block_type == BlockType::Thought { style = style.add_modifier(Modifier::ITALIC).fg(Color::Cyan); }
-        if block.block_type == BlockType::ToolCall { style = style.fg(Color::Yellow); }
-        
-        if block.block_type == BlockType::ToolResult {
-            if line_content.starts_with("EXIT_CODE: 0") { style = style.fg(Color::Green); }
-            else if line_content.contains("EXIT_CODE:") { style = style.fg(Color::Red); }
-            else if line_content.starts_with("STDOUT:") || line_content.starts_with("STDERR:") { style = style.add_modifier(Modifier::BOLD); }
-        }
+    // Advanced rendering for Markdown or specialized blocks
+    let content_lines = if block.block_type == BlockType::Formulating {
+        vec![Line::from(Span::styled("(Engine is preparing the tool payload...)", base_style.add_modifier(Modifier::ITALIC)))]
+    } else if block.block_type == BlockType::Markdown || block.content.contains("```") {
+        markdown::render_markdown(&block.content, base_style).lines
+    } else {
+        block.content.lines().map(|l| Line::from(Span::styled(l.to_string(), base_style))).collect()
+    };
 
-        spans.push(Span::styled(line_content.to_string(), style));
-        let line_len = 2 + line_content.chars().count();
-        if width > line_len {
-            spans.push(Span::styled(" ".repeat(width - line_len), base_style));
+    for mut line in content_lines {
+        let mut spans = vec![status_block.clone()];
+        
+        for span in line.spans.iter_mut() {
+            if block.block_type == BlockType::Thought {
+                span.style = span.style.add_modifier(Modifier::ITALIC).fg(Color::Cyan);
+            } else if block.block_type == BlockType::ToolCall {
+                span.style = span.style.fg(Color::Yellow);
+            }
+        }
+        
+        spans.append(&mut line.spans);
+        
+        let current_len = 2 + line.width();
+        if width > current_len {
+            spans.push(Span::styled(" ".repeat(width - current_len), base_style));
         }
         lines.push(Line::from(spans));
     }
 
-    lines.push(Line::from(vec![status_block, Span::styled(" ".repeat(width.saturating_sub(2)), base_style)]));
+    let is_final = block.block_type == BlockType::User || block.block_type == BlockType::Divider || !block.content.ends_with(' ');
+    if is_final {
+        lines.push(Line::from(vec![status_block, Span::styled(" ".repeat(width.saturating_sub(2)), base_style)]));
+    }
+
     lines
 }
 
