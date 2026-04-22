@@ -9,6 +9,7 @@ SRC_DIR="$USER_HOME/llama-cpp-turboquant"
 GGUF_URL="https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-UD-Q4_K_M.gguf"
 JINJA_URL="https://pastebin.com/raw/hnPGq0ht"
 
+
 echo "[1/7] Installing dependencies..."
 sudo apt update
 sudo apt install -y build-essential cmake git jq wget curl
