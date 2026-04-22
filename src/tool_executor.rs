@@ -73,6 +73,34 @@ pub async fn execute_read_file_lines(path: &str, start: usize, end: usize, cwd: 
     }
 }
 
+pub async fn execute_search_text(pattern: &str, path: &str, cwd: &str) -> String {
+    let processed_pattern = substitute_placeholders(pattern);
+    let search_path = if path.is_empty() { "." } else { path };
+
+    let output = Command::new("grep")
+        .arg("-rn")
+        .arg("--color=never")
+        .arg("-I")
+        .arg(&processed_pattern)
+        .arg(search_path)
+        .current_dir(cwd)
+        .output()
+        .await;
+
+    match output {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            let status = out.status.code().map_or("signaled".to_string(), |c| c.to_string());
+            if stdout.is_empty() && stderr.is_empty() && status == "1" {
+                return "No matches found.".to_string();
+            }
+            format!("EXIT_CODE: {}\nSTDOUT:\n{}\nSTDERR:\n{}", status, stdout, stderr)
+        }
+        Err(e) => format!("ERROR: {}", e),
+    }
+}
+
 pub async fn execute_apply_patch(path: &str, patch: &str, cwd: &str) -> String {
     let processed_patch = substitute_placeholders(patch);
     let patch_file = Path::new(cwd).join(".tmp.patch");

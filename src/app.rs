@@ -176,7 +176,7 @@ impl App {
         let mut cleaned_content = MARKER_REGEX.replace_all(&content, "").to_string();
         
         if b_type == BlockType::ToolCall && cleaned_content.contains("write_file") {
-             if let Some((tc, _)) = crate::parser::find_tool_call(&content, true) {
+             if let Some(Ok((tc, _))) = crate::parser::find_tool_call(&content, true) {
                  if tc.function.name == "write_file" {
                      let path = tc.function.arguments["path"].as_str().unwrap_or("unknown");
                      let file_content = tc.function.arguments["content"].as_str().unwrap_or("");
@@ -187,11 +187,21 @@ impl App {
         }
 
         if b_type == BlockType::ToolCall && cleaned_content.contains("code_snippet") {
-             if let Some((tc, _)) = crate::parser::find_tool_call(&content, true) {
+             if let Some(Ok((tc, _))) = crate::parser::find_tool_call(&content, true) {
                  if tc.function.name == "code_snippet" {
                      let name = tc.function.arguments["name"].as_str().unwrap_or("unknown");
                      let file_content = tc.function.arguments["content"].as_str().unwrap_or("");
                      cleaned_content = format!("Storing snippet: {}\n```\n{}\n```", name, file_content);
+                 }
+             }
+        }
+
+        if b_type == BlockType::ToolCall && cleaned_content.contains("search_text") {
+             if let Some(Ok((tc, _))) = crate::parser::find_tool_call(&content, true) {
+                 if tc.function.name == "search_text" {
+                     let pattern = tc.function.arguments["pattern"].as_str().unwrap_or("");
+                     let path = tc.function.arguments["path"].as_str().unwrap_or(".");
+                     cleaned_content = format!("Searching for: `{}` in `{}`", pattern, path);
                  }
              }
         }
@@ -285,7 +295,11 @@ impl App {
     pub fn scroll_output_down(&mut self) {
         if self.total_line_count == 0 { return; }
         let current = self.output_state.selected().unwrap_or(0);
-        let next = if current >= self.total_line_count.saturating_sub(1) { current } else { current + 1 };
+        let next = if current + 3 >= self.total_line_count.saturating_sub(1) { 
+            self.total_line_count.saturating_sub(1) 
+        } else { 
+            current + 3 
+        };
         self.output_state.select(Some(next));
         self.auto_scroll = next >= self.total_line_count.saturating_sub(1);
         self.should_redraw = true;
@@ -294,7 +308,7 @@ impl App {
     pub fn scroll_output_up(&mut self) {
         if self.total_line_count == 0 { return; }
         let current = self.output_state.selected().unwrap_or(0);
-        let next = if current == 0 { 0 } else { current - 1 };
+        let next = current.saturating_sub(3);
         self.output_state.select(Some(next));
         self.auto_scroll = false;
         self.should_redraw = true;
@@ -458,13 +472,13 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
         }
         KeyCode::Left => {
             if app.cursor_pos > 0 {
-                app.cursor_pos -= 1;
+                app.cursor_pos = app.input[..app.cursor_pos].chars().last().map(|c| app.cursor_pos - c.len_utf8()).unwrap_or(0);
                 app.should_redraw = true;
             }
         }
         KeyCode::Right => {
             if app.cursor_pos < app.input.len() {
-                app.cursor_pos += 1;
+                app.cursor_pos = app.input[app.cursor_pos..].chars().next().map(|c| app.cursor_pos + c.len_utf8()).unwrap_or(app.input.len());
                 app.should_redraw = true;
             }
         }
@@ -490,13 +504,14 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
         }
         KeyCode::Char(c) => { 
             app.input.insert(app.cursor_pos, c);
-            app.cursor_pos += 1;
+            app.cursor_pos += c.len_utf8();
             app.should_redraw = true; 
         },
         KeyCode::Backspace => { 
             if app.cursor_pos > 0 {
-                app.input.remove(app.cursor_pos - 1);
-                app.cursor_pos -= 1;
+                let prev_char = app.input[..app.cursor_pos].chars().last().unwrap();
+                app.cursor_pos -= prev_char.len_utf8();
+                app.input.remove(app.cursor_pos);
                 app.should_redraw = true; 
             }
         }

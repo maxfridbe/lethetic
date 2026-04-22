@@ -1,4 +1,4 @@
-pub fn find_tool_call(text: &str, is_final: bool) -> Option<(crate::context::ToolCall, usize)> {
+pub fn find_tool_call(text: &str, is_final: bool) -> Option<Result<(crate::context::ToolCall, usize), (String, usize)>> {
     let start_tokens = ["<|tool_call>", "<tool_call>"];
     
     let mut earliest_start = None;
@@ -29,30 +29,31 @@ pub fn find_tool_call(text: &str, is_final: bool) -> Option<(crate::context::Too
 
         if let Some((e_pos, _)) = earliest_end {
             let full_call_block = &after_start[..e_pos];
-            if let Some(parsed) = parse_native_block(full_call_block) {
-                return Some((parsed, pos));
+            match parse_native_block(full_call_block) {
+                Ok(parsed) => return Some(Ok((parsed, pos))),
+                Err(err) => return Some(Err((err, pos))),
             }
         } else if is_final {
-             if let Some(parsed) = parse_native_block(after_start) {
-                 return Some((parsed, pos));
+             match parse_native_block(after_start) {
+                 Ok(parsed) => return Some(Ok((parsed, pos))),
+                 Err(err) => return Some(Err((err, pos))),
              }
         }
     }
     None
 }
 
-fn parse_native_block(block: &str) -> Option<crate::context::ToolCall> {
+fn parse_native_block(block: &str) -> Result<crate::context::ToolCall, String> {
     let call_content = if let Some(c_pos) = block.find("call:") {
         &block[c_pos + 5..]
     } else {
-        block
+        return Err("Missing 'call:' prefix".to_string());
     };
 
-    let brace_start = call_content.find('{')?;
+    let brace_start = call_content.find('{').ok_or("Missing '{' for arguments")?;
     let func_name = call_content[..brace_start].trim().to_string();
     let args_content = &call_content[brace_start + 1..];
 
-    // Find the ACTUAL closing brace of the tool call, skipping any braces inside markers
     let mut last_brace = None;
     let mut in_marker = false;
     let mut current_marker = "";
@@ -91,7 +92,7 @@ fn parse_native_block(block: &str) -> Option<crate::context::ToolCall> {
         i += 1;
     }
 
-    let end_brace = last_brace?;
+    let end_brace = last_brace.ok_or("Missing closing '}' for arguments")?;
     let args_part = &args_content[..end_brace];
     
     let mut args = serde_json::Map::new();
@@ -117,10 +118,24 @@ fn parse_native_block(block: &str) -> Option<crate::context::ToolCall> {
 
             if let Some(marker) = found_marker {
                 let m_len = marker.len();
-                if let Some(end_quote_pos) = after_sep[m_len..].find(marker) {
-                    let val = &after_sep[m_len..m_len + end_quote_pos];
+                let mut end_quote_pos = after_sep[m_len..].find(marker);
+                let mut actual_end_len = m_len;
+                
+                if end_quote_pos.is_none() {
+                    let fallbacks = ["<|>", "<|", "|>"];
+                    for &f in &fallbacks {
+                        if let Some(p) = after_sep[m_len..].find(f) {
+                            end_quote_pos = Some(p);
+                            actual_end_len = f.len();
+                            break;
+                        }
+                    }
+                }
+
+                if let Some(pos) = end_quote_pos {
+                    let val = &after_sep[m_len..m_len + pos];
                     args.insert(key, serde_json::Value::String(val.to_string()));
-                    current = &after_sep[m_len + end_quote_pos + m_len..];
+                    current = &after_sep[m_len + pos + actual_end_len..];
                 } else {
                     args.insert(key, serde_json::Value::String(after_sep[m_len..].to_string()));
                     break;
@@ -144,14 +159,16 @@ fn parse_native_block(block: &str) -> Option<crate::context::ToolCall> {
                 }
                 current = &after_sep[next_comma..];
             }
-        } else { break; }
+        } else { 
+            return Err(format!("Malformed argument list around: '{}'", &current[..current.len().min(20)]));
+        }
     }
 
     let tc_id = args.get("tool_call_id").and_then(|v| v.as_str())
         .or_else(|| args.get("id").and_then(|v| v.as_str()))
         .unwrap_or("raw_call").to_string();
 
-    Some(crate::context::ToolCall {
+    Ok(crate::context::ToolCall {
         id: tc_id,
         function: crate::context::FunctionCall {
             name: func_name,

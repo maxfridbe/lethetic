@@ -43,18 +43,9 @@ impl ContextManager {
     }
 
     pub fn add_message(&mut self, role: &str, content: &str) {
-        let mut final_content = content.to_string();
-        
-        // Safety: Truncate extremely large messages in the CONTEXT as well to avoid model confusion
-        // 10k chars is plenty for most responses/data
-        if final_content.len() > 10000 {
-            final_content = format!("{}...\n\n[CONTENT TRUNCATED FOR CONTEXT STABILITY: Total {} characters]", 
-                &final_content[..8000], final_content.len());
-        }
-
         self.messages.push(Message {
             role: role.to_string(),
-            content: final_content,
+            content: content.to_string(),
             tool_calls: None,
         });
         self.trim_context();
@@ -70,15 +61,9 @@ impl ContextManager {
     }
 
     pub fn add_tool_message(&mut self, tool_call_id: String, function_name: &str, content: &str) {
-        let mut final_content = content.to_string();
-        if final_content.len() > 10000 {
-            final_content = format!("{}...\n\n[TOOL OUTPUT TRUNCATED: Total {} characters]", 
-                &final_content[..8000], final_content.len());
-        }
-
         let formatted_content = format!(
             "<|tool_response|>response:{}{{result:<|\">{}<|\">,tool_call_id:<|\">{}<|\">}}<tool_response|><turn|>", 
-            function_name, final_content, tool_call_id
+            function_name, content, tool_call_id
         );
         self.messages.push(Message {
             role: "tool".to_string(),
@@ -146,10 +131,8 @@ impl ContextManager {
                             }
                             prompt.push_str("}<tool_call|>");
                         }
-                        // Turn remains open for potential tool responses
                         current_turn_role = "model".to_string();
                     } else if msg.content.contains("<|tool_call>") {
-                        // Manual tool call also keeps the turn open
                         current_turn_role = "model".to_string();
                     } else {
                         prompt.push_str("<turn|>\n");
@@ -162,12 +145,14 @@ impl ContextManager {
                         current_turn_role = "model".to_string();
                     }
                     prompt.push_str(&msg.content);
+                    
+                    // The tool response now ends with <turn|>, so the model turn is closed.
+                    current_turn_role = String::new();
                 }
                 _ => {}
             }
         }
 
-        // Final Generation Prompt
         if current_turn_role != "model" {
             prompt.push_str("<|turn>model\n<|channel>thought\n<channel|>");
         }

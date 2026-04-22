@@ -277,7 +277,22 @@ fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme) -> Ve
 
     // Advanced rendering for Markdown or specialized blocks
     let content_lines = if block.block_type == BlockType::Formulating {
-        vec![Line::from(Span::styled("(Engine is preparing the tool payload...)", base_style.add_modifier(Modifier::ITALIC)))]
+        let lines: Vec<&str> = block.content.lines().collect();
+        if lines.is_empty() {
+            vec![Line::from(Span::styled("(Engine is preparing the tool payload...)", base_style.add_modifier(Modifier::ITALIC)))]
+        } else {
+            let last_lines = if lines.len() > 5 {
+                &lines[lines.len() - 5..]
+            } else {
+                &lines[..]
+            };
+            
+            let mut formatted_lines = vec![Line::from(Span::styled("(Engine is preparing the tool payload...)", base_style.add_modifier(Modifier::ITALIC)))];
+            for line in last_lines {
+                formatted_lines.push(Line::from(Span::styled(format!("  {}", line), base_style.add_modifier(Modifier::DIM))));
+            }
+            formatted_lines
+        }
     } else if block.block_type == BlockType::Markdown || block.content.contains("```") {
         markdown::render_markdown(&block.content, base_style).lines
     } else {

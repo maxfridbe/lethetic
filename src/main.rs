@@ -1,6 +1,6 @@
 use std::env;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyEventKind, MouseEventKind},
+    event::{self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, Event, EventStream, KeyEventKind, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -34,6 +34,27 @@ use app::{App, AppEventOutcome, BlockType, handle_key, handle_tool_call, Approva
 use ui::ui;
 use tool_executor::get_git_info;
 
+fn handle_large_output(id: &str, mut result: String) -> String {
+    if result.len() > 10000 {
+        let file_id = if id.is_empty() { "unknown" } else { id };
+        let dir_path = ".lethetic/tool_responses";
+        let _ = std::fs::create_dir_all(dir_path);
+        let file_path = format!("{}/{}.txt", dir_path, file_id);
+        let _ = std::fs::write(&file_path, &result);
+        
+        let mut exit_status = String::new();
+        if result.starts_with("EXIT_CODE: ") {
+            let lines: Vec<&str> = result.lines().collect();
+            if !lines.is_empty() {
+                exit_status = format!("{}\n", lines[0]);
+            }
+        }
+        
+        result = format!("{}... [Output truncated. Full output is {} characters long and has been saved to {}] ...", exit_status, result.len(), file_path);
+    }
+    result
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
@@ -52,7 +73,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture, EnableBracketedPaste)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -63,7 +84,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
-        DisableMouseCapture
+        DisableMouseCapture,
+        DisableBracketedPaste
     )?;
     terminal.show_cursor()?;
 
@@ -97,15 +119,86 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                     || full_response_content.contains("<tool_call|>");
 
                 if is_complete {
-                    if let Some((tc, _)) = parser::find_tool_call(&full_response_content, true) {
+                    match parser::find_tool_call(&full_response_content, true) {
+                        Some(Ok((tc, _))) => {
+                            println!("\n\n{} [TOOL CALL: {}]", icons::COMMAND, tc.function.name);
+                            println!("Arguments: {}", tc.function.arguments);
+                            cancellation_token.cancel();
+                            
+                            let assistant_content = full_response_content.clone();
+                            app.context_manager.add_message("assistant", &assistant_content);
+
+                            let (mut result, new_dir) = match tc.function.name.as_str() {
+                                "run_shell_command" => {
+                                    let cmd = tc.function.arguments["command"].as_str().unwrap_or("");
+                                    tool_executor::execute_shell(cmd, &app.current_dir).await
+                                },
+                                "read_file_lines" => {
+                                    let path = tc.function.arguments["path"].as_str().unwrap_or("");
+                                    let start = tc.function.arguments["start_line"].as_u64().unwrap_or(1) as usize;
+                                    let end = tc.function.arguments["end_line"].as_u64().unwrap_or(1) as usize;
+                                    (tool_executor::execute_read_file_lines(path, start, end, &app.current_dir).await, app.current_dir.clone())
+                                },
+                                "search_text" => {
+                                    let pattern = tc.function.arguments["pattern"].as_str().unwrap_or("");
+                                    let path = tc.function.arguments["path"].as_str().unwrap_or(".");
+                                    (tool_executor::execute_search_text(pattern, path, &app.current_dir).await, app.current_dir.clone())
+                                },
+                                "apply_patch" => {
+                                    let path = tc.function.arguments["path"].as_str().unwrap_or("");
+                                    let patch = tc.function.arguments["patch"].as_str().unwrap_or("");
+                                    (tool_executor::execute_apply_patch(path, patch, &app.current_dir).await, app.current_dir.clone())
+                                },
+                                "write_file" => {
+                                    let path = tc.function.arguments["path"].as_str().unwrap_or("");
+                                    let content = tc.function.arguments["content"].as_str().unwrap_or("");
+                                    (tool_executor::execute_write_file(path, content, &app.current_dir).await, app.current_dir.clone())
+                                },
+                                "code_snippet" => {
+                                    let name = tc.function.arguments["name"].as_str().unwrap_or("");
+                                    let content = tc.function.arguments["content"].as_str().unwrap_or("");
+                                    (tool_executor::execute_code_snippet(name, content).await, app.current_dir.clone())
+                                },
+                                "calculate" => (format!("Calculation result for: {}", tc.function.arguments["expression"]), app.current_dir.clone()),
+                                _ => (format!("Unknown tool: {}", tc.function.name), app.current_dir.clone()),
+                            };
+                            
+                            result = handle_large_output(&tc.id, result);
+                            
+                            app.current_dir = new_dir;
+                            println!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, result);
+                            app.context_manager.add_tool_message(tc.id.clone(), &tc.function.name, &result);
+                            
+                            full_response_content.clear();
+                            cancellation_token = CancellationToken::new();
+                            trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false);
+                            continue; 
+                        }
+                        Some(Err((err_msg, _))) => {
+                            println!("\n\n{} [SYNTAX ERROR: {}]", icons::WARNING, err_msg);
+                            cancellation_token.cancel();
+                            let assistant_content = full_response_content.clone();
+                            app.context_manager.add_message("assistant", &assistant_content);
+                            app.context_manager.add_tool_message("raw_call".to_string(), "syntax_error", &format!("Syntax Error in tool call: {}", err_msg));
+                            full_response_content.clear();
+                            cancellation_token = CancellationToken::new();
+                            trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false);
+                            continue;
+                        }
+                        None => {}
+                    }
+                }
+            }
+            Some(StreamEvent::Done(_, _)) => {
+                match parser::find_tool_call(&full_response_content, true) {
+                    Some(Ok((tc, _))) => {
                         println!("\n\n{} [TOOL CALL: {}]", icons::COMMAND, tc.function.name);
                         println!("Arguments: {}", tc.function.arguments);
-                        cancellation_token.cancel();
                         
                         let assistant_content = full_response_content.clone();
                         app.context_manager.add_message("assistant", &assistant_content);
 
-                        let (result, new_dir) = match tc.function.name.as_str() {
+                        let (mut result, new_dir) = match tc.function.name.as_str() {
                             "run_shell_command" => {
                                 let cmd = tc.function.arguments["command"].as_str().unwrap_or("");
                                 tool_executor::execute_shell(cmd, &app.current_dir).await
@@ -135,6 +228,8 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                             _ => (format!("Unknown tool: {}", tc.function.name), app.current_dir.clone()),
                         };
                         
+                        result = handle_large_output(&tc.id, result);
+                        
                         app.current_dir = new_dir;
                         println!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, result);
                         app.context_manager.add_tool_message(tc.id.clone(), &tc.function.name, &result);
@@ -142,56 +237,19 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                         full_response_content.clear();
                         cancellation_token = CancellationToken::new();
                         trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false);
-                        continue; 
+                        continue;
                     }
-                }
-            }
-            Some(StreamEvent::Done(_, _)) => {
-                if let Some((tc, _)) = parser::find_tool_call(&full_response_content, true) {
-                    println!("\n\n{} [TOOL CALL: {}]", icons::COMMAND, tc.function.name);
-                    println!("Arguments: {}", tc.function.arguments);
-                    
-                    let assistant_content = full_response_content.clone();
-                    app.context_manager.add_message("assistant", &assistant_content);
-
-                    let (result, new_dir) = match tc.function.name.as_str() {
-                        "run_shell_command" => {
-                            let cmd = tc.function.arguments["command"].as_str().unwrap_or("");
-                            tool_executor::execute_shell(cmd, &app.current_dir).await
-                        },
-                        "read_file_lines" => {
-                            let path = tc.function.arguments["path"].as_str().unwrap_or("");
-                            let start = tc.function.arguments["start_line"].as_u64().unwrap_or(1) as usize;
-                            let end = tc.function.arguments["end_line"].as_u64().unwrap_or(1) as usize;
-                            (tool_executor::execute_read_file_lines(path, start, end, &app.current_dir).await, app.current_dir.clone())
-                        },
-                        "apply_patch" => {
-                            let path = tc.function.arguments["path"].as_str().unwrap_or("");
-                            let patch = tc.function.arguments["patch"].as_str().unwrap_or("");
-                            (tool_executor::execute_apply_patch(path, patch, &app.current_dir).await, app.current_dir.clone())
-                        },
-                        "write_file" => {
-                            let path = tc.function.arguments["path"].as_str().unwrap_or("");
-                            let content = tc.function.arguments["content"].as_str().unwrap_or("");
-                            (tool_executor::execute_write_file(path, content, &app.current_dir).await, app.current_dir.clone())
-                        },
-                        "code_snippet" => {
-                            let name = tc.function.arguments["name"].as_str().unwrap_or("");
-                            let content = tc.function.arguments["content"].as_str().unwrap_or("");
-                            (tool_executor::execute_code_snippet(name, content).await, app.current_dir.clone())
-                        },
-                        "calculate" => (format!("Calculation result for: {}", tc.function.arguments["expression"]), app.current_dir.clone()),
-                        _ => (format!("Unknown tool: {}", tc.function.name), app.current_dir.clone()),
-                    };
-                    
-                    app.current_dir = new_dir;
-                    println!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, result);
-                    app.context_manager.add_tool_message(tc.id.clone(), &tc.function.name, &result);
-                    
-                    full_response_content.clear();
-                    cancellation_token = CancellationToken::new();
-                    trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false);
-                    continue;
+                    Some(Err((err_msg, _))) => {
+                        println!("\n\n{} [SYNTAX ERROR: {}]", icons::WARNING, err_msg);
+                        let assistant_content = full_response_content.clone();
+                        app.context_manager.add_message("assistant", &assistant_content);
+                        app.context_manager.add_tool_message("raw_call".to_string(), "syntax_error", &format!("Syntax Error in tool call: {}", err_msg));
+                        full_response_content.clear();
+                        cancellation_token = CancellationToken::new();
+                        trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false);
+                        continue;
+                    }
+                    None => {}
                 }
 
                 if !full_response_content.is_empty() {
@@ -303,6 +361,11 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                                             let end = args["end_line"].as_u64().unwrap_or(1) as usize;
                                                             (tool_executor::execute_read_file_lines(path, start, end, &current_dir).await, current_dir.clone())
                                                         },
+                                                        "search_text" => {
+                                                            let pattern = args["pattern"].as_str().unwrap_or("");
+                                                            let path = args["path"].as_str().unwrap_or(".");
+                                                            (tool_executor::execute_search_text(pattern, path, &current_dir).await, current_dir.clone())
+                                                        },
                                                         "apply_patch" => {
                                                             let path = args["path"].as_str().unwrap_or("");
                                                             let patch = args["patch"].as_str().unwrap_or("");
@@ -343,6 +406,13 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 }
                             }
                         }
+                        Event::Paste(text) => {
+                            if !app.is_processing {
+                                app.input.insert_str(app.cursor_pos, &text);
+                                app.cursor_pos += text.len();
+                                app.should_redraw = true;
+                            }
+                        }
                         Event::Mouse(mouse) => {
                             if app.mouse_enabled {
                                 match mouse.kind {
@@ -370,17 +440,28 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             }
                         } else if msg.starts_with("DIR_UPDATE|") {
                             app.current_dir = msg[11..].to_string();
+                            app.should_redraw = true;
                         } else {
                             app.log_debug(&msg);
+                        }
+                    }
+                    StreamEvent::TokenUpdate(count, ms) => {
+                        if ms > 0.0 {
+                            app.tokens_per_s = (count as f64 / (ms / 1000.0)).max(0.0);
+                            app.should_redraw = true;
                         }
                     }
                     StreamEvent::Chunk(chunk) => {
                         if !app.is_processing { continue; }
                         full_response_content.push_str(&chunk);
                         
+                        // Update context length display in real-time
+                        app.should_redraw = true;
+                        
                         let is_in_tool_call = full_response_content.contains("<|tool_call>") || full_response_content.contains("<tool_call>");
-                        let is_in_thought = (full_response_content.contains("<thought>") && !full_response_content.contains("</thought>"))
-                            || (full_response_content.contains("<|channel>thought") && !full_response_content.contains("<channel|>"));
+                        let is_in_thought = (full_response_content.contains("<|channel>thought") && !full_response_content.contains("<channel|>"))
+                            || (full_response_content.contains("<thought>") && !full_response_content.contains("</thought>"))
+                            || (full_response_content.contains("<|think|>") && !full_response_content.contains("<think|>"));
 
                         let b_type = if is_in_tool_call {
                             if !full_response_content.contains("<|tool_call|>") && !full_response_content.contains("<tool_call|>") {
@@ -399,8 +480,19 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
 
                         let is_complete = full_response_content.contains("<|tool_call|>") || full_response_content.contains("<tool_call|>");
                         if is_complete && !app.tool_calls_processed_this_request {
-                            if let Some((tc, pos)) = parser::find_tool_call(&full_response_content, true) {
-                                handle_tool_call(app, vec![tc], pos, tx.clone(), &mut cancellation_token, &full_response_content, false);
+                            match parser::find_tool_call(&full_response_content, true) {
+                                Some(Ok((tc, pos))) => {
+                                    handle_tool_call(app, vec![tc], pos, tx.clone(), &mut cancellation_token, &full_response_content, false);
+                                }
+                                Some(Err((err_msg, pos))) => {
+                                    app.log_debug(&format!("Tool call syntax error: {}", err_msg));
+                                    cancellation_token.cancel();
+                                    app.is_processing = false;
+                                    app.add_segment(format!("\n{} [SYNTAX ERROR] {}\n", icons::WARNING, err_msg), BlockType::Text);
+                                    app.context_manager.add_message("assistant", &full_response_content);
+                                    let _ = tx.send(StreamEvent::ToolResult(Some("raw_call".to_string()), "syntax_error".to_string(), format!("Syntax Error in tool call: {}", err_msg)));
+                                }
+                                None => {}
                             }
                         }
                     }
@@ -409,8 +501,12 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             handle_tool_call(app, calls, full_response_content.len(), tx.clone(), &mut cancellation_token, &full_response_content, true);
                         }
                     }
-                    StreamEvent::ToolResult(id, func_name, result) => {
+                    StreamEvent::ToolResult(id, func_name, mut result) => {
                         let success = if result.contains("EXIT_CODE: ") { result.contains("EXIT_CODE: 0") } else { true };
+                        
+                        let tc_id_str = id.clone().unwrap_or_else(|| "unknown".to_string());
+                        result = handle_large_output(&tc_id_str, result);
+                        
                         app.add_segment(format!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, result), BlockType::ToolResult);
                         if let Some(last) = app.blocks.last_mut() { last.success = Some(success); }
                         if let Some(tc_id) = id { app.context_manager.add_tool_message(tc_id, &func_name, &result); }
@@ -425,8 +521,17 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                     StreamEvent::Done(eval_count, eval_duration) => {
                         app.is_processing = false;
                         if !app.tool_calls_processed_this_request {
-                            if let Some((tc, pos)) = parser::find_tool_call(&full_response_content, true) {
-                                handle_tool_call(app, vec![tc], pos, tx.clone(), &mut cancellation_token, &full_response_content, false);
+                            match parser::find_tool_call(&full_response_content, true) {
+                                Some(Ok((tc, pos))) => {
+                                    handle_tool_call(app, vec![tc], pos, tx.clone(), &mut cancellation_token, &full_response_content, false);
+                                }
+                                Some(Err((err_msg, pos))) => {
+                                    app.log_debug(&format!("Tool call syntax error on Done: {}", err_msg));
+                                    app.add_segment(format!("\n{} [SYNTAX ERROR] {}\n", icons::WARNING, err_msg), BlockType::Text);
+                                    app.context_manager.add_message("assistant", &full_response_content);
+                                    let _ = tx.send(StreamEvent::ToolResult(Some("raw_call".to_string()), "syntax_error".to_string(), format!("Syntax Error in tool call: {}", err_msg)));
+                                }
+                                None => {}
                             }
                         }
 
@@ -466,6 +571,11 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             let start = args["start_line"].as_u64().unwrap_or(1) as usize;
                                             let end = args["end_line"].as_u64().unwrap_or(1) as usize;
                                             (tool_executor::execute_read_file_lines(path, start, end, &current_dir).await, current_dir.clone())
+                                        },
+                                        "search_text" => {
+                                            let pattern = args["pattern"].as_str().unwrap_or("");
+                                            let path = args["path"].as_str().unwrap_or(".");
+                                            (tool_executor::execute_search_text(pattern, path, &current_dir).await, current_dir.clone())
                                         },
                                         "apply_patch" => {
                                             let path = args["path"].as_str().unwrap_or("");

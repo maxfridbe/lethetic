@@ -82,7 +82,7 @@ async fn run_scenario(client: &Client, config: &Config, scenario: &Scenario) -> 
         "raw": true,
         "stream": true,
         "temperature": 0.0,
-        "stop": ["<turn|>", "<eos>", "<tool_response|>", "<|tool_response|>", "<tool_call|>", "<|tool_call|>"],
+        "stop": ["<turn|>", "<eos>", "<tool_response|>", "<|tool_response|>"],
         "num_ctx": config.context_size,
     });
 
@@ -125,7 +125,7 @@ async fn run_scenario(client: &Client, config: &Config, scenario: &Scenario) -> 
                             full_content.push_str(&content);
                             
                             if tool_detected_at.is_none() {
-                                if let Some((_, pos)) = find_tool_call(&full_content, false) {
+                                if let Some(Ok((_, pos))) = find_tool_call(&full_content, false) {
                                     tool_detected_at = Some(pos);
                                 }
                             } else if !content.trim().is_empty() {
@@ -152,7 +152,7 @@ async fn run_scenario(client: &Client, config: &Config, scenario: &Scenario) -> 
 
     match tool_detected_at {
         Some(_) => {
-            let (tc, _) = find_tool_call(&full_content, true).unwrap();
+            let (tc, _) = find_tool_call(&full_content, true).unwrap().unwrap();
             if tc.function.name != scenario.expected_tool {
                 Ok(format!("FAILED (Wrong tool: {})", tc.function.name))
             } else if !stopped_after_tool {

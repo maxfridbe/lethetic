@@ -9,7 +9,7 @@ use futures_util::StreamExt;
 use crate::context::{ContextManager, ToolCall};
 use crate::config::Config;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GenerateRequest {
     pub model: String,
     pub prompt: String,
@@ -26,31 +26,39 @@ pub struct GenerateResponse {
     pub done: bool,
     pub eval_count: Option<u32>,
     pub eval_duration: Option<u64>,
+    pub tokens_predicted: Option<u32>,
+    pub timings: Option<Timings>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Deserialize, Debug)]
+pub struct Timings {
+    pub predicted_ms: Option<f64>,
+}
+
+#[derive(Clone, Debug)]
 pub enum StreamEvent {
     Chunk(String),
-    DebugLog(String),
     ToolCalls(Vec<ToolCall>),
-    ToolResult(Option<String>, String, String), // id, function_name, result
+    ToolResult(Option<String>, String, String),
     Done(Option<u32>, Option<u64>),
     Error(String),
+    DebugLog(String),
+    TokenUpdate(u32, f64), // (count, ms)
 }
 
-pub fn trigger_llm_request(client: Client, config: Config, context_manager: &ContextManager, tx: mpsc::UnboundedSender<StreamEvent>, token: CancellationToken, is_debug: bool) {
+pub fn trigger_llm_request(client: Client, config: Config, context_manager: &ContextManager, tx: mpsc::UnboundedSender<StreamEvent>, token: CancellationToken, _is_debug: bool) {
     let raw_prompt = context_manager.get_raw_prompt();
+    
     let mut req_body = json!({
         "model": config.model.clone(),
         "prompt": raw_prompt.clone(),
         "raw": true,
         "stream": true,
         "temperature": 1.0,
-        "stop": ["<turn|>", "<eos>", "<tool_response|>", "<|tool_response|>", "<tool_call|>", "<|tool_call|>"],
+        "stop": ["<turn|>", "<eos>", "<tool_response|>", "<|tool_response|>"],
         "num_ctx": config.context_size,
     });
 
-    // If it's Ollama, move some things into options
     if config.server_url.contains("/api/chat") {
         req_body = json!({
             "model": config.model.clone(),
@@ -59,7 +67,7 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
             "stream": true,
             "options": {
                 "num_ctx": config.context_size,
-                "stop": ["<turn|>", "<eos>", "<tool_response|>", "<|tool_response|>", "<tool_call|>", "<|tool_call|>"]
+                "stop": ["<turn|>", "<eos>", "<tool_response|>", "<|tool_response|>"]
             }
         });
     }
@@ -95,17 +103,13 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
                 let mut stream = res.bytes_stream();
                 let mut buffer = String::new();
                 while let Some(item) = tokio::select! {
-                    _ = token.cancelled() => {
-                        let _ = log_tx.send(StreamEvent::Done(None, None));
-                        None
-                    },
-                    chunk = stream.next() => chunk,
+                    i = stream.next() => i,
+                    _ = token.cancelled() => None,
                 } {
                     if let Ok(bytes) = item {
                         if let Ok(chunk_str) = String::from_utf8(bytes.to_vec()) {
                             buffer.push_str(&chunk_str);
                             while let Some(pos) = buffer.find('\n') {
-                                if token.is_cancelled() { return; }
                                 let line = buffer.drain(..=pos).collect::<String>();
                                 let trimmed = line.trim();
                                 if trimmed.is_empty() { continue; }
@@ -123,27 +127,31 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
                                 match serde_json::from_str::<GenerateResponse>(json_str) {
                                     Ok(gen_res) => {
                                         if !gen_res.response.is_empty() {
-                                            let content = gen_res.response.clone();
+                                            let _ = log_tx.send(StreamEvent::Chunk(gen_res.response.clone()));
                                             if !token.is_cancelled() {
                                                 if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}responses", prefix_clone)) {
-                                                    let _ = write!(file, "{}", content);
+                                                    let _ = write!(file, "{}", gen_res.response);
                                                 }
-                                                let _ = fs::OpenOptions::new().create(true).append(true).open(format!("{}last-response", prefix_clone))
-                                                    .and_then(|mut f| write!(f, "{}", content));
-                                                let _ = log_tx.send(StreamEvent::Chunk(content)); 
+                                                if let Ok(mut file) = std::fs::OpenOptions::new().create(true).open(format!("{}last-response", prefix_clone)) {
+                                                    let _ = write!(file, "{}", gen_res.response);
+                                                }
                                             }
                                         }
-                                        if gen_res.done {
-                                            if !token.is_cancelled() {
-                                                let _ = log_tx.send(StreamEvent::Done(gen_res.eval_count, gen_res.eval_duration));
+
+                                        // Update tokens predicted and speed info
+                                        if let (Some(count), Some(timings)) = (gen_res.tokens_predicted, gen_res.timings) {
+                                            if let Some(ms) = timings.predicted_ms {
+                                                let _ = log_tx.send(StreamEvent::TokenUpdate(count, ms));
                                             }
+                                        }
+
+                                        if gen_res.done {
+                                            let _ = log_tx.send(StreamEvent::Done(gen_res.eval_count, gen_res.eval_duration));
                                             return;
                                         }
                                     }
-                                    Err(e) => {
-                                        if !token.is_cancelled() {
-                                            let _ = log_tx.send(StreamEvent::DebugLog(format!("PARSE_ERR|{}|{}", e, line)));
-                                        }
+                                    Err(_) => {
+                                        // Potential tool call or malformed JSON
                                     }
                                 }
                             }
