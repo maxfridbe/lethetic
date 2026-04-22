@@ -149,6 +149,12 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                                     let patch = tc.function.arguments["patch"].as_str().unwrap_or("");
                                     (tool_executor::execute_apply_patch(path, patch, &app.current_dir).await, app.current_dir.clone())
                                 },
+                                "replace_text" => {
+                                    let path = tc.function.arguments["path"].as_str().unwrap_or("");
+                                    let old_string = tc.function.arguments["old_string"].as_str().unwrap_or("");
+                                    let new_string = tc.function.arguments["new_string"].as_str().unwrap_or("");
+                                    (tool_executor::execute_replace_text(path, old_string, new_string, &app.current_dir).await, app.current_dir.clone())
+                                },
                                 "write_file" => {
                                     let path = tc.function.arguments["path"].as_str().unwrap_or("");
                                     let content = tc.function.arguments["content"].as_str().unwrap_or("");
@@ -369,6 +375,12 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                                             let patch = args["patch"].as_str().unwrap_or("");
                                                             (tool_executor::execute_apply_patch(path, patch, &current_dir).await, current_dir.clone())
                                                         },
+                                                        "replace_text" => {
+                                                            let path = args["path"].as_str().unwrap_or("");
+                                                            let old_string = args["old_string"].as_str().unwrap_or("");
+                                                            let new_string = args["new_string"].as_str().unwrap_or("");
+                                                            (tool_executor::execute_replace_text(path, old_string, new_string, &current_dir).await, current_dir.clone())
+                                                        },
                                                         "write_file" => {
                                                             let path = args["path"].as_str().unwrap_or("");
                                                             let content = args["content"].as_str().unwrap_or("");
@@ -580,6 +592,12 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             let path = args["path"].as_str().unwrap_or("");
                                             let patch = args["patch"].as_str().unwrap_or("");
                                             (tool_executor::execute_apply_patch(path, patch, &current_dir).await, current_dir.clone())
+                                        },
+                                        "replace_text" => {
+                                            let path = args["path"].as_str().unwrap_or("");
+                                            let old_string = args["old_string"].as_str().unwrap_or("");
+                                            let new_string = args["new_string"].as_str().unwrap_or("");
+                                            (tool_executor::execute_replace_text(path, old_string, new_string, &current_dir).await, current_dir.clone())
                                         },
                                         "write_file" => {
                                             let path = args["path"].as_str().unwrap_or("");

@@ -191,6 +191,17 @@ impl App {
              }
         }
 
+        if b_type == BlockType::ToolCall && cleaned_content.contains("replace_text") {
+             if let Some(Ok((tc, _))) = crate::parser::find_tool_call(&content, true) {
+                 if tc.function.name == "replace_text" {
+                     let path = tc.function.arguments["path"].as_str().unwrap_or("unknown");
+                     let old_str = tc.function.arguments["old_string"].as_str().unwrap_or("");
+                     let new_str = tc.function.arguments["new_string"].as_str().unwrap_or("");
+                     cleaned_content = format!("Replacing in: `{}`\n```diff\n- {}\n+ {}\n```", path, old_str, new_str);
+                 }
+             }
+        }
+
         if b_type == BlockType::ToolCall && cleaned_content.contains("web_fetch") {
              if let Some(Ok((tc, _))) = crate::parser::find_tool_call(&content, true) {
                  if tc.function.name == "web_fetch" {

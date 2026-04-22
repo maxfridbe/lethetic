@@ -125,6 +125,27 @@ pub async fn execute_write_file(path: &str, content: &str, cwd: &str) -> String 
     }
 }
 
+pub async fn execute_replace_text(path: &str, old_string: &str, new_string: &str, cwd: &str) -> String {
+    let full_path = Path::new(cwd).join(path);
+    match fs::read_to_string(&full_path) {
+        Ok(content) => {
+            let matches: Vec<_> = content.matches(old_string).collect();
+            if matches.is_empty() {
+                return format!("ERROR: old_string not found in {}", path);
+            }
+            if matches.len() > 1 {
+                return format!("ERROR: old_string matches {} occurrences in {}. It must be unique.", matches.len(), path);
+            }
+            let new_content = content.replace(old_string, new_string);
+            match fs::write(&full_path, new_content) {
+                Ok(_) => format!("Successfully replaced text in {}", path),
+                Err(e) => format!("ERROR: Failed to write to {}: {}", path, e),
+            }
+        }
+        Err(e) => format!("ERROR: Failed to read file {}: {}", path, e),
+    }
+}
+
 pub async fn execute_web_fetch(url: &str) -> String {
     let client = Client::new();
     match client.get(url).send().await {
