@@ -6,32 +6,26 @@ use std::io::Write;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use futures_util::StreamExt;
-use crate::context::{ContextManager, Message, ToolCall};
-use crate::tools::get_standard_tools;
+use crate::context::{ContextManager, ToolCall};
 use crate::config::Config;
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct ChatRequest {
+pub struct GenerateRequest {
     pub model: String,
-    pub messages: Vec<Message>,
-    pub tools: Vec<crate::tools::Tool>,
+    pub prompt: String,
+    pub raw: bool,
     pub stream: bool,
     pub options: serde_json::Value,
 }
 
 #[derive(Deserialize, Debug)]
-pub struct ChatResponse {
-    pub message: ResponseMessage,
+pub struct GenerateResponse {
+    #[serde(alias = "content")]
+    pub response: String,
+    #[serde(alias = "stop")]
     pub done: bool,
     pub eval_count: Option<u32>,
     pub eval_duration: Option<u64>,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct ResponseMessage {
-    pub role: String,
-    pub content: String,
-    pub tool_calls: Option<Vec<ToolCall>>,
 }
 
 #[derive(Debug, Clone)]
@@ -39,29 +33,36 @@ pub enum StreamEvent {
     Chunk(String),
     DebugLog(String),
     ToolCalls(Vec<ToolCall>),
-    ToolResult(Option<String>, String),
+    ToolResult(Option<String>, String, String), // id, function_name, result
     Done(Option<u32>, Option<u64>),
     Error(String),
 }
 
-pub async fn unload_model(client: &Client, server_url: &str, model: &str) {
-    let _ = client.post(format!("{}/api/generate", server_url))
-        .json(&json!({ "model": model, "keep_alive": 0 }))
-        .send()
-        .await;
-}
-
 pub fn trigger_llm_request(client: Client, config: Config, context_manager: &ContextManager, tx: mpsc::UnboundedSender<StreamEvent>, token: CancellationToken, is_debug: bool) {
-    let messages = context_manager.get_messages();
-    let req = ChatRequest {
-        model: config.model.clone(),
-        messages,
-        tools: get_standard_tools(),
-        stream: true,
-        options: json!({ 
-            "num_ctx": config.context_size
-        }),
-    };
+    let raw_prompt = context_manager.get_raw_prompt();
+    let mut req_body = json!({
+        "model": config.model.clone(),
+        "prompt": raw_prompt.clone(),
+        "raw": true,
+        "stream": true,
+        "temperature": 1.0,
+        "stop": ["<turn|>", "<eos>", "<tool_response|>", "<|tool_response|>", "<tool_call|>", "<|tool_call|>"],
+        "num_ctx": config.context_size,
+    });
+
+    // If it's Ollama, move some things into options
+    if config.server_url.contains("/api/chat") {
+        req_body = json!({
+            "model": config.model.clone(),
+            "prompt": raw_prompt.clone(),
+            "raw": true,
+            "stream": true,
+            "options": {
+                "num_ctx": config.context_size,
+                "stop": ["<turn|>", "<eos>", "<tool_response|>", "<|tool_response|>", "<tool_call|>", "<|tool_call|>"]
+            }
+        });
+    }
 
     let log_tx = tx.clone();
     let server_url = config.server_url.clone();
@@ -77,22 +78,22 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
         "".to_string()
     };
 
-    if let Ok(full_req_json) = serde_json::to_string_pretty(&req) {
+    if let Ok(full_req_json) = serde_json::to_string_pretty(&req_body) {
         let _ = fs::write(format!("{}last_context", prefix), &full_req_json);
         if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}requests", prefix)) {
             let _ = write!(file, "{}{}", sep, full_req_json);
         }
     }
     let _ = fs::write(format!("{}last-response", prefix), "");
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}responses", prefix)) {
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}responses.jsonl", prefix)) {
         let _ = write!(file, "{}", sep);
     }
 
-    let b_url = config.server_url.clone();
+    let b_url = config.server_url.replace("/api/chat", "/api/generate");
     let prefix_clone = prefix.clone();
     tokio::spawn(async move {
         let _ = log_tx.send(StreamEvent::DebugLog(format!("CALL_START|{}|{}", server_url, ctx_len)));
-        let res_res = client.post(&b_url).json(&req).send().await;
+        let res_res = client.post(&b_url).json(&req_body).send().await;
         match res_res {
             Ok(res) => {
                 let mut stream = res.bytes_stream();
@@ -110,37 +111,35 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
                             while let Some(pos) = buffer.find('\n') {
                                 if token.is_cancelled() { return; }
                                 let line = buffer.drain(..=pos).collect::<String>();
-                                if line.trim().is_empty() { continue; }
+                                let trimmed = line.trim();
+                                if trimmed.is_empty() { continue; }
                                 
+                                let json_str = if trimmed.starts_with("data: ") {
+                                    &trimmed[6..]
+                                } else {
+                                    trimmed
+                                };
+
                                 if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}responses.jsonl", prefix_clone)) {
-                                    let _ = write!(file, "{}", line);
+                                    let _ = write!(file, "{}", json_str);
                                 }
 
-                                match serde_json::from_str::<ChatResponse>(&line) {
-                                    Ok(chat_res) => {
-                                        if let Some(calls) = chat_res.message.tool_calls {
-                                            if !calls.is_empty() { 
-                                                if token.is_cancelled() { return; }
-                                                let _ = log_tx.send(StreamEvent::DebugLog(format!("NATIVE_TOOL_CALLS|count:{}", calls.len())));
-                                                let _ = log_tx.send(StreamEvent::ToolCalls(calls)); 
-                                            }
-                                        }
-                                        if !chat_res.message.content.is_empty() {
-                                            let content = chat_res.message.content.clone();
+                                match serde_json::from_str::<GenerateResponse>(json_str) {
+                                    Ok(gen_res) => {
+                                        if !gen_res.response.is_empty() {
+                                            let content = gen_res.response.clone();
                                             if !token.is_cancelled() {
-                                                // Log ONLY the content string to 'responses'
                                                 if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}responses", prefix_clone)) {
                                                     let _ = write!(file, "{}", content);
                                                 }
-
                                                 let _ = fs::OpenOptions::new().create(true).append(true).open(format!("{}last-response", prefix_clone))
                                                     .and_then(|mut f| write!(f, "{}", content));
                                                 let _ = log_tx.send(StreamEvent::Chunk(content)); 
                                             }
                                         }
-                                        if chat_res.done {
+                                        if gen_res.done {
                                             if !token.is_cancelled() {
-                                                let _ = log_tx.send(StreamEvent::Done(chat_res.eval_count, chat_res.eval_duration));
+                                                let _ = log_tx.send(StreamEvent::Done(gen_res.eval_count, gen_res.eval_duration));
                                             }
                                             return;
                                         }
@@ -159,39 +158,4 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
             Err(e) => { let _ = log_tx.send(StreamEvent::Error(e.to_string())); }
         }
     });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::Duration;
-
-    #[tokio::test]
-    async fn test_ollama_integration_from_last_context() {
-        let config_content = fs::read_to_string("config.yml").expect("Need config.yml");
-        let config: Config = serde_yaml::from_str(&config_content).expect("Valid config");
-
-        let last_context_content = fs::read_to_string(".last_context").unwrap_or_else(|_| "{\"model\":\"\",\"messages\":[],\"tools\":[],\"stream\":true,\"options\":{}}".to_string());
-        let req: ChatRequest = serde_json::from_str(&last_context_content).unwrap_or(ChatRequest {
-            model: config.model.clone(),
-            messages: vec![],
-            tools: vec![],
-            stream: true,
-            options: json!({}),
-        });
-
-        let client = Client::new();
-        let res = client.post(&config.server_url)
-            .json(&req)
-            .timeout(Duration::from_secs(30))
-            .send()
-            .await;
-
-        match res {
-            Ok(resp) => {
-                assert!(resp.status().is_success(), "Ollama should return 200 OK");
-            }
-            Err(e) => println!("Integration Test: Skipping real connection check: {}", e),
-        }
-    }
 }

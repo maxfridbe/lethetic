@@ -1216,6 +1216,7 @@ dependencies = [
  "once_cell",
  "pulldown-cmark",
  "ratatui",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

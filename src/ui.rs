@@ -1,12 +1,11 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
+    text::{Line, Span},
     widgets::{Block as UIBlock, Borders, Clear, List, ListItem, Paragraph, Wrap},
 };
-use crate::app::{App, BlockType};
+use crate::app::{App, BlockType, RenderBlock};
 use crate::icons;
-use crate::markdown;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Theme {
@@ -64,63 +63,65 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
                 else if app.is_processing { format!("{} {} Lethetic Engine Processing...", icons::SPINNER[app.spinner_index], icons::PROCESSING) } 
                 else { format!("{} Output", icons::OUTPUT) };
 
-    let mut text = Text::default();
-    let terminal_width = left_layout[0].width.saturating_sub(4);
+    let terminal_width = left_layout[0].width.saturating_sub(2) as usize;
+    
+    if terminal_width != app.last_rendered_width {
+        for block in &mut app.blocks {
+            block.cached_lines = None;
+        }
+        app.last_rendered_width = terminal_width;
+    }
 
-    for block in &app.blocks {
-        let base_style = match block.block_type {
-            BlockType::User => Style::default().fg(app.theme.highlight_fg).add_modifier(Modifier::BOLD),
-            BlockType::Thought => Style::default().fg(Color::Cyan).add_modifier(Modifier::ITALIC),
-            BlockType::ToolCall => Style::default().fg(Color::Yellow).bg(Color::Rgb(40, 40, 60)),
-            BlockType::ToolResult => Style::default().bg(Color::Rgb(30, 30, 30)),
-            _ => Style::default().fg(app.theme.output_fg),
-        };
+    let mut list_items = Vec::new();
+    let mut total_lines = 0;
 
-        if block.block_type == BlockType::Markdown {
-            let md_text = markdown::render_markdown(&block.content, Style::default().fg(app.theme.output_fg));
-            for line in md_text.lines {
-                text.lines.push(line);
-            }
+    for block in app.blocks.iter_mut() {
+        let lines = if let Some(ref cached) = block.cached_lines {
+            cached.clone()
         } else {
-            for line_content in block.content.lines() {
-                let mut line_style = base_style;
-                if block.block_type == BlockType::ToolResult {
-                    if line_content.starts_with('+') { line_style = line_style.fg(Color::LightGreen); }
-                    else if line_content.starts_with('-') { line_style = line_style.fg(Color::LightRed); }
-                    else if line_content.starts_with("STDOUT:") || line_content.starts_with("STDERR:") { line_style = line_style.fg(Color::Cyan).add_modifier(Modifier::BOLD); }
-                    else { line_style = line_style.fg(Color::Gray); }
+            let rendered = render_block_to_lines(block, terminal_width, &app.theme);
+            block.cached_lines = Some(rendered.clone());
+            rendered
+        };
+        
+        for mut line in lines {
+            if app.output_state.selected() == Some(total_lines) && app.is_output_focused {
+                for span in line.spans.iter_mut() {
+                    span.style = span.style.add_modifier(Modifier::REVERSED);
                 }
-                
-                let padded_line = format!("{:width$}", line_content, width = terminal_width as usize);
-                text.lines.push(Line::from(Span::styled(padded_line, line_style)));
             }
+            list_items.push(ListItem::new(line));
+            total_lines += 1;
         }
     }
+    app.total_line_count = total_lines;
 
-    let area = left_layout[0];
-    let widget_height = area.height.saturating_sub(2);
-    let total_lines = text.lines.iter().map(|line| {
-        let width = line.width() as u16;
-        if width == 0 { 1 } else { (width.saturating_sub(1) / terminal_width.max(1)) + 1 }
-    }).sum::<u16>();
+    let output_block = UIBlock::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(if app.is_output_focused { Style::default().fg(app.theme.highlight_fg) } else { Style::default() });
 
-    if app.auto_scroll {
-        app.scroll = if total_lines > widget_height { total_lines - widget_height } else { 0 };
-    } else if app.scroll >= total_lines.saturating_sub(widget_height) {
-        app.auto_scroll = true;
-    }
-
-    f.render_widget(Paragraph::new(text).block(UIBlock::default().title(title).borders(Borders::ALL)).wrap(Wrap { trim: false }).scroll((app.scroll, 0)), left_layout[0]);
+    f.render_stateful_widget(
+        List::new(list_items).block(output_block),
+        left_layout[0],
+        &mut app.output_state
+    );
     
     let input_style = Style::default().bg(Color::Rgb(20, 20, 30)).fg(app.theme.input_fg);
-    let input_block = UIBlock::default().title(format!("{} Input", icons::INPUT)).borders(Borders::ALL).style(input_style);
+    let input_block = UIBlock::default()
+        .title(format!("{} Input", icons::INPUT))
+        .borders(Borders::ALL)
+        .style(if !app.is_output_focused { input_style.fg(app.theme.highlight_fg) } else { input_style });
+    
     let prefix = Span::styled("> ", Style::default().fg(app.theme.highlight_fg).add_modifier(Modifier::BOLD));
     let input_text = Line::from(vec![prefix, Span::raw(&app.input)]);
     f.render_widget(Paragraph::new(input_text).block(input_block).wrap(Wrap { trim: false }), left_layout[1]);
 
-    let cursor_x = left_layout[1].x + 1 + prefix_len as u16 + (app.input.len() as u16 % inner_width.max(1));
-    let cursor_y = left_layout[1].y + 1 + (app.input.len() as u16 / inner_width.max(1));
-    f.set_cursor_position((cursor_x, cursor_y));
+    if !app.is_output_focused {
+        let cursor_x = left_layout[1].x + 1 + prefix_len as u16 + (app.input.len() as u16 % inner_width.max(1));
+        let cursor_y = left_layout[1].y + 1 + (app.input.len() as u16 / inner_width.max(1));
+        f.set_cursor_position((cursor_x, cursor_y));
+    }
 
     let status_text = vec![
         Line::from(vec![
@@ -140,6 +141,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             Span::styled(format!("{} ", app.cwd), Style::default().fg(Color::LightBlue)),
             Span::styled(format!("| {} Git: ", icons::GIT), Style::default().fg(Color::DarkGray)),
             Span::styled(format!("{} ", app.git_status), Style::default().fg(if app.git_status.contains("dirty") { Color::Red } else { Color::Green })),
+            Span::styled(format!(" | (TAB/F10) Mouse: {} ", if app.mouse_enabled { "ON" } else { "OFF" }), Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
         ]),
     ];
     f.render_widget(Paragraph::new(status_text).wrap(Wrap { trim: true }), left_layout[2]);
@@ -150,7 +152,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     }
 
     if app.show_palette {
-        let area = centered_rect(60, 20, f.area());
+        let area = centered_rect(60, 25, f.area());
         f.render_widget(Clear, area);
         let items: Vec<ListItem> = app.palette_items.iter().map(|i| ListItem::new(i.as_str())).collect();
         f.render_stateful_widget(List::new(items).block(UIBlock::default().title(format!("{} Command Palette", icons::COMMAND)).borders(Borders::ALL)).highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(app.theme.highlight_fg)).highlight_symbol("> "), area, &mut app.palette_state);
@@ -166,9 +168,12 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     if app.show_approval_prompt {
         let area = centered_rect(60, 40, f.area());
         f.render_widget(Clear, area);
-        let tc = app.pending_tool_call.as_ref().unwrap();
-        let text = format!("Tool: {}\nParams: {}\n\n(A)lways Allow | (O)nce | (D)eny", tc.function.name, tc.function.arguments);
-        f.render_widget(Paragraph::new(text).block(UIBlock::default().title(format!("{} Security Confirmation", icons::WARNING)).borders(Borders::ALL)).style(Style::default().fg(Color::Red)), area);
+        if let Some(tc) = &app.pending_tool_call {
+            let text = format!("Tool: {}\nParams: {}\n\n(A)lways Allow | (O)nce | (D)eny", tc.function.name, tc.function.arguments);
+            f.render_widget(Paragraph::new(text).block(UIBlock::default().title(format!("{} Security Confirmation", icons::WARNING)).borders(Borders::ALL)).style(Style::default().fg(Color::Red)), area);
+        } else {
+            app.show_approval_prompt = false;
+        }
     }
 
     if app.show_prompt_editor {
@@ -191,6 +196,76 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         let text = format!("{} Found existing debug files in .lethetic/\nWould you like to clear them?\n\n(Y)es | (N)o", icons::DEBUG);
         f.render_widget(Paragraph::new(text).block(UIBlock::default().title("Startup Cleanup").borders(Borders::ALL)).style(Style::default().fg(Color::Yellow)), area);
     }
+}
+
+fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    let block_color = if block.block_type == BlockType::Thought {
+        Color::Cyan
+    } else {
+        match block.success {
+            Some(true) => Color::Green,
+            Some(false) => Color::Red,
+            None => Color::Gray,
+        }
+    };
+    
+    let status_block = Span::styled("█ ", Style::default().fg(block_color));
+
+    let (bg_color, header) = match block.block_type {
+        BlockType::User => (Color::Rgb(30, 35, 45), Some(format!("{} User Request", icons::INPUT))),
+        BlockType::Thought => (Color::Rgb(25, 45, 45), Some(format!("{} Engine Thinking...", icons::PROCESSING))),
+        BlockType::ToolCall => (Color::Rgb(45, 45, 30), Some(format!("{} Engine Tool Request", icons::COMMAND))),
+        BlockType::ToolResult => (Color::Rgb(35, 35, 35), Some(format!("{} Tool Output", icons::SUCCESS))),
+        BlockType::Divider => (Color::Reset, None),
+        _ => (Color::Reset, None),
+    };
+
+    let base_style = Style::default().bg(bg_color).fg(theme.output_fg);
+
+    if block.block_type == BlockType::Divider {
+        lines.push(Line::from(vec![
+            Span::styled("─".repeat(width), Style::default().fg(Color::DarkGray))
+        ]));
+        return lines;
+    }
+
+    if let Some(h) = header {
+        let mut header_spans = vec![
+            status_block.clone(),
+            Span::styled(format!(" {} ", h), base_style.add_modifier(Modifier::BOLD).fg(Color::White)),
+        ];
+        let current_len = 2 + h.len() + 2;
+        if width > current_len {
+            header_spans.push(Span::styled(" ".repeat(width - current_len), base_style));
+        }
+        lines.push(Line::from(header_spans));
+    }
+
+    for line_content in block.content.lines() {
+        if line_content.trim().is_empty() { continue; }
+        
+        let mut spans = vec![status_block.clone()];
+        let mut style = base_style;
+        if block.block_type == BlockType::Thought { style = style.add_modifier(Modifier::ITALIC).fg(Color::Cyan); }
+        if block.block_type == BlockType::ToolCall { style = style.fg(Color::Yellow); }
+        
+        if block.block_type == BlockType::ToolResult {
+            if line_content.starts_with("EXIT_CODE: 0") { style = style.fg(Color::Green); }
+            else if line_content.contains("EXIT_CODE:") { style = style.fg(Color::Red); }
+            else if line_content.starts_with("STDOUT:") || line_content.starts_with("STDERR:") { style = style.add_modifier(Modifier::BOLD); }
+        }
+
+        spans.push(Span::styled(line_content.to_string(), style));
+        let line_len = 2 + line_content.chars().count();
+        if width > line_len {
+            spans.push(Span::styled(" ".repeat(width - line_len), base_style));
+        }
+        lines.push(Line::from(spans));
+    }
+
+    lines.push(Line::from(vec![status_block, Span::styled(" ".repeat(width.saturating_sub(2)), base_style)]));
+    lines
 }
 
 pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

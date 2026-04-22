@@ -109,13 +109,14 @@ pub fn render_markdown(content: &str, base_style: Style) -> Text<'static> {
                     let mut h = HighlightLines::new(syntax, &THEME_SET.themes["base16-ocean.dark"]);
                     
                     for line_str in t.lines() {
-                        let ranges: Vec<(SynStyle, &str)> = h.highlight_line(line_str, &SYNTAX_SET).unwrap();
-                        let mut spans = Vec::new();
-                        for (style, text) in ranges {
-                            let fg = Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
-                            spans.push(Span::styled(text.to_string(), Style::default().fg(fg).bg(Color::Rgb(20, 20, 30))));
+                        if let Ok(ranges) = h.highlight_line(line_str, &SYNTAX_SET) {
+                            let mut spans = Vec::new();
+                            for (style, text) in ranges {
+                                let fg = Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
+                                spans.push(Span::styled(text.to_string(), Style::default().fg(fg).bg(Color::Rgb(20, 20, 30))));
+                            }
+                            text.lines.push(Line::from(spans));
                         }
-                        text.lines.push(Line::from(spans));
                     }
                 } else {
                     let mut style = current_style;

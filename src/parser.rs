@@ -1,304 +1,146 @@
-pub fn parse_json_tool_call(text: &str) -> Option<(String, String, serde_json::Value)> {
-    let wrapper_tags = ["<tool_call>", "<|tool_call|>"];
+pub fn find_tool_call(text: &str, is_final: bool) -> Option<(crate::context::ToolCall, usize)> {
+    let start_tokens = ["<|tool_call>", "<tool_call>"];
     
-    let mut last_tag_pos = None;
-    for tag in wrapper_tags {
-        if let Some(pos) = text.find(tag) {
-            if last_tag_pos.map_or(true, |(p, _)| pos < p) {
-                last_tag_pos = Some((pos, tag));
-            }
-        }
-    }
-    
-    if let Some((pos, _)) = last_tag_pos {
-        let after_tag = &text[pos..];
-        if let Some(start) = after_tag.find('{') {
-            if let Some(end) = after_tag.rfind('}') {
-                let json_str = &after_tag[start..=end];
-                let sanitized_json_str = json_str.replace("\\'", "'");
-                if let Ok(tc_val) = serde_json::from_str::<serde_json::Value>(&sanitized_json_str) {
-                    let mut func_name_opt = tc_val["name"].as_str().or_else(|| tc_val["function"]["name"].as_str()).map(|s| s.to_string());
-                    
-                    if func_name_opt.is_none() {
-                        if tc_val["command"].is_string() {
-                            func_name_opt = Some("run_shell_command".to_string());
-                        } else if tc_val["patch"].is_string() {
-                            func_name_opt = Some("apply_patch".to_string());
-                        } else if tc_val["path"].is_string() {
-                            func_name_opt = Some("read_file_lines".to_string());
-                        } else if tc_val["expression"].is_string() {
-                            func_name_opt = Some("calculate".to_string());
-                        }
-                    }
-                    
-                    if let Some(func_name) = func_name_opt {
-                        let args = if tc_val["arguments"].is_object() { tc_val["arguments"].clone() } else { tc_val.clone() };
-                        let tc_id = args["tool_call_id"].as_str()
-                            .or_else(|| tc_val["tool_call_id"].as_str())
-                            .or_else(|| tc_val["id"].as_str())
-                            .unwrap_or("raw_call").to_string();
-                        return Some((func_name, tc_id, args));
-                    }
-                }
-            }
-        }
-    }
-    None
-}
+    for start_token in start_tokens {
+        if let Some(pos) = text.find(start_token) {
+            let after_token = &text[pos + start_token.len()..];
+            
+            let call_content_start = if let Some(c_pos) = after_token.find("call:") {
+                &after_token[c_pos + 5..]
+            } else {
+                after_token
+            };
 
-pub fn find_tool_call(text: &str) -> Option<(crate::context::ToolCall, usize)> {
-    let mut best_match: Option<((String, String, serde_json::Value), usize)> = None;
-
-    // JSON Parser
-    if let Some(pos) = ["<tool_call>", "<|tool_call|>"].iter().filter_map(|t| text.find(t)).min() {
-        if let Some(parsed) = parse_json_tool_call(text) {
-            best_match = Some((parsed, pos));
-        }
-    }
-
-    // XML Parser
-    let xml_pos = ["run_shell_command", "read_file_lines", "apply_patch", "calculate"]
-        .iter().filter_map(|t| text.find(&format!("<{} ", t))).min();
-    if let Some(pos) = xml_pos {
-        if let Some(parsed) = parse_xml_tool_call(text) {
-            if best_match.as_ref().map_or(true, |(_, p)| pos < *p) {
-                best_match = Some((parsed, pos));
-            }
-        }
-    }
-
-    // Native Parser
-    if let Some(pos) = text.find("call:") {
-        if let Some(parsed) = parse_gemma_native_tool_call(text) {
-            if best_match.as_ref().map_or(true, |(_, p)| pos < *p) {
-                best_match = Some((parsed, pos));
-            }
-        }
-    }
-
-    // Fallback JSON check
-    if let Some(pos) = text.find('{') {
-        if let Some(end_pos) = text[pos..].find('}') {
-            let json_str = &text[pos..pos+end_pos+1];
-            let sanitized = json_str.replace("\\'", "'");
-            if let Ok(tc_val) = serde_json::from_str::<serde_json::Value>(&sanitized) {
-                let mut func_name_opt = tc_val["name"].as_str().or_else(|| tc_val["function"]["name"].as_str()).map(|s| s.to_string());
-                if func_name_opt.is_none() {
-                    if tc_val["command"].is_string() { func_name_opt = Some("run_shell_command".to_string()); }
-                    else if tc_val["patch"].is_string() { func_name_opt = Some("apply_patch".to_string()); }
-                }
-                if let Some(func_name) = func_name_opt {
-                    if best_match.as_ref().map_or(true, |(_, p)| pos < *p) {
-                        let tc_id = args_id(&tc_val).unwrap_or("raw_call").to_string();
-                        let args = if tc_val["arguments"].is_object() { tc_val["arguments"].clone() } else { tc_val.clone() };
-                        best_match = Some(((func_name, tc_id, args), pos));
-                    }
-                }
-            }
-        }
-    }
-
-    best_match.map(|((name, id, args), pos)| {
-        (crate::context::ToolCall {
-            id,
-            tool_type: Some("function".to_string()),
-            function: crate::context::FunctionCall {
-                name,
-                arguments: args,
-            },
-            index: None,
-        }, pos)
-    })
-}
-
-fn args_id(val: &serde_json::Value) -> Option<&str> {
-    val["tool_call_id"].as_str()
-        .or_else(|| val["id"].as_str())
-        .or_else(|| val["arguments"]["tool_call_id"].as_str())
-}
-
-pub fn parse_xml_tool_call(text: &str) -> Option<(String, String, serde_json::Value)> {
-    let tool_names = ["run_shell_command", "read_file_lines", "apply_patch", "calculate"];
-    for tool in tool_names {
-        let start_tag = format!("<{} ", tool);
-        if let Some(start_idx) = text.find(&start_tag) {
-            let after_tag = &text[start_idx + start_tag.len()..];
-            if let Some(end_idx) = after_tag.find("/>").or_else(|| after_tag.find(">")) {
-                let attrs_str = &after_tag[..end_idx];
+            let brace_start = call_content_start.find('{');
+            if let Some(brace_pos) = brace_start {
+                let func_name = call_content_start[..brace_pos].trim().to_string();
+                let args_content = &call_content_start[brace_pos + 1..];
                 
-                let mut args = serde_json::Map::new();
-                let mut chars = attrs_str.chars().peekable();
-                
-                while let Some(&c) = chars.peek() {
-                    if c.is_whitespace() { chars.next(); continue; }
+                let explicit_end = args_content.find("<tool_call|>")
+                    .or_else(|| args_content.find("<|tool_call|>"))
+                    .or_else(|| args_content.find("<turn|>"))
+                    .or_else(|| args_content.find("<|turn|>"));
+
+                let end_pos = if let Some(p) = explicit_end {
+                    p
+                } else if is_final {
+                    let mut last_brace = None;
+                    let mut in_marker = false;
+                    let mut current_marker = "";
                     
-                    let mut key = String::new();
-                    while let Some(&k) = chars.peek() {
-                        if k == '=' || k.is_whitespace() { break; }
-                        key.push(k);
-                        chars.next();
-                    }
-                    if key.is_empty() { break; }
-                    
-                    while let Some(&k) = chars.peek() {
-                        if k == '=' || k.is_whitespace() { chars.next(); } else { break; }
-                    }
-                    
-                    if let Some(&quote) = chars.peek() {
-                        if quote == '"' || quote == '\'' {
-                            chars.next();
-                            let mut val = String::new();
-                            let mut escaped = false;
-                            while let Some(&v) = chars.peek() {
-                                chars.next();
-                                if escaped {
-                                    val.push(v);
-                                    escaped = false;
-                                } else if v == '\\' {
-                                    escaped = true;
-                                } else if v == quote {
-                                    break;
-                                } else {
-                                    val.push(v);
+                    // Safe UTF-8 iteration
+                    let char_indices: Vec<(usize, char)> = args_content.char_indices().collect();
+                    let mut i = 0;
+                    while i < char_indices.len() {
+                        let (byte_pos, _) = char_indices[i];
+                        let slice = &args_content[byte_pos..];
+                        
+                        if !in_marker {
+                            if slice.starts_with("<|\"|>") {
+                                in_marker = true;
+                                current_marker = "<|\"|>";
+                                // Skip next 4 chars (approx) - find index of the char that starts after marker
+                                let target = byte_pos + 5;
+                                while i < char_indices.len() && char_indices[i].0 < target { i += 1; }
+                                continue;
+                            } else if slice.starts_with("<|\">") {
+                                in_marker = true;
+                                current_marker = "<|\">";
+                                let target = byte_pos + 4;
+                                while i < char_indices.len() && char_indices[i].0 < target { i += 1; }
+                                continue;
+                            } else {
+                                if char_indices[i].1 == '}' {
+                                    last_brace = Some(byte_pos);
                                 }
                             }
-                            args.insert(key.clone(), serde_json::Value::String(val));
                         } else {
-                            let mut val = String::new();
-                            while let Some(&v) = chars.peek() {
-                                if v.is_whitespace() || v == '/' || v == '>' { break; }
-                                val.push(v);
-                                chars.next();
+                            if slice.starts_with(current_marker) {
+                                in_marker = false;
+                                let target = byte_pos + current_marker.len();
+                                while i < char_indices.len() && char_indices[i].0 < target { i += 1; }
+                                continue;
                             }
-                            args.insert(key.clone(), serde_json::Value::String(val));
                         }
+                        i += 1;
                     }
-                }
-                let tc_id = args.get("tool_call_id").and_then(|v| v.as_str())
-                    .or_else(|| args.get("id").and_then(|v| v.as_str()))
-                    .unwrap_or("raw_call").to_string();
-                return Some((tool.to_string(), tc_id, serde_json::Value::Object(args)));
-            }
-        }
-    }
-    None
-}
+                    last_brace.unwrap_or(args_content.len())
+                } else {
+                    continue;
+                };
 
-pub fn parse_gemma_native_tool_call(text: &str) -> Option<(String, String, serde_json::Value)> {
-    if let Some(start_idx) = text.find("call:") {
-        let after_call = &text[start_idx + 5..];
-        if let Some(brace_idx) = after_call.find('{') {
-            let func_name = after_call[..brace_idx].trim().to_string();
-            if let Some(end_brace_idx) = after_call.find('}') {
-                let attrs_str = &after_call[brace_idx + 1..end_brace_idx];
+                let args_part = &args_content[..end_pos];
                 let mut args = serde_json::Map::new();
                 
-                let mut chars = attrs_str.chars().peekable();
-                while let Some(&c) = chars.peek() {
-                    if c.is_whitespace() || c == ',' { chars.next(); continue; }
-                    let mut key = String::new();
-                    while let Some(&k) = chars.peek() {
-                        if k == ':' || k.is_whitespace() || k == '=' { break; }
-                        key.push(k);
-                        chars.next();
-                    }
-                    if key.is_empty() { break; }
-                    while let Some(&k) = chars.peek() {
-                        if k == ':' || k.is_whitespace() || k == '=' { chars.next(); } else { break; }
-                    }
-                    
-                    let mut val = String::new();
-                    let chars_count = chars.clone().count();
-                    let rest = if chars_count <= attrs_str.len() { &attrs_str[attrs_str.len() - chars_count..] } else { "" };
-                    
-                    if rest.starts_with("<|\"|>") {
-                        for _ in 0..5 { chars.next(); }
-                        while let Some(&v) = chars.peek() {
-                            let r_count = chars.clone().count();
-                            let rest_inner = if r_count <= attrs_str.len() { &attrs_str[attrs_str.len() - r_count..] } else { "" };
-                            if rest_inner.starts_with("<|\"|>") {
-                                for _ in 0..5 { chars.next(); }
+                let mut current = args_part;
+                while !current.is_empty() {
+                    current = current.trim_start_matches(|c| c == ',' || c == ' ' || c == '\n' || c == '{' || c == '}');
+                    if current.is_empty() { break; }
+
+                    if let Some(sep_pos) = current.find(':') {
+                        let mut key = current[..sep_pos].trim().to_string();
+                        key = key.trim_matches(|c| c == '"' || c == '\'').to_string();
+                        
+                        let after_sep = current[sep_pos + 1..].trim_start();
+                        
+                        let markers = ["<|\"|>", "<|\">", "<|'|>", "<|'>"];
+                        let mut found_marker = None;
+                        for &m in &markers {
+                            if after_sep.starts_with(m) {
+                                found_marker = Some(m);
                                 break;
                             }
-                            val.push(v);
-                            chars.next();
                         }
-                    } else if let Some(&quote) = chars.peek() {
-                        if quote == '"' || quote == '\'' {
-                            chars.next();
-                            let mut escaped = false;
-                            while let Some(&v) = chars.peek() {
-                                chars.next();
-                                if escaped {
-                                    val.push(v);
-                                    escaped = false;
-                                } else if v == '\\' {
-                                    escaped = true;
-                                } else if v == quote {
-                                    break;
-                                } else {
-                                    val.push(v);
+
+                        if let Some(marker) = found_marker {
+                            let m_len = marker.len();
+                            if let Some(end_quote_pos) = after_sep[m_len..].find(marker) {
+                                let val = &after_sep[m_len..m_len + end_quote_pos];
+                                args.insert(key, serde_json::Value::String(val.to_string()));
+                                current = &after_sep[m_len + end_quote_pos + m_len..];
+                            } else {
+                                if is_final {
+                                    args.insert(key, serde_json::Value::String(after_sep[m_len..].to_string()));
                                 }
+                                break;
                             }
+                        } else if after_sep.starts_with('"') {
+                             if let Some(end_quote_pos) = after_sep[1..].find('"') {
+                                let val = &after_sep[1..1 + end_quote_pos];
+                                args.insert(key, serde_json::Value::String(val.to_string()));
+                                current = &after_sep[1 + end_quote_pos + 1..];
+                            } else { break; }
                         } else {
-                            while let Some(&v) = chars.peek() {
-                                if v == ',' || v.is_whitespace() { break; }
-                                val.push(v);
-                                chars.next();
+                            let next_comma = after_sep.find(',').unwrap_or(after_sep.len());
+                            let val_str = after_sep[..next_comma].trim();
+                            let mut cleaned_val = val_str.to_string();
+                            for &m in &markers {
+                                cleaned_val = cleaned_val.replace(m, "");
                             }
+                            
+                            if let Ok(n) = cleaned_val.parse::<i64>() {
+                                args.insert(key, serde_json::Value::Number(n.into()));
+                            } else {
+                                args.insert(key, serde_json::Value::String(cleaned_val));
+                            }
+                            current = &after_sep[next_comma..];
                         }
-                    } else {
-                         while let Some(&v) = chars.peek() {
-                                if v == ',' || v.is_whitespace() { break; }
-                                val.push(v);
-                                chars.next();
-                         }
-                    }
-                    args.insert(key, serde_json::Value::String(val));
+                    } else { break; }
                 }
+
                 let tc_id = args.get("tool_call_id").and_then(|v| v.as_str())
                     .or_else(|| args.get("id").and_then(|v| v.as_str()))
                     .unwrap_or("raw_call").to_string();
-                return Some((func_name, tc_id, serde_json::Value::Object(args)));
+
+                return Some((crate::context::ToolCall {
+                    id: tc_id,
+                    function: crate::context::FunctionCall {
+                        name: func_name,
+                        arguments: serde_json::Value::Object(args),
+                    },
+                }, pos));
             }
         }
     }
     None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_gemma_native_format() {
-        let text = "<tool_call|><|tool_response><|tool_response>call:run_shell_command{command:<|\"|>chmod +x tellrandom.sh<|\"|>,tool_call_id:<|\"|>chmod_script_002<|\"|>}<tool_call|><|tool_response>";
-        let parsed = parse_gemma_native_tool_call(text);
-        assert!(parsed.is_some(), "Should successfully parse native Gemma format");
-
-        if let Some((func_name, tc_id, args)) = parsed {
-            assert_eq!(func_name, "run_shell_command");
-            assert_eq!(tc_id, "chmod_script_002");
-            assert_eq!(args["command"].as_str().unwrap(), "chmod +x tellrandom.sh");
-        }
-    }
-
-    #[test]
-    fn test_fail_safe_parsing_from_text() {
-        let full_response_content = "<tool_call>\n{\n  \"tool_call_id\": \"plan_001\",\n  \"command\": \"echo 'Why did the programmer quit their job? Because they didn\\'t get enough arrays!' > joke.txt\"\n}\n</tool_call>\n";
-        let (tc, _) = find_tool_call(full_response_content).expect("Failed to parse tool call");
-        assert_eq!(tc.function.name, "run_shell_command");
-        assert_eq!(tc.id, "plan_001");
-    }
-
-    #[test]
-    fn test_escaped_single_quote_json() {
-        let raw = r#"{"command": "echo 'Why did the programmer quit their job? Because they didn\'t get enough arrays!' > joke.txt"}"#;
-        let parsed = serde_json::from_str::<serde_json::Value>(raw);
-        assert!(parsed.is_err(), "serde_json should fail on \\'");
-        
-        let sanitized = raw.replace("\\'", "'");
-        let parsed2 = serde_json::from_str::<serde_json::Value>(&sanitized);
-        assert!(parsed2.is_ok(), "serde_json should succeed on unescaped '");
-    }
 }

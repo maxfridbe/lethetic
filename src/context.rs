@@ -8,19 +8,13 @@ static TOKENIZER: Lazy<tiktoken_rs::CoreBPE> = Lazy::new(|| cl100k_base().unwrap
 pub struct Message {
     pub role: String,
     pub content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_call_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ToolCall {
     pub id: String,
-    #[serde(rename = "type")]
-    pub tool_type: Option<String>,
     pub function: FunctionCall,
-    pub index: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -53,27 +47,28 @@ impl ContextManager {
             role: role.to_string(),
             content: content.to_string(),
             tool_calls: None,
-            tool_call_id: None,
         });
         self.trim_context();
     }
 
-    pub fn add_assistant_tool_call(&mut self, content: &str, tool_calls: Option<Vec<ToolCall>>) {
+    pub fn add_assistant_tool_call(&mut self, content: &str, tool_calls: Vec<ToolCall>) {
         self.messages.push(Message {
             role: "assistant".to_string(),
             content: content.to_string(),
-            tool_calls,
-            tool_call_id: None,
+            tool_calls: Some(tool_calls),
         });
         self.trim_context();
     }
 
-    pub fn add_tool_result(&mut self, tool_call_id: String, content: &str) {
+    pub fn add_tool_message(&mut self, tool_call_id: String, function_name: &str, content: &str) {
+        let formatted_content = format!(
+            "<|tool_response|>response:{}{{result:<|\">{}<|\">,tool_call_id:<|\">{}<|\">}}<tool_response|>", 
+            function_name, content, tool_call_id
+        );
         self.messages.push(Message {
             role: "tool".to_string(),
-            content: content.to_string(),
+            content: formatted_content,
             tool_calls: None,
-            tool_call_id: Some(tool_call_id),
         });
         self.trim_context();
     }
@@ -83,28 +78,90 @@ impl ContextManager {
     }
 
     pub fn get_messages(&self) -> Vec<Message> {
-        let mut all_messages = Vec::new();
+        self.messages.clone()
+    }
+
+    pub fn get_raw_prompt(&self) -> String {
+        let mut prompt = String::from("<bos>");
+        
         if let Some(sys) = &self.system_prompt {
-            all_messages.push(Message {
-                role: "system".to_string(),
-                content: sys.clone(),
-                tool_calls: None,
-                tool_call_id: None,
-            });
+            prompt.push_str("<|turn>system\n<|think|>\n");
+            prompt.push_str(sys);
+            prompt.push_str("<turn|>\n");
         }
-        all_messages.extend(self.messages.clone());
-        all_messages
+
+        let mut current_turn_role = String::new();
+
+        for msg in &self.messages {
+            match msg.role.as_str() {
+                "user" => {
+                    if current_turn_role == "model" {
+                        prompt.push_str("<turn|>\n");
+                    }
+                    prompt.push_str("<|turn>user\n");
+                    prompt.push_str(&msg.content);
+                    prompt.push_str("<turn|>\n");
+                    current_turn_role = String::new();
+                }
+                "assistant" => {
+                    if current_turn_role != "model" {
+                        prompt.push_str("<|turn>model\n");
+                        if !msg.content.contains("<|channel>") {
+                            prompt.push_str("<|channel>thought\n<channel|>");
+                        }
+                    }
+                    prompt.push_str(&msg.content);
+                    
+                    if let Some(calls) = &msg.tool_calls {
+                        for tc in calls {
+                            prompt.push_str(&format!("<|tool_call>call:{}{{", tc.function.name));
+                            if let Some(obj) = tc.function.arguments.as_object() {
+                                let mut first = true;
+                                for (k, v) in obj {
+                                    if !first { prompt.push(','); }
+                                    first = false;
+                                    prompt.push_str(k);
+                                    prompt.push(':');
+                                    if let Some(s) = v.as_str() {
+                                        prompt.push_str(&format!("<|\">{}<|\">", s));
+                                    } else {
+                                        prompt.push_str(&v.to_string());
+                                    }
+                                }
+                            }
+                            prompt.push_str("}<tool_call|>");
+                        }
+                        // Turn remains open for potential tool responses
+                        current_turn_role = "model".to_string();
+                    } else if msg.content.contains("<|tool_call>") {
+                        // Manual tool call also keeps the turn open
+                        current_turn_role = "model".to_string();
+                    } else {
+                        prompt.push_str("<turn|>\n");
+                        current_turn_role = String::new();
+                    }
+                }
+                "tool" => {
+                    if current_turn_role != "model" {
+                        prompt.push_str("<|turn>model\n");
+                        current_turn_role = "model".to_string();
+                    }
+                    prompt.push_str(&msg.content);
+                }
+                _ => {}
+            }
+        }
+
+        // Final Generation Prompt
+        if current_turn_role != "model" {
+            prompt.push_str("<|turn>model\n<|channel>thought\n<channel|>");
+        }
+        
+        prompt
     }
 
     pub fn get_token_count(&self) -> usize {
-        let mut total = 0;
-        if let Some(sys) = &self.system_prompt { total += TOKENIZER.encode_with_special_tokens(sys).len(); }
-        for msg in &self.messages {
-            total += TOKENIZER.encode_with_special_tokens(&msg.content).len();
-            if let Some(_tool_calls) = &msg.tool_calls { total += 50; } // Overhead estimate
-            if let Some(id) = &msg.tool_call_id { total += TOKENIZER.encode_with_special_tokens(id).len(); }
-        }
-        total
+        TOKENIZER.encode_with_special_tokens(&self.get_raw_prompt()).len()
     }
 
     fn trim_context(&mut self) {
