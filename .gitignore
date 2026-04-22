@@ -1,1 +1,13 @@
 /target
+
+.lethetic/
+wayland_cube/
+.last-response
+.last_context
+.requests
+.responses
+last_context
+last-response
+requests
+responses
+responses.jsonl
