@@ -1,0 +1,3 @@
+server_url: http://brainiac-nvidia:11434/api/chat
+model: prutser/gemma-4-26B-A4B-it-ara-abliterated:Q5_K_M
+context_size: 8000

@@ -1,0 +1,129 @@
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Tool {
+    #[serde(rename = "type")]
+    pub tool_type: String,
+    pub function: FunctionDefinition,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct FunctionDefinition {
+    pub name: String,
+    pub description: String,
+    pub parameters: Value,
+}
+
+pub fn get_standard_tools() -> Vec<Tool> {
+    vec![
+        Tool {
+            tool_type: "function".to_string(),
+            function: FunctionDefinition {
+                name: "read_file_lines".to_string(),
+                description: "Read a specific range of lines from a file".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "The path to the file"
+                        },
+                        "start_line": {
+                            "type": "integer",
+                            "description": "The first line to read (1-indexed)"
+                        },
+                        "end_line": {
+                            "type": "integer",
+                            "description": "The last line to read (inclusive)"
+                        },
+                        "tool_call_id": {
+                            "type": "string",
+                            "description": "Required tracking ID"
+                        }
+                    },
+                    "required": ["path", "start_line", "end_line", "tool_call_id"]
+                }),
+            },
+        },
+        Tool {
+            tool_type: "function".to_string(),
+            function: FunctionDefinition {
+                name: "apply_patch".to_string(),
+                description: "Apply a unified diff patch to a file".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "The path to the file to patch"
+                        },
+                        "patch": {
+                            "type": "string",
+                            "description": "The unified diff content to apply"
+                        },
+                        "tool_call_id": {
+                            "type": "string",
+                            "description": "Required tracking ID"
+                        }
+                    },
+                    "required": ["path", "patch", "tool_call_id"]
+                }),
+            },
+        },
+        Tool {
+            tool_type: "function".to_string(),
+            function: FunctionDefinition {
+                name: "run_shell_command".to_string(),
+                description: "Run a bash command on the local system and return the output".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "The exact bash command to execute"
+                        },
+                        "tool_call_id": {
+                            "type": "string",
+                            "description": "Required tracking ID"
+                        }
+                    },
+                    "required": ["command", "tool_call_id"]
+                }),
+            },
+        },
+        Tool {
+            tool_type: "function".to_string(),
+            function: FunctionDefinition {
+                name: "calculate".to_string(),
+                description: "Perform a mathematical calculation".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "expression": {
+                            "type": "string",
+                            "description": "The math expression to evaluate, e.g. '2 + 2' or 'sin(pi/2)'"
+                        },
+                        "tool_call_id": {
+                            "type": "string",
+                            "description": "Required tracking ID"
+                        }
+                    },
+                    "required": ["expression", "tool_call_id"]
+                }),
+            },
+        },
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tool_definitions() {
+        let tools = get_standard_tools();
+        let shell = tools.iter().find(|t| t.function.name == "run_shell_command").unwrap();
+        assert!(shell.function.parameters["required"].as_array().unwrap().iter().any(|v| v == "tool_call_id"));
+    }
+}
