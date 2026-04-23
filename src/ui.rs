@@ -51,11 +51,13 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     let inner_width = main_layout[0].width.saturating_sub(4);
     let prefix_len = 2; // "> "
     
+    let input_height = (((app.input.len() + prefix_len) as u16 / inner_width.max(1)) + 3).min(10);
+    
     let left_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(0),
-            Constraint::Length(((app.input.len() + prefix_len) as u16 / inner_width.max(1)) + 3),
+            Constraint::Length(input_height),
             Constraint::Length(2),
         ].as_ref())
         .split(main_layout[0]);

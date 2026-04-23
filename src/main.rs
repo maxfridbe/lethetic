@@ -10,7 +10,7 @@ use ratatui::{
     Terminal,
 };
 use reqwest::Client;
-use std::{error::Error, fs, io, time::Duration};
+use std::{error::Error, fs, io, time::Duration, path::{Path, PathBuf}};
 use tokio;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -58,7 +58,15 @@ fn handle_large_output(id: &str, mut result: String) -> String {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
-    let config_content = fs::read_to_string("config.yml")?;
+    
+    let config_path = if Path::new("config.yml").exists() {
+        PathBuf::from("config.yml")
+    } else {
+        let home = env::var("HOME").expect("HOME env var not set");
+        PathBuf::from(home).join(".config/lethetic/config.yml")
+    };
+
+    let config_content = fs::read_to_string(config_path)?;
     let config: Config = serde_yaml::from_str(&config_content)?;
 
     if args.len() > 2 && args[1] == "--command" {
@@ -132,6 +140,10 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                                 "run_shell_command" => {
                                     let cmd = tc.function.arguments["command"].as_str().unwrap_or("");
                                     tool_executor::execute_shell(cmd, &app.current_dir).await
+                                },
+                                "read_folder" => {
+                                    let path = tc.function.arguments["path"].as_str().unwrap_or(".");
+                                    (tool_executor::execute_read_folder(path, &app.current_dir).await, app.current_dir.clone())
                                 },
                                 "read_file_lines" => {
                                     let path = tc.function.arguments["path"].as_str().unwrap_or("");
@@ -207,6 +219,10 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                             "run_shell_command" => {
                                 let cmd = tc.function.arguments["command"].as_str().unwrap_or("");
                                 tool_executor::execute_shell(cmd, &app.current_dir).await
+                            },
+                            "read_folder" => {
+                                let path = tc.function.arguments["path"].as_str().unwrap_or(".");
+                                (tool_executor::execute_read_folder(path, &app.current_dir).await, app.current_dir.clone())
                             },
                             "read_file_lines" => {
                                 let path = tc.function.arguments["path"].as_str().unwrap_or("");
@@ -320,8 +336,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
         
         tokio::select! {
             Some(event_res) = reader.next() => {
-                let mut current_event = Some(event_res);
-                while let Some(Ok(event)) = current_event {
+                if let Ok(event) = event_res {
                     match event {
                         Event::Key(key) => {
                             if key.kind == KeyEventKind::Press {
@@ -354,10 +369,14 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                                 
                                                 let ctx_tx = tx.clone();
                                                 tokio::spawn(async move {
-                                                    let (result, new_dir) = match func_name.as_str() {
+                                                    let (mut result, new_dir) = match func_name.as_str() {
                                                         "run_shell_command" => {
                                                             let cmd = args["command"].as_str().unwrap_or("");
                                                             tool_executor::execute_shell(cmd, &current_dir).await
+                                                        },
+                                                        "read_folder" => {
+                                                            let path = args["path"].as_str().unwrap_or(".");
+                                                            (tool_executor::execute_read_folder(path, &current_dir).await, current_dir.clone())
                                                         },
                                                         "read_file_lines" => {
                                                             let path = args["path"].as_str().unwrap_or("");
@@ -393,6 +412,9 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                                         "calculate" => (format!("Calculation result for: {}", args["expression"]), current_dir.clone()),
                                                         _ => (format!("Unknown tool: {}", func_name), current_dir.clone()),
                                                     };
+                                                    
+                                                    result = handle_large_output(&tc_id, result);
+                                                    
                                                     let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, result));
                                                     let _ = ctx_tx.send(StreamEvent::DebugLog(format!("DIR_UPDATE|{}", new_dir)));
                                                 });
@@ -427,13 +449,16 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 match mouse.kind {
                                     MouseEventKind::ScrollDown => { app.scroll_output_down(); app.should_redraw = true; }
                                     MouseEventKind::ScrollUp => { app.scroll_output_up(); app.should_redraw = true; }
+                                    MouseEventKind::Down(_) => {
+                                        app.is_output_focused = !app.is_output_focused;
+                                        app.should_redraw = true;
+                                    }
                                     _ => {}
                                 }
                             }
                         }
                         _ => {}
                     }
-                    current_event = reader.next().now_or_never().and_then(|e| e);
                 }
             }
 
@@ -469,10 +494,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                         
                         let is_in_tool_call = full_response_content.contains("<|tool_call>") || full_response_content.contains("<tool_call>");
                         let is_in_thought = (full_response_content.contains("<|channel>thought") && !full_response_content.contains("<channel|>"))
-                            || (full_response_content.contains("<thought>") && !full_response_content.contains("</thought>"))
-                            || (full_response_content.contains("<|think|>") && !full_response_content.contains("<|thought|>") && !full_response_content.contains("<|tool_call>"))
-                            || (full_response_content.contains("<|thought|>") && !full_response_content.contains("<channel|>") && !full_response_content.contains("<|tool_call>"))
-                            || (full_response_content.contains("<|think|>") && !full_response_content.contains("<think|>"));
+                            || (full_response_content.contains("<thought>") && !full_response_content.contains("</thought>"));
 
                         let b_type = if is_in_tool_call {
                             if !full_response_content.contains("<|tool_call|>") && !full_response_content.contains("<tool_call|>") {
@@ -576,6 +598,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                         "run_shell_command" => {
                                             let cmd = args["command"].as_str().unwrap_or("");
                                             tool_executor::execute_shell(cmd, &current_dir).await
+                                        },
+                                        "read_folder" => {
+                                            let path = args["path"].as_str().unwrap_or(".");
+                                            (tool_executor::execute_read_folder(path, &current_dir).await, current_dir.clone())
                                         },
                                         "read_file_lines" => {
                                             let path = args["path"].as_str().unwrap_or("");

@@ -57,6 +57,25 @@ pub async fn execute_read_file_lines(path: &str, start: usize, end: usize, cwd: 
     }
 }
 
+pub async fn execute_read_folder(path: &str, cwd: &str) -> String {
+    let full_path = Path::new(cwd).join(if path.is_empty() { "." } else { path });
+    match fs::read_dir(&full_path) {
+        Ok(entries) => {
+            let mut items = Vec::new();
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    let file_name = entry.file_name().to_string_lossy().to_string();
+                    let file_type = entry.file_type().map(|t| if t.is_dir() { "DIR" } else { "FILE" }).unwrap_or("UNKNOWN");
+                    items.push(format!("[{}] {}", file_type, file_name));
+                }
+            }
+            items.sort();
+            items.join("\n")
+        }
+        Err(e) => format!("ERROR: Failed to read directory {}: {}", full_path.display(), e),
+    }
+}
+
 pub async fn execute_search_text(pattern: &str, path: &str, cwd: &str) -> String {
     let search_path = if path.is_empty() { "." } else { path };
 

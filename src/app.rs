@@ -175,6 +175,15 @@ impl App {
     pub fn add_segment(&mut self, content: String, b_type: BlockType) {
         let mut cleaned_content = MARKER_REGEX.replace_all(&content, "").to_string();
         
+        if b_type == BlockType::ToolCall && cleaned_content.contains("read_folder") {
+             if let Some(Ok((tc, _))) = crate::parser::find_tool_call(&content, true) {
+                 if tc.function.name == "read_folder" {
+                     let path = tc.function.arguments["path"].as_str().unwrap_or(".");
+                     cleaned_content = format!("Reading folder: `{}`", path);
+                 }
+             }
+        }
+
         if b_type == BlockType::ToolCall && cleaned_content.contains("write_file") {
              if let Some(Ok((tc, _))) = crate::parser::find_tool_call(&content, true) {
                  if tc.function.name == "write_file" {
