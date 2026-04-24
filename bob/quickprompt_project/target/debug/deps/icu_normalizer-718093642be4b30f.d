@@ -1,0 +1,10 @@
+/var/home/maxfridbe/Dev/vibecoding/lethetic/bob/quickprompt_project/target/debug/deps/icu_normalizer-718093642be4b30f.d: /var/home/maxfridbe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/lib.rs /var/home/maxfridbe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/properties.rs /var/home/maxfridbe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/provider.rs /var/home/maxfridbe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/uts46.rs
+
+/var/home/maxfridbe/Dev/vibecoding/lethetic/bob/quickprompt_project/target/debug/deps/libicu_normalizer-718093642be4b30f.rlib: /var/home/maxfridbe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/lib.rs /var/home/maxfridbe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/properties.rs /var/home/maxfridbe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/provider.rs /var/home/maxfridbe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/uts46.rs
+
+/var/home/maxfridbe/Dev/vibecoding/lethetic/bob/quickprompt_project/target/debug/deps/libicu_normalizer-718093642be4b30f.rmeta: /var/home/maxfridbe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/lib.rs /var/home/maxfridbe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/properties.rs /var/home/maxfridbe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/provider.rs /var/home/maxfridbe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/uts46.rs
+
+/var/home/maxfridbe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/lib.rs:
+/var/home/maxfridbe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/properties.rs:
+/var/home/maxfridbe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/provider.rs:
+/var/home/maxfridbe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/icu_normalizer-2.2.0/src/uts46.rs:
