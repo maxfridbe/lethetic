@@ -1,9 +1,10 @@
+use tokio_util::sync::CancellationToken;
 use tokio::process::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
 use reqwest::Client;
 
-pub async fn execute_shell(command: &str, cwd: &str) -> (String, String) {
+pub async fn execute_shell(command: &str, cwd: &str, cancellation_token: CancellationToken) -> (String, String) {
     // Check if the command starts with 'cd' to update the persistent state
     let mut final_cwd = PathBuf::from(cwd);
     if command.trim().starts_with("cd ") {
@@ -21,33 +22,51 @@ pub async fn execute_shell(command: &str, cwd: &str) -> (String, String) {
         }
     }
 
-    let output = Command::new("bash")
+    let child = Command::new("bash")
         .arg("-c")
         .arg(command)
         .current_dir(&final_cwd)
-        .output()
-        .await;
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("Failed to spawn bash");
 
-    let res_str = match output {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            let status = out.status.code().map_or("signaled".to_string(), |c| c.to_string());
-            format!("EXIT_CODE: {}\nSTDOUT:\n{}\nSTDERR:\n{}", status, stdout, stderr)
+    let res_str = tokio::select! {
+        _ = cancellation_token.cancelled() => {
+            format!("EXIT_CODE: signaled\nCWD: {}\nSTDOUT:\n[Process Killed by User]\nSTDERR:\n[Process Killed by User]", final_cwd.display())
         }
-        Err(e) => format!("ERROR: {}", e),
+        output = child.wait_with_output() => {
+            match output {
+                Ok(out) => {
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    let status = out.status.code().map_or("signaled".to_string(), |c| c.to_string());
+                    format!("EXIT_CODE: {}\nCWD: {}\nSTDOUT:\n{}\nSTDERR:\n{}", status, final_cwd.display(), stdout, stderr)
+                }
+                Err(e) => format!("ERROR: {}", e),
+            }
+        }
     };
 
     (res_str, final_cwd.display().to_string())
 }
 
-pub async fn execute_read_file_lines(path: &str, start: usize, end: usize, cwd: &str) -> String {
+pub async fn execute_read_file(path: &str, cwd: &str) -> String {
+    let full_path = Path::new(cwd).join(path);
+    match fs::read_to_string(&full_path) {
+        Ok(content) => content,
+        Err(e) => format!("ERROR: Failed to read file {}: {}", full_path.display(), e),
+    }
+}
+
+pub async fn execute_read_file_lines(path: &str, start_line: usize, end_line: usize, cwd: &str) -> String {
     let full_path = Path::new(cwd).join(path);
     match fs::read_to_string(&full_path) {
         Ok(content) => {
             let lines: Vec<&str> = content.lines().collect();
-            let start = start.saturating_sub(1);
-            let end = end.min(lines.len());
+            let start = start_line.saturating_sub(1);
+            let end = end_line.min(lines.len());
             if start >= lines.len() || start > end {
                 return format!("ERROR: Invalid line range {}-{} for file with {} lines", start + 1, end, lines.len());
             }

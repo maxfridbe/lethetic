@@ -11,3 +11,8 @@ last-response
 requests
 responses
 responses.jsonl
+
+# Scratch and experimental C files
+compile_cube.sh
+cube.c
+main.c

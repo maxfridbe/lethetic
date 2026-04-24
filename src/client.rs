@@ -39,14 +39,14 @@ pub struct Timings {
 pub enum StreamEvent {
     Chunk(String),
     ToolCalls(Vec<ToolCall>),
-    ToolResult(Option<String>, String, String),
+    ToolResult(Option<String>, String, String, String), // (id, func_name, result, current_dir)
     Done(Option<u32>, Option<u64>),
     Error(String),
     DebugLog(String),
     TokenUpdate(u32, f64), // (count, ms)
 }
 
-pub fn trigger_llm_request(client: Client, config: Config, context_manager: &ContextManager, tx: mpsc::UnboundedSender<StreamEvent>, token: CancellationToken, _is_debug: bool) {
+pub fn trigger_llm_request(client: Client, config: Config, context_manager: &ContextManager, tx: mpsc::UnboundedSender<StreamEvent>, token: CancellationToken, _is_debug: bool, session_dir: Option<String>) {
     let raw_prompt = context_manager.get_raw_prompt();
     
     let mut req_body = json!({
@@ -79,17 +79,17 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
     let req_id = chrono::Local::now().format("%Y%m%d_%H%M%S_%f").to_string();
     let sep = format!("\n//-------------{}-------------------------------------------\n", req_id);
 
-    let prefix = ".lethetic/".to_string();
+    let prefix = session_dir.clone().unwrap_or_else(|| ".lethetic/".to_string());
     let _ = fs::create_dir_all(&prefix);
 
     if let Ok(full_req_json) = serde_json::to_string_pretty(&req_body) {
-        let _ = fs::write(format!("{}last_context", prefix), &full_req_json);
-        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}requests", prefix)) {
+        let _ = fs::write(format!("{}/last_context", prefix), &full_req_json);
+        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}/requests", prefix)) {
             let _ = write!(file, "{}{}", sep, full_req_json);
         }
     }
-    let _ = fs::write(format!("{}last-response", prefix), "");
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}responses.jsonl", prefix)) {
+    let _ = fs::write(format!("{}/last-response", prefix), "");
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}/responses.jsonl", prefix)) {
         let _ = write!(file, "{}", sep);
     }
 
@@ -120,7 +120,7 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
                                     trimmed
                                 };
 
-                                if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}responses.jsonl", prefix_clone)) {
+                                if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}/responses.jsonl", prefix_clone)) {
                                     let _ = write!(file, "{}", json_str);
                                 }
 
@@ -129,10 +129,10 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
                                         if !gen_res.response.is_empty() {
                                             let _ = log_tx.send(StreamEvent::Chunk(gen_res.response.clone()));
                                             if !token.is_cancelled() {
-                                                if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}responses", prefix_clone)) {
+                                                if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}/responses", prefix_clone)) {
                                                     let _ = write!(file, "{}", gen_res.response);
                                                 }
-                                                if let Ok(mut file) = std::fs::OpenOptions::new().create(true).open(format!("{}last-response", prefix_clone)) {
+                                                if let Ok(mut file) = std::fs::OpenOptions::new().create(true).open(format!("{}/last-response", prefix_clone)) {
                                                     let _ = write!(file, "{}", gen_res.response);
                                                 }
                                             }

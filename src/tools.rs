@@ -20,6 +20,27 @@ pub fn get_standard_tools() -> Vec<Tool> {
         Tool {
             tool_type: "function".to_string(),
             function: FunctionDefinition {
+                name: "read_file".to_string(),
+                description: "Read the complete content of a file".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "The path to the file"
+                        },
+                        "tool_call_id": {
+                            "type": "string",
+                            "description": "Required tracking ID"
+                        }
+                    },
+                    "required": ["path", "tool_call_id"]
+                }),
+            },
+        },
+        Tool {
+            tool_type: "function".to_string(),
+            function: FunctionDefinition {
                 name: "read_file_lines".to_string(),
                 description: "Read a specific range of lines from a file".to_string(),
                 parameters: json!({
@@ -145,6 +166,35 @@ pub fn get_standard_tools() -> Vec<Tool> {
         Tool {
             tool_type: "function".to_string(),
             function: FunctionDefinition {
+                name: "replace_text".to_string(),
+                description: "Replace a literal string within a file with a new string. MUST match exactly one occurrence.".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "The path to the file to modify"
+                        },
+                        "old_string": {
+                            "type": "string",
+                            "description": "The exact literal string to find and replace"
+                        },
+                        "new_string": {
+                            "type": "string",
+                            "description": "The new literal string to replace with"
+                        },
+                        "tool_call_id": {
+                            "type": "string",
+                            "description": "Required tracking ID"
+                        }
+                    },
+                    "required": ["path", "old_string", "new_string", "tool_call_id"]
+                }),
+            },
+        },
+        Tool {
+            tool_type: "function".to_string(),
+            function: FunctionDefinition {
                 name: "calculate".to_string(),
                 description: "Perform a mathematical calculation".to_string(),
                 parameters: json!({
@@ -160,6 +210,27 @@ pub fn get_standard_tools() -> Vec<Tool> {
                         }
                     },
                     "required": ["expression", "tool_call_id"]
+                }),
+            },
+        },
+        Tool {
+            tool_type: "function".to_string(),
+            function: FunctionDefinition {
+                name: "ask_the_user".to_string(),
+                description: "Ask the user for data, clarification, or to make a decision. Use this to pause execution and wait for human input.".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "question": {
+                            "type": "string",
+                            "description": "The question to ask the user"
+                        },
+                        "tool_call_id": {
+                            "type": "string",
+                            "description": "Required tracking ID"
+                        }
+                    },
+                    "required": ["question", "tool_call_id"]
                 }),
             },
         },

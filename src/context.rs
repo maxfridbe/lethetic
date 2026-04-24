@@ -1,6 +1,7 @@
 use tiktoken_rs::cl100k_base;
 use serde::{Deserialize, Serialize};
 use once_cell::sync::Lazy;
+use std::cell::Cell;
 
 static TOKENIZER: Lazy<tiktoken_rs::CoreBPE> = Lazy::new(|| cl100k_base().unwrap());
 
@@ -27,6 +28,8 @@ pub struct ContextManager {
     max_tokens: usize,
     messages: Vec<Message>,
     system_prompt: Option<String>,
+    cwd: String,
+    cached_token_count: Cell<Option<usize>>,
 }
 
 impl ContextManager {
@@ -35,6 +38,15 @@ impl ContextManager {
             max_tokens,
             messages: Vec::new(),
             system_prompt,
+            cwd: ".".to_string(),
+            cached_token_count: Cell::new(None),
+        }
+    }
+
+    pub fn set_cwd(&mut self, cwd: String) {
+        if self.cwd != cwd {
+            self.cwd = cwd;
+            self.add_message("system", &format!("Current working directory: {}", self.cwd));
         }
     }
 
@@ -48,6 +60,11 @@ impl ContextManager {
             content: content.to_string(),
             tool_calls: None,
         });
+        self.trim_context();
+    }
+
+    pub fn add_message_raw(&mut self, msg: Message) {
+        self.messages.push(msg);
         self.trim_context();
     }
 
@@ -94,6 +111,15 @@ impl ContextManager {
 
         for msg in &self.messages {
             match msg.role.as_str() {
+                "system" => {
+                    if current_turn_role == "model" {
+                        prompt.push_str("<turn|>\n");
+                    }
+                    prompt.push_str("<|turn>system\n<|think|>\n");
+                    prompt.push_str(&msg.content);
+                    prompt.push_str("<turn|>\n");
+                    current_turn_role = String::new();
+                }
                 "user" => {
                     if current_turn_role == "model" {
                         prompt.push_str("<turn|>\n");
@@ -155,19 +181,27 @@ impl ContextManager {
         }
 
         if current_turn_role != "model" {
-            prompt.push_str("<|turn>model\n<|channel>thought\n<channel|>");
+            prompt.push_str("<|turn>model\n<|channel>thought\n");
         }
+
         
         prompt
     }
 
     pub fn get_token_count(&self) -> usize {
-        TOKENIZER.encode_with_special_tokens(&self.get_raw_prompt()).len()
+        if let Some(count) = self.cached_token_count.get() {
+            return count;
+        }
+        let count = TOKENIZER.encode_with_special_tokens(&self.get_raw_prompt()).len();
+        self.cached_token_count.set(Some(count));
+        count
     }
 
     fn trim_context(&mut self) {
+        self.cached_token_count.set(None);
         while self.get_token_count() > self.max_tokens && !self.messages.is_empty() {
             self.messages.remove(0);
+            self.cached_token_count.set(None);
         }
     }
 }

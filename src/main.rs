@@ -1,10 +1,10 @@
 use std::env;
 use crossterm::{
-    event::{self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, Event, EventStream, KeyEventKind, MouseEventKind},
+    event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, Event, EventStream, KeyEventKind, MouseEventKind, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use futures_util::{StreamExt, FutureExt};
+use futures_util::StreamExt;
 use ratatui::{
     backend::CrosstermBackend,
     Terminal,
@@ -81,7 +81,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture, EnableBracketedPaste)?;
+    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -109,12 +109,14 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
     let client = Client::new();
     let mut cancellation_token = CancellationToken::new();
     let mut app = App::new(config);
+    app.context_manager.set_cwd(app.current_dir.clone());
     
     app.context_manager.add_message("user", &prompt);
     println!("\n{} User: {}\n", icons::INPUT, prompt);
     
     let mut full_response_content = String::new();
-    trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false);
+    app.context_manager.set_cwd(app.current_dir.clone());
+    trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false, app.current_session_dir.clone());
 
     loop {
         match rx.recv().await {
@@ -139,7 +141,7 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                             let (mut result, new_dir) = match tc.function.name.as_str() {
                                 "run_shell_command" => {
                                     let cmd = tc.function.arguments["command"].as_str().unwrap_or("");
-                                    tool_executor::execute_shell(cmd, &app.current_dir).await
+                                    tool_executor::execute_shell(cmd, &app.current_dir, cancellation_token.clone()).await
                                 },
                                 "read_folder" => {
                                     let path = tc.function.arguments["path"].as_str().unwrap_or(".");
@@ -188,7 +190,8 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                             
                             full_response_content.clear();
                             cancellation_token = CancellationToken::new();
-                            trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false);
+                            app.context_manager.set_cwd(app.current_dir.clone());
+                            trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false, app.current_session_dir.clone());
                             continue; 
                         }
                         Some(Err((err_msg, _))) => {
@@ -199,7 +202,8 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                             app.context_manager.add_tool_message("raw_call".to_string(), "syntax_error", &format!("Syntax Error in tool call: {}", err_msg));
                             full_response_content.clear();
                             cancellation_token = CancellationToken::new();
-                            trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false);
+                            app.context_manager.set_cwd(app.current_dir.clone());
+                            trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false, app.current_session_dir.clone());
                             continue;
                         }
                         None => {}
@@ -211,14 +215,15 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                     Some(Ok((tc, _))) => {
                         println!("\n\n{} [TOOL CALL: {}]", icons::COMMAND, tc.function.name);
                         println!("Arguments: {}", tc.function.arguments);
-                        
-                        let assistant_content = full_response_content.clone();
-                        app.context_manager.add_message("assistant", &assistant_content);
+                        cancellation_token.cancel();
+                        cancellation_token = CancellationToken::new();
+
+                        let assistant_content = full_response_content.clone();                        app.context_manager.add_message("assistant", &assistant_content);
 
                         let (mut result, new_dir) = match tc.function.name.as_str() {
                             "run_shell_command" => {
                                 let cmd = tc.function.arguments["command"].as_str().unwrap_or("");
-                                tool_executor::execute_shell(cmd, &app.current_dir).await
+                                tool_executor::execute_shell(cmd, &app.current_dir, cancellation_token.clone()).await
                             },
                             "read_folder" => {
                                 let path = tc.function.arguments["path"].as_str().unwrap_or(".");
@@ -256,7 +261,8 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                         
                         full_response_content.clear();
                         cancellation_token = CancellationToken::new();
-                        trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false);
+                        app.context_manager.set_cwd(app.current_dir.clone());
+    trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false, app.current_session_dir.clone());
                         continue;
                     }
                     Some(Err((err_msg, _))) => {
@@ -266,7 +272,8 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                         app.context_manager.add_tool_message("raw_call".to_string(), "syntax_error", &format!("Syntax Error in tool call: {}", err_msg));
                         full_response_content.clear();
                         cancellation_token = CancellationToken::new();
-                        trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false);
+                        app.context_manager.set_cwd(app.current_dir.clone());
+    trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false, app.current_session_dir.clone());
                         continue;
                     }
                     None => {}
@@ -305,6 +312,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
     let mut reader = EventStream::new();
     
     let mut last_tick = std::time::Instant::now();
+    let mut last_save = std::time::Instant::now();
     let mut full_response_content = String::new();
 
     let stats_tx = tx.clone();
@@ -332,6 +340,12 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
             app.should_redraw = false;
         }
 
+        // Periodic save check (every 2 seconds if needed)
+        if app.needs_save && last_save.elapsed() >= Duration::from_secs(2) {
+            app.save_session();
+            last_save = std::time::Instant::now();
+        }
+
         let timeout = Duration::from_millis(16);
         
         tokio::select! {
@@ -340,23 +354,59 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                     match event {
                         Event::Key(key) => {
                             if key.kind == KeyEventKind::Press {
+                                // Global Ctrl+C handler
+                                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                                    if app.is_processing {
+                                        cancellation_token.cancel();
+                                        app.is_processing = false;
+                                        app.add_segment(format!("\n{} [STOPPED]\n", icons::WARNING), BlockType::Text);
+                                        while let Ok(_) = rx.try_recv() {}
+                                        app.should_redraw = true;
+                                        continue;
+                                    } else {
+                                        app.save_session();
+                                        return Ok(());
+                                    }
+                                }
+
                                 match handle_key(app, key) {
-                                    AppEventOutcome::Exit => return Ok(()),
-                                    AppEventOutcome::ToggleMouse => {
-                                        app.mouse_enabled = !app.mouse_enabled;
-                                        if app.mouse_enabled { execute!(io::stdout(), EnableMouseCapture)?; }
-                                        else { execute!(io::stdout(), DisableMouseCapture)?; }
+                                    AppEventOutcome::Exit => { app.save_session(); return Ok(()); },
+                                    AppEventOutcome::NewSession => {
+                                        app.start_new_session();
+                                        app.should_redraw = true;
+                                    }
+                                    AppEventOutcome::ResumeSession(filename) => {
+                                        app.load_session(&filename);
+                                        app.should_redraw = true;
+                                    }
+                                    AppEventOutcome::DeleteSession(filename) => {
+                                        let _ = std::fs::remove_dir_all(filename);
+                                        app.refresh_session_list();
                                         app.should_redraw = true;
                                     }
                                     AppEventOutcome::SendPrompt(prompt) => {
-                                        app.add_segment(prompt.clone(), BlockType::User);
-                                        app.context_manager.add_message("user", &prompt);
-                                        app.is_processing = true;
-                                        app.tool_calls_processed_this_request = false;
-                                        app.tool_call_pos = None;
-                                        full_response_content.clear();
-                                        cancellation_token = CancellationToken::new();
-                                        trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), app.show_debug);
+                                        if app.is_asking_user {
+                                            app.is_asking_user = false;
+                                            app.add_segment(prompt.clone(), BlockType::User);
+                                            app.context_manager.add_message("user", &prompt);
+                                            
+                                            if let Some(tool_call) = app.pending_tool_call.take() {
+                                                let tc_id = tool_call.id.clone();
+                                                let func_name = tool_call.function.name.clone();
+                                                let _ = tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, prompt, app.current_dir.clone()));
+                                            }
+                                        } else {
+                                            app.add_segment(prompt.clone(), BlockType::User);
+                                            app.context_manager.add_message("user", &prompt);
+                                            app.is_processing = true;
+                                            app.tool_calls_processed_this_request = false;
+                                            app.tool_call_pos = None;
+                                            full_response_content.clear();
+                                            cancellation_token = CancellationToken::new();
+                                            app.request_start_time = Some(tokio::time::Instant::now());
+                                            app.context_manager.set_cwd(app.current_dir.clone());
+                                            trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), app.show_debug, app.current_session_dir.clone());
+                                        }
                                     }
                                     AppEventOutcome::ToolApproved(approved, always) => {
                                         if let Some(tool_call) = app.pending_tool_call.take() {
@@ -368,15 +418,20 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                                 let current_dir = app.current_dir.clone();
                                                 
                                                 let ctx_tx = tx.clone();
+                                                let tool_cancel = cancellation_token.clone();
                                                 tokio::spawn(async move {
                                                     let (mut result, new_dir) = match func_name.as_str() {
                                                         "run_shell_command" => {
                                                             let cmd = args["command"].as_str().unwrap_or("");
-                                                            tool_executor::execute_shell(cmd, &current_dir).await
+                                                            tool_executor::execute_shell(cmd, &current_dir, tool_cancel).await
                                                         },
                                                         "read_folder" => {
                                                             let path = args["path"].as_str().unwrap_or(".");
                                                             (tool_executor::execute_read_folder(path, &current_dir).await, current_dir.clone())
+                                                        },
+                                                        "read_file" => {
+                                                            let path = args["path"].as_str().unwrap_or("");
+                                                            (tool_executor::execute_read_file(path, &current_dir).await, current_dir.clone())
                                                         },
                                                         "read_file_lines" => {
                                                             let path = args["path"].as_str().unwrap_or("");
@@ -415,7 +470,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                                     
                                                     result = handle_large_output(&tc_id, result);
                                                     
-                                                    let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, result));
+                                                    let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, result, new_dir.clone()));
                                                     let _ = ctx_tx.send(StreamEvent::DebugLog(format!("DIR_UPDATE|{}", new_dir)));
                                                 });
                                                 app.is_processing = true;
@@ -444,210 +499,231 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 app.should_redraw = true;
                             }
                         }
-                        Event::Mouse(mouse) => {
-                            if app.mouse_enabled {
-                                match mouse.kind {
-                                    MouseEventKind::ScrollDown => { app.scroll_output_down(); app.should_redraw = true; }
-                                    MouseEventKind::ScrollUp => { app.scroll_output_up(); app.should_redraw = true; }
-                                    MouseEventKind::Down(_) => {
-                                        app.is_output_focused = !app.is_output_focused;
-                                        app.should_redraw = true;
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
                         _ => {}
                     }
                 }
             }
 
-            Some(stream_event) = rx.recv() => {
-                match stream_event {
-                    StreamEvent::DebugLog(msg) => {
-                        if msg.starts_with("STATS|") {
-                            let parts: Vec<&str> = msg.split('|').collect();
-                            if parts.len() == 3 {
-                                app.memory_usage = parts[1].parse().unwrap_or(0);
-                                app.git_status = parts[2].to_string();
+            // DRAIN THE CHANNEL: Process all waiting events before drawing
+            Some(mut stream_event) = rx.recv() => {
+                loop {
+                    match stream_event {
+                        StreamEvent::DebugLog(msg) => {
+                            if msg.starts_with("STATS|") {
+                                let parts: Vec<&str> = msg.split('|').collect();
+                                if parts.len() == 3 {
+                                    app.memory_usage = parts[1].parse().unwrap_or(0);
+                                    app.git_status = parts[2].to_string();
+                                    app.should_redraw = true;
+                                }
+                            } else if msg.starts_with("DIR_UPDATE|") {
+                                app.current_dir = msg[11..].to_string();
                                 app.should_redraw = true;
-                            }
-                        } else if msg.starts_with("DIR_UPDATE|") {
-                            app.current_dir = msg[11..].to_string();
-                            app.should_redraw = true;
-                        } else {
-                            app.log_debug(&msg);
-                        }
-                    }
-                    StreamEvent::TokenUpdate(count, ms) => {
-                        if ms > 0.0 {
-                            app.tokens_per_s = (count as f64 / (ms / 1000.0)).max(0.0);
-                            app.should_redraw = true;
-                        }
-                    }
-                    StreamEvent::Chunk(chunk) => {
-                        if !app.is_processing { continue; }
-                        full_response_content.push_str(&chunk);
-                        
-                        // Update context length display in real-time
-                        app.should_redraw = true;
-                        
-                        let is_in_tool_call = full_response_content.contains("<|tool_call>") || full_response_content.contains("<tool_call>");
-                        let is_in_thought = (full_response_content.contains("<|channel>thought") && !full_response_content.contains("<channel|>"))
-                            || (full_response_content.contains("<thought>") && !full_response_content.contains("</thought>"));
-
-                        let b_type = if is_in_tool_call {
-                            if !full_response_content.contains("<|tool_call|>") && !full_response_content.contains("<tool_call|>") {
-                                BlockType::Formulating
                             } else {
-                                BlockType::ToolCall
-                            }
-                        } else if is_in_thought || chunk.contains("<thought>") || chunk.contains("<|channel>thought") {
-                            BlockType::Thought
-                        } else if full_response_content.contains("```") {
-                            BlockType::Markdown
-                        } else {
-                            BlockType::Text
-                        };
-                        app.add_segment(chunk, b_type);
-
-                        let is_complete = full_response_content.contains("<|tool_call|>") || full_response_content.contains("<tool_call|>");
-                        if is_complete && !app.tool_calls_processed_this_request {
-                            match parser::find_tool_call(&full_response_content, true) {
-                                Some(Ok((tc, pos))) => {
-                                    handle_tool_call(app, vec![tc], pos, tx.clone(), &mut cancellation_token, &full_response_content, false);
-                                }
-                                Some(Err((err_msg, pos))) => {
-                                    app.log_debug(&format!("Tool call syntax error: {}", err_msg));
-                                    cancellation_token.cancel();
-                                    app.is_processing = false;
-                                    app.add_segment(format!("\n{} [SYNTAX ERROR] {}\n", icons::WARNING, err_msg), BlockType::Text);
-                                    app.context_manager.add_message("assistant", &full_response_content);
-                                    let _ = tx.send(StreamEvent::ToolResult(Some("raw_call".to_string()), "syntax_error".to_string(), format!("Syntax Error in tool call: {}", err_msg)));
-                                }
-                                None => {}
+                                app.log_debug(&msg);
                             }
                         }
-                    }
-                    StreamEvent::ToolCalls(calls) => {
-                        if !app.tool_calls_processed_this_request {
-                            handle_tool_call(app, calls, full_response_content.len(), tx.clone(), &mut cancellation_token, &full_response_content, true);
-                        }
-                    }
-                    StreamEvent::ToolResult(id, func_name, mut result) => {
-                        let success = if result.contains("EXIT_CODE: ") { result.contains("EXIT_CODE: 0") } else { true };
-                        
-                        let tc_id_str = id.clone().unwrap_or_else(|| "unknown".to_string());
-                        result = handle_large_output(&tc_id_str, result);
-                        
-                        app.add_segment(format!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, result), BlockType::ToolResult);
-                        if let Some(last) = app.blocks.last_mut() { last.success = Some(success); }
-                        if let Some(tc_id) = id { app.context_manager.add_tool_message(tc_id, &func_name, &result); }
-                        
-                        app.is_processing = true;
-                        app.tool_calls_processed_this_request = false;
-                        app.tool_call_pos = None;
-                        full_response_content.clear();
-                        cancellation_token = CancellationToken::new();
-                        trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), app.show_debug);
-                    }
-                    StreamEvent::Done(eval_count, eval_duration) => {
-                        app.is_processing = false;
-                        if !app.tool_calls_processed_this_request {
-                            match parser::find_tool_call(&full_response_content, true) {
-                                Some(Ok((tc, pos))) => {
-                                    handle_tool_call(app, vec![tc], pos, tx.clone(), &mut cancellation_token, &full_response_content, false);
+                        StreamEvent::TokenUpdate(count, ms) => {
+                            if ms > 0.0 {
+                                app.tokens_per_s = (count as f64 / (ms / 1000.0)).max(0.0);
+                                app.should_redraw = true;
+                            } else if let Some(start) = app.request_start_time {
+                                let elapsed = start.elapsed().as_secs_f64();
+                                if elapsed > 0.0 {
+                                    app.tokens_per_s = (count as f64 / elapsed).max(0.0);
+                                    app.should_redraw = true;
                                 }
-                                Some(Err((err_msg, pos))) => {
-                                    app.log_debug(&format!("Tool call syntax error on Done: {}", err_msg));
-                                    app.add_segment(format!("\n{} [SYNTAX ERROR] {}\n", icons::WARNING, err_msg), BlockType::Text);
-                                    app.context_manager.add_message("assistant", &full_response_content);
-                                    let _ = tx.send(StreamEvent::ToolResult(Some("raw_call".to_string()), "syntax_error".to_string(), format!("Syntax Error in tool call: {}", err_msg)));
-                                }
-                                None => {}
                             }
                         }
-
-                        if !app.tool_calls_processed_this_request {
-                            let messages = app.context_manager.get_messages();
-                            if messages.last().map_or(true, |m| m.role != "assistant") {
-                                app.context_manager.add_message("assistant", &full_response_content);
-                            }
-                        }
-
-                        if let (Some(count), Some(duration)) = (eval_count, eval_duration) {
-                            app.tokens_per_s = (count as f64 / (duration as f64 / 1_000_000_000.0)).max(0.0);
-                        }
-                        app.should_redraw = true;
-
-                        if app.tool_calls_processed_this_request && app.shell_approval_mode == ApprovalMode::Always {
-                            if let Some(tool_call) = app.pending_tool_call.take() {
-                                let tc_id = tool_call.id.clone();
-                                let func_name = tool_call.function.name.clone();
-                                let args = tool_call.function.arguments.clone();
-                                let current_dir = app.current_dir.clone();
+                        StreamEvent::Chunk(chunk) => {
+                            if app.is_processing {
+                                full_response_content.push_str(&chunk);
+                                app.should_redraw = true;
                                 
+                                // Robust detection of whether we are currently inside a special block
+                                let last_tool_open = full_response_content.rfind("<|tool_call").or_else(|| full_response_content.rfind("<tool_call"));
+                                let last_tool_close = full_response_content.rfind("<|tool_call|>").or_else(|| full_response_content.rfind("<tool_call|>"));
+                                let is_in_tool_call = last_tool_open.is_some() && (last_tool_close.is_none() || last_tool_open > last_tool_close);
+
+                                let last_thought_open = full_response_content.rfind("<|channel>thought")
+                                    .or_else(|| full_response_content.rfind("<thought>"))
+                                    .or_else(|| full_response_content.rfind("<think>"));
+                                let last_thought_close = full_response_content.rfind("<channel|>")
+                                    .or_else(|| full_response_content.rfind("</thought>"))
+                                    .or_else(|| full_response_content.rfind("</think>"));
+                                
+                                // In Gemma 4, the response starts with the thought channel by default.
+                                // If we haven't seen any close tags yet, and we aren't in a tool call, we are thinking.
+                                let is_in_thought = if let Some(close_pos) = last_thought_close {
+                                    // If we saw a close, we are only in thought if a new one opened AFTER that close
+                                    last_thought_open.is_some() && last_thought_open.unwrap() > close_pos
+                                } else {
+                                    // No close tag seen yet. If we also haven't seen a tool call start, 
+                                    // assume we are in the default initial thought channel.
+                                    last_tool_open.is_none()
+                                };
+
+                                let b_type = if is_in_tool_call {
+                                    BlockType::Formulating
+                                } else if is_in_thought {
+                                    BlockType::Thought
+                                } else if full_response_content.contains("```") {
+                                    BlockType::Markdown
+                                } else {
+                                    BlockType::Text
+                                };
+                                
+                                app.add_segment(chunk, b_type);
+
+                                let is_complete = last_tool_close.is_some() && (last_tool_open.is_none() || last_tool_close > last_tool_open);
+                                if is_complete && !app.tool_calls_processed_this_request {
+                                    match parser::find_tool_call(&full_response_content, true) {
+                                        Some(Ok((tc, pos))) => {
+                                            handle_tool_call(app, vec![tc], pos, tx.clone(), &mut cancellation_token, &full_response_content, false);
+                                        }
+                                        Some(Err((err_msg, _pos))) => {
+                                            app.log_debug(&format!("Tool call syntax error: {}", err_msg));
+                                            cancellation_token.cancel();
+                                            app.is_processing = false;
+                                            app.add_segment(format!("\n{} [SYNTAX ERROR] {}\n", icons::WARNING, err_msg), BlockType::Text);
+                                            app.context_manager.add_message("assistant", &full_response_content);
+                                            let _ = tx.send(StreamEvent::ToolResult(Some("raw_call".to_string()), "syntax_error".to_string(), format!("Syntax Error in tool call: {}", err_msg), app.current_dir.clone()));
+                                        }
+                                        None => {}
+                                    }
+                                }
+                            }
+                        }
+                        StreamEvent::ToolCalls(calls) => {
+                            if !app.tool_calls_processed_this_request {
+                                handle_tool_call(app, calls, full_response_content.len(), tx.clone(), &mut cancellation_token, &full_response_content, true);
+                            }
+                        }
+                        StreamEvent::ToolResult(id, func_name, mut result, new_dir) => {
+                            let success = if result.contains("EXIT_CODE: ") { result.contains("EXIT_CODE: 0") } else { true };
+                            
+                            app.current_dir = new_dir;
+                            let tc_id_str = id.clone().unwrap_or_else(|| "unknown".to_string());
+                            result = handle_large_output(&tc_id_str, result);
+                            
+                            app.add_segment(format!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, result), BlockType::ToolResult);
+                            if let Some(last) = app.blocks.last_mut() { last.success = Some(success); }
+                            if let Some(tc_id) = id { app.context_manager.add_tool_message(tc_id, &func_name, &result); }
+                            
+                            app.is_processing = true;
+                            app.tool_calls_processed_this_request = false;
+                            app.tool_call_pos = None;
+                            full_response_content.clear();
+                            cancellation_token = CancellationToken::new();
+                            app.request_start_time = Some(tokio::time::Instant::now());
+                            app.context_manager.set_cwd(app.current_dir.clone());
+                            trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), app.show_debug, app.current_session_dir.clone());
+                        }
+                        StreamEvent::Done(eval_count, eval_duration) => {
+                            app.is_processing = false;
+                            if !app.tool_calls_processed_this_request {
+                                match parser::find_tool_call(&full_response_content, true) {
+                                    Some(Ok((tc, pos))) => {
+                                        handle_tool_call(app, vec![tc], pos, tx.clone(), &mut cancellation_token, &full_response_content, false);
+                                    }
+                                    _ => {}
+                                }
+                            }
+
+                            if !app.tool_calls_processed_this_request {
                                 let messages = app.context_manager.get_messages();
                                 if messages.last().map_or(true, |m| m.role != "assistant") {
                                     app.context_manager.add_message("assistant", &full_response_content);
                                 }
+                            }
 
-                                let ctx_tx = tx.clone();
-                                tokio::spawn(async move {
-                                    let (result, new_dir) = match func_name.as_str() {
-                                        "run_shell_command" => {
-                                            let cmd = args["command"].as_str().unwrap_or("");
-                                            tool_executor::execute_shell(cmd, &current_dir).await
-                                        },
-                                        "read_folder" => {
-                                            let path = args["path"].as_str().unwrap_or(".");
-                                            (tool_executor::execute_read_folder(path, &current_dir).await, current_dir.clone())
-                                        },
-                                        "read_file_lines" => {
-                                            let path = args["path"].as_str().unwrap_or("");
-                                            let start = args["start_line"].as_u64().unwrap_or(1) as usize;
-                                            let end = args["end_line"].as_u64().unwrap_or(1) as usize;
-                                            (tool_executor::execute_read_file_lines(path, start, end, &current_dir).await, current_dir.clone())
-                                        },
-                                        "search_text" => {
-                                            let pattern = args["pattern"].as_str().unwrap_or("");
-                                            let path = args["path"].as_str().unwrap_or(".");
-                                            (tool_executor::execute_search_text(pattern, path, &current_dir).await, current_dir.clone())
-                                        },
-                                        "apply_patch" => {
-                                            let path = args["path"].as_str().unwrap_or("");
-                                            let patch = args["patch"].as_str().unwrap_or("");
-                                            (tool_executor::execute_apply_patch(path, patch, &current_dir).await, current_dir.clone())
-                                        },
-                                        "replace_text" => {
-                                            let path = args["path"].as_str().unwrap_or("");
-                                            let old_string = args["old_string"].as_str().unwrap_or("");
-                                            let new_string = args["new_string"].as_str().unwrap_or("");
-                                            (tool_executor::execute_replace_text(path, old_string, new_string, &current_dir).await, current_dir.clone())
-                                        },
-                                        "write_file" => {
-                                            let path = args["path"].as_str().unwrap_or("");
-                                            let content = args["content"].as_str().unwrap_or("");
-                                            (tool_executor::execute_write_file(path, content, &current_dir).await, current_dir.clone())
-                                        },
-                                        "web_fetch" => {
-                                            let url = args["url"].as_str().unwrap_or("");
-                                            (tool_executor::execute_web_fetch(url).await, current_dir.clone())
-                                        },
-                                        "calculate" => (format!("Calculation result for: {}", args["expression"]), current_dir.clone()),
-                                        _ => (format!("Unknown tool: {}", func_name), current_dir.clone()),
-                                    };
-                                    let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, result));
-                                    let _ = ctx_tx.send(StreamEvent::DebugLog(format!("DIR_UPDATE|{}", new_dir)));
-                                });
-                                app.is_processing = true;
+                            if let (Some(count), Some(duration)) = (eval_count, eval_duration) {
+                                app.tokens_per_s = (count as f64 / (duration as f64 / 1_000_000_000.0)).max(0.0);
+                            } else if let Some(start) = app.request_start_time {
+                                // Fallback for servers that don't provide duration in Done
+                                let elapsed = start.elapsed().as_secs_f64();
+                                if elapsed > 0.0 {
+                                    // Use full_response_content as a proxy for count if eval_count is missing
+                                    let count = eval_count.unwrap_or(full_response_content.split_whitespace().count() as u32);
+                                    app.tokens_per_s = (count as f64 / elapsed).max(0.0);
+                                }
+                            }
+                            app.request_start_time = None;
+                            app.should_redraw = true;
+                            app.save_session(); // Final save on completion
+
+                            if app.tool_calls_processed_this_request && app.shell_approval_mode == ApprovalMode::Always {
+                                if let Some(tool_call) = app.pending_tool_call.take() {
+                                    let tc_id = tool_call.id.clone();
+                                    let func_name = tool_call.function.name.clone();
+                                    let args = tool_call.function.arguments.clone();
+                                    let current_dir = app.current_dir.clone();
+                                    
+                                    let ctx_tx = tx.clone();
+                                    let tool_cancel = cancellation_token.clone();
+                                    tokio::spawn(async move {
+                                        let (result, new_dir) = match func_name.as_str() {
+                                            "run_shell_command" => {
+                                                let cmd = args["command"].as_str().unwrap_or("");
+                                                tool_executor::execute_shell(cmd, &current_dir, tool_cancel).await
+                                            },
+                                            "read_folder" => {
+                                                let path = args["path"].as_str().unwrap_or(".");
+                                                (tool_executor::execute_read_folder(path, &current_dir).await, current_dir.clone())
+                                            },
+                                            "read_file_lines" => {
+                                                let path = args["path"].as_str().unwrap_or("");
+                                                let start = args["start_line"].as_u64().unwrap_or(1) as usize;
+                                                let end = args["end_line"].as_u64().unwrap_or(1) as usize;
+                                                (tool_executor::execute_read_file_lines(path, start, end, &current_dir).await, current_dir.clone())
+                                            },
+                                            "search_text" => {
+                                                let pattern = args["pattern"].as_str().unwrap_or("");
+                                                let path = args["path"].as_str().unwrap_or(".");
+                                                (tool_executor::execute_search_text(pattern, path, &current_dir).await, current_dir.clone())
+                                            },
+                                            "apply_patch" => {
+                                                let path = args["path"].as_str().unwrap_or("");
+                                                let patch = args["patch"].as_str().unwrap_or("");
+                                                (tool_executor::execute_apply_patch(path, patch, &current_dir).await, current_dir.clone())
+                                            },
+                                            "replace_text" => {
+                                                let path = args["path"].as_str().unwrap_or("");
+                                                let old_string = args["old_string"].as_str().unwrap_or("");
+                                                let new_string = args["new_string"].as_str().unwrap_or("");
+                                                (tool_executor::execute_replace_text(path, old_string, new_string, &current_dir).await, current_dir.clone())
+                                            },
+                                            "write_file" => {
+                                                let path = args["path"].as_str().unwrap_or("");
+                                                let content = args["content"].as_str().unwrap_or("");
+                                                (tool_executor::execute_write_file(path, content, &current_dir).await, current_dir.clone())
+                                            },
+                                            "web_fetch" => {
+                                                let url = args["url"].as_str().unwrap_or("");
+                                                (tool_executor::execute_web_fetch(url).await, current_dir.clone())
+                                            },
+                                            "calculate" => (format!("Calculation result for: {}", args["expression"]), current_dir.clone()),
+                                            _ => (format!("Unknown tool: {}", func_name), current_dir.clone()),
+                                        };
+                                        let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, result, new_dir.clone()));
+                                        let _ = ctx_tx.send(StreamEvent::DebugLog(format!("DIR_UPDATE|{}", new_dir)));
+                                    });
+                                    app.is_processing = true;
+                                }
                             }
                         }
+                        StreamEvent::Error(e) => {
+                            app.is_processing = false;
+                            app.add_segment(format!("\n{} ERROR: {}\n", icons::WARNING, e), BlockType::Text);
+                            app.should_redraw = true;
+                        }
                     }
-                    StreamEvent::Error(e) => {
-                        app.is_processing = false;
-                        app.add_segment(format!("\n{} ERROR: {}\n", icons::WARNING, e), BlockType::Text);
-                        app.should_redraw = true;
+
+                    // Attempt to process next available event without yielding
+                    if let Ok(next_event) = rx.try_recv() {
+                        stream_event = next_event;
+                    } else {
+                        break;
                     }
                 }
             }

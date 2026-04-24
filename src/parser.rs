@@ -147,13 +147,35 @@ fn parse_native_block(block: &str) -> Result<crate::context::ToolCall, String> {
                     current = &after_sep[1 + end_quote_pos + 1..];
                 } else { break; }
             } else {
-                let next_comma = after_sep.find(',').unwrap_or(after_sep.len());
+                // Find the next comma that is followed by a valid key pattern, or use the end of string.
+                // A valid key pattern is an identifier followed by a colon.
+                let mut next_comma = after_sep.len();
+                let mut search_start = 0;
+                while let Some(pos) = after_sep[search_start..].find(',') {
+                    let absolute_pos = search_start + pos;
+                    let after_comma = after_sep[absolute_pos + 1..].trim_start();
+                    // Check if it looks like a key: `identifier:` or `"identifier":`
+                    if let Some(colon_pos) = after_comma.find(':') {
+                        let potential_key = after_comma[..colon_pos].trim();
+                        let is_valid_key = !potential_key.is_empty() && potential_key.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '"' || c == '\'');
+                        if is_valid_key {
+                            next_comma = absolute_pos;
+                            break;
+                        }
+                    }
+                    search_start = absolute_pos + 1;
+                }
+
                 let val_str = after_sep[..next_comma].trim();
                 let mut cleaned_val = val_str.to_string();
                 for &m in &markers { cleaned_val = cleaned_val.replace(m, ""); }
                 
                 if let Ok(n) = cleaned_val.parse::<i64>() {
                     args.insert(key, serde_json::Value::Number(n.into()));
+                } else if cleaned_val == "true" {
+                    args.insert(key, serde_json::Value::Bool(true));
+                } else if cleaned_val == "false" {
+                    args.insert(key, serde_json::Value::Bool(false));
                 } else {
                     args.insert(key, serde_json::Value::String(cleaned_val));
                 }

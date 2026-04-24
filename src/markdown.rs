@@ -5,7 +5,7 @@ use ratatui::{
 use pulldown_cmark::{Event, Parser, Tag, CodeBlockKind, TagEnd, Options, HeadingLevel};
 use syntect::easy::HighlightLines;
 use syntect::parsing::SyntaxSet;
-use syntect::highlighting::{ThemeSet, Style as SynStyle};
+use syntect::highlighting::ThemeSet;
 use once_cell::sync::Lazy;
 
 static SYNTAX_SET: Lazy<SyntaxSet> = Lazy::new(SyntaxSet::load_defaults_newlines);
