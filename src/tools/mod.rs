@@ -225,5 +225,6 @@ mod tests {
         let tools = get_all_tools();
         let shell = tools.iter().find(|t| t.function.name == "run_shell_command").unwrap();
         assert!(shell.function.parameters["required"].as_array().unwrap().iter().any(|v| v == "tool_call_id"));
+        assert!(shell.function.parameters["required"].as_array().unwrap().iter().any(|v| v == "description"));
     }
 }

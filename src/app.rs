@@ -43,6 +43,7 @@ pub enum BlockType {
 pub struct RenderBlock {
     pub block_type: BlockType,
     pub content: String,
+    pub title: Option<String>,
     pub success: Option<bool>,
     #[serde(skip)]
     pub cached_lines: Option<Vec<Line<'static>>>,
@@ -138,10 +139,12 @@ impl App {
             input: String::new(),
             cursor_pos: 0,
             blocks: vec![RenderBlock { 
-                block_type: BlockType::Text, 
+                block_type: BlockType::Text,
                 content: "Type a prompt to test tool calling (e.g. 'Run ls'). F12 for debugger.".to_string(),
+                title: None,
                 success: Some(true),
                 cached_lines: None,
+
             }],
             output_state: ListState::default(),
             is_output_focused: false,
@@ -223,6 +226,7 @@ impl App {
         self.blocks.push(RenderBlock { 
             block_type: BlockType::Text, 
             content: "New session started. Type a prompt to begin.".to_string(),
+            title: None,
             success: Some(true),
             cached_lines: None,
         });
@@ -324,33 +328,31 @@ impl App {
         }
     }
 
+    pub fn add_segment_with_title(&mut self, content: String, b_type: BlockType, title: String) {
+        self.add_segment_internal_with_title(content, b_type, Some(title));
+    }
+
     fn add_segment_internal(&mut self, cleaned_content: String, b_type: BlockType) {
+        self.add_segment_internal_with_title(cleaned_content, b_type, None);
+    }
+
+    fn add_segment_internal_with_title(&mut self, cleaned_content: String, b_type: BlockType, title: Option<String>) {
         if cleaned_content.is_empty() && b_type != BlockType::Divider {
             return;
         }
 
-        if b_type == BlockType::ToolCall && cleaned_content.contains("read_folder") {
-             if let Some(Ok((tc, _))) = crate::parser::find_tool_call(&cleaned_content, true) {
-                 if tc.function.name == "read_folder" {
-                     let path = tc.function.arguments["path"].as_str().unwrap_or(".");
-                     self.add_block(format!("Reading folder: `{}`", path), b_type);
-                     return;
-                 }
-             }
-        }
-
-        // ... simplified for brevity, following the same logic as before but using add_block ...
         if let Some(last) = self.blocks.last_mut() {
             if last.block_type == BlockType::Formulating && b_type == BlockType::ToolCall {
                 last.block_type = BlockType::ToolCall;
                 last.content = cleaned_content;
+                last.title = title;
                 last.cached_lines = None;
                 self.should_redraw = true;
                 self.needs_save = true;
                 return;
             }
 
-            if last.block_type == b_type && b_type != BlockType::Divider {
+            if last.block_type == b_type && b_type != BlockType::Divider && last.title == title {
                 last.content.push_str(&cleaned_content);
                 last.cached_lines = None;
                 self.should_redraw = true;
@@ -360,14 +362,15 @@ impl App {
             }
         }
 
-        self.add_block(cleaned_content, b_type);
+        self.add_block(cleaned_content, b_type, title);
     }
 
-    fn add_block(&mut self, content: String, b_type: BlockType) {
+    fn add_block(&mut self, content: String, b_type: BlockType, title: Option<String>) {
         if b_type == BlockType::User && !self.blocks.is_empty() {
              self.blocks.push(RenderBlock {
                 block_type: BlockType::Divider,
                 content: String::new(),
+                title: None,
                 success: None,
                 cached_lines: None,
             });
@@ -383,6 +386,7 @@ impl App {
         self.blocks.push(RenderBlock {
             block_type: b_type,
             content,
+            title,
             success,
             cached_lines: None,
         });
@@ -797,6 +801,7 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
             app.blocks.push(RenderBlock {
                 block_type: BlockType::Text,
                 content: "UI Cleared. (Context preserved)".to_string(),
+                title: None,
                 success: Some(true),
                 cached_lines: None,
             });
@@ -885,13 +890,15 @@ pub fn handle_tool_call(app: &mut App, calls: Vec<ToolCall>, pos: usize, _tx: mp
         
         app.context_manager.add_message("assistant", full_response_content);
 
-        let tool_call_str = &full_response_content[pos..];
-        app.add_segment(tool_call_str.to_string(), BlockType::ToolCall);
-        
         let tool_call = calls[0].clone();
         app.pending_tool_call = Some(tool_call.clone());
-        
+
+        let tool_call_str = &full_response_content[pos..];
+        let description = tool_call.function.arguments["description"].as_str().unwrap_or("Action").to_string();
+        app.add_segment_with_title(tool_call_str.to_string(), BlockType::ToolCall, description);
+
         if tool_call.function.name == "ask_the_user" {
+
             app.is_asking_user = true;
             app.is_processing = false;
         } else if app.shell_approval_mode == ApprovalMode::Always {

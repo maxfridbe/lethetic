@@ -18,22 +18,29 @@ pub fn get_definition() -> Tool {
                         "type": "string",
                         "description": "The path to the directory to list. Defaults to '.' if omitted."
                     },
+                    "description": {
+                        "type": "string",
+                        "description": "Short description of the action"
+                    },
                     "tool_call_id": {
                         "type": "string",
                         "description": "Required tracking ID"
                     }
                 },
-                "required": ["tool_call_id"]
+                "required": ["description", "tool_call_id"]
             }),
         },
     }
 }
 
 pub fn get_prompt_template() -> String {
-    format!("{}declaration:read_folder{{description:<|\">List the names of files and subdirectories directly within a specified directory path.<|\">,parameters:{{properties:{{path:{{description:<|\">The path to the directory to list. Defaults to '.' if omitted.<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">Required tracking ID<|\">,type:<|\">STRING<|\">}}}},required:[<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
+    format!("{}declaration:read_folder{{description:<|\">List the names of files and subdirectories directly within a specified directory path.<|\">,parameters:{{properties:{{path:{{description:<|\">The path to the directory to list. Defaults to '.' if omitted.<|\">,type:<|\">STRING<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">Required tracking ID<|\">,type:<|\">STRING<|\">}}}},required:[<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
 }
 
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {
+    if let Some(desc) = arguments["description"].as_str() {
+        return format!("{} {}", icons::PATH, desc);
+    }
     let path = arguments["path"].as_str().unwrap_or(".");
     format!("{} Reading folder: `{}`", icons::PATH, path)
 }

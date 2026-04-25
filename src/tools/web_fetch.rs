@@ -20,19 +20,26 @@ pub fn get_definition() -> Tool {
                     "url": {
                         "type": "string",
                         "description": "The URL to fetch content from"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Short description of the action"
                     }
                 },
-                "required": ["url", "tool_call_id"]
+                "required": ["url", "description", "tool_call_id"]
             }),
         },
     }
 }
 
 pub fn get_prompt_template() -> String {
-    format!("{}declaration:web_fetch{{description:<|\">Fetch the content of a URL.<|\">,parameters:{{properties:{{tool_call_id:{{description:<|\">Required tracking ID<|\">,type:<|\">STRING<|\">}},url:{{description:<|\">The URL to fetch<|\">,type:<|\">STRING<|\">}}}},required:[<|\">url<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
+    format!("{}declaration:web_fetch{{description:<|\">Fetch the content of a URL.<|\">,parameters:{{properties:{{tool_call_id:{{description:<|\">Required tracking ID<|\">,type:<|\">STRING<|\">}},url:{{description:<|\">The URL to fetch<|\">,type:<|\">STRING<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}}}},required:[<|\">url<|\">,<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
 }
 
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {
+    if let Some(desc) = arguments["description"].as_str() {
+        return format!("{} {}", icons::WEATHER, desc);
+    }
     let url = arguments["url"].as_str().unwrap_or("");
     format!("{} Fetching URL: `{}`", icons::WEATHER, url)
 }

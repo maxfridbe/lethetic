@@ -22,22 +22,29 @@ pub fn get_definition() -> Tool {
                         "type": "string",
                         "description": "The full content to write"
                     },
+                    "description": {
+                        "type": "string",
+                        "description": "Short description of the action"
+                    },
                     "tool_call_id": {
                         "type": "string",
                         "description": "Required tracking ID"
                     }
                 },
-                "required": ["path", "content", "tool_call_id"]
+                "required": ["path", "content", "description", "tool_call_id"]
             }),
         },
     }
 }
 
 pub fn get_prompt_template() -> String {
-    format!("{}declaration:write_file{{description:<|\">Create a new file or overwrite an existing one with the provided content.<|\">,parameters:{{properties:{{content:{{description:<|\">The complete content to write to the file<|\">,type:<|\">STRING<|\">}},path:{{description:<|\">The path to the file to write<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">Required tracking ID<|\">,type:<|\">STRING<|\">}}}},required:[<|\">path<|\">,<|\">content<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
+    format!("{}declaration:write_file{{description:<|\">Create a new file or overwrite an existing one with the provided content.<|\">,parameters:{{properties:{{content:{{description:<|\">The complete content to write to the file<|\">,type:<|\">STRING<|\">}},path:{{description:<|\">The path to the file to write<|\">,type:<|\">STRING<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">Required tracking ID<|\">,type:<|\">STRING<|\">}}}},required:[<|\">path<|\">,<|\">content<|\">,<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
 }
 
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {
+    if let Some(desc) = arguments["description"].as_str() {
+        return format!("{} {}", icons::SUCCESS, desc);
+    }
     let path = arguments["path"].as_str().unwrap_or("");
     format!("{} Writing file: `{}`", icons::SUCCESS, path)
 }

@@ -26,22 +26,29 @@ pub fn get_definition() -> Tool {
                         "type": "integer",
                         "description": "The last line to read (inclusive)"
                     },
+                    "description": {
+                        "type": "string",
+                        "description": "Short description of the action"
+                    },
                     "tool_call_id": {
                         "type": "string",
                         "description": "Required tracking ID"
                     }
                 },
-                "required": ["path", "start_line", "end_line", "tool_call_id"]
+                "required": ["path", "start_line", "end_line", "description", "tool_call_id"]
             }),
         },
     }
 }
 
 pub fn get_prompt_template() -> String {
-    format!("{}declaration:read_file_lines{{description:<|\">Read a specific range of lines from a file.<|\">,parameters:{{properties:{{end_line:{{description:<|\">The line number to end reading at (inclusive)<|\">,type:<|\">INTEGER<|\">}},path:{{description:<|\">The path to the file<|\">,type:<|\">STRING<|\">}},start_line:{{description:<|\">The line number to start reading from<|\">,type:<|\">INTEGER<|\">}},tool_call_id:{{description:<|\">Required tracking ID<|\">,type:<|\">STRING<|\">}}}},required:[<|\">path<|\">,<|\">start_line<|\">,<|\">end_line<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
+    format!("{}declaration:read_file_lines{{description:<|\">Read a specific range of lines from a file.<|\">,parameters:{{properties:{{end_line:{{description:<|\">The line number to end reading at (inclusive)<|\">,type:<|\">INTEGER<|\">}},path:{{description:<|\">The path to the file<|\">,type:<|\">STRING<|\">}},start_line:{{description:<|\">The line number to start reading from<|\">,type:<|\">INTEGER<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">Required tracking ID<|\">,type:<|\">STRING<|\">}}}},required:[<|\">path<|\">,<|\">start_line<|\">,<|\">end_line<|\">,<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
 }
 
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {
+    if let Some(desc) = arguments["description"].as_str() {
+        return format!("{} {}", icons::PATH, desc);
+    }
     let path = arguments["path"].as_str().unwrap_or("");
     let start = arguments["start_line"].as_u64().unwrap_or(1);
     let end = arguments["end_line"].as_u64().unwrap_or(1);

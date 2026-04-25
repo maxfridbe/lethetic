@@ -19,22 +19,29 @@ pub fn get_definition() -> Tool {
                         "type": "string",
                         "description": "The exact bash command to execute"
                     },
+                    "description": {
+                        "type": "string",
+                        "description": "Short description of the action"
+                    },
                     "tool_call_id": {
                         "type": "string",
                         "description": "Required tracking ID"
                     }
                 },
-                "required": ["command", "tool_call_id"]
+                "required": ["command", "description", "tool_call_id"]
             }),
         },
     }
 }
 
 pub fn get_prompt_template() -> String {
-    format!("{}declaration:run_shell_command{{description:<|\">Execute a bash shell command. Only use this if no specialized tool is available.<|\">,parameters:{{properties:{{command:{{description:<|\">The bash command to execute<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">Required tracking ID<|\">,type:<|\">STRING<|\">}}}},required:[<|\">command<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
+    format!("{}declaration:run_shell_command{{description:<|\">Execute a bash shell command. Only use this if no specialized tool is available.<|\">,parameters:{{properties:{{command:{{description:<|\">The bash command to execute<|\">,type:<|\">STRING<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">Required tracking ID<|\">,type:<|\">STRING<|\">}}}},required:[<|\">command<|\">,<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
 }
 
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {
+    if let Some(desc) = arguments["description"].as_str() {
+        return format!("{} {}", icons::SHELL, desc);
+    }
     let command = arguments["command"].as_str().unwrap_or("");
     format!("{} Executing shell command: `{}`", icons::SHELL, command)
 }

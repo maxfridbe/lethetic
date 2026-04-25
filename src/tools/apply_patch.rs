@@ -23,22 +23,29 @@ pub fn get_definition() -> Tool {
                         "type": "string",
                         "description": "The unified diff content to apply"
                     },
+                    "description": {
+                        "type": "string",
+                        "description": "Short description of the action"
+                    },
                     "tool_call_id": {
                         "type": "string",
                         "description": "Required tracking ID"
                     }
                 },
-                "required": ["path", "patch", "tool_call_id"]
+                "required": ["path", "patch", "description", "tool_call_id"]
             }),
         },
     }
 }
 
 pub fn get_prompt_template() -> String {
-    format!("{}declaration:apply_patch{{description:<|\">Apply a unified diff patch to a file.<|\">,parameters:{{properties:{{patch:{{description:<|\">The unified diff patch to apply<|\">,type:<|\">STRING<|\">}},path:{{description:<|\">The path to the file to patch<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">Required tracking ID<|\">,type:<|\">STRING<|\">}}}},required:[<|\">path<|\">,<|\">patch<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
+    format!("{}declaration:apply_patch{{description:<|\">Apply a unified diff patch to a file.<|\">,parameters:{{properties:{{patch:{{description:<|\">The unified diff patch to apply<|\">,type:<|\">STRING<|\">}},path:{{description:<|\">The path to the file to patch<|\">,type:<|\">STRING<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">Required tracking ID<|\">,type:<|\">STRING<|\">}}}},required:[<|\">path<|\">,<|\">patch<|\">,<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
 }
 
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {
+    if let Some(desc) = arguments["description"].as_str() {
+        return format!("{} {}", icons::SUCCESS, desc);
+    }
     let path = arguments["path"].as_str().unwrap_or("");
     format!("{} Applying patch to `{}`", icons::SUCCESS, path)
 }

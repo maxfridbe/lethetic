@@ -444,7 +444,7 @@ fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme) -> Ve
     
     let status_block = Span::styled("█ ", Style::default().fg(block_color));
 
-    let (bg_color, header) = match block.block_type {
+    let (bg_color, mut header) = match block.block_type {
         BlockType::User => (Color::Rgb(30, 35, 45), Some(format!("{} User Request", icons::INPUT))),
         BlockType::Thought => (Color::Rgb(25, 45, 45), Some(format!("{} Engine Thinking...", icons::PROCESSING))),
         BlockType::Formulating => (Color::Rgb(45, 35, 25), Some(format!("{} Formulating tool request...", icons::SPINNER[0]))),
@@ -453,6 +453,14 @@ fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme) -> Ve
         BlockType::Divider => (Color::Reset, None),
         _ => (Color::Reset, None),
     };
+
+    if let Some(ref t) = block.title {
+        header = match block.block_type {
+            BlockType::ToolCall => Some(format!("{} {}", icons::COMMAND, t)),
+            BlockType::ToolResult => Some(format!("{} {}\n, Tool Output:", icons::SUCCESS, t)),
+            _ => Some(t.clone()),
+        };
+    }
 
     let base_style = Style::default().bg(bg_color).fg(theme.output_fg);
 

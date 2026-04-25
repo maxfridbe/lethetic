@@ -16,22 +16,29 @@ pub fn get_definition() -> Tool {
                         "type": "string",
                         "description": "The math expression to evaluate, e.g. '2 + 2' or 'sin(pi/2)'"
                     },
+                    "description": {
+                        "type": "string",
+                        "description": "Short description of the action"
+                    },
                     "tool_call_id": {
                         "type": "string",
                         "description": "Required tracking ID"
                     }
                 },
-                "required": ["expression", "tool_call_id"]
+                "required": ["expression", "description", "tool_call_id"]
             }),
         },
     }
 }
 
 pub fn get_prompt_template() -> String {
-    format!("{}declaration:calculate{{description:<|\">Perform a mathematical calculation<|\">,parameters:{{properties:{{expression:{{description:<|\">The math expression to evaluate, e.g. '2 + 2' or 'sin(pi/2)'<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">Required tracking ID<|\">,type:<|\">STRING<|\">}}}},required:[<|\">expression<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", TOOL_CALL_OPEN, TOOL_CALL_CLOSE)
+    format!("{}declaration:calculate{{description:<|\">Perform a mathematical calculation<|\">,parameters:{{properties:{{expression:{{description:<|\">The math expression to evaluate, e.g. '2 + 2' or 'sin(pi/2)'<|\">,type:<|\">STRING<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">Required tracking ID<|\">,type:<|\">STRING<|\">}}}},required:[<|\">expression<|\">,<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", TOOL_CALL_OPEN, TOOL_CALL_CLOSE)
 }
 
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {
+    if let Some(desc) = arguments["description"].as_str() {
+        return format!("{} {}", icons::CALC, desc);
+    }
     let expr = arguments["expression"].as_str().unwrap_or("");
     format!("{} Calculating: `{}`", icons::CALC, expr)
 }

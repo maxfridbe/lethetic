@@ -448,9 +448,12 @@ func_name.as_str(), &args, &current_dir, tool_cancel).await;
                             
                             let tc_id_str = id.clone().unwrap_or_else(|| "unknown".to_string());
                             result = handle_large_output(&tc_id_str, result);
-                            
-                            app.add_segment(format!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, result), BlockType::ToolResult);
+
+                            let description = app.pending_tool_call.as_ref().and_then(|tc| tc.function.arguments["description"].as_str()).unwrap_or("Action").to_string();
+
+                            app.add_segment_with_title(format!("\n{}\n", result), BlockType::ToolResult, description);
                             if let Some(last) = app.blocks.last_mut() { last.success = Some(success); }
+
                             if let Some(tc_id) = id { app.context_manager.add_tool_message(tc_id, &func_name, &result); }
                             
                             app.is_processing = true;
