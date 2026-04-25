@@ -16,22 +16,15 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use sysinfo::System;
 
-mod context;
-mod tools;
-mod icons;
-mod system_prompt;
-mod markdown;
-mod config;
-mod client;
-mod parser;
-mod app;
-mod ui;
-
-use config::Config;
-use client::{StreamEvent, trigger_llm_request};
-use app::{App, AppEventOutcome, BlockType, handle_key, handle_tool_call, ApprovalMode};
-use ui::ui;
-use tools::get_git_info;
+use lethetic::context;
+use lethetic::config::Config;
+use lethetic::client::{StreamEvent, trigger_llm_request};
+use lethetic::app::{App, AppEventOutcome, BlockType, handle_key, handle_tool_call, ApprovalMode};
+use lethetic::ui::ui;
+use lethetic::tools::get_git_info;
+use lethetic::icons;
+use lethetic::parser;
+use lethetic::parser_new;
 
 fn handle_large_output(id: &str, mut result: String) -> String {
     if result.len() > 10000 {
@@ -115,6 +108,7 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
     
     let mut full_response_content = String::new();
     app.context_manager.set_cwd(app.current_dir.clone());
+    app.parser.reset();
     trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false, app.current_session_dir.clone());
 
     loop {
@@ -123,11 +117,10 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                 print!("{}", chunk);
                 io::Write::flush(&mut io::stdout())?;
                 full_response_content.push_str(&chunk);
+                
+                app.parser.parse_chunk(&chunk);
 
-                let is_complete = full_response_content.contains("<|tool_call|>") 
-                    || full_response_content.contains("<tool_call|>");
-
-                if is_complete {
+                if app.parser.state == lethetic::parser_new::ParserState::Text {
                     match parser::find_tool_call(&full_response_content, true) {
                         Some(Ok((tc, _))) => {
                             println!("\n\n{} [TOOL CALL: {}]", icons::COMMAND, tc.function.name);
@@ -137,7 +130,8 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                             let assistant_content = full_response_content.clone();
                             app.context_manager.add_message("assistant", &assistant_content);
 
-                            let (mut result, new_dir) = crate::tools::execute(tc.function.name.as_str(), &tc.function.arguments, &app.current_dir, cancellation_token.clone()).await;
+                            let (mut result, new_dir) = lethetic::tools::execute(
+tc.function.name.as_str(), &tc.function.arguments, &app.current_dir, cancellation_token.clone()).await;
                             
                             result = handle_large_output(&tc.id, result);
                             
@@ -148,6 +142,7 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                             full_response_content.clear();
                             cancellation_token = CancellationToken::new();
                             app.context_manager.set_cwd(app.current_dir.clone());
+                            app.parser.reset();
                             trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false, app.current_session_dir.clone());
                             continue; 
                         }
@@ -160,6 +155,7 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                             full_response_content.clear();
                             cancellation_token = CancellationToken::new();
                             app.context_manager.set_cwd(app.current_dir.clone());
+                            app.parser.reset();
                             trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false, app.current_session_dir.clone());
                             continue;
                         }
@@ -168,8 +164,9 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                 }
             }
             Some(StreamEvent::Done(_, _)) => {
-                match parser::find_tool_call(&full_response_content, true) {
-                    Some(Ok((tc, _))) => {
+                if app.parser.state == lethetic::parser_new::ParserState::Text {
+                    match parser::find_tool_call(&full_response_content, true) {
+                        Some(Ok((tc, _))) => {
                         println!("\n\n{} [TOOL CALL: {}]", icons::COMMAND, tc.function.name);
                         println!("Arguments: {}", tc.function.arguments);
                         cancellation_token.cancel();
@@ -178,7 +175,8 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                         let assistant_content = full_response_content.clone();
                         app.context_manager.add_message("assistant", &assistant_content);
 
-                        let (mut result, new_dir) = crate::tools::execute(tc.function.name.as_str(), &tc.function.arguments, &app.current_dir, cancellation_token.clone()).await;
+                        let (mut result, new_dir) = lethetic::tools::execute(
+tc.function.name.as_str(), &tc.function.arguments, &app.current_dir, cancellation_token.clone()).await;
                         
                         result = handle_large_output(&tc.id, result);
                         
@@ -189,22 +187,13 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                         full_response_content.clear();
                         cancellation_token = CancellationToken::new();
                         app.context_manager.set_cwd(app.current_dir.clone());
-    trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false, app.current_session_dir.clone());
+                        app.parser.reset();
+                        trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false, app.current_session_dir.clone());
                         continue;
                     }
-                    Some(Err((err_msg, _))) => {
-                        println!("\n\n{} [SYNTAX ERROR: {}]", icons::WARNING, err_msg);
-                        let assistant_content = full_response_content.clone();
-                        app.context_manager.add_message("assistant", &assistant_content);
-                        app.context_manager.add_tool_message("raw_call".to_string(), "syntax_error", &format!("Syntax Error in tool call: {}", err_msg));
-                        full_response_content.clear();
-                        cancellation_token = CancellationToken::new();
-                        app.context_manager.set_cwd(app.current_dir.clone());
-    trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false, app.current_session_dir.clone());
-                        continue;
-                    }
-                    None => {}
+                    _ => {}
                 }
+            }
 
                 if !full_response_content.is_empty() {
                      let messages = app.context_manager.get_messages();
@@ -332,7 +321,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             cancellation_token = CancellationToken::new();
                                             app.request_start_time = Some(tokio::time::Instant::now());
                                             app.context_manager.set_cwd(app.current_dir.clone());
-                                            trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), app.show_debug, app.current_session_dir.clone());
+                                            app.parser.reset();
+                            trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), app.show_debug, app.current_session_dir.clone());
                                         }
                                     }
                                     AppEventOutcome::ToolApproved(approved, always) => {
@@ -348,7 +338,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                                 let tool_cancel = cancellation_token.clone();
                                                 app.is_executing_tool = true;
                                                 tokio::spawn(async move {
-                                                    let (mut result, new_dir) = crate::tools::execute(func_name.as_str(), &args, &current_dir, tool_cancel).await;
+                                                    let (mut result, new_dir) = lethetic::tools::execute(
+func_name.as_str(), &args, &current_dir, tool_cancel).await;
                                                     
                                                     result = handle_large_output(&tc_id, result);
                                                     
@@ -422,43 +413,12 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 full_response_content.push_str(&chunk);
                                 app.should_redraw = true;
                                 
-                                // Robust detection of whether we are currently inside a special block
-                                let last_tool_open = full_response_content.rfind("<|tool_call").or_else(|| full_response_content.rfind("<tool_call"));
-                                let last_tool_close = full_response_content.rfind("<|tool_call|>").or_else(|| full_response_content.rfind("<tool_call|>"));
-                                let is_in_tool_call = last_tool_open.is_some() && (last_tool_close.is_none() || last_tool_open > last_tool_close);
+                                let segments = app.parser.parse_chunk(&chunk);
+                                for (b_type, content) in segments {
+                                    app.add_segment(content, b_type);
+                                }
 
-                                let last_thought_open = full_response_content.rfind("<|channel>thought")
-                                    .or_else(|| full_response_content.rfind("<thought>"))
-                                    .or_else(|| full_response_content.rfind("<think>"));
-                                let last_thought_close = full_response_content.rfind("<channel|>")
-                                    .or_else(|| full_response_content.rfind("</thought>"))
-                                    .or_else(|| full_response_content.rfind("</think>"));
-                                
-                                // In Gemma 4, the response starts with the thought channel by default.
-                                // If we haven't seen any close tags yet, and we aren't in a tool call, we are thinking.
-                                let is_in_thought = if let Some(close_pos) = last_thought_close {
-                                    // If we saw a close, we are only in thought if a new one opened AFTER that close
-                                    last_thought_open.is_some() && last_thought_open.unwrap() > close_pos
-                                } else {
-                                    // No close tag seen yet. If we also haven't seen a tool call start, 
-                                    // assume we are in the default initial thought channel.
-                                    last_tool_open.is_none()
-                                };
-
-                                let b_type = if is_in_tool_call {
-                                    BlockType::Formulating
-                                } else if is_in_thought {
-                                    BlockType::Thought
-                                } else if full_response_content.contains("```") {
-                                    BlockType::Markdown
-                                } else {
-                                    BlockType::Text
-                                };
-                                
-                                app.add_segment(chunk, b_type);
-
-                                let is_complete = last_tool_close.is_some() && (last_tool_open.is_none() || last_tool_close > last_tool_open);
-                                if is_complete && !app.tool_calls_processed_this_request {
+                                if app.parser.state == lethetic::parser_new::ParserState::Text && !app.tool_calls_processed_this_request {
                                     match parser::find_tool_call(&full_response_content, true) {
                                         Some(Ok((tc, pos))) => {
                                             handle_tool_call(app, vec![tc], pos, tx.clone(), &mut cancellation_token, &full_response_content, false);
@@ -500,11 +460,12 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             cancellation_token = CancellationToken::new();
                             app.request_start_time = Some(tokio::time::Instant::now());
                             app.context_manager.set_cwd(app.current_dir.clone());
+                            app.parser.reset();
                             trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), app.show_debug, app.current_session_dir.clone());
                         }
                         StreamEvent::Done(eval_count, eval_duration) => {
                             app.is_processing = false;
-                            if !app.tool_calls_processed_this_request {
+                            if app.parser.state == lethetic::parser_new::ParserState::Text && !app.tool_calls_processed_this_request {
                                 match parser::find_tool_call(&full_response_content, true) {
                                     Some(Ok((tc, pos))) => {
                                         handle_tool_call(app, vec![tc], pos, tx.clone(), &mut cancellation_token, &full_response_content, false);
@@ -546,7 +507,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                     let tool_cancel = cancellation_token.clone();
                                     app.is_executing_tool = true;
                                     tokio::spawn(async move {
-                                        let (mut result, new_dir) = crate::tools::execute(func_name.as_str(), &args, &current_dir, tool_cancel).await;
+                                        let (mut result, new_dir) = lethetic::tools::execute(
+func_name.as_str(), &args, &current_dir, tool_cancel).await;
                                         result = handle_large_output(&tc_id, result);
                                         let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, result, new_dir.clone()));
                                         let _ = ctx_tx.send(StreamEvent::DebugLog(format!("DIR_UPDATE|{}", new_dir)));

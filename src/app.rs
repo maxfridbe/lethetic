@@ -13,6 +13,7 @@ use crate::icons;
 use crate::system_prompt::get_expert_engineer_prompt;
 use crate::ui::Theme;
 use crate::client::{StreamEvent};
+use crate::parser_new::StreamParser;
 use ratatui::text::Line;
 
 static MARKER_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"<\|?/?(?:channel|thought|tool_call|tool_response|turn|bos|eos|think|\||\x22|')[^>]*>?(?:thought|text|model|system)?").unwrap());
@@ -117,6 +118,7 @@ pub struct App {
     pub is_asking_user: bool,
     pub prompt_cursor_pos: usize,
     pub prompt_scroll: usize,
+    pub parser: StreamParser,
 }
 
 impl App {
@@ -198,6 +200,7 @@ impl App {
             is_asking_user: false,
             prompt_cursor_pos: system_prompt.len(),
             prompt_scroll: 0,
+            parser: StreamParser::new(),
         };
 
         app.refresh_session_list();
