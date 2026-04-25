@@ -1,0 +1,10 @@
+running: cd "/var/home/maxfridbe/Dev/vibecoding/lethetic/ignore/spinning_cube/target/debug/build/raylib-sys-7700928ff93ae52f/out/build" && CMAKE_PREFIX_PATH="" LC_ALL="C" "cmake" "/var/home/maxfridbe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/raylib-sys-5.5.1/./raylib" "-B" "/var/home/maxfridbe/Dev/vibecoding/lethetic/ignore/spinning_cube/target/debug/build/raylib-sys-7700928ff93ae52f/out/build" "-DCMAKE_BUILD_TYPE=Debug" "-DBUILD_EXAMPLES=OFF" "-DCMAKE_BUILD_TYPE=Debug" "-DSUPPORT_BUSY_WAIT_LOOP=OFF" "-DSUPPORT_FILEFORMAT_JPG=ON" "-DUSE_WAYLAND=OFF" "-DOPENGL_VERSION=OFF" "-DSUPPORT_SCREEN_CAPTURE=ON" "-DSUPPORT_GIF_RECORDING=ON" "-DPLATFORM=Desktop" "-DCMAKE_INSTALL_PREFIX=/var/home/maxfridbe/Dev/vibecoding/lethetic/ignore/spinning_cube/target/debug/build/raylib-sys-7700928ff93ae52f/out" "-DCMAKE_C_FLAGS= -ffunction-sections -fdata-sections -fPIC -m64 -w" "-DCMAKE_C_COMPILER=/usr/bin/cc" "-DCMAKE_CXX_FLAGS= -ffunction-sections -fdata-sections -fPIC -m64 -w" "-DCMAKE_CXX_COMPILER=/usr/bin/c++" "-DCMAKE_ASM_FLAGS= -ffunction-sections -fdata-sections -fPIC -m64 -w" "-DCMAKE_ASM_COMPILER=/usr/bin/cc"
+CMake Warning:
+  Manually-specified variables were not used by the project:
+
+    CMAKE_ASM_COMPILER
+    CMAKE_ASM_FLAGS
+    USE_WAYLAND
+
+
+running: cd "/var/home/maxfridbe/Dev/vibecoding/lethetic/ignore/spinning_cube/target/debug/build/raylib-sys-7700928ff93ae52f/out/build" && LC_ALL="C" MAKEFLAGS="-j --jobserver-fds=8,9 --jobserver-auth=8,9" "cmake" "--build" "/var/home/maxfridbe/Dev/vibecoding/lethetic/ignore/spinning_cube/target/debug/build/raylib-sys-7700928ff93ae52f/out/build" "--target" "install" "--config" "Debug"

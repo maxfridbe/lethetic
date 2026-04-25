@@ -1,0 +1,48 @@
+use serde_json::json;
+use crate::tools::{Tool, FunctionDefinition};
+use super::icons;
+use super::llm_tokens;
+use std::fs;
+use std::path::Path;
+
+pub fn get_definition() -> Tool {
+    Tool {
+        tool_type: "function".to_string(),
+        function: FunctionDefinition {
+            name: "read_file".to_string(),
+            description: "Read the complete content of a file".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The path to the file"
+                    },
+                    "tool_call_id": {
+                        "type": "string",
+                        "description": "Required tracking ID"
+                    }
+                },
+                "required": ["path", "tool_call_id"]
+            }),
+        },
+    }
+}
+
+pub fn get_prompt_template() -> String {
+    format!("{}declaration:read_file{{description:<|\">Read the complete content of a file.<|\">,parameters:{{properties:{{path:{{description:<|\">The path to the file<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">Required tracking ID<|\">,type:<|\">STRING<|\">}}}},required:[<|\">path<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
+}
+
+pub fn get_ui_description(arguments: &serde_json::Value) -> String {
+    let path = arguments["path"].as_str().unwrap_or("");
+    format!("{} Reading file: `{}`", icons::PATH, path)
+}
+
+pub async fn execute(path: &str, cwd: &str) -> String {
+
+    let full_path = Path::new(cwd).join(path);
+    match fs::read_to_string(&full_path) {
+        Ok(content) => content,
+        Err(e) => format!("ERROR: Failed to read file {}: {}", full_path.display(), e),
+    }
+}

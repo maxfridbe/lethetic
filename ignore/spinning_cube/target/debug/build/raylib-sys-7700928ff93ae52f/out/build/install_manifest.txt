@@ -1,0 +1,7 @@
+/var/home/maxfridbe/Dev/vibecoding/lethetic/ignore/spinning_cube/target/debug/build/raylib-sys-7700928ff93ae52f/out/lib/libraylib.a
+/var/home/maxfridbe/Dev/vibecoding/lethetic/ignore/spinning_cube/target/debug/build/raylib-sys-7700928ff93ae52f/out/include/raylib.h
+/var/home/maxfridbe/Dev/vibecoding/lethetic/ignore/spinning_cube/target/debug/build/raylib-sys-7700928ff93ae52f/out/include/rlgl.h
+/var/home/maxfridbe/Dev/vibecoding/lethetic/ignore/spinning_cube/target/debug/build/raylib-sys-7700928ff93ae52f/out/include/raymath.h
+/var/home/maxfridbe/Dev/vibecoding/lethetic/ignore/spinning_cube/target/debug/build/raylib-sys-7700928ff93ae52f/out/lib/pkgconfig/raylib.pc
+/var/home/maxfridbe/Dev/vibecoding/lethetic/ignore/spinning_cube/target/debug/build/raylib-sys-7700928ff93ae52f/out/lib/cmake/raylib/raylib-config-version.cmake
+/var/home/maxfridbe/Dev/vibecoding/lethetic/ignore/spinning_cube/target/debug/build/raylib-sys-7700928ff93ae52f/out/lib/cmake/raylib/raylib-config.cmake

@@ -17,4 +17,5 @@ pub const OUTPUT: &str = "󰗊";      // nf-md-message_text
 pub const DEBUG: &str = "󰃤";       // nf-md-bug
 pub const PATH: &str = "󰝰";        // nf-md-folder
 pub const GIT: &str = "󰊢";         // nf-md-git
-pub const SPINNER: &[&str] = &["⠋", "󱑊", "⠙", "󱑋", "⠹", "󱑌", "⠸", "󱑍", "⠼", "󱑎", "⠴", "󱑏", "⠦", "󱑐", "⠧", "󱑑", "⠇", "󱑒", "⠏", "󱑓"];
+pub const SPINNER: &[&str] = &["◰", "◳", "◲", "◱"];
+pub const TOOL_SPINNER: &[&str] = &["⢎ ", "⠎⠁", "⠊⠑", "⠈⠱", " ⠱", "⠠⠰", "⠄⠄", "⠆⠄"];
