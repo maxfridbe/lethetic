@@ -346,6 +346,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                                 
                                                 let ctx_tx = tx.clone();
                                                 let tool_cancel = cancellation_token.clone();
+                                                app.is_executing_tool = true;
                                                 tokio::spawn(async move {
                                                     let (mut result, new_dir) = crate::tools::execute(func_name.as_str(), &args, &current_dir, tool_cancel).await;
                                                     
@@ -481,9 +482,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             }
                         }
                         StreamEvent::ToolResult(id, func_name, mut result, new_dir) => {
+                            app.is_executing_tool = false;
+                            app.current_dir = new_dir;
                             let success = if result.contains("EXIT_CODE: ") { result.contains("EXIT_CODE: 0") } else { true };
                             
-                            app.current_dir = new_dir;
                             let tc_id_str = id.clone().unwrap_or_else(|| "unknown".to_string());
                             result = handle_large_output(&tc_id_str, result);
                             
@@ -542,6 +544,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                     
                                     let ctx_tx = tx.clone();
                                     let tool_cancel = cancellation_token.clone();
+                                    app.is_executing_tool = true;
                                     tokio::spawn(async move {
                                         let (mut result, new_dir) = crate::tools::execute(func_name.as_str(), &args, &current_dir, tool_cancel).await;
                                         result = handle_large_output(&tc_id, result);

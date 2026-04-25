@@ -88,6 +88,8 @@ pub struct App {
     pub shell_approval_mode: ApprovalMode,
     pub show_approval_prompt: bool,
     pub spinner_index: usize,
+    pub tool_spinner_index: usize,
+    pub is_executing_tool: bool,
     pub show_debug: bool,
     pub debug_log: Vec<String>,
     pub should_redraw: bool,
@@ -167,6 +169,8 @@ impl App {
             shell_approval_mode: ApprovalMode::None,
             show_approval_prompt: false,
             spinner_index: 0,
+            tool_spinner_index: 0,
+            is_executing_tool: false,
             show_debug: true,
             debug_log: Vec::new(),
             should_redraw: true,
@@ -459,6 +463,7 @@ impl App {
     }
     pub fn tick_spinner(&mut self) {
         self.spinner_index = (self.spinner_index + 1) % icons::SPINNER.len();
+        self.tool_spinner_index = (self.tool_spinner_index + 1) % icons::TOOL_SPINNER.len();
         self.should_redraw = true;
     }
 

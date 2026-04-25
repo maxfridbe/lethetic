@@ -63,6 +63,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         .split(main_layout[0]);
 
     let title = if app.show_approval_prompt { format!("{} Approval Required", icons::WARNING) } 
+                else if app.is_executing_tool { format!("{} {} Executing Tool...", icons::TOOL_SPINNER[app.tool_spinner_index], icons::COMMAND) }
                 else if app.is_processing { format!("{} {} Lethetic Intelligence Engine Processing...", icons::SPINNER[app.spinner_index], icons::PROCESSING) } 
                 else { format!("{} Output", icons::OUTPUT) };
 
