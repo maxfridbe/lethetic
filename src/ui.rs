@@ -1,12 +1,61 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
+    text::{Line, Span, Text},
     widgets::{Block as UIBlock, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 use crate::app::{App, BlockType, RenderBlock};
 use crate::icons;
 use crate::markdown;
+
+fn render_json_highlighted(json_val: &serde_json::Value) -> Text<'static> {
+    let pretty = match serde_json::to_string_pretty(json_val) {
+        Ok(s) => s,
+        Err(_) => format!("{:?}", json_val),
+    };
+
+    let mut lines = Vec::new();
+    for line in pretty.lines() {
+        let mut spans = Vec::new();
+        let trimmed = line.trim_start();
+        let indent = &line[..line.len() - trimmed.len()];
+        
+        if !indent.is_empty() {
+            spans.push(Span::raw(indent.to_string()));
+        }
+
+        if trimmed.starts_with('"') {
+            if let Some(colon_pos) = trimmed.find(':') {
+                // It's a key
+                let key = &trimmed[..colon_pos];
+                let rest = &trimmed[colon_pos..];
+                spans.push(Span::styled(key.to_string(), Style::default().fg(Color::Cyan)));
+                
+                // Colorize the value part
+                let value_part = rest.trim_start_matches(':').trim();
+                spans.push(Span::raw(": "));
+                if value_part.starts_with('"') {
+                    spans.push(Span::styled(value_part.to_string(), Style::default().fg(Color::Yellow)));
+                } else if value_part == "true" || value_part == "false" || value_part == "null" {
+                    spans.push(Span::styled(value_part.to_string(), Style::default().fg(Color::LightRed)));
+                } else if value_part.chars().next().map_or(false, |c| c.is_ascii_digit() || c == '-') {
+                    spans.push(Span::styled(value_part.to_string(), Style::default().fg(Color::LightMagenta)));
+                } else {
+                    spans.push(Span::raw(value_part.to_string()));
+                }
+            } else {
+                // Just a string (maybe in an array)
+                spans.push(Span::styled(trimmed.to_string(), Style::default().fg(Color::Yellow)));
+            }
+        } else if trimmed == "{" || trimmed == "}" || trimmed == "[" || trimmed == "]" || trimmed == "}," || trimmed == "]," {
+            spans.push(Span::styled(trimmed.to_string(), Style::default().fg(Color::Gray)));
+        } else {
+            spans.push(Span::raw(trimmed.to_string()));
+        }
+        lines.push(Line::from(spans));
+    }
+    Text::from(lines)
+}
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Theme {
@@ -255,23 +304,51 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     }
 
     if app.show_approval_prompt {
-        let area = centered_rect(70, 50, f.area());
+        let area = centered_rect(70, 60, f.area());
         f.render_widget(Clear, area);
         if let Some(tc) = &app.pending_tool_call {
-            let args_str = format!("{}", tc.function.arguments);
-            let display_args = if args_str.len() > 500 {
-                format!("{}... [Truncated for display]", &args_str[..500])
-            } else {
-                args_str
-            };
-            
-            let text = format!("Tool: {}\nParams:\n{}\n\n(A)lways Allow | (O)nce | (D)eny", tc.function.name, display_args);
-            f.render_widget(Paragraph::new(text).block(UIBlock::default().title(format!("{} Security Confirmation", icons::WARNING)).borders(Borders::ALL)).style(Style::default().fg(Color::Red)).wrap(Wrap { trim: false }), area);
+            let json_text = render_json_highlighted(&tc.function.arguments);
+
+            let mut display_text = Text::from(vec![
+                Line::from(vec![
+                    Span::styled("Tool: ", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::styled(&tc.function.name, Style::default().fg(Color::LightGreen)),
+                ]),
+                Line::from("Params:"),
+            ]);
+
+            // Add JSON lines with possible truncation
+            let max_lines = 15;
+            let mut lines_added = 0;
+            for line in json_text.lines {
+                if lines_added >= max_lines {
+                    display_text.lines.push(Line::from(Span::styled("... [Truncated for display]", Style::default().fg(Color::DarkGray))));
+                    break;
+                }
+                display_text.lines.push(line);
+                lines_added += 1;
+            }
+
+            display_text.lines.push(Line::from(""));
+            display_text.lines.push(Line::from(vec![
+                Span::styled("(A)", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::raw("lways Allow | "),
+                Span::styled("(O)", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::raw("nce | "),
+                Span::styled("(D)", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::raw("eny"),
+            ]));
+
+            let block = UIBlock::default()
+                .title(format!("{} Security Confirmation", icons::WARNING))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow));
+
+            f.render_widget(Paragraph::new(display_text).block(block).wrap(Wrap { trim: false }), area);
         } else {
             app.show_approval_prompt = false;
         }
     }
-
     if app.show_prompt_editor {
         let full_area = centered_rect(80, 80, f.area());
         f.render_widget(Clear, full_area);
