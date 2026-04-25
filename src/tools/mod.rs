@@ -96,6 +96,126 @@ pub fn get_ui_description(func_name: &str, arguments: &serde_json::Value) -> Str
     }
 }
 
+pub async fn execute(func_name: &str, arguments: &serde_json::Value, cwd: &str, cancellation_token: tokio_util::sync::CancellationToken) -> (String, String) {
+    match func_name {
+        "read_file" => {
+            let path = arguments["path"].as_str().unwrap_or("");
+            (read_file::execute(path, cwd).await, cwd.to_string())
+        }
+        "read_file_lines" => {
+            let path = arguments["path"].as_str().unwrap_or("");
+            let start = arguments["start_line"].as_u64().unwrap_or(1) as usize;
+            let end = arguments["end_line"].as_u64().unwrap_or(1) as usize;
+            (read_file_lines::execute(path, start, end, cwd).await, cwd.to_string())
+        }
+        "read_folder" => {
+            let path = arguments["path"].as_str().unwrap_or(".");
+            (read_folder::execute(path, cwd).await, cwd.to_string())
+        }
+        "search_text" => {
+            let pattern = arguments["pattern"].as_str().unwrap_or("");
+            let path = arguments["path"].as_str().unwrap_or(".");
+            (search_text::execute(pattern, path, cwd).await, cwd.to_string())
+        }
+        "apply_patch" => {
+            let path = arguments["path"].as_str().unwrap_or("");
+            let patch = arguments["patch"].as_str().unwrap_or("");
+            (apply_patch::execute(path, patch, cwd).await, cwd.to_string())
+        }
+        "run_shell_command" => {
+            let command = arguments["command"].as_str().unwrap_or("");
+            run_shell_command::execute(command, cwd, cancellation_token).await
+        }
+        "write_file" => {
+            let path = arguments["path"].as_str().unwrap_or("");
+            let content = arguments["content"].as_str().unwrap_or("");
+            (write_file::execute(path, content, cwd).await, cwd.to_string())
+        }
+        "replace_text" => {
+            let path = arguments["path"].as_str().unwrap_or("");
+            let old_string = arguments["old_string"].as_str().unwrap_or("");
+            let new_string = arguments["new_string"].as_str().unwrap_or("");
+            (replace_text::execute(path, old_string, new_string, cwd).await, cwd.to_string())
+        }
+        "web_fetch" => {
+            let url = arguments["url"].as_str().unwrap_or("");
+            (web_fetch::execute(url).await, cwd.to_string())
+        }
+        "calculate" => {
+            let expression = arguments["expression"].as_str().unwrap_or("");
+            (calculate::execute(expression).await, cwd.to_string())
+        }
+        "ask_the_user" => {
+            // This is handled specially in the app, but we can return the question if called here
+            let question = arguments["question"].as_str().unwrap_or("");
+            (question.to_string(), cwd.to_string())
+        }
+        "code_snippet" => {
+            let name = arguments["name"].as_str().unwrap_or("");
+            (format!("Snippet '{}' stored.", name), cwd.to_string())
+        }
+        _ => (format!("Unknown tool: {}", func_name), cwd.to_string()),
+    }
+}
+
+pub async fn get_git_info() -> String {
+    use tokio::process::Command;
+    let status = Command::new("git")
+        .arg("status")
+        .arg("--porcelain=v2")
+        .arg("--branch")
+        .output()
+        .await;
+
+    match status {
+        Ok(out) => {
+            let s = String::from_utf8_lossy(&out.stdout);
+            if s.trim().is_empty() { return "clean".to_string(); }
+
+            let mut branch = String::from("unknown");
+            let mut untracked = 0;
+            let mut modified = 0;
+            let mut staged = 0;
+            let mut renamed = 0;
+            let mut deleted = 0;
+
+            for line in s.lines() {
+                if line.starts_with("# branch.head") {
+                    branch = line.split_whitespace().nth(2).unwrap_or("detached").to_string();
+                } else if line.starts_with("?") {
+                    untracked += 1;
+                } else if line.starts_with("1 ") || line.starts_with("2 ") {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() > 1 {
+                        let codes = parts[1];
+                        let staged_code = codes.chars().nth(0).unwrap_or('.');
+                        let unstaged_code = codes.chars().nth(1).unwrap_or('.');
+                        
+                        if staged_code != '.' { staged += 1; }
+                        if unstaged_code == 'M' { modified += 1; }
+                        if unstaged_code == 'D' { deleted += 1; }
+                        if staged_code == 'R' { renamed += 1; }
+                    }
+                }
+            }
+
+            let mut res = format!(" {}", branch);
+            if staged > 0 { res.push_str(&format!(" +{}", staged)); }
+            if modified > 0 { res.push_str(&format!(" ~{}", modified)); }
+            if deleted > 0 { res.push_str(&format!(" -{}", deleted)); }
+            if untracked > 0 { res.push_str(&format!(" ?{}", untracked)); }
+            if renamed > 0 { res.push_str(&format!(" r{}", renamed)); }
+            
+            if staged == 0 && modified == 0 && untracked == 0 && deleted == 0 && renamed == 0 {
+                format!(" {} (clean)", branch)
+            } else {
+                res
+            }
+        }
+        Err(_) => "not a git repo".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

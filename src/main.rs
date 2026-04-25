@@ -24,7 +24,6 @@ mod markdown;
 mod config;
 mod client;
 mod parser;
-mod tool_executor;
 mod app;
 mod ui;
 
@@ -32,7 +31,7 @@ use config::Config;
 use client::{StreamEvent, trigger_llm_request};
 use app::{App, AppEventOutcome, BlockType, handle_key, handle_tool_call, ApprovalMode};
 use ui::ui;
-use tool_executor::get_git_info;
+use tools::get_git_info;
 
 fn handle_large_output(id: &str, mut result: String) -> String {
     if result.len() > 10000 {
@@ -138,49 +137,7 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                             let assistant_content = full_response_content.clone();
                             app.context_manager.add_message("assistant", &assistant_content);
 
-                            let (mut result, new_dir) = match tc.function.name.as_str() {
-                                "run_shell_command" => {
-                                    let cmd = tc.function.arguments["command"].as_str().unwrap_or("");
-                                    tool_executor::execute_shell(cmd, &app.current_dir, cancellation_token.clone()).await
-                                },
-                                "read_folder" => {
-                                    let path = tc.function.arguments["path"].as_str().unwrap_or(".");
-                                    (tool_executor::execute_read_folder(path, &app.current_dir).await, app.current_dir.clone())
-                                },
-                                "read_file_lines" => {
-                                    let path = tc.function.arguments["path"].as_str().unwrap_or("");
-                                    let start = tc.function.arguments["start_line"].as_u64().unwrap_or(1) as usize;
-                                    let end = tc.function.arguments["end_line"].as_u64().unwrap_or(1) as usize;
-                                    (tool_executor::execute_read_file_lines(path, start, end, &app.current_dir).await, app.current_dir.clone())
-                                },
-                                "search_text" => {
-                                    let pattern = tc.function.arguments["pattern"].as_str().unwrap_or("");
-                                    let path = tc.function.arguments["path"].as_str().unwrap_or(".");
-                                    (tool_executor::execute_search_text(pattern, path, &app.current_dir).await, app.current_dir.clone())
-                                },
-                                "apply_patch" => {
-                                    let path = tc.function.arguments["path"].as_str().unwrap_or("");
-                                    let patch = tc.function.arguments["patch"].as_str().unwrap_or("");
-                                    (tool_executor::execute_apply_patch(path, patch, &app.current_dir).await, app.current_dir.clone())
-                                },
-                                "replace_text" => {
-                                    let path = tc.function.arguments["path"].as_str().unwrap_or("");
-                                    let old_string = tc.function.arguments["old_string"].as_str().unwrap_or("");
-                                    let new_string = tc.function.arguments["new_string"].as_str().unwrap_or("");
-                                    (tool_executor::execute_replace_text(path, old_string, new_string, &app.current_dir).await, app.current_dir.clone())
-                                },
-                                "write_file" => {
-                                    let path = tc.function.arguments["path"].as_str().unwrap_or("");
-                                    let content = tc.function.arguments["content"].as_str().unwrap_or("");
-                                    (tool_executor::execute_write_file(path, content, &app.current_dir).await, app.current_dir.clone())
-                                },
-                                "web_fetch" => {
-                                    let url = tc.function.arguments["url"].as_str().unwrap_or("");
-                                    (tool_executor::execute_web_fetch(url).await, app.current_dir.clone())
-                                },
-                                "calculate" => (format!("Calculation result for: {}", tc.function.arguments["expression"]), app.current_dir.clone()),
-                                _ => (format!("Unknown tool: {}", tc.function.name), app.current_dir.clone()),
-                            };
+                            let (mut result, new_dir) = crate::tools::execute(tc.function.name.as_str(), &tc.function.arguments, &app.current_dir, cancellation_token.clone()).await;
                             
                             result = handle_large_output(&tc.id, result);
                             
@@ -218,40 +175,10 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                         cancellation_token.cancel();
                         cancellation_token = CancellationToken::new();
 
-                        let assistant_content = full_response_content.clone();                        app.context_manager.add_message("assistant", &assistant_content);
+                        let assistant_content = full_response_content.clone();
+                        app.context_manager.add_message("assistant", &assistant_content);
 
-                        let (mut result, new_dir) = match tc.function.name.as_str() {
-                            "run_shell_command" => {
-                                let cmd = tc.function.arguments["command"].as_str().unwrap_or("");
-                                tool_executor::execute_shell(cmd, &app.current_dir, cancellation_token.clone()).await
-                            },
-                            "read_folder" => {
-                                let path = tc.function.arguments["path"].as_str().unwrap_or(".");
-                                (tool_executor::execute_read_folder(path, &app.current_dir).await, app.current_dir.clone())
-                            },
-                            "read_file_lines" => {
-                                let path = tc.function.arguments["path"].as_str().unwrap_or("");
-                                let start = tc.function.arguments["start_line"].as_u64().unwrap_or(1) as usize;
-                                let end = tc.function.arguments["end_line"].as_u64().unwrap_or(1) as usize;
-                                (tool_executor::execute_read_file_lines(path, start, end, &app.current_dir).await, app.current_dir.clone())
-                            },
-                            "apply_patch" => {
-                                let path = tc.function.arguments["path"].as_str().unwrap_or("");
-                                let patch = tc.function.arguments["patch"].as_str().unwrap_or("");
-                                (tool_executor::execute_apply_patch(path, patch, &app.current_dir).await, app.current_dir.clone())
-                            },
-                            "write_file" => {
-                                let path = tc.function.arguments["path"].as_str().unwrap_or("");
-                                let content = tc.function.arguments["content"].as_str().unwrap_or("");
-                                (tool_executor::execute_write_file(path, content, &app.current_dir).await, app.current_dir.clone())
-                            },
-                            "web_fetch" => {
-                                let url = tc.function.arguments["url"].as_str().unwrap_or("");
-                                (tool_executor::execute_web_fetch(url).await, app.current_dir.clone())
-                            },
-                            "calculate" => (format!("Calculation result for: {}", tc.function.arguments["expression"]), app.current_dir.clone()),
-                            _ => (format!("Unknown tool: {}", tc.function.name), app.current_dir.clone()),
-                        };
+                        let (mut result, new_dir) = crate::tools::execute(tc.function.name.as_str(), &tc.function.arguments, &app.current_dir, cancellation_token.clone()).await;
                         
                         result = handle_large_output(&tc.id, result);
                         
@@ -420,53 +347,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                                 let ctx_tx = tx.clone();
                                                 let tool_cancel = cancellation_token.clone();
                                                 tokio::spawn(async move {
-                                                    let (mut result, new_dir) = match func_name.as_str() {
-                                                        "run_shell_command" => {
-                                                            let cmd = args["command"].as_str().unwrap_or("");
-                                                            tool_executor::execute_shell(cmd, &current_dir, tool_cancel).await
-                                                        },
-                                                        "read_folder" => {
-                                                            let path = args["path"].as_str().unwrap_or(".");
-                                                            (tool_executor::execute_read_folder(path, &current_dir).await, current_dir.clone())
-                                                        },
-                                                        "read_file" => {
-                                                            let path = args["path"].as_str().unwrap_or("");
-                                                            (tool_executor::execute_read_file(path, &current_dir).await, current_dir.clone())
-                                                        },
-                                                        "read_file_lines" => {
-                                                            let path = args["path"].as_str().unwrap_or("");
-                                                            let start = args["start_line"].as_u64().unwrap_or(1) as usize;
-                                                            let end = args["end_line"].as_u64().unwrap_or(1) as usize;
-                                                            (tool_executor::execute_read_file_lines(path, start, end, &current_dir).await, current_dir.clone())
-                                                        },
-                                                        "search_text" => {
-                                                            let pattern = args["pattern"].as_str().unwrap_or("");
-                                                            let path = args["path"].as_str().unwrap_or(".");
-                                                            (tool_executor::execute_search_text(pattern, path, &current_dir).await, current_dir.clone())
-                                                        },
-                                                        "apply_patch" => {
-                                                            let path = args["path"].as_str().unwrap_or("");
-                                                            let patch = args["patch"].as_str().unwrap_or("");
-                                                            (tool_executor::execute_apply_patch(path, patch, &current_dir).await, current_dir.clone())
-                                                        },
-                                                        "replace_text" => {
-                                                            let path = args["path"].as_str().unwrap_or("");
-                                                            let old_string = args["old_string"].as_str().unwrap_or("");
-                                                            let new_string = args["new_string"].as_str().unwrap_or("");
-                                                            (tool_executor::execute_replace_text(path, old_string, new_string, &current_dir).await, current_dir.clone())
-                                                        },
-                                                        "write_file" => {
-                                                            let path = args["path"].as_str().unwrap_or("");
-                                                            let content = args["content"].as_str().unwrap_or("");
-                                                            (tool_executor::execute_write_file(path, content, &current_dir).await, current_dir.clone())
-                                                        },
-                                                        "web_fetch" => {
-                                                            let url = args["url"].as_str().unwrap_or("");
-                                                            (tool_executor::execute_web_fetch(url).await, current_dir.clone())
-                                                        },
-                                                        "calculate" => (format!("Calculation result for: {}", args["expression"]), current_dir.clone()),
-                                                        _ => (format!("Unknown tool: {}", func_name), current_dir.clone()),
-                                                    };
+                                                    let (mut result, new_dir) = crate::tools::execute(func_name.as_str(), &args, &current_dir, tool_cancel).await;
                                                     
                                                     result = handle_large_output(&tc_id, result);
                                                     
@@ -662,49 +543,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                     let ctx_tx = tx.clone();
                                     let tool_cancel = cancellation_token.clone();
                                     tokio::spawn(async move {
-                                        let (result, new_dir) = match func_name.as_str() {
-                                            "run_shell_command" => {
-                                                let cmd = args["command"].as_str().unwrap_or("");
-                                                tool_executor::execute_shell(cmd, &current_dir, tool_cancel).await
-                                            },
-                                            "read_folder" => {
-                                                let path = args["path"].as_str().unwrap_or(".");
-                                                (tool_executor::execute_read_folder(path, &current_dir).await, current_dir.clone())
-                                            },
-                                            "read_file_lines" => {
-                                                let path = args["path"].as_str().unwrap_or("");
-                                                let start = args["start_line"].as_u64().unwrap_or(1) as usize;
-                                                let end = args["end_line"].as_u64().unwrap_or(1) as usize;
-                                                (tool_executor::execute_read_file_lines(path, start, end, &current_dir).await, current_dir.clone())
-                                            },
-                                            "search_text" => {
-                                                let pattern = args["pattern"].as_str().unwrap_or("");
-                                                let path = args["path"].as_str().unwrap_or(".");
-                                                (tool_executor::execute_search_text(pattern, path, &current_dir).await, current_dir.clone())
-                                            },
-                                            "apply_patch" => {
-                                                let path = args["path"].as_str().unwrap_or("");
-                                                let patch = args["patch"].as_str().unwrap_or("");
-                                                (tool_executor::execute_apply_patch(path, patch, &current_dir).await, current_dir.clone())
-                                            },
-                                            "replace_text" => {
-                                                let path = args["path"].as_str().unwrap_or("");
-                                                let old_string = args["old_string"].as_str().unwrap_or("");
-                                                let new_string = args["new_string"].as_str().unwrap_or("");
-                                                (tool_executor::execute_replace_text(path, old_string, new_string, &current_dir).await, current_dir.clone())
-                                            },
-                                            "write_file" => {
-                                                let path = args["path"].as_str().unwrap_or("");
-                                                let content = args["content"].as_str().unwrap_or("");
-                                                (tool_executor::execute_write_file(path, content, &current_dir).await, current_dir.clone())
-                                            },
-                                            "web_fetch" => {
-                                                let url = args["url"].as_str().unwrap_or("");
-                                                (tool_executor::execute_web_fetch(url).await, current_dir.clone())
-                                            },
-                                            "calculate" => (format!("Calculation result for: {}", args["expression"]), current_dir.clone()),
-                                            _ => (format!("Unknown tool: {}", func_name), current_dir.clone()),
-                                        };
+                                        let (mut result, new_dir) = crate::tools::execute(func_name.as_str(), &args, &current_dir, tool_cancel).await;
+                                        result = handle_large_output(&tc_id, result);
                                         let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, result, new_dir.clone()));
                                         let _ = ctx_tx.send(StreamEvent::DebugLog(format!("DIR_UPDATE|{}", new_dir)));
                                     });
