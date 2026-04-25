@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::context::{ContextManager, ToolCall};
 use crate::config::Config;
 use crate::icons;
-use crate::system_prompt::EXPERT_ENGINEER;
+use crate::system_prompt::get_expert_engineer_prompt;
 use crate::ui::Theme;
 use crate::client::{StreamEvent};
 use ratatui::text::Line;
@@ -124,7 +124,7 @@ impl App {
         let mut theme_state = ListState::default();
         theme_state.select(Some(0));
         
-        let system_prompt = EXPERT_ENGINEER.to_string();
+        let system_prompt = get_expert_engineer_prompt();
         let context_manager = ContextManager::new(
             config.context_size, 
             Some(system_prompt.clone())

@@ -8,18 +8,18 @@ mod system_prompt;
 mod config;
 #[path = "../client.rs"]
 mod client;
-
-// Mock tools module to satisfy client.rs
-mod tools {
-    use serde::{Deserialize, Serialize};
-    #[derive(Serialize, Deserialize, Debug, Clone)]
-    pub struct Tool;
-}
+#[path = "../tools/mod.rs"]
+mod tools;
+#[path = "../icons.rs"]
+mod icons;
+#[path = "../llm_tokens.rs"]
+mod llm_tokens;
 
 use crate::context::{ContextManager};
 use crate::parser::find_tool_call;
 use crate::config::Config;
 use crate::client::{GenerateRequest, GenerateResponse};
+use crate::system_prompt::get_expert_engineer_prompt;
 use reqwest::Client;
 use serde_json::json;
 use futures_util::StreamExt;
@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn run_scenario(client: &Client, config: &Config, scenario: &Scenario) -> Result<String, Box<dyn std::error::Error>> {
-    let mut context_manager = ContextManager::new(config.context_size, Some(crate::system_prompt::EXPERT_ENGINEER.to_string()));
+    let mut context_manager = ContextManager::new(config.context_size, Some(get_expert_engineer_prompt()));
     context_manager.add_message("user", scenario.prompt);
 
     let mut req_body = json!({
