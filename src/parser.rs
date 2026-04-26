@@ -81,7 +81,8 @@ pub fn parse_native_block(block: &str) -> Result<ToolCall, String> {
                 i += end_marker.chars().count();
                 continue;
             }
-            if remaining.starts_with(",") && (remaining.contains(",path:") || remaining.contains(", path:") || remaining.contains(",description:") || remaining.contains(", description:") || remaining.contains(",tool_call_id:")) {
+            // Heuristic boundary check: if we see a comma followed by a likely key, we've probably leaked out of the string
+            if is_at_key_boundary(remaining) {
                  marker_string_end = None;
                  in_string = false;
             }
@@ -97,7 +98,8 @@ pub fn parse_native_block(block: &str) -> Result<ToolCall, String> {
                     in_string = false;
                 }
             }
-            if (c == ',' || c == '`') && (remaining.contains(",path:") || remaining.contains(", path:") || remaining.contains(",description:") || remaining.contains(", description:") || remaining.contains(",tool_call_id:")) {
+            // Also check for boundary leakage in normal strings (including backticks)
+            if is_at_key_boundary(remaining) || (c == '`' && is_at_key_boundary(&remaining[1..])) {
                 in_string = false;
             }
         } else {
@@ -141,13 +143,7 @@ pub fn parse_native_block(block: &str) -> Result<ToolCall, String> {
     }
     
     let args_raw = &args_content[..end_pos.unwrap()];
-    let mut normalized = normalize_markers(args_raw);
-    
-    // Final cleanup of model-induced artifacts
-    if normalized.ends_with('`') {
-        normalized.pop();
-    }
-    
+    let normalized = normalize_markers(args_raw);
     let fixed_json = fix_json_heuristically(&normalized);
 
     match serde_json::from_str::<serde_json::Value>(&fixed_json) {
@@ -169,6 +165,17 @@ pub fn parse_native_block(block: &str) -> Result<ToolCall, String> {
             Err(format!("JSON Error: {} (Fixed JSON: {})", e, fixed_json))
         }
     }
+}
+
+fn is_at_key_boundary(text: &str) -> bool {
+    if !text.starts_with(',') { return false; }
+    let after_comma = &text[1..];
+    let trimmed = after_comma.trim_start();
+    trimmed.starts_with("path:") || 
+    trimmed.starts_with("description:") || 
+    trimmed.starts_with("tool_call_id:") ||
+    trimmed.starts_with("content:") ||
+    trimmed.starts_with("command:")
 }
 
 fn normalize_markers(input: &str) -> String {
@@ -205,7 +212,7 @@ fn normalize_markers(input: &str) -> String {
                             break;
                         }
                     }
-                    if matched_end.is_some() || sub_remaining.starts_with(",") && (sub_remaining.contains(",path:") || sub_remaining.contains(", path:") || sub_remaining.contains(",description:") || sub_remaining.contains(", description:") || sub_remaining.contains(",tool_call_id:")) {
+                    if matched_end.is_some() || is_at_key_boundary(sub_remaining) {
                         break;
                     }
 
@@ -268,12 +275,23 @@ fn fix_json_heuristically(input: &str) -> String {
                 } else {
                     output.push(c);
                 }
-            } else if (c == ',' || c == '`') && (remaining.starts_with(",path:") || remaining.starts_with(", path:") || remaining.starts_with(",description:") || remaining.starts_with(", description:") || remaining.starts_with(",tool_call_id:") || remaining.starts_with(", tool_call_id:")) {
+            } else if is_at_key_boundary(remaining) || (c == '`' && is_at_key_boundary(&remaining[1..])) {
                 output.push('"');
                 in_string = false;
+                // If it was a comma boundary, we'll process the comma in the next iteration (after loop i+=1)
+                // but wait, we need to make sure we don't skip the comma if we just pushed the quote.
+                // Actually, if we are at a boundary, we just closed the string.
+                // We should NOT increment i here, let the loop do it? 
+                // But wait, if c is the boundary character (comma or backtick), 
+                // and we want it to be processed as a non-string character...
+                
                 if c == ',' {
-                    output.push(c);
-                    expect_key = true;
+                    // Stay on this character to let the non-string logic handle it
+                    continue; 
+                } else if c == '`' {
+                    // Skip the backtick, it was an artifact
+                    i += 1;
+                    continue;
                 }
             } else if c == '\n' { output.push_str("\\n"); }
             else if c == '\r' { output.push_str("\\r"); }
@@ -337,5 +355,23 @@ mod tests {
         let block = r#"call:test_tool{key1: "value1", key2: 123, tool_call_id: "test"}"#;
         let result = parse_native_block(block).unwrap();
         assert_eq!(result.function.arguments.get("key1").unwrap().as_str().unwrap(), "value1");
+    }
+
+    #[test]
+    fn test_latest_run_real_world_failure() {
+        // This is the exact string from the failed run. 
+        // Note the <|"> start and the ` ,path boundary failure.
+        let block = r#"call:write_file{content:<|">use raylib::prelude::*;
+
+fn main() {
+    println!("Hello World");
+}
+`,description: "Replace the spinning cube code with a bouncing cube implementation.",path: "src/main.rs",tool_call_id: "replace_with_bouncing_cube"}"#;
+
+        let result = parse_native_block(block).expect("Should recover from real-world failure case");
+        assert_eq!(result.id, "replace_with_bouncing_cube");
+        let content = result.function.arguments.get("content").unwrap().as_str().unwrap();
+        assert!(content.contains("println!(\"Hello World\")"));
+        assert!(!content.contains("`,description:"));
     }
 }
