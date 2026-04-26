@@ -113,7 +113,6 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
 
     let title = if app.show_approval_prompt { format!("{} Approval Required", icons::WARNING) } 
                 else if app.is_executing_tool { format!("{} {} Executing Tool...", icons::TOOL_SPINNER[app.tool_spinner_index], icons::COMMAND) }
-                else if app.is_processing { format!("{} {} Lethetic Intelligence Engine Processing...", icons::SPINNER[app.spinner_index], icons::PROCESSING) } 
                 else { format!("{} Output", icons::OUTPUT) };
 
     let terminal_width = left_layout[0].width.saturating_sub(2) as usize;
@@ -248,6 +247,17 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         f.set_cursor_position((cursor_x, cursor_y));
     }
 
+    let mut line2_spans = vec![
+        Span::styled(format!("{} Path: ", icons::PATH), Style::default().fg(Color::DarkGray)),
+        Span::styled(format!("{} ", app.current_dir), Style::default().fg(Color::LightBlue)),
+        Span::styled(format!("| {} Git: ", icons::GIT), Style::default().fg(Color::DarkGray)),
+        Span::styled(format!("{} ", app.git_status), Style::default().fg(if app.git_status.contains("dirty") { Color::Red } else { Color::Green })),
+    ];
+
+    if app.is_processing && !app.is_executing_tool {
+        line2_spans.push(Span::styled(format!(" | {} {} Lethetic Intelligence Engine Processing...", icons::SPINNER[app.spinner_index], icons::PROCESSING), Style::default().fg(Color::Yellow)));
+    }
+
     let status_text = vec![
         Line::from(vec![
             Span::styled(format!("{} T/s: ", icons::TOKENS), Style::default().fg(Color::DarkGray)),
@@ -261,12 +271,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             Span::styled("| Mem: ", Style::default().fg(Color::DarkGray)),
             Span::styled(format!("{}MB ", app.memory_usage), Style::default().fg(Color::Magenta)),
         ]),
-        Line::from(vec![
-            Span::styled(format!("{} Path: ", icons::PATH), Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{} ", app.current_dir), Style::default().fg(Color::LightBlue)),
-            Span::styled(format!("| {} Git: ", icons::GIT), Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{} ", app.git_status), Style::default().fg(if app.git_status.contains("dirty") { Color::Red } else { Color::Green })),
-        ]),
+        Line::from(line2_spans),
     ];
     f.render_widget(Paragraph::new(status_text).wrap(Wrap { trim: true }), left_layout[2]);
 
@@ -287,6 +292,25 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         f.render_widget(Clear, area);
         let items: Vec<ListItem> = app.themes.iter().map(|t| ListItem::new(t.name.as_str())).collect();
         f.render_stateful_widget(List::new(items).block(UIBlock::default().title(format!("{} Themes", icons::THEME)).borders(Borders::ALL)).highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(app.theme.highlight_fg)).highlight_symbol("> "), area, &mut app.theme_state);
+    }
+
+    if app.is_loading_session {
+        let area = centered_rect(50, 10, f.area());
+        f.render_widget(Clear, area);
+        
+        let block = UIBlock::default()
+            .title(format!("{} Loading Session...", icons::PROCESSING))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan));
+            
+        let progress = (app.load_progress as u16).min(100);
+        let filled = (progress as usize * 40) / 100;
+        let empty = 40_usize.saturating_sub(filled);
+        let bar = format!("[{}{}] {}%", "█".repeat(filled), "░".repeat(empty), progress);
+        
+        let text = format!("\n  {}\n\n  {}", bar, app.load_status);
+        f.render_widget(Paragraph::new(text).block(block).alignment(ratatui::layout::Alignment::Center), area);
+        return; // Don't render the rest of the UI while loading
     }
 
     if app.show_prompt_manager {
@@ -490,7 +514,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     }
 }
 
-fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, tool_preview: Option<&str>) -> Vec<Line<'static>> {
+pub fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, tool_preview: Option<&str>) -> Vec<Line<'static>> {
     let block_color = match block.block_type {
         BlockType::User => theme.input_fg,
         BlockType::Thought => Color::Cyan,
