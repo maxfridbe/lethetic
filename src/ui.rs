@@ -255,10 +255,16 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         Span::styled(format!("{} ", app.git_status), Style::default().fg(if app.git_status.contains("dirty") { Color::Red } else { Color::Green })),
     ];
 
-    let processing_text = if app.is_processing && !app.is_executing_tool {
+    let processing_text = if app.show_approval_prompt {
+        vec![Line::from(vec![Span::styled(format!("  {} {} Awaiting Permission For Tool Call...", icons::SPINNER[app.spinner_index], icons::WARNING), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))])]
+    } else if app.is_executing_tool {
+        vec![Line::from(vec![Span::styled(format!("  {} {} Executing Tool...", icons::TOOL_SPINNER[app.tool_spinner_index], icons::COMMAND), Style::default().fg(Color::LightBlue))])]
+    } else if app.is_asking_user {
+        vec![Line::from(vec![Span::styled(format!("  {} {} Waiting for User Input...", icons::SPINNER[app.spinner_index], icons::INPUT), Style::default().fg(Color::Yellow))])]
+    } else if app.is_processing {
         vec![Line::from(vec![Span::styled(format!("  {} {} Lethetic Intelligence Engine Processing...", icons::SPINNER[app.spinner_index], icons::PROCESSING), Style::default().fg(Color::Yellow))])]
     } else {
-        vec![]
+        vec![Line::from(vec![Span::styled(format!("  {} Ready", icons::SUCCESS), Style::default().fg(Color::DarkGray))])]
     };
     f.render_widget(Paragraph::new(processing_text), left_layout[1]);
 
