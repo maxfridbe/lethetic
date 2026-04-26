@@ -307,16 +307,26 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
 
                                         let tx_clone = tx.clone();
                                         let filename_clone = filename.clone();
+                                        let theme_clone = app.theme.clone();
+                                        let terminal_width = app.last_rendered_width;
+
                                         tokio::spawn(async move {
                                             let _ = tx_clone.send(StreamEvent::LoadProgress(10.0, "Reading UI state...".to_string()));
                                             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                                             
                                             let ui_content = tokio::fs::read_to_string(format!("{}/ui_state.json", filename_clone)).await.unwrap_or_default();
-                                            let _ = tx_clone.send(StreamEvent::LoadProgress(40.0, "Parsing UI state...".to_string()));
+                                            let _ = tx_clone.send(StreamEvent::LoadProgress(40.0, "Parsing & rendering UI state...".to_string()));
                                             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                                             
                                             let blocks: Vec<lethetic::app::RenderBlock> = tokio::task::spawn_blocking(move || {
-                                                serde_json::from_str::<Vec<lethetic::app::RenderBlock>>(&ui_content).unwrap_or_default()
+                                                let mut parsed_blocks = serde_json::from_str::<Vec<lethetic::app::RenderBlock>>(&ui_content).unwrap_or_default();
+                                                if terminal_width > 0 {
+                                                    for block in &mut parsed_blocks {
+                                                        let rendered = lethetic::ui::render_block_to_lines(block, terminal_width, &theme_clone, None);
+                                                        block.cached_lines = Some(rendered);
+                                                    }
+                                                }
+                                                parsed_blocks
                                             }).await.unwrap_or_default();
 
                                             let _ = tx_clone.send(StreamEvent::LoadProgress(60.0, "Reading context...".to_string()));
