@@ -10,7 +10,7 @@ pub fn get_definition() -> Tool {
         tool_type: "function".to_string(),
         function: FunctionDefinition {
             name: "read_file_lines".to_string(),
-            description: "Read a specific range of lines from a file".to_string(),
+            description: "Read a specific range of lines from a file. The output will include line numbers (cat -n format) to help with patching.".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -42,7 +42,7 @@ pub fn get_definition() -> Tool {
 }
 
 pub fn get_prompt_template() -> String {
-    format!("{}declaration:read_file_lines{{description:<|\">Read a specific range of lines from a file.<|\">,parameters:{{properties:{{end_line:{{description:<|\">The line number to end reading at (inclusive)<|\">,type:<|\">INTEGER<|\">}},path:{{description:<|\">The path to the file<|\">,type:<|\">STRING<|\">}},start_line:{{description:<|\">The line number to start reading from<|\">,type:<|\">INTEGER<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">A unique, descriptive string identifier for this call (e.g., 'read_main_rs', 'check_folders'). Do not use simple numbers.<|\">,type:<|\">STRING<|\">}}}},required:[<|\">path<|\">,<|\">start_line<|\">,<|\">end_line<|\">,<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
+    format!("{}declaration:read_file_lines{{description:<|\">Read a specific range of lines from a file. The output will include line numbers.<|\">,parameters:{{properties:{{end_line:{{description:<|\">The line number to end reading at (inclusive)<|\">,type:<|\">INTEGER<|\">}},path:{{description:<|\">The path to the file<|\">,type:<|\">STRING<|\">}},start_line:{{description:<|\">The line number to start reading from<|\">,type:<|\">INTEGER<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">A unique, descriptive string identifier for this call (e.g., 'read_main_rs', 'check_folders'). Do not use simple numbers.<|\">,type:<|\">STRING<|\">}}}},required:[<|\">path<|\">,<|\">start_line<|\">,<|\">end_line<|\">,<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
 }
 
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {
@@ -66,7 +66,12 @@ pub async fn execute(path: &str, start_line: usize, end_line: usize, cwd: &str) 
             if start >= lines.len() || start > end {
                 return format!("ERROR: Invalid line range {}-{} for file with {} lines", start + 1, end, lines.len());
             }
-            lines[start..end].join("\n")
+            
+            let mut result = String::new();
+            for (i, line) in lines[start..end].iter().enumerate() {
+                result.push_str(&format!("{:6}\t{}\n", start + i + 1, line));
+            }
+            result
         }
         Err(e) => format!("ERROR: Failed to read file {}: {}", full_path.display(), e),
     }

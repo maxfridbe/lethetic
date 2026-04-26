@@ -10,7 +10,7 @@ pub fn get_definition() -> Tool {
         tool_type: "function".to_string(),
         function: FunctionDefinition {
             name: "read_file".to_string(),
-            description: "Read the complete content of a file".to_string(),
+            description: "Read the complete content of a file. The output will include line numbers (cat -n format) to help with patching.".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -34,7 +34,7 @@ pub fn get_definition() -> Tool {
 }
 
 pub fn get_prompt_template() -> String {
-    format!("{}declaration:read_file{{description:<|\">Read the complete content of a file.<|\">,parameters:{{properties:{{path:{{description:<|\">The path to the file<|\">,type:<|\">STRING<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">A unique, descriptive string identifier for this call (e.g., 'read_main_rs', 'check_folders'). Do not use simple numbers.<|\">,type:<|\">STRING<|\">}}}},required:[<|\">path<|\">,<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
+    format!("{}declaration:read_file{{description:<|\">Read the complete content of a file. The output will include line numbers.<|\">,parameters:{{properties:{{path:{{description:<|\">The path to the file<|\">,type:<|\">STRING<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">A unique, descriptive string identifier for this call (e.g., 'read_main_rs', 'check_folders'). Do not use simple numbers.<|\">,type:<|\">STRING<|\">}}}},required:[<|\">path<|\">,<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
 }
 
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {
@@ -49,7 +49,19 @@ pub async fn execute(path: &str, cwd: &str) -> String {
 
     let full_path = Path::new(cwd).join(path);
     match fs::read_to_string(&full_path) {
-        Ok(content) => content,
+        Ok(content) => {
+            let mut result = String::new();
+            for (i, line) in content.lines().enumerate() {
+                result.push_str(&format!("{:6}\t{}\n", i + 1, line));
+            }
+            if content.ends_with('\n') || content.is_empty() {
+                // Keep trailing newline if it exists
+            } else if !result.is_empty() {
+                // If the last line didn't have a newline, content.lines() still yields it
+                // and we already pushed a \n in the loop.
+            }
+            result
+        }
         Err(e) => format!("ERROR: Failed to read file {}: {}", full_path.display(), e),
     }
 }
