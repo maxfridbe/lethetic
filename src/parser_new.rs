@@ -36,12 +36,42 @@ impl StreamParser {
             match self.state {
                 ParserState::Thought => {
                     let end_markers = ["<channel|>", "</thought>", "</think>"];
+                    let thought_starts = ["<|channel>thought", "<thought>", "<think>"];
+                    let tool_starts = ["<|tool_call>", "<tool_call>"];
+
                     let mut earliest_end = None;
                     for &m in &end_markers {
                         if let Some(pos) = input.find(m) {
                             if earliest_end.map_or(true, |(p, _)| pos < p) {
                                 earliest_end = Some((pos, m));
                             }
+                        }
+                    }
+
+                    // Heuristic: If we see a new start marker before an end marker, the previous one was likely aborted
+                    let mut earliest_interrupt = None;
+                    for &m in &thought_starts {
+                        if let Some(pos) = input.find(m) {
+                            if earliest_interrupt.map_or(true, |(p, _, _)| pos < p) {
+                                earliest_interrupt = Some((pos, m, ParserState::Thought));
+                            }
+                        }
+                    }
+                    for &m in &tool_starts {
+                        if let Some(pos) = input.find(m) {
+                            if earliest_interrupt.map_or(true, |(p, _, _)| pos < p) {
+                                earliest_interrupt = Some((pos, m, ParserState::ToolCall));
+                            }
+                        }
+                    }
+
+                    if let Some((i_pos, i_marker, i_state)) = earliest_interrupt {
+                        if i_pos > 0 && earliest_end.map_or(true, |(e_pos, _)| i_pos < e_pos) {
+                            let content = input[..i_pos].to_string();
+                            results.push((BlockType::Thought, content));
+                            self.state = i_state;
+                            self.buffer = input[i_pos + i_marker.len()..].to_string();
+                            continue;
                         }
                     }
 
@@ -121,12 +151,44 @@ impl StreamParser {
                 }
                 ParserState::ToolCall => {
                     let end_markers = ["<tool_call|>", "<|tool_call|>"];
+                    let thought_starts = ["<|channel>thought", "<thought>", "<think>"];
+                    let tool_starts = ["<|tool_call>", "<tool_call>"];
+
                     let mut earliest_end = None;
                     for &m in &end_markers {
                         if let Some(pos) = input.find(m) {
                             if earliest_end.map_or(true, |(p, _)| pos < p) {
                                 earliest_end = Some((pos, m));
                             }
+                        }
+                    }
+
+                    // Heuristic: If we see a new start marker before an end marker, the previous one was likely aborted
+                    let mut earliest_interrupt = None;
+                    for &m in &thought_starts {
+                        if let Some(pos) = input.find(m) {
+                            if earliest_interrupt.map_or(true, |(p, _, _)| pos < p) {
+                                earliest_interrupt = Some((pos, m, ParserState::Thought));
+                            }
+                        }
+                    }
+                    for &m in &tool_starts {
+                        if let Some(pos) = input.find(m) {
+                            // If it's a tool start at position 0, it's likely the one we are ALREADY in (handled by continue logic)
+                            // We only interrupt if it's LATER in the input.
+                            if pos > 0 && earliest_interrupt.map_or(true, |(p, _, _)| pos < p) {
+                                earliest_interrupt = Some((pos, m, ParserState::ToolCall));
+                            }
+                        }
+                    }
+
+                    if let Some((i_pos, i_marker, i_state)) = earliest_interrupt {
+                        if i_pos > 0 && earliest_end.map_or(true, |(e_pos, _)| i_pos < e_pos) {
+                            let content = input[..i_pos].to_string();
+                            results.push((BlockType::Formulating, content));
+                            self.state = i_state;
+                            self.buffer = input[i_pos + i_marker.len()..].to_string();
+                            continue;
                         }
                     }
 

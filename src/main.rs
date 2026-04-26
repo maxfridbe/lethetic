@@ -468,8 +468,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                     app.add_segment(content, b_type);
                                     
                                     // Check for loops after adding content
-                                    if let Some(reason) = app.loop_detector.check(&app.last_block_content) {
-                                        app.log_debug(&format!("LOOP DETECTED: {}", reason));
+                                    if let Some(detection) = app.loop_detector.check(&app.last_block_content) {
+                                        app.log_debug(&format!("LOOP DETECTED: {}", detection.reason));
                                         cancellation_token.cancel();
                                         app.is_processing = false;
                                         
@@ -487,7 +487,11 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             app.loop_detection_count = 0; // Reset for next attempt
                                             app.last_loop_detection_time = None;
                                         } else {
-                                            app.add_segment(format!("\n{} [LOOP DETECTED] {}\n", icons::WARNING, reason), BlockType::Text);
+                                            let mut loop_msg = format!("\n{} [LOOP DETECTED] {}\n", icons::WARNING, detection.reason);
+                                            if let Some(sample) = detection.sample {
+                                                loop_msg.push_str(&format!("{} Sample: \"{}\"\n", icons::DEBUG, sample));
+                                            }
+                                            app.add_segment(loop_msg, BlockType::Text);
                                             app.context_manager.add_message("assistant", &full_response_content);
                                             app.context_manager.add_message("system", "Note: You were stuck in a reasoning loop. Please choose a single clear path and proceed with a tool call immediately.");
                                             

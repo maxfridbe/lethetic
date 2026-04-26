@@ -22,12 +22,18 @@ impl Default for LoopDetectorConfig {
     fn default() -> Self {
         Self {
             mode: LoopDetectionMode::Combined,
-            block_limit: 5000,
+            block_limit: 10000,
             ngram_window: 64,
             ngram_threshold: 3,
             phrase_threshold: 10,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct Detection {
+    pub reason: String,
+    pub sample: Option<String>,
 }
 
 pub struct LoopDetector {
@@ -40,8 +46,8 @@ impl LoopDetector {
     }
 
     /// Checks for loops in the given full block content.
-    /// Returns Some(reason) if a loop is detected.
-    pub fn check(&self, content: &str) -> Option<String> {
+    /// Returns Some(Detection) if a loop is detected.
+    pub fn check(&self, content: &str) -> Option<Detection> {
         if self.config.mode == LoopDetectionMode::Off {
             return None;
         }
@@ -49,7 +55,10 @@ impl LoopDetector {
         // 1. Block Limit Check
         if (self.config.mode == LoopDetectionMode::BlockLimit || self.config.mode == LoopDetectionMode::Combined) 
             && content.len() > self.config.block_limit {
-            return Some(format!("Block length ({} chars) exceeded limit", content.len()));
+            return Some(Detection {
+                reason: format!("Block length ({} chars) exceeded limit", content.len()),
+                sample: None,
+            });
         }
 
         // 2. Phrase Frequency Check
@@ -60,7 +69,10 @@ impl LoopDetector {
                 total_phrases += content.matches(p).count();
             }
             if total_phrases >= self.config.phrase_threshold {
-                return Some(format!("Excessive self-correction detected ({} phrases)", total_phrases));
+                return Some(Detection {
+                    reason: format!("Excessive self-correction detected ({} phrases)", total_phrases),
+                    sample: None,
+                });
             }
         }
 
@@ -73,7 +85,14 @@ impl LoopDetector {
                 // Count how many times this specific window appears in the whole block
                 let occurrences = content.matches(last_window).count();
                 if occurrences >= self.config.ngram_threshold {
-                    return Some(format!("Repeating pattern detected (sequence seen {} times)", occurrences));
+                    let mut sample = last_window.to_string();
+                    if sample.len() > 80 {
+                        sample = format!("...{}", &sample[sample.len() - 77..]);
+                    }
+                    return Some(Detection {
+                        reason: format!("Repeating pattern detected (sequence seen {} times)", occurrences),
+                        sample: Some(sample),
+                    });
                 }
             }
         }
@@ -108,7 +127,9 @@ mod tests {
         };
         let detector = LoopDetector::new(config);
         // "abcde" repeated 3 times
-        assert!(detector.check("abcde...abcde...abcde").is_some());
+        let result = detector.check("abcde...abcde...abcde");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().sample.unwrap(), "abcde");
         assert!(detector.check("abcdefghijk").is_none());
     }
 
