@@ -68,6 +68,11 @@ impl ContextManager {
         self.trim_context();
     }
 
+    pub fn set_messages(&mut self, messages: Vec<Message>) {
+        self.messages = messages;
+        self.trim_context();
+    }
+
     pub fn add_assistant_tool_call(&mut self, content: &str, tool_calls: Vec<ToolCall>) {
         self.messages.push(Message {
             role: "assistant".to_string(),

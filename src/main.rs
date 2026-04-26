@@ -629,9 +629,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             app.current_session_dir = Some(dir);
                             app.blocks = blocks;
                             app.context_manager.clear();
-                            for msg in messages {
-                                app.context_manager.add_message_raw(msg);
-                            }
+                            app.context_manager.set_messages(messages);
                             app.scroll = 0;
                             app.output_state.select(Some(app.blocks.len().saturating_sub(1)));
                             app.is_loading_session = false;
