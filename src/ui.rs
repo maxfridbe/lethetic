@@ -431,18 +431,21 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
 }
 
 fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
-    let block_color = if block.block_type == BlockType::Thought {
-        Color::Cyan
-    } else {
-        match block.success {
-            Some(true) => Color::Green,
-            Some(false) => Color::Red,
-            None => Color::Gray,
+    let block_color = match block.block_type {
+        BlockType::User => theme.input_fg,
+        BlockType::Thought => Color::Cyan,
+        BlockType::Formulating => Color::Yellow,
+        BlockType::ToolCall => Color::LightBlue,
+        BlockType::ToolResult => {
+            match block.success {
+                Some(true) => Color::Green,
+                Some(false) => Color::Red,
+                None => Color::Gray,
+            }
         }
+        BlockType::Divider => Color::DarkGray,
+        _ => Color::Gray,
     };
-    
-    let status_block = Span::styled("█ ", Style::default().fg(block_color));
 
     let (bg_color, mut header) = match block.block_type {
         BlockType::User => (Color::Rgb(30, 35, 45), Some(format!("{} User Request", icons::INPUT))),
@@ -462,13 +465,15 @@ fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme) -> Ve
         };
     }
 
+    let status_block = Span::styled("█ ", Style::default().fg(block_color));
     let base_style = Style::default().bg(bg_color).fg(theme.output_fg);
+    let mut lines_output: Vec<Line<'static>> = Vec::new();
 
     if block.block_type == BlockType::Divider {
-        lines.push(Line::from(vec![
+        lines_output.push(Line::from(vec![
             Span::styled("─".repeat(width), Style::default().fg(Color::DarkGray))
         ]));
-        return lines;
+        return lines_output;
     }
 
     if let Some(h) = header {
@@ -480,26 +485,47 @@ fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme) -> Ve
         if width > current_len {
             header_spans.push(Span::styled(" ".repeat(width - current_len), base_style));
         }
-        lines.push(Line::from(header_spans));
+        lines_output.push(Line::from(header_spans));
     }
 
-    // Advanced rendering for Markdown or specialized blocks
-    let content_lines = if block.block_type == BlockType::Formulating {
-        let lines: Vec<&str> = block.content.lines().collect();
-        if lines.is_empty() {
-            vec![Line::from(Span::styled("(Engine is preparing the tool payload...)", base_style.add_modifier(Modifier::ITALIC)))]
+    // Advanced rendering for specialized blocks
+    let content_lines: Vec<Line<'static>> = if block.block_type == BlockType::Formulating {
+        let block_lines: Vec<&str> = block.content.lines().collect();
+        let mut formatted = vec![Line::from(Span::styled("(Engine is preparing the tool payload...)", base_style.add_modifier(Modifier::ITALIC)))];
+        
+        let last_lines = if block_lines.len() > 3 {
+            &block_lines[block_lines.len() - 3..]
         } else {
-            let last_lines = if lines.len() > 5 {
-                &lines[lines.len() - 5..]
-            } else {
-                &lines[..]
-            };
+            &block_lines[..]
+        };
+        
+        for line in last_lines {
+            formatted.push(Line::from(Span::styled(format!("  {}", line), base_style.add_modifier(Modifier::DIM))));
+        }
+        formatted
+    } else if block.block_type == BlockType::ToolCall {
+        if let Some(brace_pos) = block.content.find('{') {
+            let func_name_part = &block.content[..brace_pos];
+            let json_part = &block.content[brace_pos..];
             
-            let mut formatted_lines = vec![Line::from(Span::styled("(Engine is preparing the tool payload...)", base_style.add_modifier(Modifier::ITALIC)))];
-            for line in last_lines {
-                formatted_lines.push(Line::from(Span::styled(format!("  {}", line), base_style.add_modifier(Modifier::DIM))));
+            if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(json_part) {
+                let json_text = render_json_highlighted(&json_val);
+                let mut formatted = Vec::new();
+                
+                if let Some(first_line) = json_text.lines.first() {
+                    let mut spans = vec![Span::styled(func_name_part.to_string(), Style::default().fg(Color::LightBlue))];
+                    spans.extend(first_line.spans.clone());
+                    formatted.push(Line::from(spans));
+                }
+                for line in json_text.lines.iter().skip(1) {
+                    formatted.push(line.clone());
+                }
+                formatted
+            } else {
+                block.content.lines().map(|l| Line::from(Span::styled(l.to_string(), base_style))).collect()
             }
-            formatted_lines
+        } else {
+            block.content.lines().map(|l| Line::from(Span::styled(l.to_string(), base_style))).collect()
         }
     } else if block.block_type == BlockType::Markdown || block.content.contains("```") {
         markdown::render_markdown(&block.content, base_style).lines
@@ -507,15 +533,15 @@ fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme) -> Ve
         block.content.lines().map(|l| Line::from(Span::styled(l.to_string(), base_style))).collect()
     };
 
-    let content_lines = wrap_lines(content_lines, width.saturating_sub(2));
+    let wrapped = wrap_lines(content_lines, width.saturating_sub(2));
 
-    for mut line in content_lines {
+    for mut line in wrapped {
         let mut spans = vec![status_block.clone()];
         
         for span in line.spans.iter_mut() {
             if block.block_type == BlockType::Thought {
                 span.style = span.style.add_modifier(Modifier::ITALIC).fg(Color::Cyan);
-            } else if block.block_type == BlockType::ToolCall {
+            } else if block.block_type == BlockType::ToolCall && span.style.fg.is_none() {
                 span.style = span.style.fg(Color::Yellow);
             }
         }
@@ -526,15 +552,15 @@ fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme) -> Ve
         if width > current_len {
             spans.push(Span::styled(" ".repeat(width - current_len), base_style));
         }
-        lines.push(Line::from(spans));
+        lines_output.push(Line::from(spans));
     }
 
     let is_final = block.block_type == BlockType::User || block.block_type == BlockType::Divider;
     if is_final {
-        lines.push(Line::from(vec![status_block, Span::styled(" ".repeat(width.saturating_sub(2)), base_style)]));
+        lines_output.push(Line::from(vec![status_block, Span::styled(" ".repeat(width.saturating_sub(2)), base_style)]));
     }
 
-    lines
+    lines_output
 }
 
 fn wrap_lines(lines: Vec<Line<'static>>, max_width: usize) -> Vec<Line<'static>> {

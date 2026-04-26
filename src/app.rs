@@ -893,12 +893,15 @@ pub fn handle_tool_call(app: &mut App, calls: Vec<ToolCall>, pos: usize, _tx: mp
         let tool_call = calls[0].clone();
         app.pending_tool_call = Some(tool_call.clone());
 
-        let tool_call_str = &full_response_content[pos..];
         let description = tool_call.function.arguments["description"].as_str().unwrap_or("Action").to_string();
-        app.add_segment_with_title(tool_call_str.to_string(), BlockType::ToolCall, description);
+
+        // Reconstruct a clean version of the call for the UI
+        let clean_args = serde_json::to_string(&tool_call.function.arguments).unwrap_or_default();
+        let clean_call = format!("call:{}{}", tool_call.function.name, clean_args);
+
+        app.add_segment_with_title(clean_call, BlockType::ToolCall, description);
 
         if tool_call.function.name == "ask_the_user" {
-
             app.is_asking_user = true;
             app.is_processing = false;
         } else if app.shell_approval_mode == ApprovalMode::Always {
