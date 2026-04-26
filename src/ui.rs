@@ -509,18 +509,31 @@ fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, tool_
     let content_lines: Vec<Line<'static>> = if block.block_type == BlockType::Formulating {
         let block_lines: Vec<&str> = block.content.lines().collect();
         let mut formatted = vec![Line::from(Span::styled("(Engine is preparing the tool payload...)", base_style.add_modifier(Modifier::ITALIC)))];
-        
+
         let last_lines = if block_lines.len() > 3 {
             &block_lines[block_lines.len() - 3..]
         } else {
             &block_lines[..]
         };
-        
-        for line in last_lines {
-            formatted.push(Line::from(Span::styled(format!("  {}", line), base_style.add_modifier(Modifier::DIM))));
+
+        // Always show 3 lines to prevent bouncing
+        for i in 0..3 {
+            if i < last_lines.len() {
+                let line_content = last_lines[i];
+                let max_line_len = width.saturating_sub(10);
+                let display_line = if line_content.len() > max_line_len {
+                    format!("  {}...", &line_content[..max_line_len.saturating_sub(3)])
+                } else {
+                    format!("  {}", line_content)
+                };
+                formatted.push(Line::from(Span::styled(display_line, base_style.add_modifier(Modifier::DIM))));
+            } else {
+                formatted.push(Line::from(Span::styled("  ", base_style)));
+            }
         }
         formatted
-    } else if block.block_type == BlockType::ToolCall {
+    }
+ else if block.block_type == BlockType::ToolCall {
         if let Some(brace_pos) = block.content.find('{') {
             let func_name_part = &block.content[..brace_pos];
             let json_part = &block.content[brace_pos..];
@@ -539,10 +552,23 @@ fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, tool_
                 }
                 
                 if let Some(preview) = tool_preview {
-                    if !preview.is_empty() {
-                        formatted.push(Line::from(vec![Span::styled("--- Live Output Preview ---", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC))]));
-                        for line in preview.lines() {
-                            formatted.push(Line::from(vec![Span::styled(format!("> {}", line), Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC))]));
+                    formatted.push(Line::from(vec![Span::styled("--- Live Output Preview ---", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC))]));
+                    let lines: Vec<&str> = preview.lines().collect();
+                    // Always show 5 lines to prevent bouncing
+                    for i in 0..5 {
+                        if i < lines.len() {
+                            let line_content = lines[i];
+                            // Truncate to width to prevent wrapping which causes bouncing
+                            let max_line_len = width.saturating_sub(10);
+                            let display_line = if line_content.len() > max_line_len {
+                                format!("> {}...", &line_content[..max_line_len.saturating_sub(3)])
+                            } else {
+                                format!("> {}", line_content)
+                            };
+                            formatted.push(Line::from(vec![Span::styled(display_line, Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC))]));
+                        } else {
+                            // Spacer line
+                            formatted.push(Line::from(vec![Span::styled(">", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC))]));
                         }
                     }
                 }
