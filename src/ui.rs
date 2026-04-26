@@ -106,8 +106,9 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(0),
-            Constraint::Length(3),
+            Constraint::Length(1),
             Constraint::Length(input_height),
+            Constraint::Length(2),
         ].as_ref())
         .split(main_layout[0]);
 
@@ -254,11 +255,12 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         Span::styled(format!("{} ", app.git_status), Style::default().fg(if app.git_status.contains("dirty") { Color::Red } else { Color::Green })),
     ];
 
-    let line3_spans = if app.is_processing && !app.is_executing_tool {
-        vec![Span::styled(format!("{} {} Lethetic Intelligence Engine Processing...", icons::SPINNER[app.spinner_index], icons::PROCESSING), Style::default().fg(Color::Yellow))]
+    let processing_text = if app.is_processing && !app.is_executing_tool {
+        vec![Line::from(vec![Span::styled(format!("  {} {} Lethetic Intelligence Engine Processing...", icons::SPINNER[app.spinner_index], icons::PROCESSING), Style::default().fg(Color::Yellow))])]
     } else {
-        vec![Span::raw("")]
+        vec![]
     };
+    f.render_widget(Paragraph::new(processing_text), left_layout[1]);
 
     let status_text = vec![
         Line::from(vec![
@@ -274,9 +276,8 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             Span::styled(format!("{}MB ", app.memory_usage), Style::default().fg(Color::Magenta)),
         ]),
         Line::from(line2_spans),
-        Line::from(line3_spans),
     ];
-    f.render_widget(Paragraph::new(status_text).wrap(Wrap { trim: true }), left_layout[1]);
+    f.render_widget(Paragraph::new(status_text).wrap(Wrap { trim: true }), left_layout[3]);
 
     if app.show_debug {
         let items: Vec<ListItem> = app.debug_log.iter().rev().take(50).map(|s| ListItem::new(s.as_str())).collect();
