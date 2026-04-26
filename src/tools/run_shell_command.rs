@@ -4,7 +4,10 @@ use super::icons;
 use super::llm_tokens;
 use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use std::path::{Path, PathBuf};
+use tokio::sync::mpsc;
+use crate::client::StreamEvent;
 
 pub fn get_definition() -> Tool {
     Tool {
@@ -46,7 +49,7 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     format!("{} Executing shell command: `{}`", icons::SHELL, command)
 }
 
-pub async fn execute(command: &str, cwd: &str, cancellation_token: CancellationToken) -> (String, String) {
+pub async fn execute(command: &str, cwd: &str, cancellation_token: CancellationToken, tx: mpsc::UnboundedSender<StreamEvent>) -> (String, String) {
     // Check if the command starts with 'cd' to update the persistent state
     let mut final_cwd = PathBuf::from(cwd);
     if command.trim().starts_with("cd ") {
@@ -64,7 +67,7 @@ pub async fn execute(command: &str, cwd: &str, cancellation_token: CancellationT
         }
     }
 
-    let child = Command::new("bash")
+    let mut child = Command::new("bash")
         .arg("-c")
         .arg(command)
         .current_dir(&final_cwd)
@@ -74,17 +77,48 @@ pub async fn execute(command: &str, cwd: &str, cancellation_token: CancellationT
         .spawn()
         .expect("Failed to spawn bash");
 
+    let stdout = child.stdout.take().expect("Failed to open stdout");
+    let stderr = child.stderr.take().expect("Failed to open stderr");
+
+    let mut stdout_reader = BufReader::new(stdout).lines();
+    let mut stderr_reader = BufReader::new(stderr).lines();
+
+    let mut full_stdout = String::new();
+    let mut full_stderr = String::new();
+    let mut streaming_lines: Vec<String> = Vec::new();
+
     let res_str = tokio::select! {
         _ = cancellation_token.cancelled() => {
-            format!("EXIT_CODE: signaled\nCWD: {}\nSTDOUT:\n[Process Killed by User]\nSTDERR:\n[Process Killed by User]", final_cwd.display())
+            let _ = child.kill().await;
+            format!("EXIT_CODE: signaled\nSTDOUT:\n[Process Killed by User]\nSTDERR:\n[Process Killed by User]")
         }
-        output = child.wait_with_output() => {
-            match output {
-                Ok(out) => {
-                    let stdout = String::from_utf8_lossy(&out.stdout);
-                    let stderr = String::from_utf8_lossy(&out.stderr);
-                    let status = out.status.code().map_or("signaled".to_string(), |c| c.to_string());
-                    format!("EXIT_CODE: {}\nCWD: {}\nSTDOUT:\n{}\nSTDERR:\n{}", status, final_cwd.display(), stdout, stderr)
+        status = async {
+            loop {
+                tokio::select! {
+                    Ok(Some(line)) = stdout_reader.next_line() => {
+                        full_stdout.push_str(&line);
+                        full_stdout.push('\n');
+                        streaming_lines.push(line);
+                        if streaming_lines.len() > 5 { streaming_lines.remove(0); }
+                        let _ = tx.send(StreamEvent::ToolProgress(streaming_lines.join("\n")));
+                    }
+                    Ok(Some(line)) = stderr_reader.next_line() => {
+                        full_stderr.push_str(&line);
+                        full_stderr.push('\n');
+                        streaming_lines.push(format!("[STDERR] {}", line));
+                        if streaming_lines.len() > 5 { streaming_lines.remove(0); }
+                        let _ = tx.send(StreamEvent::ToolProgress(streaming_lines.join("\n")));
+                    }
+                    else => {
+                        break child.wait().await;
+                    }
+                }
+            }
+        } => {
+            match status {
+                Ok(s) => {
+                    let exit_status = s.code().map_or("signaled".to_string(), |c| c.to_string());
+                    format!("EXIT_CODE: {}\nSTDOUT:\n{}\nSTDERR:\n{}", exit_status, full_stdout, full_stderr)
                 }
                 Err(e) => format!("ERROR: {}", e),
             }

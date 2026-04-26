@@ -40,6 +40,7 @@ pub enum StreamEvent {
     Chunk(String),
     ToolCalls(Vec<ToolCall>),
     ToolResult(Option<String>, String, String, String), // (id, func_name, result, current_dir)
+    ToolProgress(String),
     Done(Option<u32>, Option<u64>),
     Error(String),
     DebugLog(String),

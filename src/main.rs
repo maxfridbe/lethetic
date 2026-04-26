@@ -131,7 +131,7 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                             app.context_manager.add_message("assistant", &assistant_content);
 
                             let (mut result, new_dir) = lethetic::tools::execute(
-tc.function.name.as_str(), &tc.function.arguments, &app.current_dir, cancellation_token.clone()).await;
+                                tc.function.name.as_str(), &tc.function.arguments, &app.current_dir, cancellation_token.clone(), tx.clone()).await;
                             
                             result = handle_large_output(&tc.id, result);
                             
@@ -163,7 +163,14 @@ tc.function.name.as_str(), &tc.function.arguments, &app.current_dir, cancellatio
                     }
                 }
             }
+            Some(StreamEvent::ToolProgress(msg)) => {
+                // In headless, we could print progress or just ignore for now
+                // but let's print a single line indicator if it changed
+                print!("\r[STREAMING] {}          ", msg.replace('\n', " | "));
+                io::Write::flush(&mut io::stdout())?;
+            }
             Some(StreamEvent::Done(_, _)) => {
+                print!("\r                                                                \r");
                 if app.parser.state == lethetic::parser_new::ParserState::Text {
                     match parser::find_tool_call(&full_response_content, true) {
                         Some(Ok((tc, _))) => {
@@ -176,8 +183,7 @@ tc.function.name.as_str(), &tc.function.arguments, &app.current_dir, cancellatio
                         app.context_manager.add_message("assistant", &assistant_content);
 
                         let (mut result, new_dir) = lethetic::tools::execute(
-tc.function.name.as_str(), &tc.function.arguments, &app.current_dir, cancellation_token.clone()).await;
-                        
+                            tc.function.name.as_str(), &tc.function.arguments, &app.current_dir, cancellation_token.clone(), tx.clone()).await;
                         result = handle_large_output(&tc.id, result);
                         
                         app.current_dir = new_dir;
@@ -339,7 +345,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                                 app.is_executing_tool = true;
                                                 tokio::spawn(async move {
                                                     let (mut result, new_dir) = lethetic::tools::execute(
-func_name.as_str(), &args, &current_dir, tool_cancel).await;
+                                                        func_name.as_str(), &args, &current_dir, tool_cancel, ctx_tx.clone()).await;
                                                     
                                                     result = handle_large_output(&tc_id, result);
                                                     
@@ -443,6 +449,7 @@ func_name.as_str(), &args, &current_dir, tool_cancel).await;
                         }
                         StreamEvent::ToolResult(id, func_name, mut result, new_dir) => {
                             app.is_executing_tool = false;
+                            app.tool_output_preview.clear();
                             app.current_dir = new_dir;
                             let success = if result.contains("EXIT_CODE: ") { result.contains("EXIT_CODE: 0") } else { true };
                             
@@ -472,6 +479,10 @@ func_name.as_str(), &args, &current_dir, tool_cancel).await;
                             app.context_manager.set_cwd(app.current_dir.clone());
                             app.parser.reset();
                             trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), app.show_debug, app.current_session_dir.clone());
+                        }
+                        StreamEvent::ToolProgress(msg) => {
+                            app.tool_output_preview = msg;
+                            app.should_redraw = true;
                         }
                         StreamEvent::Done(eval_count, eval_duration) => {
                             app.is_processing = false;
@@ -518,7 +529,7 @@ func_name.as_str(), &args, &current_dir, tool_cancel).await;
                                     app.is_executing_tool = true;
                                     tokio::spawn(async move {
                                         let (mut result, new_dir) = lethetic::tools::execute(
-func_name.as_str(), &args, &current_dir, tool_cancel).await;
+                                            func_name.as_str(), &args, &current_dir, tool_cancel, ctx_tx.clone()).await;
                                         result = handle_large_output(&tc_id, result);
                                         let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, result, new_dir.clone()));
                                         let _ = ctx_tx.send(StreamEvent::DebugLog(format!("DIR_UPDATE|{}", new_dir)));

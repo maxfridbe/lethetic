@@ -129,13 +129,23 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     // --- VIRTUALIZATION LOGIC START ---
     // Instead of rendering all lines, we first count them and then only render the ones that would be visible.
     let mut total_lines = 0;
-    let mut block_line_counts = Vec::with_capacity(app.blocks.len());
+    let num_blocks = app.blocks.len();
+    let mut block_line_counts = Vec::with_capacity(num_blocks);
 
-    for block in &mut app.blocks {
+    for (i, block) in app.blocks.iter_mut().enumerate() {
+        let is_last = i == num_blocks - 1;
         let count = if let Some(ref cached) = block.cached_lines {
-            cached.len()
+            if is_last && app.is_executing_tool {
+                // Bypass cache for live preview
+                let rendered = render_block_to_lines(block, terminal_width, &app.theme, Some(&app.tool_output_preview));
+                let len = rendered.len();
+                // Don't update cache with temporary preview
+                len
+            } else {
+                cached.len()
+            }
         } else {
-            let rendered = render_block_to_lines(block, terminal_width, &app.theme);
+            let rendered = render_block_to_lines(block, terminal_width, &app.theme, None);
             let len = rendered.len();
             block.cached_lines = Some(rendered);
             len
@@ -167,21 +177,28 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
 
     for (block_idx, count) in block_line_counts.iter().enumerate() {
         let block_end = current_line_idx + count;
-        
+        let is_last = block_idx == app.blocks.len() - 1;
+
         // If this block is within or partially within our visible window
         if block_end > start_line && current_line_idx < end_line {
-            if let Some(ref lines) = app.blocks[block_idx].cached_lines {
-                for (i, line) in lines.iter().enumerate() {
-                    let absolute_idx = current_line_idx + i;
-                    if absolute_idx >= start_line && absolute_idx < end_line {
-                        let rendered_line = line.clone();
-                        list_items.push(ListItem::new(rendered_line));
-                    }
+            // Re-render if it's the live block, otherwise use cache
+            let lines_to_render = if is_last && app.is_executing_tool {
+                render_block_to_lines(&app.blocks[block_idx], terminal_width, &app.theme, Some(&app.tool_output_preview))
+            } else {
+                app.blocks[block_idx].cached_lines.as_ref().cloned().unwrap_or_default()
+            };
+
+            for (i, line) in lines_to_render.iter().enumerate() {
+                let absolute_idx = current_line_idx + i;
+                if absolute_idx >= start_line && absolute_idx < end_line {
+                    let rendered_line = line.clone();
+                    list_items.push(ListItem::new(rendered_line));
                 }
             }
         }
-        current_line_idx = block_end;
+        current_line_idx += count;
     }
+
 
     // Adjust the list state to point to the correct relative item in our virtualized list
     let mut virtual_state = ListState::default();
@@ -430,7 +447,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     }
 }
 
-fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme) -> Vec<Line<'static>> {
+fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, tool_preview: Option<&str>) -> Vec<Line<'static>> {
     let block_color = match block.block_type {
         BlockType::User => theme.input_fg,
         BlockType::Thought => Color::Cyan,
@@ -520,6 +537,16 @@ fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme) -> Ve
                 for line in json_text.lines.iter().skip(1) {
                     formatted.push(line.clone());
                 }
+                
+                if let Some(preview) = tool_preview {
+                    if !preview.is_empty() {
+                        formatted.push(Line::from(vec![Span::styled("--- Live Output Preview ---", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC))]));
+                        for line in preview.lines() {
+                            formatted.push(Line::from(vec![Span::styled(format!("> {}", line), Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC))]));
+                        }
+                    }
+                }
+                
                 formatted
             } else {
                 block.content.lines().map(|l| Line::from(Span::styled(l.to_string(), base_style))).collect()

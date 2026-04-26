@@ -96,7 +96,7 @@ pub fn get_ui_description(func_name: &str, arguments: &serde_json::Value) -> Str
     }
 }
 
-pub async fn execute(func_name: &str, arguments: &serde_json::Value, cwd: &str, cancellation_token: tokio_util::sync::CancellationToken) -> (String, String) {
+pub async fn execute(func_name: &str, arguments: &serde_json::Value, cwd: &str, cancellation_token: tokio_util::sync::CancellationToken, tx: tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>) -> (String, String) {
     match func_name {
         "read_file" => {
             let path = arguments["path"].as_str().unwrap_or("");
@@ -124,7 +124,7 @@ pub async fn execute(func_name: &str, arguments: &serde_json::Value, cwd: &str, 
         }
         "run_shell_command" => {
             let command = arguments["command"].as_str().unwrap_or("");
-            run_shell_command::execute(command, cwd, cancellation_token).await
+            run_shell_command::execute(command, cwd, cancellation_token, tx).await
         }
         "write_file" => {
             let path = arguments["path"].as_str().unwrap_or("");
