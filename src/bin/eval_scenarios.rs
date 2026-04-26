@@ -1,24 +1,12 @@
-#[path = "../context.rs"]
-mod context;
-#[path = "../parser.rs"]
-mod parser;
-#[path = "../system_prompt.rs"]
-mod system_prompt;
-#[path = "../config.rs"]
-mod config;
-#[path = "../client.rs"]
-mod client;
-#[path = "../tools/mod.rs"]
-mod tools;
-#[path = "../icons.rs"]
-mod icons;
-#[path = "../llm_tokens.rs"]
-mod llm_tokens;
+use lethetic::context::ContextManager;
+use lethetic::parser::find_tool_call;
+use lethetic::config::Config;
+use lethetic::client::{GenerateRequest, GenerateResponse};
+use lethetic::system_prompt;
+use lethetic::tools;
+use lethetic::icons;
+use lethetic::llm_tokens;
 
-use crate::context::{ContextManager};
-use crate::parser::find_tool_call;
-use crate::config::Config;
-use crate::client::{GenerateRequest, GenerateResponse};
 use reqwest::Client;
 use serde_json::json;
 use futures_util::StreamExt;

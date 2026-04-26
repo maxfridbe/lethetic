@@ -41,6 +41,8 @@ pub enum StreamEvent {
     ToolCalls(Vec<ToolCall>),
     ToolResult(Option<String>, String, String, String), // (id, func_name, result, current_dir)
     ToolProgress(String),
+    LoadProgress(f32, String),
+    SessionLoaded(String, Vec<crate::app::RenderBlock>, Vec<crate::context::Message>),
     Done(Option<u32>, Option<u64>),
     Error(String),
     DebugLog(String),

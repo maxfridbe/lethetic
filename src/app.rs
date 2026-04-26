@@ -131,6 +131,9 @@ pub struct App {
     pub last_block_content: String,
     pub loop_detection_count: usize,
     pub last_loop_detection_time: Option<std::time::Instant>,
+    pub is_loading_session: bool,
+    pub load_progress: f32,
+    pub load_status: String,
 }
 
 impl App {
@@ -230,6 +233,9 @@ impl App {
             last_block_content: String::new(),
             loop_detection_count: 0,
             last_loop_detection_time: None,
+            is_loading_session: false,
+            load_progress: 0.0,
+            load_status: String::new(),
         };
 
         app.refresh_session_list();

@@ -494,7 +494,12 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             app.loop_detection_count += 1;
                                             app.last_loop_detection_time = Some(now);
                                             
-                                            // Re-trigger the request automatically once
+                                            // Correct re-triggering logic:
+                                            app.is_processing = true;
+                                            full_response_content.clear();
+                                            cancellation_token = CancellationToken::new(); // NEW TOKEN
+                                            app.parser.reset();
+                                            
                                             trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), app.show_debug, app.current_session_dir.clone());
                                         }
                                         break; 

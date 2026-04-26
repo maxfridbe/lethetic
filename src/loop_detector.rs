@@ -25,7 +25,7 @@ impl Default for LoopDetectorConfig {
             block_limit: 5000,
             ngram_window: 64,
             ngram_threshold: 3,
-            phrase_threshold: 4,
+            phrase_threshold: 10,
         }
     }
 }
