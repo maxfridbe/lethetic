@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use crate::context::{ContextManager, ToolCall};
 use crate::config::Config;
 use crate::icons;
-use crate::system_prompt::get_expert_engineer_prompt;
 use crate::ui::Theme;
 use crate::client::{StreamEvent};
 use crate::parser_new::StreamParser;
@@ -106,6 +105,9 @@ pub struct App {
     pub system_prompt: String,
     pub show_prompt_editor: bool,
     pub is_editing_prompt: bool,
+    pub show_prompt_save_dialog: bool,
+    pub prompt_save_name: String,
+    pub system_prompt_manager: crate::system_prompt::SystemPromptManager,
     pub show_cleanup_prompt: bool,
     pub show_hotkeys: bool,
     pub tool_call_pos: Option<usize>,
@@ -135,10 +137,13 @@ impl App {
         let mut theme_state = ListState::default();
         theme_state.select(Some(0));
         
-        let system_prompt = get_expert_engineer_prompt();
+        let system_prompt_manager = crate::system_prompt::SystemPromptManager::new();
+        let system_prompt = system_prompt_manager.load_prompt("software_engineer").unwrap_or_else(|| crate::system_prompt::DEFAULT_PROMPT_TEMPLATE.to_string());
+        
+        let resolved_prompt = crate::system_prompt::SystemPromptManager::resolve_prompt(&system_prompt);
         let context_manager = ContextManager::new(
             config.context_size, 
-            Some(system_prompt.clone())
+            Some(resolved_prompt)
         );
 
         let mut app = App {
@@ -196,6 +201,9 @@ impl App {
             system_prompt: system_prompt.clone(),
             show_prompt_editor: false,
             is_editing_prompt: false,
+            show_prompt_save_dialog: false,
+            prompt_save_name: String::new(),
+            system_prompt_manager,
             show_cleanup_prompt: false,
             show_hotkeys: false,
             tool_call_pos: None,
@@ -565,6 +573,31 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                 }
                 _ => {}
             }
+        } else if app.show_prompt_save_dialog {
+            match key.code {
+                KeyCode::Esc => {
+                    app.show_prompt_save_dialog = false;
+                    app.should_redraw = true;
+                }
+                KeyCode::Enter => {
+                    let name = app.prompt_save_name.trim().to_string();
+                    if !name.is_empty() {
+                        let _ = app.system_prompt_manager.save_prompt(&name, &app.system_prompt);
+                        app.log_debug(&format!("System prompt saved as {}.md", name));
+                    }
+                    app.show_prompt_save_dialog = false;
+                    app.should_redraw = true;
+                }
+                KeyCode::Char(c) => {
+                    app.prompt_save_name.push(c);
+                    app.should_redraw = true;
+                }
+                KeyCode::Backspace => {
+                    app.prompt_save_name.pop();
+                    app.should_redraw = true;
+                }
+                _ => {}
+            }
         } else {
             match key.code {
                 KeyCode::Char('m') | KeyCode::Char('M') => {
@@ -573,10 +606,18 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                     app.should_redraw = true;
                 }
                 KeyCode::Char('s') | KeyCode::Char('S') => {
-                    app.context_manager.update_system_prompt(app.system_prompt.clone());
+                    let resolved = crate::system_prompt::SystemPromptManager::resolve_prompt(&app.system_prompt);
+                    app.context_manager.update_system_prompt(resolved);
+                    // Also auto-save as software_engineer.md
+                    let _ = app.system_prompt_manager.save_prompt("software_engineer", &app.system_prompt);
                     app.show_prompt_editor = false;
                     app.should_redraw = true;
-                    app.log_debug("System prompt updated and applied.");
+                    app.log_debug("System prompt updated and saved as software_engineer.md.");
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') => {
+                    app.show_prompt_save_dialog = true;
+                    app.prompt_save_name.clear();
+                    app.should_redraw = true;
                 }
                 KeyCode::Up | KeyCode::Char('k') => {
                     app.prompt_scroll = app.prompt_scroll.saturating_sub(1);

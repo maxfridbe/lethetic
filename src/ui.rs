@@ -383,7 +383,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         let instructions = if app.is_editing_prompt { 
             format!("EDITING MODE | Cursor: {} | (ESC) Finish", app.prompt_cursor_pos) 
         } else { 
-            "(M)odify | (S)ave & Apply | (UP/DN) Scroll | (ESC) Close".to_string() 
+            "(M)odify | (S)ave & Use | Save for Later (N) | (UP/DN) Scroll | (ESC) Close".to_string() 
         };
         f.render_widget(Paragraph::new(instructions).block(header_block), chunks[0]);
 
@@ -419,6 +419,19 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
                 .scroll((app.prompt_scroll as u16, 0)), 
             chunks[1]
         );
+
+        if app.show_prompt_save_dialog {
+            let dialog_area = centered_rect(50, 20, f.area());
+            f.render_widget(Clear, dialog_area);
+            
+            let dialog_block = UIBlock::default()
+                .title(format!("{} Save Prompt As", icons::WARNING))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow));
+                
+            let text = format!("Enter filename (without .md):\n> {}\n\n(ENTER) Save | (ESC) Cancel", app.prompt_save_name);
+            f.render_widget(Paragraph::new(text).block(dialog_block).wrap(Wrap { trim: true }), dialog_area);
+        }
     }
 
     if app.show_hotkeys {
