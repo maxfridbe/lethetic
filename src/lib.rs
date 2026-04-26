@@ -10,3 +10,4 @@ pub mod parser_new;
 pub mod app;
 pub mod ui;
 pub mod tools;
+pub mod loop_detector;

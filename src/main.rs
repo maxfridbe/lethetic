@@ -26,7 +26,7 @@ use lethetic::icons;
 use lethetic::parser;
 use lethetic::parser_new;
 
-fn handle_large_output(id: &str, mut result: String) -> String {
+fn handle_large_output(id: &str, result: String) -> (String, String) {
     if result.len() > 10000 {
         let file_id = if id.is_empty() { "unknown" } else { id };
         let dir_path = ".lethetic/tool_responses";
@@ -42,9 +42,11 @@ fn handle_large_output(id: &str, mut result: String) -> String {
             }
         }
         
-        result = format!("{}... [Output truncated. Full output is {} characters long and has been saved to {}] ...", exit_status, result.len(), file_path);
+        let truncated = format!("{}... [Output truncated. Full output is {} characters long and has been saved to {}] ...", exit_status, result.len(), file_path);
+        (result, truncated)
+    } else {
+        (result.clone(), result)
     }
-    result
 }
 
 #[tokio::main]
@@ -132,12 +134,12 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
 
                             let (mut result, new_dir) = lethetic::tools::execute(
                                 tc.function.name.as_str(), &tc.function.arguments, &app.current_dir, cancellation_token.clone(), tx.clone()).await;
-                            
-                            result = handle_large_output(&tc.id, result);
-                            
+                            let (full_result, ui_result) = handle_large_output(&tc.id, result);
+
                             app.current_dir = new_dir;
-                            println!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, result);
-                            app.context_manager.add_tool_message(tc.id.clone(), &tc.function.name, &result);
+                            println!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, ui_result);
+                            app.context_manager.add_tool_message(tc.id.clone(), &tc.function.name, &full_result);
+
                             
                             full_response_content.clear();
                             cancellation_token = CancellationToken::new();
@@ -184,11 +186,11 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
 
                         let (mut result, new_dir) = lethetic::tools::execute(
                             tc.function.name.as_str(), &tc.function.arguments, &app.current_dir, cancellation_token.clone(), tx.clone()).await;
-                        result = handle_large_output(&tc.id, result);
+                        let (full_result, ui_result) = handle_large_output(&tc.id, result);
                         
                         app.current_dir = new_dir;
-                        println!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, result);
-                        app.context_manager.add_tool_message(tc.id.clone(), &tc.function.name, &result);
+                        println!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, ui_result);
+                        app.context_manager.add_tool_message(tc.id.clone(), &tc.function.name, &full_result);
                         
                         full_response_content.clear();
                         cancellation_token = CancellationToken::new();
@@ -347,9 +349,9 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                                     let (mut result, new_dir) = lethetic::tools::execute(
                                                         func_name.as_str(), &args, &current_dir, tool_cancel, ctx_tx.clone()).await;
                                                     
-                                                    result = handle_large_output(&tc_id, result);
+                                                    let (full_result, ui_result) = handle_large_output(&tc_id, result);
                                                     
-                                                    let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, result, new_dir.clone()));
+                                                    let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, full_result, new_dir.clone()));
                                                     let _ = ctx_tx.send(StreamEvent::DebugLog(format!("DIR_UPDATE|{}", new_dir)));
                                                 });
                                                 app.is_processing = true;
@@ -422,6 +424,39 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 let segments = app.parser.parse_chunk(&chunk);
                                 for (b_type, content) in segments {
                                     app.add_segment(content, b_type);
+                                    
+                                    // Check for loops after adding content
+                                    if let Some(reason) = app.loop_detector.check(&app.last_block_content) {
+                                        app.log_debug(&format!("LOOP DETECTED: {}", reason));
+                                        cancellation_token.cancel();
+                                        app.is_processing = false;
+                                        
+                                        let now = std::time::Instant::now();
+                                        let is_rapid_loop = if let Some(last_time) = app.last_loop_detection_time {
+                                            now.duration_since(last_time) < std::time::Duration::from_secs(120)
+                                        } else {
+                                            false
+                                        };
+
+                                        if is_rapid_loop && app.loop_detection_count >= 1 {
+                                            app.add_segment(format!("\n{} [FORCED STOP] Rapid reasoning loop detected twice within 2 minutes. Stopping engine to prevent waste.\n", icons::WARNING), BlockType::Text);
+                                            app.context_manager.add_message("assistant", &full_response_content);
+                                            app.context_manager.add_message("system", "The user's system forced a stop because you entered a persistent reasoning loop.");
+                                            app.loop_detection_count = 0; // Reset for next attempt
+                                            app.last_loop_detection_time = None;
+                                        } else {
+                                            app.add_segment(format!("\n{} [LOOP DETECTED] {}\n", icons::WARNING, reason), BlockType::Text);
+                                            app.context_manager.add_message("assistant", &full_response_content);
+                                            app.context_manager.add_message("system", "Note: You were stuck in a reasoning loop. Please choose a single clear path and proceed with a tool call immediately.");
+                                            
+                                            app.loop_detection_count += 1;
+                                            app.last_loop_detection_time = Some(now);
+                                            
+                                            // Re-trigger the request automatically once
+                                            trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), app.show_debug, app.current_session_dir.clone());
+                                        }
+                                        break; 
+                                    }
                                 }
 
                                 if app.parser.state == lethetic::parser_new::ParserState::Text && !app.tool_calls_processed_this_request {
@@ -454,20 +489,20 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             let success = if result.contains("EXIT_CODE: ") { result.contains("EXIT_CODE: 0") } else { true };
                             
                             let tc_id_str = id.clone().unwrap_or_else(|| "unknown".to_string());
-                            result = handle_large_output(&tc_id_str, result);
+                            let (full_result, ui_result) = handle_large_output(&tc_id_str, result);
 
                             let description = app.pending_tool_call.as_ref()
                                 .and_then(|tc| tc.function.arguments["description"].as_str())
                                 .unwrap_or("Action").to_string();
 
-                            app.add_segment_with_title(format!("\n{}\n", result), BlockType::ToolResult, description);
+                            app.add_segment_with_title(format!("\n{}\n", ui_result), BlockType::ToolResult, description);
                             if let Some(last) = app.blocks.last_mut() { last.success = Some(success); }
 
                             if let Some(tc_id) = id { 
                                 if let Some(tc) = app.pending_tool_call.take() {
                                     app.context_manager.add_assistant_tool_call(&full_response_content, vec![tc]);
                                 }
-                                app.context_manager.add_tool_message(tc_id, &func_name, &result); 
+                                app.context_manager.add_tool_message(tc_id, &func_name, &full_result); 
                             }
                             
                             app.is_processing = true;
@@ -530,8 +565,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                     tokio::spawn(async move {
                                         let (mut result, new_dir) = lethetic::tools::execute(
                                             func_name.as_str(), &args, &current_dir, tool_cancel, ctx_tx.clone()).await;
-                                        result = handle_large_output(&tc_id, result);
-                                        let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, result, new_dir.clone()));
+                                        let (full_result, ui_result) = handle_large_output(&tc_id, result);
+                                        let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, full_result, new_dir.clone()));
                                         let _ = ctx_tx.send(StreamEvent::DebugLog(format!("DIR_UPDATE|{}", new_dir)));
                                     });
                                     app.is_processing = true;

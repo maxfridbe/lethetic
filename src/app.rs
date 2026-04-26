@@ -14,6 +14,7 @@ use crate::system_prompt::get_expert_engineer_prompt;
 use crate::ui::Theme;
 use crate::client::{StreamEvent};
 use crate::parser_new::StreamParser;
+use crate::loop_detector::{LoopDetector, LoopDetectorConfig};
 use ratatui::text::Line;
 
 static MARKER_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"<\|?/?(?:channel|thought|tool_call|tool_response|turn|bos|eos|think|\||\x22|')[^>]*>?(?:thought|text|model|system)?").unwrap());
@@ -121,6 +122,10 @@ pub struct App {
     pub prompt_cursor_pos: usize,
     pub prompt_scroll: usize,
     pub parser: StreamParser,
+    pub loop_detector: LoopDetector,
+    pub last_block_content: String,
+    pub loop_detection_count: usize,
+    pub last_loop_detection_time: Option<std::time::Instant>,
 }
 
 impl App {
@@ -154,6 +159,7 @@ impl App {
             palette_items: vec![
                 format!("{} Hotkeys", icons::COMMAND),
                 format!("{} Themes", icons::THEME),
+                format!("{} Loop Detection: Combined", icons::PROCESSING),
                 format!("{} System Prompt", icons::MODEL),
                 format!("{} Clear UI (Keep Context)", icons::TRASH),
                 format!("{} Clear All Context", icons::TRASH),
@@ -206,6 +212,10 @@ impl App {
             prompt_cursor_pos: system_prompt.len(),
             prompt_scroll: 0,
             parser: StreamParser::new(),
+            loop_detector: LoopDetector::new(LoopDetectorConfig::default()),
+            last_block_content: String::new(),
+            loop_detection_count: 0,
+            last_loop_detection_time: None,
         };
 
         app.refresh_session_list();
@@ -346,9 +356,10 @@ impl App {
         if let Some(last) = self.blocks.last_mut() {
             if last.block_type == BlockType::Formulating && b_type == BlockType::ToolCall {
                 last.block_type = BlockType::ToolCall;
-                last.content = cleaned_content;
+                last.content = cleaned_content.clone();
                 last.title = title;
                 last.cached_lines = None;
+                self.last_block_content = cleaned_content;
                 self.should_redraw = true;
                 self.needs_save = true;
                 return;
@@ -356,6 +367,7 @@ impl App {
 
             if last.block_type == b_type && b_type != BlockType::Divider && last.title == title {
                 last.content.push_str(&cleaned_content);
+                self.last_block_content.push_str(&cleaned_content);
                 last.cached_lines = None;
                 self.should_redraw = true;
                 if self.auto_scroll { self.sync_scroll_to_end(); }
@@ -364,6 +376,7 @@ impl App {
             }
         }
 
+        self.last_block_content = cleaned_content.clone();
         self.add_block(cleaned_content, b_type, title);
     }
 
@@ -676,12 +689,26 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                 match i {
                     0 => { app.show_palette = false; app.show_hotkeys = true; }
                     1 => { app.show_palette = false; app.show_theme_menu = true; }
-                    2 => { app.show_palette = false; app.show_prompt_editor = true; }
-                    3 => { app.show_palette = false; app.blocks.clear(); app.should_redraw = true; app.needs_save = true; }
-                    4 => { app.show_palette = false; app.context_manager.clear(); app.start_new_session(); }
-                    5 => { app.show_palette = false; app.show_debug = !app.show_debug; }
-                    6 => { app.show_palette = false; app.refresh_session_list(); app.show_session_manager = true; }
-                    7 => return AppEventOutcome::Exit,
+                    2 => { 
+                        // Cycle loop detection mode
+                        use crate::loop_detector::LoopDetectionMode;
+                        let next_mode = match app.loop_detector.config.mode {
+                            LoopDetectionMode::Off => LoopDetectionMode::BlockLimit,
+                            LoopDetectionMode::BlockLimit => LoopDetectionMode::NGram,
+                            LoopDetectionMode::NGram => LoopDetectionMode::PhraseFrequency,
+                            LoopDetectionMode::PhraseFrequency => LoopDetectionMode::Combined,
+                            LoopDetectionMode::Combined => LoopDetectionMode::Off,
+                        };
+                        app.loop_detector.config.mode = next_mode;
+                        app.palette_items[2] = format!("{} Loop Detection: {:?}", icons::PROCESSING, next_mode);
+                        app.should_redraw = true;
+                    }
+                    3 => { app.show_palette = false; app.show_prompt_editor = true; }
+                    4 => { app.show_palette = false; app.blocks.clear(); app.should_redraw = true; app.needs_save = true; }
+                    5 => { app.show_palette = false; app.context_manager.clear(); app.start_new_session(); }
+                    6 => { app.show_palette = false; app.show_debug = !app.show_debug; }
+                    7 => { app.show_palette = false; app.refresh_session_list(); app.show_session_manager = true; }
+                    8 => return AppEventOutcome::Exit,
                     _ => app.show_palette = false,
                 }
             }
