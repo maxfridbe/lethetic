@@ -539,7 +539,7 @@ pub fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, t
         BlockType::Thought => (Color::Rgb(25, 45, 45), Some(format!("{} Engine Thinking...", icons::PROCESSING))),
         BlockType::Formulating => (Color::Rgb(45, 35, 25), Some(format!("{} Formulating tool request...", icons::SPINNER[0]))),
         BlockType::ToolCall => (Color::Rgb(45, 45, 30), Some(format!("{} Engine Tool Request", icons::COMMAND))),
-        BlockType::ToolResult => (Color::Rgb(35, 35, 35), Some(format!("{} Tool Output", icons::SUCCESS))),
+        BlockType::ToolResult => (Color::Rgb(35, 35, 35), Some(format!("{} Agent, Tool Output", icons::SUCCESS))),
         BlockType::Divider => (Color::Reset, None),
         _ => (Color::Reset, None),
     };
@@ -547,7 +547,7 @@ pub fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, t
     if let Some(ref t) = block.title {
         header = match block.block_type {
             BlockType::ToolCall => header, // Keep generic "Engine Tool Request"
-            BlockType::ToolResult => Some(format!("{} {}\n, Tool Output:", icons::SUCCESS, t)),
+            BlockType::ToolResult => Some(format!("{} Agent, {}", icons::SUCCESS, t)),
             _ => Some(t.clone()),
         };
     }
