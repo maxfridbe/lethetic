@@ -467,15 +467,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 for (b_type, content) in segments {
                                     app.add_segment(content, b_type);
                                     
-                                    // Check for loops across the context of the last few blocks to catch oscillations
-                                    let mut detection_context = String::new();
-                                    let blocks_to_check = 3;
-                                    let start_idx = app.blocks.len().saturating_sub(blocks_to_check);
-                                    for i in start_idx..app.blocks.len() {
-                                        detection_context.push_str(&app.blocks[i].content);
-                                    }
-
-                                    if let Some(detection) = app.loop_detector.check(&detection_context) {
+                                    // Check for loops after adding content
+                                    if let Some(detection) = app.loop_detector.check(&app.last_block_content) {
                                         app.log_debug(&format!("LOOP DETECTED: {}", detection.reason));
                                         cancellation_token.cancel();
                                         app.is_processing = false;
@@ -488,17 +481,13 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                         };
 
                                         if is_rapid_loop && app.loop_detection_count >= 1 {
-                                            let mut stop_msg = format!("\n{} [WATCHDOG TERMINATED] Persistent loop detected after multiple auto-correction attempts. Handing control to user.\n", icons::WARNING);
-                                            if let Some(sample) = detection.sample {
-                                                stop_msg.push_str(&format!("{} Last looping sequence: \"{}\"\n", icons::DEBUG, sample));
-                                            }
-                                            app.add_segment(stop_msg, BlockType::Text);
+                                            app.add_segment(format!("\n{} [FORCED STOP] Rapid reasoning loop detected twice within 2 minutes. Stopping engine to prevent waste.\n", icons::WARNING), BlockType::Text);
                                             app.context_manager.add_message("assistant", &full_response_content);
-                                            app.context_manager.add_message("system", "The watchdog terminated your generation because you were unable to break out of a loop. Please proceed with a tool call immediately.");
+                                            app.context_manager.add_message("system", "The user's system forced a stop because you entered a persistent reasoning loop.");
                                             app.loop_detection_count = 0; // Reset for next attempt
                                             app.last_loop_detection_time = None;
                                         } else {
-                                            let mut loop_msg = format!("\n{} [WATCHDOG NUDGE] {}\n", icons::WARNING, detection.reason);
+                                            let mut loop_msg = format!("\n{} [LOOP DETECTED] {}\n", icons::WARNING, detection.reason);
                                             if let Some(sample) = detection.sample {
                                                 loop_msg.push_str(&format!("{} Sample: \"{}\"\n", icons::DEBUG, sample));
                                             }
