@@ -27,7 +27,7 @@ pub fn get_definition() -> Tool {
                     },
                     "tool_call_id": {
                         "type": "string",
-                        "description": "Required tracking ID"
+                        "description": "A unique, descriptive string identifier for this call (e.g., 'read_main_rs', 'check_folders'). Do not use simple numbers."
                     }
                 },
                 "required": ["pattern", "description", "tool_call_id"]
@@ -37,7 +37,7 @@ pub fn get_definition() -> Tool {
 }
 
 pub fn get_prompt_template() -> String {
-    format!("{}declaration:search_text{{description:<|\">Search for a regular expression pattern within file contents.<|\">,parameters:{{properties:{{path:{{description:<|\">Directory or file to search (recursive if directory)<|\">,type:<|\">STRING<|\">}},pattern:{{description:<|\">The regex pattern to search for<|\">,type:<|\">STRING<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">Required tracking ID<|\">,type:<|\">STRING<|\">}}}},required:[<|\">pattern<|\">,<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
+    format!("{}declaration:search_text{{description:<|\">Search for a regular expression pattern within file contents.<|\">,parameters:{{properties:{{path:{{description:<|\">Directory or file to search (recursive if directory)<|\">,type:<|\">STRING<|\">}},pattern:{{description:<|\">The regex pattern to search for<|\">,type:<|\">STRING<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">A unique, descriptive string identifier for this call (e.g., 'read_main_rs', 'check_folders'). Do not use simple numbers.<|\">,type:<|\">STRING<|\">}}}},required:[<|\">pattern<|\">,<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
 }
 
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {
