@@ -459,7 +459,7 @@ fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme) -> Ve
 
     if let Some(ref t) = block.title {
         header = match block.block_type {
-            BlockType::ToolCall => Some(format!("{} {}", icons::COMMAND, t)),
+            BlockType::ToolCall => header, // Keep generic "Engine Tool Request"
             BlockType::ToolResult => Some(format!("{} {}\n, Tool Output:", icons::SUCCESS, t)),
             _ => Some(t.clone()),
         };
