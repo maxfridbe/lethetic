@@ -300,8 +300,40 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                         app.should_redraw = true;
                                     }
                                     AppEventOutcome::ResumeSession(filename) => {
-                                        app.load_session(&filename);
+                                        app.is_loading_session = true;
+                                        app.load_progress = 0.0;
+                                        app.load_status = "Starting to load session...".to_string();
                                         app.should_redraw = true;
+
+                                        let tx_clone = tx.clone();
+                                        let filename_clone = filename.clone();
+                                        tokio::spawn(async move {
+                                            let _ = tx_clone.send(StreamEvent::LoadProgress(10.0, "Reading UI state...".to_string()));
+                                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                                            
+                                            let ui_content = tokio::fs::read_to_string(format!("{}/ui_state.json", filename_clone)).await.unwrap_or_default();
+                                            let _ = tx_clone.send(StreamEvent::LoadProgress(40.0, "Parsing UI state...".to_string()));
+                                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                                            
+                                            let blocks: Vec<lethetic::app::RenderBlock> = tokio::task::spawn_blocking(move || {
+                                                serde_json::from_str::<Vec<lethetic::app::RenderBlock>>(&ui_content).unwrap_or_default()
+                                            }).await.unwrap_or_default();
+
+                                            let _ = tx_clone.send(StreamEvent::LoadProgress(60.0, "Reading context...".to_string()));
+                                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                                            
+                                            let ctx_content = tokio::fs::read_to_string(format!("{}/context.json", filename_clone)).await.unwrap_or_default();
+                                            let _ = tx_clone.send(StreamEvent::LoadProgress(80.0, "Parsing context...".to_string()));
+                                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                                            
+                                            let messages: Vec<lethetic::context::Message> = tokio::task::spawn_blocking(move || {
+                                                serde_json::from_str::<Vec<lethetic::context::Message>>(&ctx_content).unwrap_or_default()
+                                            }).await.unwrap_or_default();
+
+                                            let _ = tx_clone.send(StreamEvent::LoadProgress(100.0, "Finishing...".to_string()));
+                                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                                            let _ = tx_clone.send(StreamEvent::SessionLoaded(filename_clone, blocks, messages));
+                                        });
                                     }
                                     AppEventOutcome::DeleteSession(filename) => {
                                         let _ = std::fs::remove_dir_all(filename);
@@ -578,7 +610,25 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             app.add_segment(format!("\n{} ERROR: {}\n", icons::WARNING, e), BlockType::Text);
                             app.should_redraw = true;
                         }
+                        StreamEvent::LoadProgress(pct, status) => {
+                            app.load_progress = pct;
+                            app.load_status = status;
+                            app.should_redraw = true;
+                        }
+                        StreamEvent::SessionLoaded(dir, blocks, messages) => {
+                            app.current_session_dir = Some(dir);
+                            app.blocks = blocks;
+                            app.context_manager.clear();
+                            for msg in messages {
+                                app.context_manager.add_message_raw(msg);
+                            }
+                            app.scroll = 0;
+                            app.output_state.select(Some(app.blocks.len().saturating_sub(1)));
+                            app.is_loading_session = false;
+                            app.should_redraw = true;
+                        }
                     }
+
 
                     // Attempt to process next available event without yielding
                     if let Ok(next_event) = rx.try_recv() {
