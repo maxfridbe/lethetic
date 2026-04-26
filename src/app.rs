@@ -358,9 +358,8 @@ impl App {
         if parts.is_empty() { return; }
 
         for (part, is_marker) in parts {
-            if is_marker {
-                // If it's a marker, we might want to switch block types or just skip it
-                // For now, we skip markers in the UI content (MARKER_REGEX.replace_all behavior)
+            if is_marker && b_type != BlockType::ToolCall && b_type != BlockType::Formulating {
+                // Skip markers in UI content for Text/Thought blocks, but KEEP them for tool blocks
                 continue;
             }
             self.add_segment_internal(part.to_string(), b_type.clone());
