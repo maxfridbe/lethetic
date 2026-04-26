@@ -106,8 +106,8 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(0),
-            Constraint::Length(input_height),
             Constraint::Length(3),
+            Constraint::Length(input_height),
         ].as_ref())
         .split(main_layout[0]);
 
@@ -239,11 +239,11 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     
     let prefix = Span::styled("> ", Style::default().fg(app.theme.highlight_fg).add_modifier(Modifier::BOLD));
     let input_text = Line::from(vec![prefix, Span::raw(&app.input)]);
-    f.render_widget(Paragraph::new(input_text).block(input_block).wrap(Wrap { trim: false }), left_layout[1]);
+    f.render_widget(Paragraph::new(input_text).block(input_block).wrap(Wrap { trim: false }), left_layout[2]);
 
     if !app.is_output_focused {
-        let cursor_x = left_layout[1].x + 1 + prefix_len as u16 + (app.cursor_pos as u16 % inner_width.max(1));
-        let cursor_y = left_layout[1].y + 1 + (app.cursor_pos as u16 / inner_width.max(1));
+        let cursor_x = left_layout[2].x + 1 + prefix_len as u16 + (app.cursor_pos as u16 % inner_width.max(1));
+        let cursor_y = left_layout[2].y + 1 + (app.cursor_pos as u16 / inner_width.max(1));
         f.set_cursor_position((cursor_x, cursor_y));
     }
 
@@ -276,7 +276,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         Line::from(line2_spans),
         Line::from(line3_spans),
     ];
-    f.render_widget(Paragraph::new(status_text).wrap(Wrap { trim: true }), left_layout[2]);
+    f.render_widget(Paragraph::new(status_text).wrap(Wrap { trim: true }), left_layout[1]);
 
     if app.show_debug {
         let items: Vec<ListItem> = app.debug_log.iter().rev().take(50).map(|s| ListItem::new(s.as_str())).collect();
