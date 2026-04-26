@@ -1,3 +1,8 @@
+use regex::Regex;
+use once_cell::sync::Lazy;
+
+static KEY_FIXER: Lazy<Regex> = Lazy::new(|| Regex::new(r"([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)").unwrap());
+
 pub fn find_tool_call(text: &str, is_final: bool) -> Option<Result<(crate::context::ToolCall, usize), (String, usize)>> {
     let start_tokens = ["<|tool_call>", "<tool_call>"];
     
@@ -43,158 +48,97 @@ pub fn find_tool_call(text: &str, is_final: bool) -> Option<Result<(crate::conte
     None
 }
 
-fn parse_native_block(block: &str) -> Result<crate::context::ToolCall, String> {
-    let call_content = if let Some(c_pos) = block.find("call:") {
-        &block[c_pos + 5..]
+pub fn parse_native_block(block: &str) -> Result<crate::context::ToolCall, String> {
+    // 1. Normalize all specialized string markers to standard quotes.
+    // This handles cases where the model mixes " with <|"|> or uses markers as delimiters.
+    let mut normalized = block.to_string();
+    let markers = [
+        ("<|\"|>", "\""),
+        ("<|\">", "\""),
+        ("<|'|>", "'"),
+        ("<|'>", "'"),
+        ("<|\"", "\""),
+        ("\">", "\""),
+    ];
+    for (m, r) in &markers {
+        normalized = normalized.replace(m, r);
+    }
+
+    let call_content = if let Some(c_pos) = normalized.find("call:") {
+        &normalized[c_pos + 5..]
     } else {
         return Err("Missing 'call:' prefix".to_string());
     };
 
     let brace_start = call_content.find('{').ok_or("Missing '{' for arguments")?;
     let func_name = call_content[..brace_start].trim().to_string();
-    let args_content = &call_content[brace_start + 1..];
+    let args_content = &call_content[brace_start..]; 
 
-    let mut last_brace = None;
-    let mut in_marker = false;
-    let mut current_marker = "";
-    let char_indices: Vec<(usize, char)> = args_content.char_indices().collect();
-    let mut i = 0;
-    while i < char_indices.len() {
-        let (byte_pos, _) = char_indices[i];
-        let slice = &args_content[byte_pos..];
-        
-        if !in_marker {
-            if slice.starts_with("<|\"|>") {
-                in_marker = true;
-                current_marker = "<|\"|>";
-                let target = byte_pos + 5;
-                while i < char_indices.len() && char_indices[i].0 < target { i += 1; }
-                continue;
-            } else if slice.starts_with("<|\">") {
-                in_marker = true;
-                current_marker = "<|\">";
-                let target = byte_pos + 4;
-                while i < char_indices.len() && char_indices[i].0 < target { i += 1; }
-                continue;
-            } else {
-                if char_indices[i].1 == '}' {
-                    last_brace = Some(byte_pos);
+    // 2. Simple character-level scan on normalized string to find the closing brace.
+    let mut brace_count = 0;
+    let mut in_string = false;
+    let mut string_char = ' ';
+    let mut end_pos = None;
+
+    let chars: Vec<char> = args_content.chars().collect();
+    for (i, &c) in chars.iter().enumerate() {
+        if in_string {
+            if c == string_char {
+                // Check for escape (only handles single backslash)
+                let mut is_escaped = false;
+                let mut k = i as i32 - 1;
+                while k >= 0 && chars[k as usize] == '\\' {
+                    is_escaped = !is_escaped;
+                    k -= 1;
+                }
+                if !is_escaped {
+                    in_string = false;
                 }
             }
         } else {
-            if slice.starts_with(current_marker) {
-                in_marker = false;
-                let target = byte_pos + current_marker.len();
-                while i < char_indices.len() && char_indices[i].0 < target { i += 1; }
-                continue;
-            }
-        }
-        i += 1;
-    }
-
-    let end_brace = last_brace.ok_or("Missing closing '}' for arguments")?;
-    let args_part = &args_content[..end_brace];
-    
-    let mut args = serde_json::Map::new();
-    let mut current = args_part;
-    
-    while !current.is_empty() {
-        current = current.trim_start_matches(|c| c == ',' || c == ' ' || c == '\n' || c == '{' || c == '}');
-        if current.is_empty() { break; }
-
-        if let Some(sep_pos) = current.find(':') {
-            let mut key = current[..sep_pos].trim().to_string();
-            key = key.trim_matches(|c| c == '"' || c == '\'').to_string();
-            
-            let after_sep = current[sep_pos + 1..].trim_start();
-            let markers = ["<|\"|>", "<|\">", "<|'|>", "<|'>"];
-            let mut found_marker = None;
-            for &m in &markers {
-                if after_sep.starts_with(m) {
-                    found_marker = Some(m);
+            if c == '"' || c == '\'' {
+                in_string = true;
+                string_char = c;
+            } else if c == '{' {
+                brace_count += 1;
+            } else if c == '}' {
+                brace_count -= 1;
+                if brace_count == 0 {
+                    // Find byte offset for slicing
+                    let byte_offset = args_content.char_indices().nth(i + 1).map(|(pos, _)| pos).unwrap_or(args_content.len());
+                    end_pos = Some(byte_offset);
                     break;
                 }
             }
-
-            if let Some(marker) = found_marker {
-                let m_len = marker.len();
-                let mut end_quote_pos = after_sep[m_len..].find(marker);
-                let mut actual_end_len = m_len;
-                
-                if end_quote_pos.is_none() {
-                    let fallbacks = ["<|>", "<|", "|>"];
-                    for &f in &fallbacks {
-                        if let Some(p) = after_sep[m_len..].find(f) {
-                            end_quote_pos = Some(p);
-                            actual_end_len = f.len();
-                            break;
-                        }
-                    }
-                }
-
-                if let Some(pos) = end_quote_pos {
-                    let val = &after_sep[m_len..m_len + pos];
-                    args.insert(key, serde_json::Value::String(val.to_string()));
-                    current = &after_sep[m_len + pos + actual_end_len..];
-                } else {
-                    args.insert(key, serde_json::Value::String(after_sep[m_len..].to_string()));
-                    break;
-                }
-            } else if after_sep.starts_with('"') {
-                 if let Some(end_quote_pos) = after_sep[1..].find('"') {
-                    let val = &after_sep[1..1 + end_quote_pos];
-                    args.insert(key, serde_json::Value::String(val.to_string()));
-                    current = &after_sep[1 + end_quote_pos + 1..];
-                } else { break; }
-            } else {
-                // Find the next comma that is followed by a valid key pattern, or use the end of string.
-                // A valid key pattern is an identifier followed by a colon.
-                let mut next_comma = after_sep.len();
-                let mut search_start = 0;
-                while let Some(pos) = after_sep[search_start..].find(',') {
-                    let absolute_pos = search_start + pos;
-                    let after_comma = after_sep[absolute_pos + 1..].trim_start();
-                    // Check if it looks like a key: `identifier:` or `"identifier":`
-                    if let Some(colon_pos) = after_comma.find(':') {
-                        let potential_key = after_comma[..colon_pos].trim();
-                        let is_valid_key = !potential_key.is_empty() && potential_key.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '"' || c == '\'');
-                        if is_valid_key {
-                            next_comma = absolute_pos;
-                            break;
-                        }
-                    }
-                    search_start = absolute_pos + 1;
-                }
-
-                let val_str = after_sep[..next_comma].trim();
-                let mut cleaned_val = val_str.to_string();
-                for &m in &markers { cleaned_val = cleaned_val.replace(m, ""); }
-                
-                if let Ok(n) = cleaned_val.parse::<i64>() {
-                    args.insert(key, serde_json::Value::Number(n.into()));
-                } else if cleaned_val == "true" {
-                    args.insert(key, serde_json::Value::Bool(true));
-                } else if cleaned_val == "false" {
-                    args.insert(key, serde_json::Value::Bool(false));
-                } else {
-                    args.insert(key, serde_json::Value::String(cleaned_val));
-                }
-                current = &after_sep[next_comma..];
-            }
-        } else { 
-            return Err(format!("Malformed argument list around: '{}'", &current[..current.len().min(20)]));
         }
     }
 
-    let tc_id = args.get("tool_call_id").and_then(|v| v.as_str())
-        .or_else(|| args.get("id").and_then(|v| v.as_str()))
-        .unwrap_or("raw_call").to_string();
+    if end_pos.is_none() {
+        return Err(format!("Missing closing '}}' for arguments. State: count={}, in_str={}", brace_count, in_string));
+    }
+    
+    let args_json_raw = &args_content[..end_pos.unwrap()];
 
-    Ok(crate::context::ToolCall {
-        id: tc_id,
-        function: crate::context::FunctionCall {
-            name: func_name,
-            arguments: serde_json::Value::Object(args),
-        },
-    })
+    // 3. Fix unquoted keys if necessary
+    let fixed_json = KEY_FIXER.replace_all(args_json_raw, "$1\"$2\"$3").to_string();
+
+    match serde_json::from_str::<serde_json::Value>(&fixed_json) {
+        Ok(serde_json::Value::Object(args)) => {
+            let tc_id = args.get("tool_call_id").and_then(|v| v.as_str())
+                .or_else(|| args.get("id").and_then(|v| v.as_str()))
+                .unwrap_or("raw_call").to_string();
+
+            Ok(crate::context::ToolCall {
+                id: tc_id,
+                function: crate::context::FunctionCall {
+                    name: func_name,
+                    arguments: serde_json::Value::Object(args),
+                },
+            })
+        }
+        Ok(_) => Err("Arguments must be a JSON object".to_string()),
+        Err(e) => {
+            Err(format!("JSON Error: {} (Fixed JSON: {})", e, fixed_json))
+        }
+    }
 }
