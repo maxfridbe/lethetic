@@ -108,6 +108,9 @@ pub struct App {
     pub show_prompt_save_dialog: bool,
     pub prompt_save_name: String,
     pub system_prompt_manager: crate::system_prompt::SystemPromptManager,
+    pub show_prompt_manager: bool,
+    pub prompt_files: Vec<String>,
+    pub prompt_list_state: ListState,
     pub show_cleanup_prompt: bool,
     pub show_hotkeys: bool,
     pub tool_call_pos: Option<usize>,
@@ -204,6 +207,9 @@ impl App {
             show_prompt_save_dialog: false,
             prompt_save_name: String::new(),
             system_prompt_manager,
+            show_prompt_manager: false,
+            prompt_files: Vec::new(),
+            prompt_list_state: ListState::default(),
             show_cleanup_prompt: false,
             show_hotkeys: false,
             tool_call_pos: None,
@@ -293,6 +299,13 @@ impl App {
             self.session_list_state.select(None);
         } else if self.session_list_state.selected().is_none() {
             self.session_list_state.select(Some(0));
+        }
+    }
+
+    pub fn refresh_prompt_list(&mut self) {
+        self.prompt_files = self.system_prompt_manager.list_prompts();
+        if self.prompt_list_state.selected().is_none() && !self.prompt_files.is_empty() {
+            self.prompt_list_state.select(Some(0));
         }
     }
 
@@ -637,6 +650,52 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
         return AppEventOutcome::Continue;
     }
 
+    if app.show_prompt_manager {
+        match key.code {
+            KeyCode::Down | KeyCode::Char('j') => {
+                let max = app.prompt_files.len() + 1; // +1 for "Create New"
+                let i = match app.prompt_list_state.selected() {
+                    Some(i) => if i >= max.saturating_sub(1) { 0 } else { i + 1 },
+                    None => 0,
+                };
+                if max > 0 { app.prompt_list_state.select(Some(i)); }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                let max = app.prompt_files.len() + 1;
+                let i = match app.prompt_list_state.selected() {
+                    Some(i) => if i == 0 { max.saturating_sub(1) } else { i - 1 },
+                    None => 0,
+                };
+                if max > 0 { app.prompt_list_state.select(Some(i)); }
+            }
+            KeyCode::Enter => {
+                if let Some(i) = app.prompt_list_state.selected() {
+                    if i == 0 {
+                        app.system_prompt = crate::system_prompt::DEFAULT_PROMPT_TEMPLATE.to_string();
+                        app.prompt_save_name.clear();
+                    } else if i - 1 < app.prompt_files.len() {
+                        let name = &app.prompt_files[i - 1];
+                        if let Some(content) = app.system_prompt_manager.load_prompt(name) {
+                            app.system_prompt = content;
+                            app.prompt_save_name = name.clone();
+                        }
+                    }
+                    app.show_prompt_manager = false;
+                    app.show_prompt_editor = true;
+                    app.prompt_cursor_pos = app.system_prompt.len();
+                    app.should_redraw = true;
+                }
+            }
+            KeyCode::Esc => {
+                app.show_prompt_manager = false;
+                app.should_redraw = true;
+            }
+            _ => {}
+        }
+        app.should_redraw = true;
+        return AppEventOutcome::Continue;
+    }
+
     if app.show_session_manager {
         match key.code {
             KeyCode::Down | KeyCode::Char('j') => {
@@ -744,7 +803,7 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                         app.palette_items[2] = format!("{} Loop Detection: {:?}", icons::PROCESSING, next_mode);
                         app.should_redraw = true;
                     }
-                    3 => { app.show_palette = false; app.show_prompt_editor = true; }
+                    3 => { app.show_palette = false; app.refresh_prompt_list(); app.show_prompt_manager = true; }
                     4 => { app.show_palette = false; app.blocks.clear(); app.should_redraw = true; app.needs_save = true; }
                     5 => { app.show_palette = false; app.context_manager.clear(); app.start_new_session(); }
                     6 => { app.show_palette = false; app.show_debug = !app.show_debug; }

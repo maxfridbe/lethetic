@@ -289,6 +289,36 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         f.render_stateful_widget(List::new(items).block(UIBlock::default().title(format!("{} Themes", icons::THEME)).borders(Borders::ALL)).highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(app.theme.highlight_fg)).highlight_symbol("> "), area, &mut app.theme_state);
     }
 
+    if app.show_prompt_manager {
+        let area = centered_rect(60, 60, f.area());
+        f.render_widget(Clear, area);
+        
+        let mut items: Vec<ListItem> = vec![ListItem::new("  + Create New Prompt")];
+        items.extend(app.prompt_files.iter().map(|f| ListItem::new(f.clone())));
+
+        let block = UIBlock::default()
+            .title(format!("{} Prompt Manager", icons::MODEL))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow));
+
+        let inner_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(3)])
+            .split(area);
+
+        f.render_stateful_widget(
+            List::new(items)
+                .block(block)
+                .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(app.theme.highlight_fg))
+                .highlight_symbol("> "),
+            inner_layout[0],
+            &mut app.prompt_list_state
+        );
+        
+        let help_text = "(Enter) Select/Create | (Esc) Close";
+        f.render_widget(Paragraph::new(help_text).block(UIBlock::default().borders(Borders::TOP)).style(Style::default().fg(Color::DarkGray)), inner_layout[1]);
+    }
+
     if app.show_session_manager {
         let area = centered_rect(80, 80, f.area());
         f.render_widget(Clear, area);
