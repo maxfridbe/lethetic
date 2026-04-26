@@ -50,30 +50,41 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     format!("{} Applying patch to `{}`", icons::SUCCESS, path)
 }
 
-pub async fn execute(path: &str, patch: &str, cwd: &str) -> String {
+pub async fn execute(path: &str, patch: &str, cwd: &str, cancellation_token: tokio_util::sync::CancellationToken) -> String {
 
     let patch_file = Path::new(cwd).join(".tmp.patch");
     if let Err(e) = fs::write(&patch_file, patch) {
         return format!("ERROR: Failed to write temp patch file: {}", e);
     }
 
-    let output = Command::new("patch")
+    let child = Command::new("patch")
         .arg("-u")
         .arg(path)
         .arg("-i")
         .arg(".tmp.patch")
         .current_dir(cwd)
-        .output()
-        .await;
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("Failed to spawn patch");
+
+    let result = tokio::select! {
+        _ = cancellation_token.cancelled() => {
+            "[Operation Cancelled by User]".to_string()
+        }
+        output = child.wait_with_output() => {
+            match output {
+                Ok(out) => {
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    format!("STDOUT:\n{}\nSTDERR:\n{}", stdout, stderr)
+                }
+                Err(e) => format!("ERROR: {}", e),
+            }
+        }
+    };
 
     let _ = fs::remove_file(patch_file);
-
-    match output {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            format!("STDOUT:\n{}\nSTDERR:\n{}", stdout, stderr)
-        }
-        Err(e) => format!("ERROR: {}", e),
-    }
+    result
 }

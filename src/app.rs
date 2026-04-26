@@ -1001,7 +1001,7 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
             }
         }
         KeyCode::Esc => { 
-            if app.is_processing {
+            if app.is_processing || app.is_executing_tool {
                 return AppEventOutcome::Stop;
             } else {
                 app.show_palette = true; 

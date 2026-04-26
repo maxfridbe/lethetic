@@ -407,6 +407,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                     AppEventOutcome::Stop => {
                                         cancellation_token.cancel();
                                         app.is_processing = false;
+                                        app.is_executing_tool = false;
+                                        app.tool_output_preview.clear();
                                         app.add_segment(format!("\n{} [STOPPED]\n", icons::WARNING), BlockType::Text);
                                         while let Ok(_) = rx.try_recv() {}
                                         app.should_redraw = true;

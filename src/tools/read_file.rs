@@ -45,23 +45,24 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     format!("{} Reading file: `{}`", icons::PATH, path)
 }
 
-pub async fn execute(path: &str, cwd: &str) -> String {
-
+pub async fn execute(path: &str, cwd: &str, cancellation_token: tokio_util::sync::CancellationToken) -> String {
     let full_path = Path::new(cwd).join(path);
-    match fs::read_to_string(&full_path) {
-        Ok(content) => {
-            let mut result = String::new();
-            for (i, line) in content.lines().enumerate() {
-                result.push_str(&format!("{:6}\t{}\n", i + 1, line));
-            }
-            if content.ends_with('\n') || content.is_empty() {
-                // Keep trailing newline if it exists
-            } else if !result.is_empty() {
-                // If the last line didn't have a newline, content.lines() still yields it
-                // and we already pushed a \n in the loop.
-            }
-            result
+    
+    tokio::select! {
+        _ = cancellation_token.cancelled() => {
+            "[Operation Cancelled by User]".to_string()
         }
-        Err(e) => format!("ERROR: Failed to read file {}: {}", full_path.display(), e),
+        res = async {
+            match fs::read_to_string(&full_path) {
+                Ok(content) => {
+                    let mut result = String::new();
+                    for (i, line) in content.lines().enumerate() {
+                        result.push_str(&format!("{:6}\t{}\n", i + 1, line));
+                    }
+                    result
+                }
+                Err(e) => format!("ERROR: Failed to read file {}: {}", full_path.display(), e),
+            }
+        } => res
     }
 }

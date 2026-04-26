@@ -55,24 +55,31 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     format!("{} Reading lines {}-{} of: `{}`", icons::PATH, start, end, path)
 }
 
-pub async fn execute(path: &str, start_line: usize, end_line: usize, cwd: &str) -> String {
-
+pub async fn execute(path: &str, start_line: usize, end_line: usize, cwd: &str, cancellation_token: tokio_util::sync::CancellationToken) -> String {
     let full_path = Path::new(cwd).join(path);
-    match fs::read_to_string(&full_path) {
-        Ok(content) => {
-            let lines: Vec<&str> = content.lines().collect();
-            let start = start_line.saturating_sub(1);
-            let end = end_line.min(lines.len());
-            if start >= lines.len() || start > end {
-                return format!("ERROR: Invalid line range {}-{} for file with {} lines", start + 1, end, lines.len());
-            }
-            
-            let mut result = String::new();
-            for (i, line) in lines[start..end].iter().enumerate() {
-                result.push_str(&format!("{:6}\t{}\n", start + i + 1, line));
-            }
-            result
+    
+    tokio::select! {
+        _ = cancellation_token.cancelled() => {
+            "[Operation Cancelled by User]".to_string()
         }
-        Err(e) => format!("ERROR: Failed to read file {}: {}", full_path.display(), e),
+        res = async {
+            match fs::read_to_string(&full_path) {
+                Ok(content) => {
+                    let lines: Vec<&str> = content.lines().collect();
+                    let start = start_line.saturating_sub(1);
+                    let end = end_line.min(lines.len());
+                    if start >= lines.len() || start > end {
+                        return format!("ERROR: Invalid line range {}-{} for file with {} lines", start + 1, end, lines.len());
+                    }
+                    
+                    let mut result = String::new();
+                    for (i, line) in lines[start..end].iter().enumerate() {
+                        result.push_str(&format!("{:6}\t{}\n", start + i + 1, line));
+                    }
+                    result
+                }
+                Err(e) => format!("ERROR: Failed to read file {}: {}", full_path.display(), e),
+            }
+        } => res
     }
 }

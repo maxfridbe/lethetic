@@ -44,16 +44,24 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     format!("{} Fetching URL: `{}`", icons::WEATHER, url)
 }
 
-pub async fn execute(url: &str) -> String {
+pub async fn execute(url: &str, cancellation_token: tokio_util::sync::CancellationToken) -> String {
 
     let client = Client::new();
-    match client.get(url).send().await {
-        Ok(res) => {
-            match res.text().await {
-                Ok(text) => text,
-                Err(e) => format!("ERROR: Failed to read response body: {}", e),
-            }
+    
+    tokio::select! {
+        _ = cancellation_token.cancelled() => {
+            "[Operation Cancelled by User]".to_string()
         }
-        Err(e) => format!("ERROR: Failed to fetch URL {}: {}", url, e),
+        res = async {
+            match client.get(url).send().await {
+                Ok(res) => {
+                    match res.text().await {
+                        Ok(text) => text,
+                        Err(e) => format!("ERROR: Failed to read response body: {}", e),
+                    }
+                }
+                Err(e) => format!("ERROR: Failed to fetch URL {}: {}", url, e),
+            }
+        } => res
     }
 }

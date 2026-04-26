@@ -49,30 +49,40 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     format!("{} Searching for `{}` in `{}`", icons::SEARCH, pattern, path)
 }
 
-pub async fn execute(pattern: &str, path: &str, cwd: &str) -> String {
+pub async fn execute(pattern: &str, path: &str, cwd: &str, cancellation_token: tokio_util::sync::CancellationToken) -> String {
 
     let search_path = if path.is_empty() { "." } else { path };
 
-    let output = Command::new("grep")
+    let child = Command::new("grep")
         .arg("-rn")
         .arg("--color=never")
         .arg("-I")
         .arg(pattern)
         .arg(search_path)
         .current_dir(cwd)
-        .output()
-        .await;
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("Failed to spawn grep");
 
-    match output {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            let status = out.status.code().map_or("signaled".to_string(), |c| c.to_string());
-            if stdout.is_empty() && stderr.is_empty() && status == "1" {
-                return "No matches found.".to_string();
-            }
-            format!("EXIT_CODE: {}\nSTDOUT:\n{}\nSTDERR:\n{}", status, stdout, stderr)
+    tokio::select! {
+        _ = cancellation_token.cancelled() => {
+            "[Operation Cancelled by User]".to_string()
         }
-        Err(e) => format!("ERROR: {}", e),
+        output = child.wait_with_output() => {
+            match output {
+                Ok(out) => {
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    let status = out.status.code().map_or("signaled".to_string(), |c| c.to_string());
+                    if stdout.is_empty() && stderr.is_empty() && status == "1" {
+                        return "No matches found.".to_string();
+                    }
+                    format!("EXIT_CODE: {}\nSTDOUT:\n{}\nSTDERR:\n{}", status, stdout, stderr)
+                }
+                Err(e) => format!("ERROR: {}", e),
+            }
+        }
     }
 }

@@ -100,27 +100,27 @@ pub async fn execute(func_name: &str, arguments: &serde_json::Value, cwd: &str, 
     match func_name {
         "read_file" => {
             let path = arguments["path"].as_str().unwrap_or("");
-            (read_file::execute(path, cwd).await, cwd.to_string())
+            (read_file::execute(path, cwd, cancellation_token).await, cwd.to_string())
         }
         "read_file_lines" => {
             let path = arguments["path"].as_str().unwrap_or("");
             let start = arguments["start_line"].as_u64().unwrap_or(1) as usize;
             let end = arguments["end_line"].as_u64().unwrap_or(1) as usize;
-            (read_file_lines::execute(path, start, end, cwd).await, cwd.to_string())
+            (read_file_lines::execute(path, start, end, cwd, cancellation_token).await, cwd.to_string())
         }
         "read_folder" => {
             let path = arguments["path"].as_str().unwrap_or(".");
-            (read_folder::execute(path, cwd).await, cwd.to_string())
+            (read_folder::execute(path, cwd, cancellation_token).await, cwd.to_string())
         }
         "search_text" => {
             let pattern = arguments["pattern"].as_str().unwrap_or("");
             let path = arguments["path"].as_str().unwrap_or(".");
-            (search_text::execute(pattern, path, cwd).await, cwd.to_string())
+            (search_text::execute(pattern, path, cwd, cancellation_token).await, cwd.to_string())
         }
         "apply_patch" => {
             let path = arguments["path"].as_str().unwrap_or("");
             let patch = arguments["patch"].as_str().unwrap_or("");
-            (apply_patch::execute(path, patch, cwd).await, cwd.to_string())
+            (apply_patch::execute(path, patch, cwd, cancellation_token).await, cwd.to_string())
         }
         "run_shell_command" => {
             let command = arguments["command"].as_str().unwrap_or("");
@@ -129,17 +129,17 @@ pub async fn execute(func_name: &str, arguments: &serde_json::Value, cwd: &str, 
         "write_file" => {
             let path = arguments["path"].as_str().unwrap_or("");
             let content = arguments["content"].as_str().unwrap_or("");
-            (write_file::execute(path, content, cwd).await, cwd.to_string())
+            (write_file::execute(path, content, cwd, cancellation_token).await, cwd.to_string())
         }
         "replace_text" => {
             let path = arguments["path"].as_str().unwrap_or("");
             let old_string = arguments["old_string"].as_str().unwrap_or("");
             let new_string = arguments["new_string"].as_str().unwrap_or("");
-            (replace_text::execute(path, old_string, new_string, cwd).await, cwd.to_string())
+            (replace_text::execute(path, old_string, new_string, cwd, cancellation_token).await, cwd.to_string())
         }
         "web_fetch" => {
             let url = arguments["url"].as_str().unwrap_or("");
-            (web_fetch::execute(url).await, cwd.to_string())
+            (web_fetch::execute(url, cancellation_token).await, cwd.to_string())
         }
         "calculate" => {
             let expression = arguments["expression"].as_str().unwrap_or("");

@@ -49,17 +49,24 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     format!("{} Writing file: `{}`", icons::SUCCESS, path)
 }
 
-pub async fn execute(path: &str, content: &str, cwd: &str) -> String {
+pub async fn execute(path: &str, content: &str, cwd: &str, cancellation_token: tokio_util::sync::CancellationToken) -> String {
 
     let full_path = Path::new(cwd).join(path);
     
-    // Ensure parent directory exists
-    if let Some(parent) = full_path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
+    tokio::select! {
+        _ = cancellation_token.cancelled() => {
+            "[Operation Cancelled by User]".to_string()
+        }
+        res = async {
+            // Ensure parent directory exists
+            if let Some(parent) = full_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
 
-    match fs::write(&full_path, content) {
-        Ok(_) => format!("Successfully wrote to {}", full_path.display()),
-        Err(e) => format!("ERROR: Failed to write to {}: {}", full_path.display(), e),
+            match fs::write(&full_path, content) {
+                Ok(_) => format!("Successfully wrote to {}", full_path.display()),
+                Err(e) => format!("ERROR: Failed to write to {}: {}", full_path.display(), e),
+            }
+        } => res
     }
 }
