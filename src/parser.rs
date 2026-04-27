@@ -296,7 +296,10 @@ fn fix_json_heuristically(input: &str) -> String {
             } else if c == '\n' { output.push_str("\\n"); }
             else if c == '\r' { output.push_str("\\r"); }
             else if (c as u32) < 32 { output.push_str(&format!("\\u{:04x}", c as u32)); }
-            else if c == '"' && string_quote == '\'' { output.push_str("\\\""); }
+            else if c == '"' { 
+                // ALWAYS escape double quotes when they appear inside a JSON string
+                output.push_str("\\\""); 
+            }
             else { output.push(c); }
         } else {
             if c == '"' || c == '\'' || c == '`' {
@@ -355,6 +358,22 @@ mod tests {
         let block = r#"call:test_tool{key1: "value1", key2: 123, tool_call_id: "test"}"#;
         let result = parse_native_block(block).unwrap();
         assert_eq!(result.function.arguments.get("key1").unwrap().as_str().unwrap(), "value1");
+    }
+
+    #[test]
+    fn test_no_premature_closing() {
+        // Ensure that words like "description" inside a command don't trigger the key boundary heuristic
+        let block = r#"call:run_shell_command{command: "ls -R . | grep description", description: "searching", tool_call_id: "search"}"#;
+        let result = parse_native_block(block).expect("Should NOT close string early");
+        assert_eq!(result.function.arguments.get("command").unwrap().as_str().unwrap(), "ls -R . | grep description");
+    }
+
+    #[test]
+    fn test_internal_quote_escaping() {
+        // If the model uses backticks, internal double quotes must be escaped in the fixed JSON
+        let block = r#"call:run_shell_command{command: `echo "hello"`, tool_call_id: "test"}"#;
+        let result = parse_native_block(block).unwrap();
+        assert_eq!(result.function.arguments.get("command").unwrap().as_str().unwrap(), "echo \"hello\"");
     }
 
     #[test]

@@ -57,17 +57,42 @@ pub async fn execute(path: &str, patch: &str, cwd: &str, cancellation_token: tok
         return format!("ERROR: Failed to write temp patch file: {}", e);
     }
 
-    let child = Command::new("patch")
-        .arg("-u")
-        .arg(path)
-        .arg("-i")
+    let mut final_path = path.to_string();
+    
+    // Heuristic: If path is empty, try to extract it from the patch header
+    if final_path.is_empty() {
+        for line in patch.lines() {
+            if line.starts_with("--- ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let extracted = parts[1].trim();
+                    if !extracted.is_empty() && extracted != "/dev/null" {
+                        final_path = extracted.to_string();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let mut cmd = Command::new("patch");
+    cmd.arg("-u");
+    
+    if !final_path.is_empty() {
+        cmd.arg(final_path);
+    } else {
+        // If still empty, fall back to -p0 which uses the path in the header
+        cmd.arg("-p0");
+    }
+    
+    cmd.arg("-i")
         .arg(".tmp.patch")
         .current_dir(cwd)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .expect("Failed to spawn patch");
+        .kill_on_drop(true);
+
+    let child = cmd.spawn().expect("Failed to spawn patch");
 
     let result = tokio::select! {
         _ = cancellation_token.cancelled() => {

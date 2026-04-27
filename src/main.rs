@@ -376,7 +376,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                         }
                                     }
                                     AppEventOutcome::ToolApproved(approved, always) => {
-                                        if let Some(tool_call) = app.pending_tool_call.take() {
+                                        if let Some(tool_call) = app.pending_tool_call.as_ref() {
                                             if approved {
                                                 if always { app.shell_approval_mode = ApprovalMode::Always; }
                                                 let tc_id = tool_call.id.clone();
@@ -398,6 +398,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                                 });
                                                 app.is_processing = true;
                                             } else {
+                                                app.pending_tool_call.take();
                                                 app.add_segment(format!("\n{} Tool execution denied by user.\n", icons::WARNING), BlockType::Text);
                                             }
                                         }
@@ -483,9 +484,13 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                         };
 
                                         if is_rapid_loop && app.loop_detection_count >= 1 {
-                                            app.add_segment(format!("\n{} [FORCED STOP] Rapid reasoning loop detected twice within 2 minutes. Stopping engine to prevent waste.\n", icons::WARNING), BlockType::Text);
+                                            let mut stop_msg = format!("\n{} [WATCHDOG TERMINATED] Persistent loop detected after multiple auto-correction attempts. Handing control to user.\n", icons::WARNING);
+                                            if let Some(sample) = detection.sample {
+                                                stop_msg.push_str(&format!("{} Last looping sequence: \"{}\"\n", icons::DEBUG, sample));
+                                            }
+                                            app.add_segment(stop_msg, BlockType::Text);
                                             app.context_manager.add_message("assistant", &full_response_content);
-                                            app.context_manager.add_message("system", "The user's system forced a stop because you entered a persistent reasoning loop.");
+                                            app.context_manager.add_message("system", "The watchdog terminated your generation because you were unable to break out of a loop. Please proceed with a tool call immediately.");
                                             app.loop_detection_count = 0; // Reset for next attempt
                                             app.last_loop_detection_time = None;
                                         } else {
@@ -606,7 +611,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             app.save_session(); // Final save on completion
 
                             if app.tool_calls_processed_this_request && app.shell_approval_mode == ApprovalMode::Always {
-                                if let Some(tool_call) = app.pending_tool_call.take() {
+                                if let Some(tool_call) = app.pending_tool_call.as_ref() {
                                     let tc_id = tool_call.id.clone();
                                     let func_name = tool_call.function.name.clone();
                                     let args = tool_call.function.arguments.clone();

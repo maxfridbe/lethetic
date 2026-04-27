@@ -78,16 +78,19 @@ impl LoopDetector {
 
         // 3. N-Gram Repetition Check
         if self.config.mode == LoopDetectionMode::NGram || self.config.mode == LoopDetectionMode::Combined {
-            if content.len() >= self.config.ngram_window * 2 {
+            let chars: Vec<char> = content.chars().collect();
+            if chars.len() >= self.config.ngram_window * 2 {
                 let window_size = self.config.ngram_window;
-                let last_window = &content[content.len() - window_size..];
+                let last_window_chars = &chars[chars.len() - window_size..];
+                let last_window: String = last_window_chars.iter().collect();
                 
                 // Count how many times this specific window appears in the whole block
-                let occurrences = content.matches(last_window).count();
+                let occurrences = content.matches(&last_window).count();
                 if occurrences >= self.config.ngram_threshold {
-                    let mut sample = last_window.to_string();
-                    if sample.len() > 80 {
-                        sample = format!("...{}", &sample[sample.len() - 77..]);
+                    let mut sample = last_window;
+                    let sample_chars: Vec<char> = sample.chars().collect();
+                    if sample_chars.len() > 80 {
+                        sample = format!("...{}", sample_chars[sample_chars.len() - 77..].iter().collect::<String>());
                     }
                     return Some(Detection {
                         reason: format!("Repeating pattern detected (sequence seen {} times)", occurrences),
@@ -143,5 +146,23 @@ mod tests {
         let detector = LoopDetector::new(config);
         assert!(detector.check("Actually, I'll do this. Wait, Actually, no. Actually, yes.").is_some());
         assert!(detector.check("I will do this normally.").is_none());
+    }
+
+    #[test]
+    fn test_multibyte_characters_no_panic() {
+        let config = LoopDetectorConfig {
+            mode: LoopDetectionMode::Combined,
+            ngram_window: 4,
+            ngram_threshold: 2,
+            ..Default::default()
+        };
+        let detector = LoopDetector::new(config);
+        
+        // This string contains multi-byte characters (─ is 3 bytes)
+        // We repeat " ───" which is 4 characters.
+        let content = "The directory structure is a mess. ─── ───";
+        let result = detector.check(content);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().sample.unwrap(), " ───");
     }
 }
