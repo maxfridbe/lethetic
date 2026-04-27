@@ -16,8 +16,10 @@ fn main() {
     let mut cube_vel = Vector3::new(0.0, 0.0, 0.0); // Velocity of the cube
     let gravity = -15.0; // Gravity constant
     let damping = 0.6;    // Damping factor for floor collision (bounciness)
-    // Load shader for Gouraud shading
-    let shader = rl.load_shader(&thread, Some("shaders/gouraud.vs"), Some("shaders/gouraud.fs"));
+    // Load shader from memory (embedded)
+    let vs_code = include_str!("../../shaders/gouraud.vs");
+    let fs_code = include_str!("../../shaders/gouraud.fs");
+    let mut shader = rl.load_shader_from_memory(&thread, Some(vs_code), Some(fs_code));
     let light_pos_loc = shader.get_shader_location("lightPos");
     let light_pos = Vector3::new(5.0, 10.0, 5.0);
 
@@ -59,11 +61,15 @@ fn main() {
             let mut d3d = d.begin_mode3D(camera);
             
             // Apply shader and set light position
-            d.begin_shader_mode(&mut shader);
-            d.set_shader_value(&shader, light_pos_loc, &light_pos);
+            // We use the shader directly here if possible, or just call it on the shader object
+            shader.set_shader_value(light_pos_loc, light_pos);
+            
+            // To enable the shader, we need to call begin_shader_mode. 
+            // Since we are already in 3D mode (d3d), let's see if d3d has it.
+            let mut _shader_mode = d3d.begin_shader_mode(&mut shader);
 
             // Draw the ground plane
-            d3d.draw_plane(Vector3::new(0.0, 0.0, 0.0), Vector2::new(20.0, 20.0), Color::DARKGREEN);
+            _shader_mode.draw_plane(Vector3::new(0.0, 0.0, 0.0), Vector2::new(20.0, 20.0), Color::DARKGREEN);
 
             // Shadow calculation: project cube position onto the floor based on a light direction
             let light_dir = Vector3::new(0.6, -1.0, 0.4);
@@ -75,14 +81,11 @@ fn main() {
             );
             
             // Draw the shadow (a flattened cube)
-            d3d.draw_cube(shadow_pos, 2.1, 0.01, 2.1, Color::new(0, 0, 0, 150));
+            _shader_mode.draw_cube(shadow_pos, 2.1, 0.01, 2.1, Color::new(0, 0, 0, 150));
             
             // Draw the actual cube
-            d3d.draw_cube(cube_pos, 2.0, 2.0, 2.0, Color::RED);
-            d3d.draw_cube_wires(cube_pos, 2.0, 2.0, 2.0, Color::BLACK);
-            d.end_shader_mode();
-            d.end_shader_mode();
-            rl.end_shader_mode();
+            _shader_mode.draw_cube(cube_pos, 2.0, 2.0, 2.0, Color::RED);
+            _shader_mode.draw_cube_wires(cube_pos, 2.0, 2.0, 2.0, Color::BLACK);
         }
 
         // UI overlay

@@ -38,6 +38,9 @@ pub fn render_markdown(content: &str, base_style: Style) -> Text<'static> {
     for event in parser {
         match event {
             Event::Start(Tag::Heading { level, .. }) => {
+                if !current_line.spans.is_empty() {
+                    text.lines.push(std::mem::take(&mut current_line));
+                }
                 current_heading_level = Some(level);
                 let color = match level {
                     HeadingLevel::H1 => Color::Red,
@@ -53,6 +56,16 @@ pub fn render_markdown(content: &str, base_style: Style) -> Text<'static> {
                 current_style = base_style;
                 text.lines.push(std::mem::take(&mut current_line));
             }
+            Event::Start(Tag::Paragraph) => {
+                if !current_line.spans.is_empty() {
+                    text.lines.push(std::mem::take(&mut current_line));
+                }
+            }
+            Event::End(TagEnd::Paragraph) => {
+                if !current_line.spans.is_empty() {
+                    text.lines.push(std::mem::take(&mut current_line));
+                }
+            }
             Event::Start(Tag::Strong) => {
                 current_style = current_style.add_modifier(Modifier::BOLD);
             }
@@ -66,6 +79,9 @@ pub fn render_markdown(content: &str, base_style: Style) -> Text<'static> {
                 current_style = current_style.remove_modifier(Modifier::ITALIC);
             }
             Event::Start(Tag::CodeBlock(kind)) => {
+                if !current_line.spans.is_empty() {
+                    text.lines.push(std::mem::take(&mut current_line));
+                }
                 in_code_block = match kind {
                     CodeBlockKind::Fenced(lang) => Some(lang.to_string()),
                     _ => Some("text".to_string()),
@@ -76,6 +92,9 @@ pub fn render_markdown(content: &str, base_style: Style) -> Text<'static> {
             }
             // Table handling
             Event::Start(Tag::Table(_)) => {
+                if !current_line.spans.is_empty() {
+                    text.lines.push(std::mem::take(&mut current_line));
+                }
                 text.lines.push(Line::from(Span::styled(format!("┌{}", "─".repeat(40)), Style::default().fg(Color::DarkGray))));
             }
             Event::End(TagEnd::Table) => {
