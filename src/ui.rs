@@ -656,7 +656,7 @@ pub fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, t
         } else {
             block.content.lines().map(|l| Line::from(Span::styled(l.to_string(), base_style))).collect()
         }
-    } else if block.block_type == BlockType::Markdown || block.content.contains("```") {
+    } else if block.block_type == BlockType::Markdown || block.block_type == BlockType::Thought || block.content.contains("```") {
         markdown::render_markdown(&block.content, base_style).lines
     } else {
         block.content.lines().map(|l| Line::from(Span::styled(l.to_string(), base_style))).collect()
