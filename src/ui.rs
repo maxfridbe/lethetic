@@ -135,11 +135,10 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     for (i, block) in app.blocks.iter_mut().enumerate() {
         let is_last = i == num_blocks - 1;
         let count = if let Some(ref cached) = block.cached_lines {
-            if is_last && app.is_executing_tool {
-                // Bypass cache for live preview
-                let rendered = render_block_to_lines(block, terminal_width, &app.theme, Some(&app.tool_output_preview));
+            if is_last && (app.is_executing_tool || app.is_processing) {
+                // Bypass cache for live streaming/preview
+                let rendered = render_block_to_lines(block, terminal_width, &app.theme, if app.is_executing_tool { Some(&app.tool_output_preview) } else { None });
                 let len = rendered.len();
-                // Don't update cache with temporary preview
                 len
             } else {
                 cached.len()
@@ -182,8 +181,8 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         // If this block is within or partially within our visible window
         if block_end > start_line && current_line_idx < end_line {
             // Re-render if it's the live block, otherwise use cache
-            let lines_to_render = if is_last && app.is_executing_tool {
-                render_block_to_lines(&app.blocks[block_idx], terminal_width, &app.theme, Some(&app.tool_output_preview))
+            let lines_to_render = if is_last && (app.is_executing_tool || app.is_processing) {
+                render_block_to_lines(&app.blocks[block_idx], terminal_width, &app.theme, if app.is_executing_tool { Some(&app.tool_output_preview) } else { None })
             } else {
                 app.blocks[block_idx].cached_lines.as_ref().cloned().unwrap_or_default()
             };

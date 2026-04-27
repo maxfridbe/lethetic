@@ -18,7 +18,7 @@ fn main() {
     let damping = 0.6;    // Damping factor for floor collision (bounciness)
     // Load shader for Gouraud shading
     let shader = rl.load_shader(&thread, Some("shaders/gouraud.vs"), Some("shaders/gouraud.fs"));
-    let light_pos_loc = shader.get_location("lightPos");
+    let light_pos_loc = shader.get_shader_location("lightPos");
     let light_pos = Vector3::new(5.0, 10.0, 5.0);
 
     // Main game loop
@@ -59,8 +59,8 @@ fn main() {
             let mut d3d = d.begin_mode3D(camera);
             
             // Apply shader and set light position
-            d3d.set_shader(&shader);
-            rl.set_shader_value_vec3(&shader, light_pos_loc, &light_pos);
+            d.begin_shader_mode(&mut shader);
+            d.set_shader_value(&shader, light_pos_loc, &light_pos);
 
             // Draw the ground plane
             d3d.draw_plane(Vector3::new(0.0, 0.0, 0.0), Vector2::new(20.0, 20.0), Color::DARKGREEN);
@@ -80,6 +80,9 @@ fn main() {
             // Draw the actual cube
             d3d.draw_cube(cube_pos, 2.0, 2.0, 2.0, Color::RED);
             d3d.draw_cube_wires(cube_pos, 2.0, 2.0, 2.0, Color::BLACK);
+            d.end_shader_mode();
+            d.end_shader_mode();
+            rl.end_shader_mode();
         }
 
         // UI overlay
