@@ -831,6 +831,9 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                 };
                 app.theme_state.select(Some(i));
                 app.theme = app.themes[i].clone();
+                for block in &mut app.blocks {
+                    block.cached_lines = None;
+                }
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 let i = match app.theme_state.selected() {
@@ -839,6 +842,9 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                 };
                 app.theme_state.select(Some(i));
                 app.theme = app.themes[i].clone();
+                for block in &mut app.blocks {
+                    block.cached_lines = None;
+                }
             }
             KeyCode::Enter | KeyCode::Esc => app.show_theme_menu = false,
             _ => {}

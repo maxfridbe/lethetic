@@ -21,7 +21,7 @@ pub fn sniff_for_markdown(line: &str) -> bool {
     (trimmed.starts_with("[") && trimmed.contains("]("))
 }
 
-pub fn render_markdown(content: &str, base_style: Style) -> Text<'static> {
+pub fn render_markdown(content: &str, theme: &crate::ui::Theme) -> Text<'static> {
     let mut text = Text::default();
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
@@ -33,6 +33,7 @@ pub fn render_markdown(content: &str, base_style: Style) -> Text<'static> {
     let mut in_code_block: Option<String> = None;
     let mut in_table_header = false;
     let mut current_heading_level: Option<HeadingLevel> = None;
+    let base_style = Style::default().fg(theme.output_fg);
     let mut current_style = base_style;
 
     for event in parser {
@@ -43,9 +44,9 @@ pub fn render_markdown(content: &str, base_style: Style) -> Text<'static> {
                 }
                 current_heading_level = Some(level);
                 let color = match level {
-                    HeadingLevel::H1 => Color::Red,
-                    HeadingLevel::H2 => Color::Magenta,
-                    _ => Color::Yellow,
+                    HeadingLevel::H1 => theme.error_fg,
+                    HeadingLevel::H2 => theme.thought_fg,
+                    _ => theme.warning_fg,
                 };
                 let prefix = "#".repeat(level as usize) + " ";
                 current_line.spans.push(Span::styled(prefix, Style::default().fg(color).add_modifier(Modifier::BOLD)));
@@ -95,28 +96,28 @@ pub fn render_markdown(content: &str, base_style: Style) -> Text<'static> {
                 if !current_line.spans.is_empty() {
                     text.lines.push(std::mem::take(&mut current_line));
                 }
-                text.lines.push(Line::from(Span::styled(format!("┌{}", "─".repeat(40)), Style::default().fg(Color::DarkGray))));
+                text.lines.push(Line::from(Span::styled(format!("┌{}", "─".repeat(40)), Style::default().fg(theme.system_fg))));
             }
             Event::End(TagEnd::Table) => {
-                text.lines.push(Line::from(Span::styled(format!("└{}", "─".repeat(40)), Style::default().fg(Color::DarkGray))));
+                text.lines.push(Line::from(Span::styled(format!("└{}", "─".repeat(40)), Style::default().fg(theme.system_fg))));
             }
             Event::Start(Tag::TableHead) => {
                 in_table_header = true;
             }
             Event::End(TagEnd::TableHead) => {
                 in_table_header = false;
-                text.lines.push(Line::from(Span::styled(format!("├{}", "─".repeat(40)), Style::default().fg(Color::DarkGray))));
+                text.lines.push(Line::from(Span::styled(format!("├{}", "─".repeat(40)), Style::default().fg(theme.system_fg))));
             }
             Event::Start(Tag::TableRow) => {
-                current_line.spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
+                current_line.spans.push(Span::styled("│ ", Style::default().fg(theme.system_fg)));
             }
             Event::End(TagEnd::TableRow) => {
-                current_line.spans.push(Span::styled(" │", Style::default().fg(Color::DarkGray)));
+                current_line.spans.push(Span::styled(" │", Style::default().fg(theme.system_fg)));
                 text.lines.push(std::mem::take(&mut current_line));
             }
             Event::Start(Tag::TableCell) => {
                 if !current_line.spans.is_empty() && current_line.spans.last().unwrap().content != "│ " {
-                    current_line.spans.push(Span::styled(" ║ ", Style::default().fg(Color::DarkGray)));
+                    current_line.spans.push(Span::styled(" ║ ", Style::default().fg(theme.system_fg)));
                 }
             }
             Event::End(TagEnd::TableCell) => {}
@@ -132,7 +133,7 @@ pub fn render_markdown(content: &str, base_style: Style) -> Text<'static> {
                             let mut spans = Vec::new();
                             for (style, text) in ranges {
                                 let fg = Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
-                                spans.push(Span::styled(text.to_string(), Style::default().fg(fg).bg(Color::Rgb(20, 20, 30))));
+                                spans.push(Span::styled(text.to_string(), Style::default().fg(fg).bg(theme.terminal_bg)));
                             }
                             text.lines.push(Line::from(spans));
                         }
@@ -140,18 +141,13 @@ pub fn render_markdown(content: &str, base_style: Style) -> Text<'static> {
                 } else {
                     let mut style = current_style;
                     if in_table_header {
-                        style = style.add_modifier(Modifier::BOLD).fg(Color::Cyan);
+                        style = style.add_modifier(Modifier::BOLD).fg(theme.highlight_fg);
                     }
-                    // Handle text within heading
-                    if current_heading_level.is_some() {
-                        current_line.spans.push(Span::styled(t.to_string(), style));
-                    } else {
-                        current_line.spans.push(Span::styled(t.to_string(), style));
-                    }
+                    current_line.spans.push(Span::styled(t.to_string(), style));
                 }
             }
             Event::Code(t) => {
-                current_line.spans.push(Span::styled(format!(" `{}` ", t), Style::default().fg(Color::Yellow).bg(Color::DarkGray)));
+                current_line.spans.push(Span::styled(format!(" `{}` ", t), Style::default().fg(theme.warning_fg).bg(theme.terminal_bg)));
             }
             Event::SoftBreak | Event::HardBreak => {
                 text.lines.push(std::mem::take(&mut current_line));

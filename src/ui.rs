@@ -8,7 +8,7 @@ use crate::app::{App, BlockType, RenderBlock};
 use crate::icons;
 use crate::markdown;
 
-fn render_json_highlighted(json_val: &serde_json::Value) -> Text<'static> {
+fn render_json_highlighted(json_val: &serde_json::Value, theme: &Theme) -> Text<'static> {
     let pretty = match serde_json::to_string_pretty(json_val) {
         Ok(s) => s,
         Err(_) => format!("{:?}", json_val),
@@ -29,26 +29,26 @@ fn render_json_highlighted(json_val: &serde_json::Value) -> Text<'static> {
                 // It's a key
                 let key = &trimmed[..colon_pos];
                 let rest = &trimmed[colon_pos..];
-                spans.push(Span::styled(key.to_string(), Style::default().fg(Color::Cyan)));
+                spans.push(Span::styled(key.to_string(), Style::default().fg(theme.json_key_fg)));
                 
                 // Colorize the value part
                 let value_part = rest.trim_start_matches(':').trim();
                 spans.push(Span::raw(": "));
                 if value_part.starts_with('"') {
-                    spans.push(Span::styled(value_part.to_string(), Style::default().fg(Color::Yellow)));
+                    spans.push(Span::styled(value_part.to_string(), Style::default().fg(theme.json_val_fg)));
                 } else if value_part == "true" || value_part == "false" || value_part == "null" {
-                    spans.push(Span::styled(value_part.to_string(), Style::default().fg(Color::LightRed)));
+                    spans.push(Span::styled(value_part.to_string(), Style::default().fg(theme.error_fg)));
                 } else if value_part.chars().next().map_or(false, |c| c.is_ascii_digit() || c == '-') {
-                    spans.push(Span::styled(value_part.to_string(), Style::default().fg(Color::LightMagenta)));
+                    spans.push(Span::styled(value_part.to_string(), Style::default().fg(theme.thought_fg)));
                 } else {
                     spans.push(Span::raw(value_part.to_string()));
                 }
             } else {
                 // Just a string (maybe in an array)
-                spans.push(Span::styled(trimmed.to_string(), Style::default().fg(Color::Yellow)));
+                spans.push(Span::styled(trimmed.to_string(), Style::default().fg(theme.json_val_fg)));
             }
         } else if trimmed == "{" || trimmed == "}" || trimmed == "[" || trimmed == "]" || trimmed == "}," || trimmed == "]," {
-            spans.push(Span::styled(trimmed.to_string(), Style::default().fg(Color::Gray)));
+            spans.push(Span::styled(trimmed.to_string(), Style::default().fg(theme.system_fg)));
         } else {
             spans.push(Span::raw(trimmed.to_string()));
         }
@@ -63,6 +63,18 @@ pub struct Theme {
     pub output_fg: Color,
     pub input_fg: Color,
     pub highlight_fg: Color,
+    pub system_fg: Color,
+    pub thought_fg: Color,
+    pub tool_fg: Color,
+    pub success_fg: Color,
+    pub error_fg: Color,
+    pub warning_fg: Color,
+    pub json_key_fg: Color,
+    pub json_val_fg: Color,
+    pub input_bg: Color,
+    pub thought_bg: Color,
+    pub tool_bg: Color,
+    pub terminal_bg: Color,
 }
 
 impl Theme {
@@ -72,21 +84,186 @@ impl Theme {
             output_fg: Color::Green,
             input_fg: Color::Yellow,
             highlight_fg: Color::Cyan,
+            system_fg: Color::DarkGray,
+            thought_fg: Color::Cyan,
+            tool_fg: Color::LightBlue,
+            success_fg: Color::Green,
+            error_fg: Color::Red,
+            warning_fg: Color::Yellow,
+            json_key_fg: Color::Cyan,
+            json_val_fg: Color::Yellow,
+            input_bg: Color::Rgb(20, 20, 30),
+            thought_bg: Color::Rgb(25, 45, 45),
+            tool_bg: Color::Rgb(45, 45, 30),
+            terminal_bg: Color::Rgb(15, 15, 20),
         }
     }
 
     pub fn all() -> Vec<Self> {
         vec![
             Self::default(),
-            Self { name: "Matrix".to_string(), output_fg: Color::Green, input_fg: Color::LightGreen, highlight_fg: Color::White },
-            Self { name: "Cyberpunk".to_string(), output_fg: Color::Magenta, input_fg: Color::LightCyan, highlight_fg: Color::LightMagenta },
-            Self { name: "Ocean".to_string(), output_fg: Color::Blue, input_fg: Color::Cyan, highlight_fg: Color::White },
-            Self { name: "Sunset".to_string(), output_fg: Color::Red, input_fg: Color::LightYellow, highlight_fg: Color::Yellow },
-            Self { name: "Forest".to_string(), output_fg: Color::DarkGray, input_fg: Color::Green, highlight_fg: Color::LightGreen },
-            Self { name: "Lavender".to_string(), output_fg: Color::Magenta, input_fg: Color::White, highlight_fg: Color::LightMagenta },
-            Self { name: "Mono".to_string(), output_fg: Color::White, input_fg: Color::Gray, highlight_fg: Color::DarkGray },
-            Self { name: "Gold".to_string(), output_fg: Color::Yellow, input_fg: Color::White, highlight_fg: Color::LightYellow },
-            Self { name: "Deep Sea".to_string(), output_fg: Color::DarkGray, input_fg: Color::Blue, highlight_fg: Color::LightBlue },
+            Self { 
+                name: "Matrix".to_string(), 
+                output_fg: Color::Green, 
+                input_fg: Color::LightGreen, 
+                highlight_fg: Color::White,
+                system_fg: Color::DarkGray,
+                thought_fg: Color::Green,
+                tool_fg: Color::LightGreen,
+                success_fg: Color::LightGreen,
+                error_fg: Color::Red,
+                warning_fg: Color::Yellow,
+                json_key_fg: Color::Green,
+                json_val_fg: Color::LightGreen,
+                input_bg: Color::Black,
+                thought_bg: Color::Black,
+                tool_bg: Color::Black,
+                terminal_bg: Color::Black,
+            },
+            Self { 
+                name: "Cyberpunk".to_string(), 
+                output_fg: Color::Magenta, 
+                input_fg: Color::LightCyan, 
+                highlight_fg: Color::LightMagenta,
+                system_fg: Color::DarkGray,
+                thought_fg: Color::LightMagenta,
+                tool_fg: Color::LightCyan,
+                success_fg: Color::Green,
+                error_fg: Color::Red,
+                warning_fg: Color::Yellow,
+                json_key_fg: Color::LightCyan,
+                json_val_fg: Color::Magenta,
+                input_bg: Color::Rgb(30, 0, 30),
+                thought_bg: Color::Rgb(0, 30, 30),
+                tool_bg: Color::Rgb(30, 30, 0),
+                terminal_bg: Color::Rgb(10, 0, 10),
+            },
+            Self { 
+                name: "Ocean".to_string(), 
+                output_fg: Color::Blue, 
+                input_fg: Color::Cyan, 
+                highlight_fg: Color::White,
+                system_fg: Color::DarkGray,
+                thought_fg: Color::Cyan,
+                tool_fg: Color::LightBlue,
+                success_fg: Color::Green,
+                error_fg: Color::Red,
+                warning_fg: Color::Yellow,
+                json_key_fg: Color::LightBlue,
+                json_val_fg: Color::Cyan,
+                input_bg: Color::Rgb(0, 20, 40),
+                thought_bg: Color::Rgb(0, 30, 50),
+                tool_bg: Color::Rgb(0, 40, 60),
+                terminal_bg: Color::Rgb(0, 10, 20),
+            },
+            Self { 
+                name: "Sunset".to_string(), 
+                output_fg: Color::Red, 
+                input_fg: Color::LightYellow, 
+                highlight_fg: Color::Yellow,
+                system_fg: Color::DarkGray,
+                thought_fg: Color::Yellow,
+                tool_fg: Color::LightRed,
+                success_fg: Color::Green,
+                error_fg: Color::LightRed,
+                warning_fg: Color::Yellow,
+                json_key_fg: Color::LightYellow,
+                json_val_fg: Color::Red,
+                input_bg: Color::Rgb(40, 10, 0),
+                thought_bg: Color::Rgb(50, 20, 0),
+                tool_bg: Color::Rgb(60, 30, 0),
+                terminal_bg: Color::Rgb(20, 5, 0),
+            },
+            Self { 
+                name: "Forest".to_string(), 
+                output_fg: Color::Green, 
+                input_fg: Color::LightGreen, 
+                highlight_fg: Color::White,
+                system_fg: Color::DarkGray,
+                thought_fg: Color::Green,
+                tool_fg: Color::Green,
+                success_fg: Color::LightGreen,
+                error_fg: Color::Red,
+                warning_fg: Color::Yellow,
+                json_key_fg: Color::Green,
+                json_val_fg: Color::LightGreen,
+                input_bg: Color::Rgb(0, 20, 0),
+                thought_bg: Color::Rgb(0, 30, 0),
+                tool_bg: Color::Rgb(0, 40, 0),
+                terminal_bg: Color::Rgb(0, 10, 0),
+            },
+            Self { 
+                name: "Lavender".to_string(), 
+                output_fg: Color::Magenta, 
+                input_fg: Color::White, 
+                highlight_fg: Color::LightMagenta,
+                system_fg: Color::DarkGray,
+                thought_fg: Color::Magenta,
+                tool_fg: Color::LightMagenta,
+                success_fg: Color::Green,
+                error_fg: Color::Red,
+                warning_fg: Color::Yellow,
+                json_key_fg: Color::LightMagenta,
+                json_val_fg: Color::White,
+                input_bg: Color::Rgb(20, 0, 40),
+                thought_bg: Color::Rgb(30, 0, 50),
+                tool_bg: Color::Rgb(40, 0, 60),
+                terminal_bg: Color::Rgb(10, 0, 20),
+            },
+            Self { 
+                name: "Mono".to_string(), 
+                output_fg: Color::White, 
+                input_fg: Color::Gray, 
+                highlight_fg: Color::DarkGray,
+                system_fg: Color::DarkGray,
+                thought_fg: Color::White,
+                tool_fg: Color::Gray,
+                success_fg: Color::White,
+                error_fg: Color::White,
+                warning_fg: Color::White,
+                json_key_fg: Color::White,
+                json_val_fg: Color::Gray,
+                input_bg: Color::Black,
+                thought_bg: Color::Black,
+                tool_bg: Color::Black,
+                terminal_bg: Color::Black,
+            },
+            Self { 
+                name: "Gold".to_string(), 
+                output_fg: Color::Yellow, 
+                input_fg: Color::White, 
+                highlight_fg: Color::LightYellow,
+                system_fg: Color::DarkGray,
+                thought_fg: Color::Yellow,
+                tool_fg: Color::LightYellow,
+                success_fg: Color::Green,
+                error_fg: Color::Red,
+                warning_fg: Color::Yellow,
+                json_key_fg: Color::LightYellow,
+                json_val_fg: Color::White,
+                input_bg: Color::Rgb(30, 20, 0),
+                thought_bg: Color::Rgb(40, 30, 0),
+                tool_bg: Color::Rgb(50, 40, 0),
+                terminal_bg: Color::Rgb(15, 10, 0),
+            },
+            Self { 
+                name: "Deep Sea".to_string(), 
+                output_fg: Color::DarkGray, 
+                input_fg: Color::Blue, 
+                highlight_fg: Color::LightBlue,
+                system_fg: Color::DarkGray,
+                thought_fg: Color::Blue,
+                tool_fg: Color::LightBlue,
+                success_fg: Color::Green,
+                error_fg: Color::Red,
+                warning_fg: Color::Yellow,
+                json_key_fg: Color::Blue,
+                json_val_fg: Color::LightBlue,
+                input_bg: Color::Rgb(0, 10, 30),
+                thought_bg: Color::Rgb(0, 20, 40),
+                tool_bg: Color::Rgb(0, 30, 50),
+                terminal_bg: Color::Rgb(0, 5, 15),
+            },
         ]
     }
 }
@@ -226,7 +403,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     );
     // --- VIRTUALIZATION LOGIC END ---
     
-    let input_style = Style::default().bg(Color::Rgb(20, 20, 30)).fg(app.theme.input_fg);
+    let input_style = Style::default().bg(app.theme.input_bg).fg(app.theme.input_fg);
     let input_title = if app.is_asking_user {
         format!("{} Waiting for your answer...", icons::WARNING)
     } else {
@@ -248,37 +425,37 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     }
 
     let line2_spans = vec![
-        Span::styled(format!("{} Path: ", icons::PATH), Style::default().fg(Color::DarkGray)),
-        Span::styled(format!("{} ", app.current_dir), Style::default().fg(Color::LightBlue)),
-        Span::styled(format!("| {} Git: ", icons::GIT), Style::default().fg(Color::DarkGray)),
-        Span::styled(format!("{} ", app.git_status), Style::default().fg(if app.git_status.contains("dirty") { Color::Red } else { Color::Green })),
+        Span::styled(format!("{} Path: ", icons::PATH), Style::default().fg(app.theme.system_fg)),
+        Span::styled(format!("{} ", app.current_dir), Style::default().fg(app.theme.tool_fg)),
+        Span::styled(format!("| {} Git: ", icons::GIT), Style::default().fg(app.theme.system_fg)),
+        Span::styled(format!("{} ", app.git_status), Style::default().fg(if app.git_status.contains("dirty") { app.theme.error_fg } else { app.theme.success_fg })),
     ];
 
     let processing_text = if app.show_approval_prompt {
-        vec![Line::from(vec![Span::styled(format!("  {} {} Awaiting Permission For Tool Call...", icons::SPINNER[app.spinner_index], icons::WARNING), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))])]
+        vec![Line::from(vec![Span::styled(format!("  {} {} Awaiting Permission For Tool Call...", icons::SPINNER[app.spinner_index], icons::WARNING), Style::default().fg(app.theme.warning_fg).add_modifier(Modifier::BOLD))])]
     } else if app.is_executing_tool {
-        vec![Line::from(vec![Span::styled(format!("  {} {} Executing Tool...", icons::TOOL_SPINNER[app.tool_spinner_index], icons::COMMAND), Style::default().fg(Color::LightBlue))])]
+        vec![Line::from(vec![Span::styled(format!("  {} {} Executing Tool...", icons::TOOL_SPINNER[app.tool_spinner_index], icons::COMMAND), Style::default().fg(app.theme.tool_fg))])]
     } else if app.is_asking_user {
-        vec![Line::from(vec![Span::styled(format!("  {} {} Waiting for User Input...", icons::SPINNER[app.spinner_index], icons::INPUT), Style::default().fg(Color::Yellow))])]
+        vec![Line::from(vec![Span::styled(format!("  {} {} Waiting for User Input...", icons::SPINNER[app.spinner_index], icons::INPUT), Style::default().fg(app.theme.warning_fg))])]
     } else if app.is_processing {
-        vec![Line::from(vec![Span::styled(format!("  {} {} Lethetic Intelligence Engine Processing...", icons::SPINNER[app.spinner_index], icons::PROCESSING), Style::default().fg(Color::Yellow))])]
+        vec![Line::from(vec![Span::styled(format!("  {} {} Lethetic Intelligence Engine Processing...", icons::SPINNER[app.spinner_index], icons::PROCESSING), Style::default().fg(app.theme.warning_fg))])]
     } else {
-        vec![Line::from(vec![Span::styled(format!("  {} Ready", icons::SUCCESS), Style::default().fg(Color::DarkGray))])]
+        vec![Line::from(vec![Span::styled(format!("  {} Ready", icons::SUCCESS), Style::default().fg(app.theme.system_fg))])]
     };
     f.render_widget(Paragraph::new(processing_text), left_layout[1]);
 
     let status_text = vec![
         Line::from(vec![
-            Span::styled(format!("{} T/s: ", icons::TOKENS), Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{:.2} ", app.tokens_per_s), Style::default().fg(Color::Cyan)),
-            Span::styled(format!("| {} Model: ", icons::MODEL), Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{} ", app.model_name), Style::default().fg(Color::Green)),
-            Span::styled(format!("| {} Server: ", icons::SERVER), Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{} ", app.server_url), Style::default().fg(Color::Yellow)),
-            Span::styled(format!("| {} Context: ", icons::TOKENS), Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{}/{} ", app.context_manager.get_token_count(), app.max_tokens), Style::default().fg(Color::Cyan)),
-            Span::styled("| Mem: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{}MB ", app.memory_usage), Style::default().fg(Color::Magenta)),
+            Span::styled(format!("{} T/s: ", icons::TOKENS), Style::default().fg(app.theme.system_fg)),
+            Span::styled(format!("{:.2} ", app.tokens_per_s), Style::default().fg(app.theme.thought_fg)),
+            Span::styled(format!("| {} Model: ", icons::MODEL), Style::default().fg(app.theme.system_fg)),
+            Span::styled(format!("{} ", app.model_name), Style::default().fg(app.theme.success_fg)),
+            Span::styled(format!("| {} Server: ", icons::SERVER), Style::default().fg(app.theme.system_fg)),
+            Span::styled(format!("{} ", app.server_url), Style::default().fg(app.theme.warning_fg)),
+            Span::styled(format!("| {} Context: ", icons::TOKENS), Style::default().fg(app.theme.system_fg)),
+            Span::styled(format!("{}/{} ", app.context_manager.get_token_count(), app.max_tokens), Style::default().fg(app.theme.thought_fg)),
+            Span::styled("| Mem: ", Style::default().fg(app.theme.system_fg)),
+            Span::styled(format!("{}MB ", app.memory_usage), Style::default().fg(app.theme.thought_fg)),
         ]),
         Line::from(line2_spans),
     ];
@@ -286,7 +463,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
 
     if app.show_debug {
         let items: Vec<ListItem> = app.debug_log.iter().rev().take(50).map(|s| ListItem::new(s.as_str())).collect();
-        f.render_widget(List::new(items).block(UIBlock::default().title(format!("{} Debugger", icons::DEBUG)).borders(Borders::ALL)).style(Style::default().fg(Color::Gray)), main_layout[1]);
+        f.render_widget(List::new(items).block(UIBlock::default().title(format!("{} Debugger", icons::DEBUG)).borders(Borders::ALL)).style(Style::default().fg(app.theme.system_fg)), main_layout[1]);
     }
 
     if app.show_palette {
@@ -310,7 +487,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         let block = UIBlock::default()
             .title(format!("{} Loading Session...", icons::PROCESSING))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan));
+            .border_style(Style::default().fg(app.theme.thought_fg));
             
         let progress = (app.load_progress as u16).min(100);
         let filled = (progress as usize * 40) / 100;
@@ -332,7 +509,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         let block = UIBlock::default()
             .title(format!("{} Prompt Manager", icons::MODEL))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow));
+            .border_style(Style::default().fg(app.theme.warning_fg));
 
         let inner_layout = Layout::default()
             .direction(Direction::Vertical)
@@ -349,7 +526,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         );
         
         let help_text = "(Enter) Select/Create | (Esc) Close";
-        f.render_widget(Paragraph::new(help_text).block(UIBlock::default().borders(Borders::TOP)).style(Style::default().fg(Color::DarkGray)), inner_layout[1]);
+        f.render_widget(Paragraph::new(help_text).block(UIBlock::default().borders(Borders::TOP)).style(Style::default().fg(app.theme.system_fg)), inner_layout[1]);
     }
 
     if app.show_session_manager {
@@ -363,7 +540,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         let block = UIBlock::default()
             .title(format!("{} Session Manager", icons::COMMAND))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan));
+            .border_style(Style::default().fg(app.theme.thought_fg));
         
         let inner_layout = Layout::default()
             .direction(Direction::Vertical)
@@ -380,19 +557,19 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         );
         
         let help_text = "(Enter) Resume | (N) New | (D) Delete | (X) Wipe All | (Esc) Close";
-        f.render_widget(Paragraph::new(help_text).block(UIBlock::default().borders(Borders::TOP)).style(Style::default().fg(Color::DarkGray)), inner_layout[1]);
+        f.render_widget(Paragraph::new(help_text).block(UIBlock::default().borders(Borders::TOP)).style(Style::default().fg(app.theme.system_fg)), inner_layout[1]);
     }
 
     if app.show_approval_prompt {
         let area = centered_rect(70, 60, f.area());
         f.render_widget(Clear, area);
         if let Some(tc) = &app.pending_tool_call {
-            let json_text = render_json_highlighted(&tc.function.arguments);
+            let json_text = render_json_highlighted(&tc.function.arguments, &app.theme);
 
             let mut display_text = Text::from(vec![
                 Line::from(vec![
                     Span::styled("Tool: ", Style::default().add_modifier(Modifier::BOLD)),
-                    Span::styled(&tc.function.name, Style::default().fg(Color::LightGreen)),
+                    Span::styled(&tc.function.name, Style::default().fg(app.theme.success_fg)),
                 ]),
                 Line::from("Params:"),
             ]);
@@ -402,7 +579,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             let mut lines_added = 0;
             for line in json_text.lines {
                 if lines_added >= max_lines {
-                    display_text.lines.push(Line::from(Span::styled("... [Truncated for display]", Style::default().fg(Color::DarkGray))));
+                    display_text.lines.push(Line::from(Span::styled("... [Truncated for display]", Style::default().fg(app.theme.system_fg))));
                     break;
                 }
                 display_text.lines.push(line);
@@ -411,18 +588,18 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
 
             display_text.lines.push(Line::from(""));
             display_text.lines.push(Line::from(vec![
-                Span::styled("(A)", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled("(A)", Style::default().fg(app.theme.warning_fg).add_modifier(Modifier::BOLD)),
                 Span::raw("lways Allow | "),
-                Span::styled("(O)", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled("(O)", Style::default().fg(app.theme.warning_fg).add_modifier(Modifier::BOLD)),
                 Span::raw("nce | "),
-                Span::styled("(D)", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled("(D)", Style::default().fg(app.theme.error_fg).add_modifier(Modifier::BOLD)),
                 Span::raw("eny"),
             ]));
 
             let block = UIBlock::default()
                 .title(format!("{} Security Confirmation", icons::WARNING))
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Yellow));
+                .border_style(Style::default().fg(app.theme.warning_fg));
 
             f.render_widget(Paragraph::new(display_text).block(block).wrap(Wrap { trim: false }), area);
         } else {
@@ -441,7 +618,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         let header_block = UIBlock::default()
             .title(format!("{} System Prompt Editor", icons::MODEL))
             .borders(Borders::ALL)
-            .style(if app.is_editing_prompt { Style::default().fg(Color::Yellow) } else { Style::default() });
+            .style(if app.is_editing_prompt { Style::default().fg(app.theme.warning_fg) } else { Style::default() });
         
         let instructions = if app.is_editing_prompt { 
             format!("EDITING MODE | Cursor: {} | (ESC) Finish", app.prompt_cursor_pos) 
@@ -460,7 +637,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             
             for c in app.system_prompt.chars() {
                 if current_pos == app.prompt_cursor_pos {
-                    display_spans.push(Span::styled(c.to_string(), Style::default().add_modifier(Modifier::REVERSED).fg(Color::Yellow)));
+                    display_spans.push(Span::styled(c.to_string(), Style::default().add_modifier(Modifier::REVERSED).fg(app.theme.warning_fg)));
                     cursor_seen = true;
                 } else {
                     display_spans.push(Span::raw(c.to_string()));
@@ -469,7 +646,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             }
             
             if !cursor_seen {
-                display_spans.push(Span::styled("█", Style::default().fg(Color::Yellow)));
+                display_spans.push(Span::styled("█", Style::default().fg(app.theme.warning_fg)));
             }
         } else {
             display_spans.push(Span::raw(app.system_prompt.clone()));
@@ -490,7 +667,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             let dialog_block = UIBlock::default()
                 .title(format!("{} Save Prompt As", icons::WARNING))
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Yellow));
+                .border_style(Style::default().fg(app.theme.warning_fg));
                 
             let text = format!("Enter filename (without .md):\n> {}\n\n(ENTER) Save | (ESC) Cancel", app.prompt_save_name);
             f.render_widget(Paragraph::new(text).block(dialog_block).wrap(Wrap { trim: true }), dialog_area);
@@ -526,26 +703,26 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
 pub fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, tool_preview: Option<&str>) -> Vec<Line<'static>> {
     let block_color = match block.block_type {
         BlockType::User => theme.input_fg,
-        BlockType::Thought => Color::Cyan,
-        BlockType::Formulating => Color::Yellow,
-        BlockType::ToolCall => Color::LightBlue,
+        BlockType::Thought => theme.thought_fg,
+        BlockType::Formulating => theme.warning_fg,
+        BlockType::ToolCall => theme.tool_fg,
         BlockType::ToolResult => {
             match block.success {
-                Some(true) => Color::Green,
-                Some(false) => Color::Red,
-                None => Color::Gray,
+                Some(true) => theme.success_fg,
+                Some(false) => theme.error_fg,
+                None => theme.system_fg,
             }
         }
-        BlockType::Divider => Color::DarkGray,
-        _ => Color::Gray,
+        BlockType::Divider => theme.system_fg,
+        _ => theme.output_fg,
     };
 
     let (bg_color, mut header) = match block.block_type {
-        BlockType::User => (Color::Rgb(30, 35, 45), Some(format!("{} User Request", icons::INPUT))),
-        BlockType::Thought => (Color::Rgb(25, 45, 45), Some(format!("{} Engine Thinking...", icons::PROCESSING))),
-        BlockType::Formulating => (Color::Rgb(45, 35, 25), Some(format!("{} Formulating tool request...", icons::SPINNER[0]))),
-        BlockType::ToolCall => (Color::Rgb(45, 45, 30), Some(format!("{} Engine Tool Request", icons::COMMAND))),
-        BlockType::ToolResult => (Color::Rgb(35, 35, 35), Some(format!("{} Agent, Tool Output", icons::SUCCESS))),
+        BlockType::User => (theme.input_bg, Some(format!("{} User Request", icons::INPUT))),
+        BlockType::Thought => (theme.thought_bg, Some(format!("{} Engine Thinking...", icons::PROCESSING))),
+        BlockType::Formulating => (theme.thought_bg, Some(format!("{} Formulating tool request...", icons::SPINNER[0]))),
+        BlockType::ToolCall => (theme.tool_bg, Some(format!("{} Engine Tool Request", icons::COMMAND))),
+        BlockType::ToolResult => (theme.terminal_bg, Some(format!("{} Agent, Tool Output", icons::SUCCESS))),
         BlockType::Divider => (Color::Reset, None),
         _ => (Color::Reset, None),
     };
@@ -564,7 +741,7 @@ pub fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, t
 
     if block.block_type == BlockType::Divider {
         lines_output.push(Line::from(vec![
-            Span::styled("─".repeat(width), Style::default().fg(Color::DarkGray))
+            Span::styled("─".repeat(width), Style::default().fg(theme.system_fg))
         ]));
         return lines_output;
     }
@@ -615,11 +792,11 @@ pub fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, t
             let json_part = &block.content[brace_pos..];
             
             if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(json_part) {
-                let json_text = render_json_highlighted(&json_val);
+                let json_text = render_json_highlighted(&json_val, theme);
                 let mut formatted = Vec::new();
                 
                 if let Some(first_line) = json_text.lines.first() {
-                    let mut spans = vec![Span::styled(func_name_part.to_string(), Style::default().fg(Color::LightBlue))];
+                    let mut spans = vec![Span::styled(func_name_part.to_string(), Style::default().fg(theme.tool_fg))];
                     spans.extend(first_line.spans.clone());
                     formatted.push(Line::from(spans));
                 }
@@ -628,7 +805,7 @@ pub fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, t
                 }
                 
                 if let Some(preview) = tool_preview {
-                    formatted.push(Line::from(vec![Span::styled("--- Live Output Preview ---", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC))]));
+                    formatted.push(Line::from(vec![Span::styled("--- Live Output Preview ---", Style::default().fg(theme.system_fg).add_modifier(Modifier::ITALIC))]));
                     let lines: Vec<&str> = preview.lines().collect();
                     // Always show 5 lines to prevent bouncing
                     for i in 0..5 {
@@ -641,10 +818,10 @@ pub fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, t
                             } else {
                                 format!("> {}", line_content)
                             };
-                            formatted.push(Line::from(vec![Span::styled(display_line, Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC))]));
+                            formatted.push(Line::from(vec![Span::styled(display_line, Style::default().fg(theme.system_fg).add_modifier(Modifier::ITALIC))]));
                         } else {
                             // Spacer line
-                            formatted.push(Line::from(vec![Span::styled(">", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC))]));
+                            formatted.push(Line::from(vec![Span::styled(">", Style::default().fg(theme.system_fg).add_modifier(Modifier::ITALIC))]));
                         }
                     }
                 }
@@ -657,7 +834,7 @@ pub fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, t
             block.content.lines().map(|l| Line::from(Span::styled(l.to_string(), base_style))).collect()
         }
     } else if block.block_type == BlockType::Markdown || block.block_type == BlockType::Thought || block.content.contains("```") {
-        markdown::render_markdown(&block.content, base_style).lines
+        markdown::render_markdown(&block.content, theme).lines
     } else {
         block.content.lines().map(|l| Line::from(Span::styled(l.to_string(), base_style))).collect()
     };
@@ -669,9 +846,9 @@ pub fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, t
         
         for span in line.spans.iter_mut() {
             if block.block_type == BlockType::Thought {
-                span.style = span.style.add_modifier(Modifier::ITALIC).fg(Color::Cyan);
+                span.style = span.style.add_modifier(Modifier::ITALIC).fg(theme.thought_fg);
             } else if block.block_type == BlockType::ToolCall && span.style.fg.is_none() {
-                span.style = span.style.fg(Color::Yellow);
+                span.style = span.style.fg(theme.warning_fg);
             }
         }
         
