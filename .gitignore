@@ -16,3 +16,4 @@ responses.jsonl
 compile_cube.sh
 cube.c
 main.c
+ignore/
