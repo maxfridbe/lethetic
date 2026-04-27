@@ -16,6 +16,10 @@ fn main() {
     let mut cube_vel = Vector3::new(0.0, 0.0, 0.0); // Velocity of the cube
     let gravity = -15.0; // Gravity constant
     let damping = 0.6;    // Damping factor for floor collision (bounciness)
+    // Load shader for Gouraud shading
+    let shader = rl.load_shader(&thread, Some("shaders/gouraud.vs"), Some("shaders/gouraud.fs"));
+    let light_pos_loc = shader.get_location("lightPos");
+    let light_pos = Vector3::new(5.0, 10.0, 5.0);
 
     // Main game loop
     while !rl.window_should_close() {
@@ -54,6 +58,10 @@ fn main() {
             // Begin 3D mode
             let mut d3d = d.begin_mode3D(camera);
             
+            // Apply shader and set light position
+            d3d.set_shader(&shader);
+            rl.set_shader_value_vec3(&shader, light_pos_loc, &light_pos);
+
             // Draw the ground plane
             d3d.draw_plane(Vector3::new(0.0, 0.0, 0.0), Vector2::new(20.0, 20.0), Color::DARKGREEN);
 

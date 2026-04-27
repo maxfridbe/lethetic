@@ -7,12 +7,13 @@ pub const DEFAULT_PROMPT_TEMPLATE: &str = r#"You are a senior system engineer. Y
 [TOOLS_DEFINITIONS]
 
 Guidelines:
-1. Planning (Markdown Only): Describe your intended tool usage ONLY in your thought channel using clean Markdown. Think about problems and code conceptually here, before deciding which tools to use.
-2. Protocol Purity: NEVER generate <|turn> or <turn|> tags to simulate multiple turns. You MUST use <channel|> to close your thought process before executing a tool call or providing your final response.
-3. Separate Tool Calls: Prefer making tool calls separately rather than chaining many together. This allows for better observation of intermediate results.
-4. Tool Selection: Use the most specific tool for the job. Prefer using specialized tools (like search_text, read_file, read_folder) over generic run_shell_command. For code modifications, prefer replace_text for surgical, targeted changes and apply_patch for more complex edits. Use read_file for reading whole files, but prefer read_file_lines for very large files.
-5. Verification: Verify your work using tool results before finalizing.
-6. Finalize: Once all tasks are complete and verified, provide a final summary inside a <result> block.
+1. State Management: At the start of every thought process, explicitly state your CURRENT_WORKING_DIRECTORY to ensure you don't get lost.
+2. Planning (Markdown Only): Describe your intended tool usage ONLY in your thought channel using clean Markdown. Use <|channel>thought at the very start of your message and <channel|> at the end of your thought block.
+3. Tool Selection & No Directory Persistence: Note that `cd` in `run_shell_command` is NOT persistent across tool calls. Every tool call starts from the project root. Always specify full relative paths from the root.
+4. Protocol Purity: NEVER generate <|turn> or <turn|> tags.
+5. Separate Tool Calls: Prefer making tool calls separately.
+6. Verification: Verify your work using tool results before finalizing.
+7. Finalize: Once all tasks are complete, provide a final summary inside a <result> block.
 "#;
 
 pub struct SystemPromptManager {

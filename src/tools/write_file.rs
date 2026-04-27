@@ -10,13 +10,13 @@ pub fn get_definition() -> Tool {
         tool_type: "function".to_string(),
         function: FunctionDefinition {
             name: "write_file".to_string(),
-            description: "Write content to a file (overwrites existing)".to_string(),
+            description: "Create a new file or overwrite an existing one with the provided content. Note: 'path' must be a filename, not a directory.".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "The path to the file"
+                        "description": "The path to the file (e.g., 'src/main.rs'). Must include a filename."
                     },
                     "content": {
                         "type": "string",
@@ -38,7 +38,7 @@ pub fn get_definition() -> Tool {
 }
 
 pub fn get_prompt_template() -> String {
-    format!("{}declaration:write_file{{description:<|\">Create a new file or overwrite an existing one with the provided content.<|\">,parameters:{{properties:{{content:{{description:<|\">The complete content to write to the file<|\">,type:<|\">STRING<|\">}},path:{{description:<|\">The path to the file to write<|\">,type:<|\">STRING<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">A unique, descriptive string identifier for this call (e.g., 'read_main_rs', 'check_folders'). Do not use simple numbers.<|\">,type:<|\">STRING<|\">}}}},required:[<|\">path<|\">,<|\">content<|\">,<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
+    format!("{}declaration:write_file{{description:<|\">Create a new file or overwrite an existing one. 'path' must be a full filename, not a directory.<|\">,parameters:{{properties:{{content:{{description:<|\">The complete content to write to the file<|\">,type:<|\">STRING<|\">}},path:{{description:<|\">The path to the file to write (e.g. 'llm.md')<|\">,type:<|\">STRING<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">A unique, descriptive string identifier for this call (e.g., 'read_main_rs', 'check_folders'). Do not use simple numbers.<|\">,type:<|\">STRING<|\">}}}},required:[<|\">path<|\">,<|\">content<|\">,<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
 }
 
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {
@@ -51,21 +51,26 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
 
 pub async fn execute(path: &str, content: &str, cwd: &str, cancellation_token: tokio_util::sync::CancellationToken) -> String {
 
-    let full_path = Path::new(cwd).join(path);
+    let full_file_path = Path::new(cwd).join(path);
     
     tokio::select! {
         _ = cancellation_token.cancelled() => {
             "[Operation Cancelled by User]".to_string()
         }
         res = async {
+            // Check if the path is actually a directory
+            if full_file_path.is_dir() {
+                return format!("ERROR: '{}' is a directory. Please specify a full filename (e.g., '{}/filename.txt').", path, path);
+            }
+
             // Ensure parent directory exists
-            if let Some(parent) = full_path.parent() {
+            if let Some(parent) = full_file_path.parent() {
                 let _ = fs::create_dir_all(parent);
             }
 
-            match fs::write(&full_path, content) {
-                Ok(_) => format!("Successfully wrote to {}", full_path.display()),
-                Err(e) => format!("ERROR: Failed to write to {}: {}", full_path.display(), e),
+            match fs::write(&full_file_path, content) {
+                Ok(_) => format!("Successfully wrote to {}", full_file_path.display()),
+                Err(e) => format!("ERROR: Failed to write to {}: {}", full_file_path.display(), e),
             }
         } => res
     }

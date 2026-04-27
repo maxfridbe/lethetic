@@ -50,27 +50,10 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
 }
 
 pub async fn execute(command: &str, cwd: &str, cancellation_token: CancellationToken, tx: mpsc::UnboundedSender<StreamEvent>) -> (String, String) {
-    // Check if the command starts with 'cd' to update the persistent state
-    let mut final_cwd = PathBuf::from(cwd);
-    if command.trim().starts_with("cd ") {
-        let parts: Vec<&str> = command.trim().split_whitespace().collect();
-        if parts.len() > 1 {
-            let target = parts[1];
-            let new_path = if target == ".." {
-                final_cwd.parent().map(|p| p.to_path_buf()).unwrap_or(final_cwd.clone())
-            } else {
-                final_cwd.join(target)
-            };
-            if new_path.exists() && new_path.is_dir() {
-                final_cwd = new_path;
-            }
-        }
-    }
-
     let mut child = Command::new("bash")
         .arg("-c")
         .arg(command)
-        .current_dir(&final_cwd)
+        .current_dir(cwd)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
@@ -125,5 +108,5 @@ pub async fn execute(command: &str, cwd: &str, cancellation_token: CancellationT
         }
     };
 
-    (res_str, final_cwd.display().to_string())
+    (res_str, cwd.to_string())
 }
