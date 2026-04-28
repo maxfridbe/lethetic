@@ -13,7 +13,7 @@ fn test_system_prompt_manager_lifecycle() {
     
     // For now, let's just test `resolve_prompt` to ensure the placeholder is replaced.
     let template = "Hello\n[TOOLS_DEFINITIONS]\nGoodbye";
-    let resolved = SystemPromptManager::resolve_prompt(template);
+    let resolved = SystemPromptManager::resolve_prompt(template, "/mock/cwd");
     
     assert!(resolved.contains("Hello"));
     assert!(resolved.contains("Goodbye"));

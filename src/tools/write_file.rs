@@ -38,7 +38,7 @@ pub fn get_definition() -> Tool {
 }
 
 pub fn get_prompt_template() -> String {
-    format!("{}declaration:write_file{{description:<|\">Create a new file or overwrite an existing one. 'path' must be a full filename, not a directory.<|\">,parameters:{{properties:{{content:{{description:<|\">The complete content to write to the file<|\">,type:<|\">STRING<|\">}},path:{{description:<|\">The path to the file to write (e.g. 'llm.md')<|\">,type:<|\">STRING<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">A unique, descriptive string identifier for this call (e.g., 'read_main_rs', 'check_folders'). Do not use simple numbers.<|\">,type:<|\">STRING<|\">}}}},required:[<|\">path<|\">,<|\">content<|\">,<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
+    format!("{}declaration:write_file{{description: \"Create a new file or overwrite an existing one. 'path' must be a full filename, not a directory.\",parameters:{{properties:{{content:{{description: \"The complete content to write to the file\",type: \"STRING\"}},path:{{description: \"The path to the file to write (e.g. 'llm.md')\",type: \"STRING\"}},description:{{description: \"Short description of the action\",type: \"STRING\"}},tool_call_id:{{description: \"A unique, descriptive string identifier for this call (e.g., 'read_main_rs', 'check_folders'). Do not use simple numbers.\",type: \"STRING\"}}}},required:[\"path\",\"content\",\"description\",\"tool_call_id\"],type: \"OBJECT\"}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
 }
 
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {

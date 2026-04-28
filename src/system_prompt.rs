@@ -2,18 +2,15 @@ use std::path::PathBuf;
 use std::fs;
 use crate::tools;
 
-pub const DEFAULT_PROMPT_TEMPLATE: &str = r#"You are a senior system engineer. You have access to the following tools:
+pub const DEFAULT_PROMPT_TEMPLATE: &str = r#"You are a helpful assistant.
+CurrentWorkingDir:[CWD]
 
 [TOOLS_DEFINITIONS]
 
 Guidelines:
-1. State Management: At the start of every thought process, explicitly state your CURRENT_WORKING_DIRECTORY to ensure you don't get lost.
-2. Planning (Markdown Only): Describe your intended tool usage ONLY in your thought channel using clean Markdown. Use <|channel>thought at the very start of your message and <channel|> at the end of your thought block.
-3. Tool Selection & No Directory Persistence: Note that `cd` in `run_shell_command` is NOT persistent across tool calls. Every tool call starts from the project root. Always specify full relative paths from the root.
-4. Protocol Purity: NEVER generate <|turn> or <turn|> tags.
-5. Separate Tool Calls: Prefer making tool calls separately.
-6. Verification: Verify your work using tool results before finalizing.
-7. Finalize: Once all tasks are complete, provide a final summary inside a <result> block.
+1. Tool Selection & No Directory Persistence: Note that `cd` in `run_shell_command` is NOT persistent across tool calls. Every tool call starts from the project root. Always specify full relative paths from the root.
+2. Verification: Verify your work using tool results before finalizing.
+3. Finalize: Once all tasks are complete, provide a final summary inside a <result> block.
 "#;
 
 pub struct SystemPromptManager {
@@ -62,8 +59,8 @@ impl SystemPromptManager {
         fs::write(path, content)
     }
 
-    pub fn resolve_prompt(template: &str) -> String {
+    pub fn resolve_prompt(template: &str, cwd: &str) -> String {
         let tool_declarations = tools::get_all_prompt_templates();
-        template.replace("[TOOLS_DEFINITIONS]", &tool_declarations)
+        template.replace("[TOOLS_DEFINITIONS]", &tool_declarations).replace("[CWD]", cwd)
     }
 }

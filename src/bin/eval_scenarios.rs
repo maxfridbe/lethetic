@@ -62,7 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn run_scenario(client: &Client, config: &Config, scenario: &Scenario) -> Result<String, Box<dyn std::error::Error>> {
-    let mut context_manager = ContextManager::new(config.context_size, Some(crate::system_prompt::SystemPromptManager::resolve_prompt(crate::system_prompt::DEFAULT_PROMPT_TEMPLATE)));
+    let mut context_manager = ContextManager::new(config.context_size, Some(crate::system_prompt::SystemPromptManager::resolve_prompt(crate::system_prompt::DEFAULT_PROMPT_TEMPLATE, ".")));
     context_manager.add_message("user", scenario.prompt);
 
     let mut req_body = json!({

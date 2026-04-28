@@ -146,7 +146,8 @@ impl App {
         let system_prompt_manager = crate::system_prompt::SystemPromptManager::new();
         let system_prompt = system_prompt_manager.load_prompt("software_engineer").unwrap_or_else(|| crate::system_prompt::DEFAULT_PROMPT_TEMPLATE.to_string());
         
-        let resolved_prompt = crate::system_prompt::SystemPromptManager::resolve_prompt(&system_prompt);
+        let cwd = std::env::current_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| ".".to_string());
+        let resolved_prompt = crate::system_prompt::SystemPromptManager::resolve_prompt(&system_prompt, &cwd);
         let context_manager = ContextManager::new(
             config.context_size, 
             Some(resolved_prompt)
@@ -624,7 +625,7 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                     app.should_redraw = true;
                 }
                 KeyCode::Char('s') | KeyCode::Char('S') => {
-                    let resolved = crate::system_prompt::SystemPromptManager::resolve_prompt(&app.system_prompt);
+                    let resolved = crate::system_prompt::SystemPromptManager::resolve_prompt(&app.system_prompt, &app.cwd);
                     app.context_manager.update_system_prompt(resolved);
                     // Also auto-save as software_engineer.md
                     let _ = app.system_prompt_manager.save_prompt("software_engineer", &app.system_prompt);

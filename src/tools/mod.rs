@@ -50,31 +50,42 @@ pub fn get_all_tools() -> Vec<Tool> {
     ]
 }
 
+pub fn get_tool_parameter_names(func_name: &str) -> Vec<String> {
+    let tools = get_all_tools();
+    if let Some(tool) = tools.iter().find(|t| t.function.name == func_name) {
+        if let Some(properties) = tool.function.parameters.get("properties") {
+            if let Some(obj) = properties.as_object() {
+                return obj.keys().cloned().collect();
+            }
+        }
+    }
+    vec![]
+}
+
 pub fn get_all_prompt_templates() -> String {
     let mut templates = String::new();
-    templates.push_str(&read_file::get_prompt_template());
-    templates.push('\n');
-    templates.push_str(&read_file_lines::get_prompt_template());
-    templates.push('\n');
-    templates.push_str(&read_folder::get_prompt_template());
-    templates.push('\n');
-    templates.push_str(&search_text::get_prompt_template());
-    templates.push('\n');
-    templates.push_str(&apply_patch::get_prompt_template());
-    templates.push('\n');
-    templates.push_str(&run_shell_command::get_prompt_template());
-    templates.push('\n');
-    templates.push_str(&write_file::get_prompt_template());
-    templates.push('\n');
-    templates.push_str(&replace_text::get_prompt_template());
-    templates.push('\n');
-    templates.push_str(&web_fetch::get_prompt_template());
-    templates.push('\n');
-    templates.push_str(&calculate::get_prompt_template());
-    templates.push('\n');
-    templates.push_str(&ask_the_user::get_prompt_template());
-    templates.push('\n');
-    templates.push_str(&code_snippet::get_prompt_template());
+    let raw_templates = [
+        read_file::get_prompt_template(),
+        read_file_lines::get_prompt_template(),
+        read_folder::get_prompt_template(),
+        search_text::get_prompt_template(),
+        apply_patch::get_prompt_template(),
+        run_shell_command::get_prompt_template(),
+        write_file::get_prompt_template(),
+        replace_text::get_prompt_template(),
+        web_fetch::get_prompt_template(),
+        calculate::get_prompt_template(),
+        ask_the_user::get_prompt_template(),
+        code_snippet::get_prompt_template(),
+    ];
+    
+    for tmpl in raw_templates {
+        // Strip the existing <|tool_call> and <tool_call|> tags added by tools
+        let inner = tmpl.replace(llm_tokens::TOOL_CALL_OPEN, "").replace(llm_tokens::TOOL_CALL_CLOSE, "");
+        templates.push_str("<|tool>");
+        templates.push_str(&inner);
+        templates.push_str("<tool|>\n");
+    }
     templates
 }
 

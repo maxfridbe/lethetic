@@ -53,3 +53,16 @@ fn test_fragmented_tool_call() {
         (BlockType::Text, "OK".to_string())
     ]);
 }
+
+#[test]
+fn test_think_tags() {
+    let mut parser = StreamParser::new();
+    parser.state = ParserState::Text;
+    
+    let res = parser.parse_chunk("Here is my answer: <think>I need to be careful</think> Done.");
+    assert_eq!(res, vec![
+        (BlockType::Text, "Here is my answer: ".to_string()),
+        (BlockType::Thought, "I need to be careful".to_string()),
+        (BlockType::Text, " Done.".to_string())
+    ]);
+}
