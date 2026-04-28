@@ -16,6 +16,8 @@ pub struct GenerateRequest {
     pub raw: bool,
     pub stream: bool,
     pub options: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub images: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -165,4 +167,93 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
             Err(e) => { let _ = log_tx.send(StreamEvent::Error(e.to_string())); }
         }
     });
+}
+
+pub async fn get_single_response(client: &Client, config: &Config, prompt: String, images: Option<Vec<String>>, tx: Option<&mpsc::UnboundedSender<StreamEvent>>) -> Result<String, String> {
+    let b_url = if config.server_url.contains("/completion") {
+        config.server_url.replace("/completion", "/v1/chat/completions")
+    } else if config.server_url.contains("/api/chat") {
+        config.server_url.replace("/api/chat", "/v1/chat/completions")
+    } else {
+        format!("{}/v1/chat/completions", config.server_url.trim_end_matches('/'))
+    };
+
+    let req_body = if let Some(imgs) = images {
+        if let Some(log_tx) = tx {
+            let _ = log_tx.send(StreamEvent::DebugLog(format!("[CLIENT] Sending {} images using OpenAI Vision format to {}...", imgs.len(), b_url)));
+        }
+        
+        let mut content = vec![
+            json!({ "type": "text", "text": prompt })
+        ];
+
+        for img in imgs {
+            content.push(json!({
+                "type": "image_url",
+                "image_url": {
+                    "url": format!("data:image/png;base64,{}", img)
+                }
+            }));
+        }
+
+        json!({
+            "model": config.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": content
+                }
+            ],
+            "stream": false,
+            "max_tokens": 512,
+            "temperature": 1.0
+        })
+    } else {
+        // Standard completion fallback
+        json!({
+            "model": config.model,
+            "prompt": prompt,
+            "stream": false,
+            "max_tokens": 512,
+            "temperature": 1.0
+        })
+    };
+
+    if let Ok(debug_json) = serde_json::to_string(&req_body) {
+        if let Some(log_tx) = tx {
+            // Only print first 500 chars to avoid base64 noise
+            let _ = log_tx.send(StreamEvent::DebugLog(format!("[CLIENT] Request JSON: {}...", &debug_json[..usize::min(debug_json.len(), 500)])));
+        }
+    }
+
+    let start = std::time::Instant::now();
+    let res = client.post(&b_url)
+        .json(&req_body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let json_val: serde_json::Value = res.json()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if let Some(log_tx) = tx {
+        let _ = log_tx.send(StreamEvent::DebugLog(format!("[CLIENT] Vision request completed in {:?}", start.elapsed())));
+    }
+
+    // Parse OpenAI format: choices[0].message.content
+    if let Some(choices) = json_val["choices"].as_array() {
+        if let Some(choice) = choices.get(0) {
+            if let Some(content) = choice["message"]["content"].as_str() {
+                return Ok(content.to_string());
+            }
+        }
+    }
+    
+    // Fallback to legacy formats
+    let response = json_val["response"].as_str()
+        .or_else(|| json_val["content"].as_str())
+        .ok_or_else(|| format!("Invalid response format: {:?}", json_val))?;
+
+    Ok(response.to_string())
 }

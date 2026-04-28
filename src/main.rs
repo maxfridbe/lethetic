@@ -125,20 +125,24 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                 if app.parser.state == lethetic::parser_new::ParserState::Text {
                     match parser::find_tool_call(&full_response_content, true) {
                         Some(Ok((tc, _))) => {
-                            println!("\n\n{} [TOOL CALL: {}]", icons::COMMAND, tc.function.name);
-                            println!("Arguments: {}", tc.function.arguments);
+                            eprintln!("\n\n{} [TOOL CALL: {}]", icons::COMMAND, tc.function.name);
+                            eprintln!("Arguments: {}", tc.function.arguments);
                             cancellation_token.cancel();
                             
                             let assistant_content = full_response_content.clone();
                             app.context_manager.add_message("assistant", &assistant_content);
 
+                            let func_name = tc.function.name.clone();
+                            let tc_id = tc.id.clone();
                             let (mut result, new_dir) = lethetic::tools::execute(
-                                tc.function.name.as_str(), &tc.function.arguments, &app.current_dir, cancellation_token.clone(), tx.clone()).await;
-                            let (full_result, ui_result) = handle_large_output(&tc.id, result);
+                                &func_name, &tc.function.arguments, &app.current_dir, cancellation_token.clone(), tx.clone(), &client, &config).await;
+                            let (full_result, ui_result) = handle_large_output(&tc_id, result);
 
                             app.current_dir = new_dir;
-                            println!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, ui_result);
-                            app.context_manager.add_tool_message(tc.id.clone(), &tc.function.name, &full_result);
+                            app.log_debug(&format!("[TOOL RESULT] {} finished", func_name));
+                            eprintln!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, ui_result);
+                            app.context_manager.add_tool_message(tc_id, &func_name, &full_result);
+
 
                             
                             full_response_content.clear();
@@ -176,21 +180,25 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                 if app.parser.state == lethetic::parser_new::ParserState::Text {
                     match parser::find_tool_call(&full_response_content, true) {
                         Some(Ok((tc, _))) => {
-                        println!("\n\n{} [TOOL CALL: {}]", icons::COMMAND, tc.function.name);
-                        println!("Arguments: {}", tc.function.arguments);
+                        eprintln!("\n\n{} [TOOL CALL: {}]", icons::COMMAND, tc.function.name);
+                        eprintln!("Arguments: {}", tc.function.arguments);
                         cancellation_token.cancel();
                         cancellation_token = CancellationToken::new();
 
                         let assistant_content = full_response_content.clone();
                         app.context_manager.add_message("assistant", &assistant_content);
 
+                        let func_name = tc.function.name.clone();
+                        let tc_id = tc.id.clone();
                         let (mut result, new_dir) = lethetic::tools::execute(
-                            tc.function.name.as_str(), &tc.function.arguments, &app.current_dir, cancellation_token.clone(), tx.clone()).await;
-                        let (full_result, ui_result) = handle_large_output(&tc.id, result);
+                            &func_name, &tc.function.arguments, &app.current_dir, cancellation_token.clone(), tx.clone(), &client, &config).await;
+                        let (full_result, ui_result) = handle_large_output(&tc_id, result);
                         
                         app.current_dir = new_dir;
-                        println!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, ui_result);
-                        app.context_manager.add_tool_message(tc.id.clone(), &tc.function.name, &full_result);
+                        app.log_debug(&format!("[TOOL RESULT] {} finished", func_name));
+                        eprintln!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, ui_result);
+                        app.context_manager.add_tool_message(tc_id, &func_name, &full_result);
+
                         
                         full_response_content.clear();
                         cancellation_token = CancellationToken::new();
@@ -386,10 +394,12 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                                 
                                                 let ctx_tx = tx.clone();
                                                 let tool_cancel = cancellation_token.clone();
+                                                let client_clone = client.clone();
+                                                let config_clone = config.clone();
                                                 app.is_executing_tool = true;
                                                 tokio::spawn(async move {
                                                     let (mut result, new_dir) = lethetic::tools::execute(
-                                                        func_name.as_str(), &args, &current_dir, tool_cancel, ctx_tx.clone()).await;
+                                                        func_name.as_str(), &args, &current_dir, tool_cancel, ctx_tx.clone(), &client_clone, &config_clone).await;
                                                     
                                                     let (full_result, ui_result) = handle_large_output(&tc_id, result);
                                                     
@@ -619,10 +629,12 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                     
                                     let ctx_tx = tx.clone();
                                     let tool_cancel = cancellation_token.clone();
+                                    let client_clone = client.clone();
+                                    let config_clone = config.clone();
                                     app.is_executing_tool = true;
                                     tokio::spawn(async move {
                                         let (mut result, new_dir) = lethetic::tools::execute(
-                                            func_name.as_str(), &args, &current_dir, tool_cancel, ctx_tx.clone()).await;
+                                            func_name.as_str(), &args, &current_dir, tool_cancel, ctx_tx.clone(), &client_clone, &config_clone).await;
                                         let (full_result, ui_result) = handle_large_output(&tc_id, result);
                                         let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, full_result, new_dir.clone()));
                                         let _ = ctx_tx.send(StreamEvent::DebugLog(format!("DIR_UPDATE|{}", new_dir)));

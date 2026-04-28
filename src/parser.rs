@@ -55,24 +55,12 @@ fn parse_gemma4_value(input: &str, mut pos: usize) -> Result<(Value, usize), Str
                             key_end += input[key_end..].chars().next().unwrap().len_utf8();
                         }
                         if key_start != key_end {
-                            let key = &input[key_start..key_end];
-                            let known_keys = [
-                                "path", "description", "tool_call_id", "content", "command", "id", 
-                                "expression", "url", "patch", "old_string", "new_string", "start_line", 
-                                "end_line", "pattern", "dir_path", "include_pattern", "exclude_pattern",
-                                "case_sensitive", "context", "before", "after", "fixed_strings",
-                                "total_max_matches", "names_only", "no_ignore", "max_matches_per_file",
-                                "respect_git_ignore", "respect_gemini_ignore", "ignore", "allow_multiple",
-                                "is_background", "wait_for_previous", "pid", "delay_ms", "lines",
-                                "query", "questions", "reason", "agent_name", "prompt", "name", "fact", "scope",
-                                "args", "type", "properties", "required", "location", "units"
-                            ];
                             let mut after_key = key_end;
                             if after_key < input.len() && (input[after_key..].starts_with('"') || input[after_key..].starts_with('\'') || input[after_key..].starts_with('`')) {
                                 after_key += 1;
                             }
                             after_key = skip_ws(input, after_key);
-                            if after_key < input.len() && input[after_key..].starts_with(':') && known_keys.contains(&key) {
+                            if after_key < input.len() && input[after_key..].starts_with(':') {
                                 break;
                             }
                         }
@@ -85,8 +73,7 @@ fn parse_gemma4_value(input: &str, mut pos: usize) -> Result<(Value, usize), Str
                     }
                     end += input[end..].chars().next().unwrap().len_utf8();
                 }
-                let mut s = input[start..end].to_string();
-                if s.ends_with('`') { s.pop(); }
+                let s = input[start..end].to_string();
                 return Ok((Value::String(s), end));
             }
         }
@@ -151,24 +138,12 @@ fn parse_gemma4_value(input: &str, mut pos: usize) -> Result<(Value, usize), Str
                     key_end += input[key_end..].chars().next().unwrap().len_utf8();
                 }
                 if key_start != key_end {
-                    let key = &input[key_start..key_end];
-                    let known_keys = [
-                        "path", "description", "tool_call_id", "content", "command", "id", 
-                        "expression", "url", "patch", "old_string", "new_string", "start_line", 
-                        "end_line", "pattern", "dir_path", "include_pattern", "exclude_pattern",
-                        "case_sensitive", "context", "before", "after", "fixed_strings",
-                        "total_max_matches", "names_only", "no_ignore", "max_matches_per_file",
-                        "respect_git_ignore", "respect_gemini_ignore", "ignore", "allow_multiple",
-                        "is_background", "wait_for_previous", "pid", "delay_ms", "lines",
-                        "query", "questions", "reason", "agent_name", "prompt", "name", "fact", "scope",
-                        "args", "type", "properties", "required", "location", "units"
-                    ];
                     let mut after_key = key_end;
                     if after_key < input.len() && (input[after_key..].starts_with('"') || input[after_key..].starts_with('\'') || input[after_key..].starts_with('`')) {
                         after_key += 1;
                     }
                     after_key = skip_ws(input, after_key);
-                    if after_key < input.len() && input[after_key..].starts_with(':') && known_keys.contains(&key) {
+                    if after_key < input.len() && input[after_key..].starts_with(':') {
                         break;
                     }
                 }

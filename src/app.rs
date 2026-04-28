@@ -517,10 +517,24 @@ impl App {
     }
 
     pub fn log_debug(&mut self, msg: &str) {
-        let timestamp = chrono::Local::now().format("%H:%M:%S%.3f");
-        self.debug_log.push(format!("[{}] {}", timestamp, msg));
+        let now = chrono::Local::now();
+        let timestamp = now.format("%H:%M:%S%.3f");
+        let log_entry = format!("[{}] {}", timestamp, msg);
+        
+        self.debug_log.push(log_entry.clone());
         if self.debug_log.len() > 200 { self.debug_log.remove(0); }
         self.should_redraw = true;
+
+        if let Some(session_dir) = &self.current_session_dir {
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(format!("{}/logs.txt", session_dir))
+            {
+                use std::io::Write;
+                let _ = writeln!(file, "{}", log_entry);
+            }
+        }
     }
 
     pub fn refresh_system_stats(&mut self) {
@@ -1035,6 +1049,7 @@ pub fn handle_tool_call(app: &mut App, calls: Vec<ToolCall>, pos: usize, _tx: mp
         app.pending_tool_call = Some(tool_call.clone());
 
         let description = tool_call.function.arguments["description"].as_str().unwrap_or("Action").to_string();
+        app.log_debug(&format!("[TOOL CALL] {}: {}", tool_call.function.name, description));
 
         // Reconstruct a clean version of the call for the UI
         let clean_args = serde_json::to_string(&tool_call.function.arguments).unwrap_or_default();

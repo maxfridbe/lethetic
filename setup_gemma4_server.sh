@@ -7,6 +7,7 @@ MODELS_DIR="$USER_HOME/models"
 SCRIPTS_DIR="$USER_HOME/Scripts"
 SRC_DIR="$USER_HOME/llama-cpp-turboquant"
 GGUF_URL="https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-UD-Q4_K_M.gguf"
+MMPROJ_URL="https://huggingface.co/unsloth/Gemma-4-26B-A4B-it-GGUF/resolve/main/mmproj-F16.gguf"
 JINJA_URL="https://pastebin.com/raw/hnPGq0ht"
 
 
@@ -28,6 +29,7 @@ cmake --build . --config Release -j $(nproc) --target llama-server
 echo "[3/7] Setting up models..."
 mkdir -p "$MODELS_DIR"
 wget -c -O "$MODELS_DIR/gemma-4-26B-A4B-it-UD-Q4_K_M.gguf" "$GGUF_URL"
+wget -c -O "$MODELS_DIR/gemma-4-26b-mmproj.gguf" "$MMPROJ_URL"
 wget -O "$MODELS_DIR/gemma-4.jinja" "$JINJA_URL"
 
 echo "[4/7] Creating runner script..."
@@ -35,7 +37,9 @@ cat << R_EOF > "$USER_HOME/run_llama_gemma4.sh"
 #!/bin/bash
 export PATH=\$PATH:/usr/local/cuda/bin
 $SRC_DIR/build/bin/llama-server \\
+  --host 0.0.0.0 \\
   -m \"$MODELS_DIR/gemma-4-26B-A4B-it-UD-Q4_K_M.gguf\" \\
+  --mmproj \"$MODELS_DIR/gemma-4-26b-mmproj.gguf\" \\
   --cache-type-k turbo3 \\
   --cache-type-v turbo3 \\
   --flash-attn on \\
@@ -76,7 +80,7 @@ echo "[6/7] Creating management scripts in $SCRIPTS_DIR..."
 mkdir -p "$SCRIPTS_DIR"
 cat << G_EOF > "$SCRIPTS_DIR/start_gemma4.sh"
 #!/bin/bash
-echo "Stopping Ollama and starting Gemma 4..."
+echo "Stopping Ollama and starting Gemma 4 (7210)..."
 sudo systemctl stop ollama
 sudo systemctl start gemma4
 G_EOF

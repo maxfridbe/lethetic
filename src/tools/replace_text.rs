@@ -54,8 +54,9 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
 }
 
 pub async fn execute(path: &str, old_string: &str, new_string: &str, cwd: &str, cancellation_token: tokio_util::sync::CancellationToken) -> String {
-
+    let path = path.trim_matches(|c| c == '\'' || c == '\"');
     let full_path = Path::new(cwd).join(path);
+
     
     tokio::select! {
         _ = cancellation_token.cancelled() => {

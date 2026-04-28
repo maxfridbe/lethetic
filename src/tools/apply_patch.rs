@@ -51,7 +51,7 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
 }
 
 pub async fn execute(path: &str, patch: &str, cwd: &str, cancellation_token: tokio_util::sync::CancellationToken) -> String {
-
+    let path = path.trim_matches(|c| c == '\'' || c == '\"');
     let patch_file = Path::new(cwd).join(".tmp.patch");
     if let Err(e) = fs::write(&patch_file, patch) {
         return format!("ERROR: Failed to write temp patch file: {}", e);

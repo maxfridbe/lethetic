@@ -10,6 +10,9 @@ pub mod web_fetch;
 pub mod calculate;
 pub mod ask_the_user;
 pub mod code_snippet;
+pub mod process_image;
+pub mod process_pdf_image;
+pub mod get_pdf_text;
 
 #[path = "../icons.rs"]
 pub mod icons;
@@ -47,6 +50,9 @@ pub fn get_all_tools() -> Vec<Tool> {
         calculate::get_definition(),
         ask_the_user::get_definition(),
         code_snippet::get_definition(),
+        process_image::get_definition(),
+        process_pdf_image::get_definition(),
+        get_pdf_text::get_definition(),
     ]
 }
 
@@ -63,28 +69,12 @@ pub fn get_tool_parameter_names(func_name: &str) -> Vec<String> {
 }
 
 pub fn get_all_prompt_templates() -> String {
+    let tools = get_all_tools();
     let mut templates = String::new();
-    let raw_templates = [
-        read_file::get_prompt_template(),
-        read_file_lines::get_prompt_template(),
-        read_folder::get_prompt_template(),
-        search_text::get_prompt_template(),
-        apply_patch::get_prompt_template(),
-        run_shell_command::get_prompt_template(),
-        write_file::get_prompt_template(),
-        replace_text::get_prompt_template(),
-        web_fetch::get_prompt_template(),
-        calculate::get_prompt_template(),
-        ask_the_user::get_prompt_template(),
-        code_snippet::get_prompt_template(),
-    ];
-    
-    for tmpl in raw_templates {
-        // Strip the existing <|tool_call> and <tool_call|> tags added by tools
-        let inner = tmpl.replace(llm_tokens::TOOL_CALL_OPEN, "").replace(llm_tokens::TOOL_CALL_CLOSE, "");
-        templates.push_str("<|tool>");
-        templates.push_str(&inner);
-        templates.push_str("<tool|>\n");
+    for tool in tools {
+        templates.push_str("<|tool>\n");
+        templates.push_str(&serde_json::to_string_pretty(&tool.function).unwrap());
+        templates.push_str("\n<tool|>\n");
     }
     templates
 }
@@ -103,11 +93,22 @@ pub fn get_ui_description(func_name: &str, arguments: &serde_json::Value) -> Str
         "calculate" => calculate::get_ui_description(arguments),
         "ask_the_user" => ask_the_user::get_ui_description(arguments),
         "code_snippet" => code_snippet::get_ui_description(arguments),
+        "process_image" => process_image::get_ui_description(arguments),
+        "process_pdf_image" => process_pdf_image::get_ui_description(arguments),
+        "get_pdf_text" => get_pdf_text::get_ui_description(arguments),
         _ => format!("{} {}: {}", icons::COMMAND, func_name, arguments),
     }
 }
 
-pub async fn execute(func_name: &str, arguments: &serde_json::Value, cwd: &str, cancellation_token: tokio_util::sync::CancellationToken, tx: tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>) -> (String, String) {
+pub async fn execute(
+    func_name: &str, 
+    arguments: &serde_json::Value, 
+    cwd: &str, 
+    cancellation_token: tokio_util::sync::CancellationToken, 
+    tx: tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>,
+    client: &reqwest::Client,
+    config: &crate::config::Config,
+) -> (String, String) {
     match func_name {
         "read_file" => {
             let path = arguments["path"].as_str().unwrap_or("");
@@ -164,6 +165,23 @@ pub async fn execute(func_name: &str, arguments: &serde_json::Value, cwd: &str, 
         "code_snippet" => {
             let name = arguments["name"].as_str().unwrap_or("");
             (format!("Snippet '{}' stored.", name), cwd.to_string())
+        }
+        "process_image" => {
+            let prompt = arguments["prompt"].as_str().unwrap_or("");
+            let image_path = arguments["image_path"].as_str().unwrap_or("");
+            let max_size = arguments["max_size"].as_u64().map(|v| v as u32);
+            (process_image::execute(prompt, image_path, max_size, cwd, client, config, &tx).await, cwd.to_string())
+        }
+        "process_pdf_image" => {
+            let prompt = arguments["prompt"].as_str().unwrap_or("");
+            let pdf_path = arguments["pdf_path"].as_str().unwrap_or("");
+            let page_num = arguments["page_num"].as_u64().unwrap_or(1) as usize;
+            let max_size = arguments["max_size"].as_u64().map(|v| v as u32);
+            (process_pdf_image::execute(prompt, pdf_path, page_num, max_size, cwd, client, config, &tx).await, cwd.to_string())
+        }
+        "get_pdf_text" => {
+            let pdf_path = arguments["pdf_path"].as_str().unwrap_or("");
+            (get_pdf_text::execute(pdf_path, cwd, &tx).await, cwd.to_string())
         }
         _ => (format!("Unknown tool: {}", func_name), cwd.to_string()),
     }

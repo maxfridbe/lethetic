@@ -434,7 +434,17 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     let processing_text = if app.show_approval_prompt {
         vec![Line::from(vec![Span::styled(format!("  {} {} Awaiting Permission For Tool Call...", icons::SPINNER[app.spinner_index], icons::WARNING), Style::default().fg(app.theme.warning_fg).add_modifier(Modifier::BOLD))])]
     } else if app.is_executing_tool {
-        vec![Line::from(vec![Span::styled(format!("  {} {} Executing Tool...", icons::TOOL_SPINNER[app.tool_spinner_index], icons::COMMAND), Style::default().fg(app.theme.tool_fg))])]
+        let preview = if app.tool_output_preview.is_empty() {
+             "Executing Tool...".to_string()
+        } else {
+            let first_line = app.tool_output_preview.lines().next().unwrap_or("...");
+            if first_line.len() > 50 {
+                format!("{}...", &first_line[..47])
+            } else {
+                first_line.to_string()
+            }
+        };
+        vec![Line::from(vec![Span::styled(format!("  {} {} {}", icons::TOOL_SPINNER[app.tool_spinner_index], icons::COMMAND, preview), Style::default().fg(app.theme.tool_fg))])]
     } else if app.is_asking_user {
         vec![Line::from(vec![Span::styled(format!("  {} {} Waiting for User Input...", icons::SPINNER[app.spinner_index], icons::INPUT), Style::default().fg(app.theme.warning_fg))])]
     } else if app.is_processing {
@@ -873,6 +883,10 @@ fn wrap_lines(lines: Vec<Line<'static>>, max_width: usize) -> Vec<Line<'static>>
     if max_width == 0 { return lines; }
     let mut wrapped_lines = Vec::new();
     for line in lines {
+        if line.spans.is_empty() {
+            wrapped_lines.push(Line::from(vec![]));
+            continue;
+        }
         let mut current_line_spans = Vec::new();
         let mut current_width = 0;
 

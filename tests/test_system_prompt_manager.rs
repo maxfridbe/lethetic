@@ -19,7 +19,8 @@ fn test_system_prompt_manager_lifecycle() {
     assert!(resolved.contains("Goodbye"));
     assert!(!resolved.contains("[TOOLS_DEFINITIONS]"));
     
-    // Check if some expected tool declarations are present
-    assert!(resolved.contains("declaration:read_file"));
-    assert!(resolved.contains("declaration:run_shell_command"));
+    // Check if some expected tool declarations are present in new JSON format
+    assert!(resolved.contains("<|tool>"));
+    assert!(resolved.contains("\"name\": \"read_file\""));
+    assert!(resolved.contains("\"name\": \"run_shell_command\""));
 }

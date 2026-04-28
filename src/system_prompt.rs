@@ -7,6 +7,10 @@ CurrentWorkingDir:[CWD]
 
 [TOOLS_DEFINITIONS]
 
+Rules for Tool Calls:
+1. Never use single quotes (') inside JSON string values.
+2. Ensure all paths are clean and do not contain extra surrounding or internal quotes.
+
 Guidelines:
 1. Tool Selection & No Directory Persistence: Note that `cd` in `run_shell_command` is NOT persistent across tool calls. Every tool call starts from the project root. Always specify full relative paths from the root.
 2. Verification: Verify your work using tool results before finalizing.
