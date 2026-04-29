@@ -131,6 +131,43 @@ async fn test_live_vision_bike() {
     assert!(!res.contains("ERROR"), "Vision processing failed for bike image");
 }
 
+#[tokio::test]
+#[ignore]
+async fn test_live_vision_sequential() {
+    let config_content = fs::read_to_string("config.yml").expect("Could not read config.yml");
+    let config: Config = serde_yaml::from_str(&config_content).expect("Failed to parse config");
+    let client = Client::new();
+    let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+    
+    let timeout = std::time::Duration::from_secs(600);
+    
+    println!("--- Starting Sequential Vision Test (Query 1) ---");
+    let res1 = tokio::time::timeout(timeout, process_image::execute(
+        "what kind of image this is", 
+        "/var/home/maxfridbe/Downloads/bike.jpg", 
+        Some(1024), 
+        ".", 
+        &client, 
+        &config,
+        &tx
+    )).await.expect("Test 1 timed out");
+    println!("Query 1 Response: {}", res1);
+    assert!(!res1.contains("ERROR"), "Sequential query 1 failed");
+
+    println!("--- Starting Sequential Vision Test (Query 2) ---");
+    let res2 = tokio::time::timeout(timeout, process_image::execute(
+        "What is the contents of this image?", 
+        "res/Screenshot.webp", 
+        Some(1024), 
+        ".", 
+        &client, 
+        &config,
+        &tx
+    )).await.expect("Test 2 timed out");
+    println!("Query 2 Response: {}", res2);
+    assert!(!res2.contains("ERROR"), "Sequential query 2 failed");
+}
+
 #[test]
 fn test_tool_registration() {
     let tools = lethetic::tools::get_all_tools();

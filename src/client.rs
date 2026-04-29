@@ -205,7 +205,7 @@ pub async fn get_single_response(client: &Client, config: &Config, prompt: Strin
                 }
             ],
             "stream": false,
-            "max_tokens": 512,
+            "max_tokens": 2048,
             "temperature": 1.0
         })
     } else {
@@ -214,7 +214,7 @@ pub async fn get_single_response(client: &Client, config: &Config, prompt: Strin
             "model": config.model,
             "prompt": prompt,
             "stream": false,
-            "max_tokens": 512,
+            "max_tokens": 2048,
             "temperature": 1.0
         })
     };
@@ -227,11 +227,21 @@ pub async fn get_single_response(client: &Client, config: &Config, prompt: Strin
     }
 
     let start = std::time::Instant::now();
-    let res = client.post(&b_url)
-        .json(&req_body)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+    let mut attempts = 0;
+    let max_attempts = 3;
+    let res = loop {
+        match client.post(&b_url).json(&req_body).send().await {
+            Ok(r) => break Ok(r),
+            Err(e) if attempts < max_attempts - 1 => {
+                attempts += 1;
+                if let Some(log_tx) = tx {
+                    let _ = log_tx.send(StreamEvent::DebugLog(format!("[CLIENT] Connection failed ({}), retrying in 2s... (attempt {})", e, attempts)));
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+            Err(e) => break Err(e.to_string()),
+        }
+    }?;
 
     let json_val: serde_json::Value = res.json()
         .await
