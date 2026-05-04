@@ -42,7 +42,7 @@ pub async fn execute(pdf_path: &str, cwd: &str, tx: &tokio::sync::mpsc::Unbounde
     }
 
     match PdfDocument::open(&full_path) {
-        Ok(mut doc) => {
+        Ok(doc) => {
             let mut full_text = String::new();
             let num_pages = match doc.page_count() {
                 Ok(n) => n,

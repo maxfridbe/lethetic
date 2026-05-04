@@ -1,7 +1,6 @@
 use serde_json::json;
 use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
-use super::llm_tokens;
 use std::fs;
 use std::path::Path;
 
@@ -10,35 +9,31 @@ pub fn get_definition() -> Tool {
         tool_type: "function".to_string(),
         function: FunctionDefinition {
             name: "write_file".to_string(),
-            description: "Create a new file or overwrite an existing one with the provided content. Note: 'path' must be a filename, not a directory.".to_string(),
+            description: "Create a new file or overwrite an existing one with the provided content. Parent directories are created automatically if they do not exist. Use this tool for writing full files or large blocks of content.".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "The path to the file (e.g., 'src/main.rs'). Must include a filename."
+                        "description": "The full path to the file including the filename (e.g., 'src/utils/math.rs')."
                     },
                     "content": {
                         "type": "string",
-                        "description": "The full content to write"
+                        "description": "The complete literal content to write. You MUST wrap this value in asymmetric markers: <|tool_parameter>your content here<tool_parameter|>"
                     },
                     "description": {
                         "type": "string",
-                        "description": "Short description of the action"
+                        "description": "Short description of what you are writing (e.g., 'Create Game Design Document')."
                     },
                     "tool_call_id": {
                         "type": "string",
-                        "description": "A unique, descriptive string identifier for this call (e.g., 'read_main_rs', 'check_folders'). Do not use simple numbers."
+                        "description": "A unique identifier for this specific call."
                     }
                 },
                 "required": ["path", "content", "description", "tool_call_id"]
             }),
         },
     }
-}
-
-pub fn get_prompt_template() -> String {
-    format!("{}declaration:write_file{{description: \"Create a new file or overwrite an existing one. 'path' must be a full filename, not a directory.\",parameters:{{properties:{{content:{{description: \"The complete content to write to the file\",type: \"STRING\"}},path:{{description: \"The path to the file to write (e.g. 'llm.md')\",type: \"STRING\"}},description:{{description: \"Short description of the action\",type: \"STRING\"}},tool_call_id:{{description: \"A unique, descriptive string identifier for this call (e.g., 'read_main_rs', 'check_folders'). Do not use simple numbers.\",type: \"STRING\"}}}},required:[\"path\",\"content\",\"description\",\"tool_call_id\"],type: \"OBJECT\"}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
 }
 
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {

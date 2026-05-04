@@ -32,7 +32,6 @@ pub fn render_markdown(content: &str, theme: &crate::ui::Theme) -> Text<'static>
     let mut current_line = Line::default();
     let mut in_code_block: Option<String> = None;
     let mut in_table_header = false;
-    let mut current_heading_level: Option<HeadingLevel> = None;
     let base_style = Style::default().fg(theme.output_fg);
     let mut current_style = base_style;
 
@@ -42,7 +41,6 @@ pub fn render_markdown(content: &str, theme: &crate::ui::Theme) -> Text<'static>
                 if !current_line.spans.is_empty() {
                     text.lines.push(std::mem::take(&mut current_line));
                 }
-                current_heading_level = Some(level);
                 let color = match level {
                     HeadingLevel::H1 => theme.error_fg,
                     HeadingLevel::H2 => theme.thought_fg,
@@ -53,7 +51,6 @@ pub fn render_markdown(content: &str, theme: &crate::ui::Theme) -> Text<'static>
                 current_style = Style::default().fg(color).add_modifier(Modifier::BOLD);
             }
             Event::End(TagEnd::Heading(_)) => {
-                current_heading_level = None;
                 current_style = base_style;
                 text.lines.push(std::mem::take(&mut current_line));
             }
@@ -129,13 +126,33 @@ pub fn render_markdown(content: &str, theme: &crate::ui::Theme) -> Text<'static>
                     let mut h = HighlightLines::new(syntax, &THEME_SET.themes["base16-ocean.dark"]);
                     
                     for line_str in t.lines() {
-                        if let Ok(ranges) = h.highlight_line(line_str, &SYNTAX_SET) {
+                        // Check if the line starts with a 6-char number prefix + tab (from read_file)
+                        if line_str.len() >= 7 && line_str.chars().take(6).all(|c| c.is_whitespace() || c.is_ascii_digit()) && line_str.chars().nth(6) == Some('\t') {
+                            let (prefix, code) = line_str.split_at(7);
                             let mut spans = Vec::new();
-                            for (style, text) in ranges {
-                                let fg = Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
-                                spans.push(Span::styled(text.to_string(), Style::default().fg(fg).bg(theme.terminal_bg)));
+                            
+                            // Add dimmed line number
+                            spans.push(Span::styled(prefix.to_string(), Style::default().fg(theme.system_fg).add_modifier(Modifier::DIM)));
+                            
+                            // Highlight the rest of the code
+                            if let Ok(ranges) = h.highlight_line(code, &SYNTAX_SET) {
+                                for (style, text) in ranges {
+                                    let fg = Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
+                                    spans.push(Span::styled(text.to_string(), Style::default().fg(fg).bg(theme.terminal_bg)));
+                                }
+                            } else {
+                                spans.push(Span::styled(code.to_string(), Style::default().fg(theme.output_fg).bg(theme.terminal_bg)));
                             }
                             text.lines.push(Line::from(spans));
+                        } else {
+                            if let Ok(ranges) = h.highlight_line(line_str, &SYNTAX_SET) {
+                                let mut spans = Vec::new();
+                                for (style, text) in ranges {
+                                    let fg = Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
+                                    spans.push(Span::styled(text.to_string(), Style::default().fg(fg).bg(theme.terminal_bg)));
+                                }
+                                text.lines.push(Line::from(spans));
+                            }
                         }
                     }
                 } else {

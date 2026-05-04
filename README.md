@@ -33,52 +33,67 @@ Lethetic uses a `config.yml` file for server connection and UI settings.
 ### Example `config.yml`
 ```yaml
 server_url: "http://brainiac-nvidia:12345/completion"
-model_name: "Gemma-4-26B-TurboQuant-262k"
-max_context_tokens: 262144
-shell_approval_mode: "Optional" # Always, Optional, or Never
+model: "Gemma-4-26B-TurboQuant-262k"
+context_size: 262144
+tool_wrapper: null
+enable_image_processing_tool: false # Enable vision tools if model supports it
 ```
 
-## Features
+## Advanced Features
 
-- **Persistent Engineering Sessions**: Automatically saves workspace state, UI blocks, and conversation context to `.lethetic/sessions/`, allowing you to resume complex tasks across restarts.
-- **Advanced Loop Detection**: Real-time monitoring of LLM output with multiple detection modes (NGram, PhraseFrequency, BlockLimit) to prevent infinite loops and token waste.
-- **Integrated System Prompt Manager**: Hot-swap and edit capability profiles (e.g., "software_engineer") directly within the TUI to adapt the engine's persona to the task.
-- **Granular Tool Execution Controls**: Secure approval workflow for autonomous actions, supporting "Always", "Once", or "Deny" modes for shell commands and filesystem edits.
-- **Native Filesystem & Web Integration**: Suite of specialized tools (`apply_patch`, `web_fetch`, `search_text`) that allow the model to autonomously refactor code, research docs, and explore repositories.
-- **Customizable TUI Themes**: Multiple pre-configured themes switchable on-the-fly via the command palette (`CTRL+P`) to match your terminal aesthetics.
-- **Interactive Markdown Rendering**: Powered by Ratatui and Syntect, featuring syntax highlighting for code blocks and robust real-time streaming updates.
-- **TurboQuant Optimized**: Custom SSE parser designed for ultra-low latency interaction with high-context Gemma 4 models running on quantized KV caches.
+### "Latest Files" Context Management
+Lethetic features a unique state-management system to prevent context bloat. Instead of appending full file contents to the linear chat history every time a file is read or patched, the engine maintains a **Latest Files** context:
+- **Dynamic Injection**: The most recent version of every file you interact with is automatically injected into a dedicated `<latest_files>` block right before the model's turn.
+- **Stub History**: Linear chat history only contains small stubs (e.g., `[File read successfully...]`), keeping the conversation fast and focused.
+- **View & Manage**: Use the Command Palette (**F1** / **Ctrl+P**) and select **Latest Files** to see all tracked files, their token counts, and relative age. Press **R** to remove any file from the context.
 
-## Prerequisites
+### Robust Multi-Line Patching
+The `apply_patch` tool uses **programmatic diff generation**:
+- **Semantic Edits**: The LLM provides the `old_content` and `new_content` blocks.
+- **Deterministic Diffing**: The engine uses the `diffy` crate to generate a guaranteed-valid unified diff, which is then applied via the system `patch` command.
+- **Resilient**: Automatically strips line numbers and markdown formatting frequently added by LLMs.
 
-- [Rust & Cargo](https://rustup.rs/) (2024 edition)
-- A running `llama-server` instance (TurboQuant fork recommended) on port `12345`.
-- The target model: `Gemma-4-26B-TurboQuant-262k`.
+### Auto-Summarization
+Handle massive outputs without losing context:
+- **Safety Truncation**: Outputs >10,000 characters are automatically saved to disk (`.lethetic/tool_responses/`) and truncated in the context.
+- **Summarization Tool**: Use the `summarize_content` tool to have the LLM analyze large files or raw text and provide a concise summary of the key findings.
 
-## Usage
-
-1. **Setup**: Use the provided `setup_gemma4_server.sh` on your Debian/Ubuntu server to automate the compilation and configuration.
-2. **Run**: 
-   ```bash
-   cargo run --bin lethetic
-   ```
-3. **Headless Mode**: Execute single tasks directly from your shell:
-   ```bash
-   cargo run --bin lethetic -- --command "Create a hello world program in Rust"
-   ```
+### Enhanced TUI Experience
+- **Syntax Highlighting**: Real-time syntax highlighting for all supported languages (powered by `Syntect`), including specialized styling for `read_file` output.
+- **Hanging Indents**: Long code lines wrap with automatic indentation to align with line numbers, maintaining readability in narrow terminals.
+- **Mouse Support**: Smooth mouse wheel scrolling for the output pane.
+- **Input History**: Press **Up/Down** arrows at the boundary of the input field to scroll output, or use the Command Palette to browse and restore previous prompts.
 
 ## Key Hotkeys
 
 - **TAB**: Switch focus between Input and Output panes.
-- **UP/DOWN**: Scroll through output history (when focused).
+- **UP / DOWN**:
+    - **At Input Boundary**: Scroll output line-by-line.
+    - **In Input**: Move cursor or navigate history.
+- **ALT + UP / DOWN**: Scroll output line-by-line at any time.
+- **PAGE UP / DOWN**: Scroll output by 20 lines.
+- **F1 / CTRL+P**: Open the Command Palette.
 - **F12**: Toggle the Debugger pane.
-- **F10**: Toggle Mouse Capture (for native terminal selection).
-- **ESC / CTRL+P**: Open the Command Palette.
 - **CTRL+C**: Stop output (1st press) / Quit (2nd press).
+
+## Usage
+
+1. **Run**: 
+   ```bash
+   cargo run --bin lethetic
+   ```
+2. **Headless Mode**: Execute single tasks directly from your shell:
+   ```bash
+   cargo run --bin lethetic -- --command "Analyze the main loop in src/main.rs"
+   ```
 
 ## Testing
 
-Comprehensive integration scenarios for tool-calling:
+Verify tool-calling and context logic:
 ```bash
-cargo run --bin eval_scenarios
+cargo test -- --nocapture
+```
+For live model integration tests:
+```bash
+cargo test --test test_live_patch_read_integration -- --ignored --nocapture
 ```

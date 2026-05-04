@@ -1,5 +1,5 @@
 use lethetic::app::BlockType;
-use lethetic::parser_new::{StreamParser, ParserState};
+use lethetic::parser::{StreamParser, ParserState};
 
 #[test]
 fn test_basic_thought_to_text() {
@@ -65,4 +65,26 @@ fn test_think_tags() {
         (BlockType::Thought, "I need to be careful".to_string()),
         (BlockType::Text, " Done.".to_string())
     ]);
+}
+
+#[test]
+fn test_tool_call_at_start() {
+    let mut parser = StreamParser::new();
+    // In many models, the response might start directly with a tool call
+    let res = parser.parse_chunk("<tool_call>call:ls{}<tool_call|>");
+    assert_eq!(res, vec![
+        (BlockType::Formulating, "call:ls{}".to_string())
+    ]);
+}
+
+#[test]
+fn test_unclosed_tool_call_at_end() {
+    let mut parser = StreamParser::new();
+    parser.state = ParserState::Text;
+    let res = parser.parse_chunk("I will run: <tool_call>call:ls{}");
+    assert_eq!(res, vec![
+        (BlockType::Text, "I will run: ".to_string()),
+        (BlockType::Formulating, "call:ls{}".to_string())
+    ]);
+    assert_eq!(parser.state, ParserState::ToolCall);
 }

@@ -30,11 +30,6 @@ pub const TOOL_CALL_CLOSE_ALT: &str = "<|tool_call|>";
 pub const TOOL_RESPONSE_OPEN: &str = "<|tool_response|>";
 pub const TOOL_RESPONSE_CLOSE: &str = "<tool_response|>";
 
-pub const STRING_MARKER_V1: &str = "<|\"|>";
-pub const STRING_MARKER_V2: &str = "<|\">";
-pub const STRING_MARKER_V3: &str = "<|'|>";
-pub const STRING_MARKER_V4: &str = "<|'>";
-
 // Pre-concatenated tags using concat! macro (requires literals)
 pub const CHANNEL_THOUGHT_OPEN: &str = concat!("<|channel>", "thought");
 pub const CHANNEL_THOUGHT_OPEN_NL: &str = concat!("<|channel>", "thought", "\n");

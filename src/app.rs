@@ -12,7 +12,7 @@ use crate::config::Config;
 use crate::icons;
 use crate::ui::Theme;
 use crate::client::{StreamEvent};
-use crate::parser_new::StreamParser;
+use crate::parser::StreamParser;
 use crate::loop_detector::{LoopDetector, LoopDetectorConfig};
 use ratatui::text::Line;
 
@@ -59,12 +59,14 @@ pub enum AppEventOutcome {
     NewSession,
     ResumeSession(String),
     DeleteSession(String),
+    ToggleHistory,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SessionState {
     pub messages: Vec<crate::context::Message>,
     pub blocks: Vec<RenderBlock>,
+    pub history: Vec<String>,
 }
 
 pub struct App {
@@ -134,20 +136,32 @@ pub struct App {
     pub is_loading_session: bool,
     pub load_progress: f32,
     pub load_status: String,
-}
+    pub history: Vec<String>,
+    pub history_state: ListState,
+    pub backbuffer: String,
+    pub show_history: bool,
+    pub show_latest_files: bool,
+    pub latest_files_state: ListState,
+    pub config: Config,
+    }
 
-impl App {
+    impl App {
     pub fn new(config: &Config) -> App {
         let mut palette_state = ListState::default();
         palette_state.select(Some(0));
         let mut theme_state = ListState::default();
         theme_state.select(Some(0));
+        let mut session_list_state = ListState::default();
+        session_list_state.select(Some(0));
+        let mut latest_files_state = ListState::default();
+        latest_files_state.select(Some(0));
+        let history_state = ListState::default();
         
         let system_prompt_manager = crate::system_prompt::SystemPromptManager::new();
         let system_prompt = system_prompt_manager.load_prompt("software_engineer").unwrap_or_else(|| crate::system_prompt::DEFAULT_PROMPT_TEMPLATE.to_string());
         
         let cwd = std::env::current_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| ".".to_string());
-        let resolved_prompt = crate::system_prompt::SystemPromptManager::resolve_prompt(&system_prompt, &cwd);
+        let resolved_prompt = crate::system_prompt::SystemPromptManager::resolve_prompt(&system_prompt, &cwd, config);
         let context_manager = ContextManager::new(
             config.context_size, 
             Some(resolved_prompt)
@@ -171,12 +185,14 @@ impl App {
             palette_items: vec![
                 format!("{} Hotkeys", icons::COMMAND),
                 format!("{} Themes", icons::THEME),
+                format!("{} Input History", icons::COMMAND),
                 format!("{} Loop Detection: Combined", icons::PROCESSING),
                 format!("{} System Prompt", icons::MODEL),
                 format!("{} Clear UI (Keep Context)", icons::TRASH),
                 format!("{} Clear All Context", icons::TRASH),
                 format!("{} Toggle Debugger", icons::DEBUG),
                 format!("{} Sessions", icons::COMMAND),
+                format!("{} Latest Files", icons::COMMAND),
                 format!("{} Quit", icons::QUIT),
             ],
             theme: Theme::default(),
@@ -237,8 +253,14 @@ impl App {
             is_loading_session: false,
             load_progress: 0.0,
             load_status: String::new(),
-        };
-
+            history: Vec::new(),
+            history_state: history_state,
+            backbuffer: String::new(),
+            show_history: false,
+            show_latest_files: false,
+            latest_files_state: latest_files_state,
+            config: config.clone(),
+            };
         app.refresh_session_list();
         if !app.session_files.is_empty() {
             app.show_session_manager = true;
@@ -267,6 +289,22 @@ impl App {
         self.save_session();
     }
 
+    pub fn add_to_history(&mut self, text: String) {
+        let trimmed = text.trim();
+        if trimmed.is_empty() { return; }
+
+        // Remove if already exists to move it to the end (most recent)
+        if let Some(pos) = self.history.iter().position(|x| x == trimmed) {
+            self.history.remove(pos);
+        }
+        self.history.push(trimmed.to_string());
+
+        // Limit history size to 100
+        if self.history.len() > 100 {
+            self.history.remove(0);
+        }
+    }
+
     pub fn save_session(&mut self) {
         if let Some(ref dir) = self.current_session_dir {
             let _ = std::fs::create_dir_all(dir);
@@ -279,6 +317,16 @@ impl App {
             // Save Context
             if let Ok(json) = serde_json::to_string_pretty(&self.context_manager.get_messages()) {
                 let _ = std::fs::write(format!("{}/context.json", dir), json);
+            }
+
+            // Save unified session state with history
+            let state = SessionState {
+                messages: self.context_manager.get_messages().to_vec(),
+                blocks: self.blocks.clone(),
+                history: self.history.clone(),
+            };
+            if let Ok(json) = serde_json::to_string_pretty(&state) {
+                let _ = std::fs::write(format!("{}/session_state.json", dir), json);
             }
         }
         self.needs_save = false;
@@ -317,7 +365,24 @@ impl App {
     }
 
     pub fn load_session(&mut self, session_dir: &str) {
-        // Load UI blocks
+        // Try loading unified session state first
+        if let Ok(content) = std::fs::read_to_string(format!("{}/session_state.json", session_dir)) {
+            if let Ok(state) = serde_json::from_str::<SessionState>(&content) {
+                self.blocks = state.blocks;
+                self.history = state.history;
+                self.context_manager.clear();
+                for msg in state.messages {
+                    self.context_manager.add_message_raw(msg);
+                }
+                self.current_session_dir = Some(session_dir.to_string());
+                self.should_redraw = true;
+                self.needs_save = false;
+                if self.auto_scroll { self.sync_scroll_to_end(); }
+                return;
+            }
+        }
+
+        // Fallback to legacy individual files
         if let Ok(content) = std::fs::read_to_string(format!("{}/ui_state.json", session_dir)) {
             if let Ok(blocks) = serde_json::from_str::<Vec<RenderBlock>>(&content) {
                 self.blocks = blocks;
@@ -639,7 +704,7 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                     app.should_redraw = true;
                 }
                 KeyCode::Char('s') | KeyCode::Char('S') => {
-                    let resolved = crate::system_prompt::SystemPromptManager::resolve_prompt(&app.system_prompt, &app.cwd);
+                    let resolved = crate::system_prompt::SystemPromptManager::resolve_prompt(&app.system_prompt, &app.cwd, &app.config);
                     app.context_manager.update_system_prompt(resolved);
                     // Also auto-save as software_engineer.md
                     let _ = app.system_prompt_manager.save_prompt("software_engineer", &app.system_prompt);
@@ -709,6 +774,51 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
             KeyCode::Esc => {
                 app.show_prompt_manager = false;
                 app.should_redraw = true;
+            }
+            _ => {}
+        }
+        app.should_redraw = true;
+        return AppEventOutcome::Continue;
+    }
+
+    if app.show_history {
+        match key.code {
+            KeyCode::Esc => {
+                app.show_history = false;
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                let i = match app.history_state.selected() {
+                    Some(i) => if i == 0 { app.history.len().saturating_sub(1) } else { i - 1 },
+                    None => 0,
+                };
+                app.history_state.select(Some(i));
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let i = match app.history_state.selected() {
+                    Some(i) => if i >= app.history.len().saturating_sub(1) { 0 } else { i + 1 },
+                    None => 0,
+                };
+                app.history_state.select(Some(i));
+            }
+            KeyCode::Enter => {
+                if let Some(i) = app.history_state.selected() {
+                    // History is shown reversed (newest first)
+                    let idx = app.history.len().saturating_sub(1).saturating_sub(i);
+                    if let Some(selected) = app.history.get(idx).cloned() {
+                        if selected == app.input {
+                            // If same, restore backbuffer
+                            if !app.backbuffer.is_empty() {
+                                app.input = app.backbuffer.clone();
+                                app.backbuffer.clear();
+                            }
+                        } else {
+                            app.backbuffer = app.input.clone();
+                            app.input = selected;
+                        }
+                        app.cursor_pos = app.input.len();
+                        app.show_history = false;
+                    }
+                }
             }
             _ => {}
         }
@@ -810,6 +920,13 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                     0 => { app.show_palette = false; app.show_hotkeys = true; }
                     1 => { app.show_palette = false; app.show_theme_menu = true; }
                     2 => { 
+                        if !app.history.is_empty() {
+                            app.show_palette = false;
+                            app.show_history = true;
+                            app.history_state.select(Some(0));
+                        }
+                    }
+                    3 => { 
                         // Cycle loop detection mode
                         use crate::loop_detector::LoopDetectionMode;
                         let next_mode = match app.loop_detector.config.mode {
@@ -820,20 +937,65 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                             LoopDetectionMode::Combined => LoopDetectionMode::Off,
                         };
                         app.loop_detector.config.mode = next_mode;
-                        app.palette_items[2] = format!("{} Loop Detection: {:?}", icons::PROCESSING, next_mode);
+                        app.palette_items[3] = format!("{} Loop Detection: {:?}", icons::PROCESSING, next_mode);
                         app.should_redraw = true;
                     }
-                    3 => { app.show_palette = false; app.refresh_prompt_list(); app.show_prompt_manager = true; }
-                    4 => { app.show_palette = false; app.blocks.clear(); app.should_redraw = true; app.needs_save = true; }
-                    5 => { app.show_palette = false; app.context_manager.clear(); app.start_new_session(); }
-                    6 => { app.show_palette = false; app.show_debug = !app.show_debug; }
-                    7 => { app.show_palette = false; app.refresh_session_list(); app.show_session_manager = true; }
-                    8 => return AppEventOutcome::Exit,
+                    4 => { app.show_palette = false; app.refresh_prompt_list(); app.show_prompt_manager = true; }
+                    5 => { app.show_palette = false; app.blocks.clear(); app.should_redraw = true; app.needs_save = true; }
+                    6 => { app.show_palette = false; app.context_manager.clear(); app.start_new_session(); }
+                    7 => { app.show_palette = false; app.show_debug = !app.show_debug; }
+                    8 => { app.show_palette = false; app.refresh_session_list(); app.show_session_manager = true; }
+                    9 => { app.show_palette = false; app.show_latest_files = true; app.latest_files_state.select(Some(0)); }
+                    10 => return AppEventOutcome::Exit,
                     _ => app.show_palette = false,
                 }
             }
             _ => {}
         }
+        return AppEventOutcome::Continue;
+    }
+
+    if app.show_latest_files {
+        match key.code {
+            KeyCode::Esc => { app.show_latest_files = false; }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let num_files = app.context_manager.latest_files.len();
+                if num_files > 0 {
+                    let i = match app.latest_files_state.selected() {
+                        Some(i) => if i >= num_files - 1 { 0 } else { i + 1 },
+                        None => 0,
+                    };
+                    app.latest_files_state.select(Some(i));
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                let num_files = app.context_manager.latest_files.len();
+                if num_files > 0 {
+                    let i = match app.latest_files_state.selected() {
+                        Some(i) => if i == 0 { num_files - 1 } else { i - 1 },
+                        None => 0,
+                    };
+                    app.latest_files_state.select(Some(i));
+                }
+            }
+            KeyCode::Char('r') | KeyCode::Char('R') => {
+                let paths: Vec<String> = app.context_manager.latest_files.keys().cloned().collect();
+                if let Some(i) = app.latest_files_state.selected() {
+                    if let Some(path) = paths.get(i) {
+                        app.context_manager.remove_latest_file(path);
+                        // Adjust selection
+                        let num_files = app.context_manager.latest_files.len();
+                        if num_files == 0 {
+                            app.latest_files_state.select(None);
+                        } else if i >= num_files {
+                            app.latest_files_state.select(Some(num_files - 1));
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        app.should_redraw = true;
         return AppEventOutcome::Continue;
     }
 
@@ -943,6 +1105,11 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
             app.should_redraw = true;
             return AppEventOutcome::Continue;
         }
+        KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
+            app.input.insert(app.cursor_pos, '\n');
+            app.cursor_pos += 1;
+            app.should_redraw = true;
+        }
         KeyCode::Enter => {
             let p = app.input.drain(..).collect::<String>();
             app.cursor_pos = 0;
@@ -1007,6 +1174,76 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
             app.cursor_pos += c.len_utf8();
             app.should_redraw = true; 
         },
+        KeyCode::Up => {
+            let first_newline = app.input.find('\n');
+            let is_on_first_line = match first_newline {
+                None => true,
+                Some(idx) => app.cursor_pos <= idx,
+            };
+
+            if is_on_first_line {
+                if app.cursor_pos > 0 {
+                    // If we're at the beginning of the first line, show history.
+                    // But if we're not at the beginning, maybe we want to scroll?
+                    // Actually, usually Up always goes to history if on first line.
+                    // The user says Up is going to input instead of scrolling.
+                    // Let's make it so if we are on the first line, we scroll up instead of history,
+                    // unless we are specifically wanting history.
+                    app.scroll_output_up(1);
+                    app.should_redraw = true;
+                } else if !app.history.is_empty() {
+                    app.show_history = true;
+                    app.history_state.select(Some(0));
+                    app.should_redraw = true;
+                }
+            } else {
+                // Move cursor up one line
+                let current_line_start = app.input[..app.cursor_pos].rfind('\n').unwrap();
+                let column = app.input[current_line_start + 1..app.cursor_pos].chars().count();
+                
+                let prev_line_start = if current_line_start == 0 {
+                    0
+                } else {
+                    app.input[..current_line_start].rfind('\n').map(|idx| idx + 1).unwrap_or(0)
+                };
+                
+                let prev_line = &app.input[prev_line_start..current_line_start];
+                let prev_line_chars: Vec<char> = prev_line.chars().collect();
+                let target_column = column.min(prev_line_chars.len());
+                
+                let mut new_pos = prev_line_start;
+                for i in 0..target_column {
+                    new_pos += prev_line_chars[i].len_utf8();
+                }
+                app.cursor_pos = new_pos;
+                app.should_redraw = true;
+            }
+        }
+        KeyCode::Down => {
+            if let Some(next_newline) = app.input[app.cursor_pos..].find('\n') {
+                let current_line_start = app.input[..app.cursor_pos].rfind('\n').map(|idx| idx + 1).unwrap_or(0);
+                let column = app.input[current_line_start..app.cursor_pos].chars().count();
+                
+                let next_line_start = app.cursor_pos + next_newline + 1;
+                let next_line_rest = &app.input[next_line_start..];
+                let next_line_end = next_line_rest.find('\n').map(|idx| next_line_start + idx).unwrap_or(app.input.len());
+                
+                let next_line = &app.input[next_line_start..next_line_end];
+                let next_line_chars: Vec<char> = next_line.chars().collect();
+                let target_column = column.min(next_line_chars.len());
+                
+                let mut new_pos = next_line_start;
+                for i in 0..target_column {
+                    new_pos += next_line_chars[i].len_utf8();
+                }
+                app.cursor_pos = new_pos;
+                app.should_redraw = true;
+            } else {
+                // On last line, scroll output down
+                app.scroll_output_down(1);
+                app.should_redraw = true;
+            }
+        }
         KeyCode::Backspace => { 
             if app.cursor_pos > 0 {
                 let prev_char = app.input[..app.cursor_pos].chars().last().unwrap();

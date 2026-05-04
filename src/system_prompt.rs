@@ -7,14 +7,11 @@ CurrentWorkingDir:[CWD]
 
 [TOOLS_DEFINITIONS]
 
-Rules for Tool Calls:
-1. Never use single quotes (') inside JSON string values.
-2. Ensure all paths are clean and do not contain extra surrounding or internal quotes.
-
 Guidelines:
-1. Tool Selection & No Directory Persistence: Note that `cd` in `run_shell_command` is NOT persistent across tool calls. Every tool call starts from the project root. Always specify full relative paths from the root.
-2. Verification: Verify your work using tool results before finalizing.
-3. Finalize: Once all tasks are complete, provide a final summary inside a <result> block.
+1. Pathing: Always specify full paths relative to the CurrentWorkingDir.
+2. Tool Calls: For ALL tool call argument values that are strings, you MUST wrap the value in asymmetric markers: `<|tool_parameter>your content here<tool_parameter|>`. Do NOT use standard double quotes (") or single quotes (') as delimiters.
+3. Verification: Verify your work using tool results before finalizing.
+4. Finalize: Once all tasks are complete, provide a final summary of your actions.
 "#;
 
 pub struct SystemPromptManager {
@@ -23,17 +20,18 @@ pub struct SystemPromptManager {
 
 impl SystemPromptManager {
     pub fn new() -> Self {
-        let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        let prompts_dir = home_dir.join(".lethetic").join("prompts");
+        let config_dir = dirs::config_dir().unwrap_or_else(|| {
+            dirs::home_dir().map(|h| h.join(".config")).unwrap_or_else(|| PathBuf::from("."))
+        });
+        let prompts_dir = config_dir.join("lethetic").join("prompts");
         
         if !prompts_dir.exists() {
             let _ = fs::create_dir_all(&prompts_dir);
-            // Save the default template as software_engineer.md if it doesn't exist
-            let default_path = prompts_dir.join("software_engineer.md");
-            if !default_path.exists() {
-                let _ = fs::write(default_path, DEFAULT_PROMPT_TEMPLATE);
-            }
         }
+
+        // Always ensure the latest default template is available
+        let default_path = prompts_dir.join("software_engineer.md");
+        let _ = fs::write(default_path, DEFAULT_PROMPT_TEMPLATE);
         
         Self { prompts_dir }
     }
@@ -63,8 +61,8 @@ impl SystemPromptManager {
         fs::write(path, content)
     }
 
-    pub fn resolve_prompt(template: &str, cwd: &str) -> String {
-        let tool_declarations = tools::get_all_prompt_templates();
+    pub fn resolve_prompt(template: &str, cwd: &str, config: &crate::config::Config) -> String {
+        let tool_declarations = tools::get_all_prompt_templates(config);
         template.replace("[TOOLS_DEFINITIONS]", &tool_declarations).replace("[CWD]", cwd)
     }
 }

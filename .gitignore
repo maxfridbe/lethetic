@@ -1,6 +1,8 @@
 /target
-
 .lethetic/
+temp_run_manual/
+ignore/
+
 wayland_cube/
 .last-response
 .last_context
@@ -16,6 +18,4 @@ responses.jsonl
 compile_cube.sh
 cube.c
 main.c
-ignore/
-brainiac-nvidia/
 brainiac-nvidia/

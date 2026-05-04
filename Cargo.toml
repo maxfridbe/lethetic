@@ -26,6 +26,9 @@ tokio-util = "0.7.18"
 pdf_oxide = { version = "0.3", features = ["rendering"] }
 image = "0.25"
 base64 = "0.22"
+diffy = "0.4"
+h2m = "0.7.1"
+h2m-search = "0.7.1"
 
 [[bin]]
 name = "eval_scenarios"

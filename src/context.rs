@@ -1,9 +1,18 @@
 use tiktoken_rs::cl100k_base;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use once_cell::sync::Lazy;
 use std::cell::Cell;
 
 static TOKENIZER: Lazy<tiktoken_rs::CoreBPE> = Lazy::new(|| cl100k_base().unwrap());
+
+pub fn truncate_to_tokens(text: &str, max_tokens: usize) -> String {
+    let tokens = TOKENIZER.encode_with_special_tokens(text);
+    if tokens.len() <= max_tokens {
+        return text.to_string();
+    }
+    TOKENIZER.decode(&tokens[..max_tokens]).unwrap_or_else(|_| text[..max_tokens.min(text.len())].to_string())
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Message {
@@ -24,12 +33,20 @@ pub struct FunctionCall {
     pub arguments: serde_json::Value,
 }
 
+#[derive(Debug, Clone)]
+pub struct CachedFile {
+    pub content: String,
+    pub timestamp: std::time::Instant,
+    pub tokens: usize,
+}
+
 pub struct ContextManager {
     max_tokens: usize,
     messages: Vec<Message>,
     system_prompt: Option<String>,
     cwd: String,
     cached_token_count: Cell<Option<usize>>,
+    pub latest_files: std::collections::HashMap<String, CachedFile>,
 }
 
 impl ContextManager {
@@ -40,6 +57,7 @@ impl ContextManager {
             system_prompt,
             cwd: ".".to_string(),
             cached_token_count: Cell::new(None),
+            latest_files: std::collections::HashMap::new(),
         }
     }
 
@@ -52,6 +70,21 @@ impl ContextManager {
 
     pub fn update_system_prompt(&mut self, prompt: String) {
         self.system_prompt = Some(prompt);
+    }
+
+    pub fn update_latest_file(&mut self, path: String, content: String) {
+        let tokens = TOKENIZER.encode_with_special_tokens(&content).len();
+        self.latest_files.insert(path, CachedFile {
+            content,
+            timestamp: std::time::Instant::now(),
+            tokens,
+        });
+        self.cached_token_count.set(None);
+    }
+
+    pub fn remove_latest_file(&mut self, path: &str) {
+        self.latest_files.remove(path);
+        self.cached_token_count.set(None);
     }
 
     pub fn add_message(&mut self, role: &str, content: &str) {
@@ -137,30 +170,23 @@ impl ContextManager {
                 "assistant" => {
                     if current_turn_role != "model" {
                         prompt.push_str("<|turn>model\n");
-                        if !msg.content.contains("<|channel>") {
-                            prompt.push_str("<|channel>thought\n<channel|>");
+                    }
+                    
+                    let mut clean_content = msg.content.clone();
+                    if msg.tool_calls.is_some() {
+                        if let Some(idx) = clean_content.find("<|tool_call>") {
+                            clean_content.truncate(idx);
                         }
                     }
-                    prompt.push_str(&msg.content);
+                    prompt.push_str(&clean_content);
                     
                     if let Some(calls) = &msg.tool_calls {
                         for tc in calls {
-                            prompt.push_str(&format!("<|tool_call>call:{}{{", tc.function.name));
-                            if let Some(obj) = tc.function.arguments.as_object() {
-                                let mut first = true;
-                                for (k, v) in obj {
-                                    if !first { prompt.push(','); }
-                                    first = false;
-                                    prompt.push_str(k);
-                                    prompt.push(':');
-                                    if let Some(s) = v.as_str() {
-                                        prompt.push_str(&format!("<|\">{}<|\">", s));
-                                    } else {
-                                        prompt.push_str(&v.to_string());
-                                    }
-                                }
-                            }
-                            prompt.push_str("}<tool_call|>");
+                            let call_json = json!({
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments
+                            });
+                            prompt.push_str(&format!("<|tool_call>{}{}", serde_json::to_string(&call_json).unwrap_or_default(), "<tool_call|>"));
                         }
                         current_turn_role = "model".to_string();
                     } else if msg.content.contains("<|tool_call>") {
@@ -173,20 +199,29 @@ impl ContextManager {
                 "tool" => {
                     if current_turn_role != "model" {
                         prompt.push_str("<|turn>model\n");
-                        current_turn_role = "model".to_string();
                     }
                     prompt.push_str(&msg.content);
-                    
-                    // The tool response now ends with <turn|>, so the model turn is closed.
-                    // Commented out as requested:
-                    // current_turn_role = String::new();
+                    current_turn_role = "model".to_string();
                 }
                 _ => {}
             }
         }
 
+        if !self.latest_files.is_empty() {
+            if current_turn_role == "model" {
+                prompt.push_str("<turn|>\n");
+            }
+            prompt.push_str("<|turn>system\n<|think|>\n");
+            prompt.push_str("<latest_files>\n");
+            for (path, cached_file) in &self.latest_files {
+                prompt.push_str(&format!("File: `{}`\n```\n{}\n```\n", path, cached_file.content));
+            }
+            prompt.push_str("</latest_files>\n<turn|>\n");
+            current_turn_role = String::new();
+        }
+
         if current_turn_role != "model" {
-            prompt.push_str("<|turn>model\n<|channel>thought\n");
+            prompt.push_str("<|turn>model\n");
         }
 
         

@@ -1,7 +1,6 @@
 use serde_json::json;
 use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
-use super::llm_tokens::*;
 
 pub fn get_definition() -> Tool {
     Tool {
@@ -31,9 +30,6 @@ pub fn get_definition() -> Tool {
     }
 }
 
-pub fn get_prompt_template() -> String {
-    format!("{}declaration:calculate{{description:<|\">Perform a mathematical calculation.<|\">,parameters:{{properties:{{expression:{{description:<|\">The math expression to evaluate, e.g. '2 + 2' or 'sin(pi/2)'<|\">,type:<|\">STRING<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">A unique, descriptive string identifier for this call (e.g., 'read_main_rs', 'check_folders'). Do not use simple numbers.<|\">,type:<|\">STRING<|\">}}}},required:[<|\">expression<|\">,<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", TOOL_CALL_OPEN, TOOL_CALL_CLOSE)
-}
 
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     if let Some(desc) = arguments["description"].as_str() {

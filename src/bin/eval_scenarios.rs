@@ -1,11 +1,7 @@
 use lethetic::context::ContextManager;
 use lethetic::parser::find_tool_call;
 use lethetic::config::Config;
-use lethetic::client::{GenerateRequest, GenerateResponse};
 use lethetic::system_prompt;
-use lethetic::tools;
-use lethetic::icons;
-use lethetic::llm_tokens;
 
 use reqwest::Client;
 use serde_json::json;
@@ -62,34 +58,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn run_scenario(client: &Client, config: &Config, scenario: &Scenario) -> Result<String, Box<dyn std::error::Error>> {
-    let mut context_manager = ContextManager::new(config.context_size, Some(crate::system_prompt::SystemPromptManager::resolve_prompt(crate::system_prompt::DEFAULT_PROMPT_TEMPLATE, ".")));
+    let mut context_manager = ContextManager::new(config.context_size, Some(crate::system_prompt::SystemPromptManager::resolve_prompt(crate::system_prompt::DEFAULT_PROMPT_TEMPLATE, ".", &config)));
     context_manager.add_message("user", scenario.prompt);
+let req_body = json!({
+    "model": config.model.clone(),
+    "input": context_manager.get_raw_prompt(),
+    "stream": true,
+    "max_tokens": 16384,
+});
 
-    let mut req_body = json!({
-        "model": config.model.clone(),
-        "prompt": context_manager.get_raw_prompt(),
-        "raw": true,
-        "stream": true,
-        "temperature": 0.0,
-        "stop": ["<turn|>", "<eos>", "<tool_response|>", "<|tool_response|>"],
-        "num_ctx": config.context_size,
-    });
-
-    if config.server_url.contains("/api/chat") {
-        req_body = json!({
-            "model": config.model.clone(),
-            "prompt": context_manager.get_raw_prompt(),
-            "raw": true,
-            "stream": true,
-            "options": { "num_ctx": config.context_size, "temperature": 0.0 }
-        });
-    }
-
-    let b_url = config.server_url.replace("/api/chat", "/api/generate");
+    let b_url = config.server_url.clone();
     let res = client.post(&b_url).json(&req_body).send().await?;
-    // Note: trigger_llm_request in eval_scenarios is not actually called from this file's main loop, 
-    // it uses a manual request body. But if there were calls, they would need the extra arg.
-    // Actually, I see that run_scenario builds its own request.
     let mut stream = res.bytes_stream();
     
     let mut full_content = String::new();
@@ -99,29 +78,38 @@ async fn run_scenario(client: &Client, config: &Config, scenario: &Scenario) -> 
     let timeout_duration = std::time::Duration::from_secs(30);
 
     let result = tokio::time::timeout(timeout_duration, async {
+        let mut buffer = String::new();
+        let mut current_event = String::new();
+
         while let Some(item) = stream.next().await {
             if let Ok(bytes) = item {
                 if let Ok(chunk_str) = String::from_utf8(bytes.to_vec()) {
-                    for line in chunk_str.lines() {
+                    buffer.push_str(&chunk_str);
+                    while let Some(pos) = buffer.find('\n') {
+                        let line = buffer.drain(..=pos).collect::<String>();
                         let trimmed = line.trim();
                         if trimmed.is_empty() { continue; }
                         
-                        let json_str = if trimmed.starts_with("data: ") {
-                            &trimmed[6..]
-                        } else {
-                            trimmed
-                        };
+                        if trimmed.starts_with("event: ") {
+                            current_event = trimmed[7..].to_string();
+                        } else if trimmed.starts_with("data: ") {
+                            let json_str = &trimmed[6..];
+                            if json_str == "[DONE]" { break; }
 
-                        if let Ok(gen_res) = serde_json::from_str::<GenerateResponse>(json_str) {
-                            let content = gen_res.response;
-                            full_content.push_str(&content);
-                            
-                            if tool_detected_at.is_none() {
-                                if let Some(Ok((_, pos))) = find_tool_call(&full_content, false) {
-                                    tool_detected_at = Some(pos);
+                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
+                                if current_event == "response.output_text.delta" {
+                                    if let Some(delta) = val["delta"].as_str() {
+                                        full_content.push_str(delta);
+                                        
+                                        if tool_detected_at.is_none() {
+                                            if let Some(Ok((_, pos))) = find_tool_call(&full_content, false) {
+                                                tool_detected_at = Some(pos);
+                                            }
+                                        } else if !delta.trim().is_empty() {
+                                            stopped_after_tool = false;
+                                        }
+                                    }
                                 }
-                            } else if !content.trim().is_empty() {
-                                stopped_after_tool = false;
                             }
                         }
                     }

@@ -31,3 +31,22 @@ async fn test_write_file_success() {
     let content = fs::read_to_string(dir.path().join("new_file.txt")).unwrap();
     assert_eq!(content, "content");
 }
+
+#[tokio::test]
+async fn test_write_file_nested_and_multiline() {
+    let dir = tempdir().unwrap();
+    let cwd = dir.path().to_str().unwrap();
+    let token = CancellationToken::new();
+    
+    let multiline_content = "line 1\nline 2\n\"quoted line\"\n    indented line";
+    let nested_path = "nested/dir/test_file.rs";
+    
+    let result = write_file::execute(nested_path, multiline_content, cwd, token).await;
+    assert!(result.contains("Successfully wrote"));
+    
+    let file_path = dir.path().join(nested_path);
+    assert!(file_path.exists());
+    
+    let content = fs::read_to_string(file_path).unwrap();
+    assert_eq!(content, multiline_content);
+}

@@ -2,27 +2,28 @@ use serde_json::json;
 use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
 use reqwest::Client;
+use h2m::convert;
 
 pub fn get_definition() -> Tool {
     Tool {
         tool_type: "function".to_string(),
         function: FunctionDefinition {
-            name: "web_fetch".to_string(),
-            description: "Fetch the content of a URL".to_string(),
+            name: "read_page".to_string(),
+            description: "Fetch a URL and convert its content to Markdown".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "tool_call_id": {
                         "type": "string",
-                        "description": "A unique, descriptive string identifier for this call (e.g., 'read_main_rs', 'check_folders'). Do not use simple numbers."
+                        "description": "A unique, descriptive string identifier for this call."
                     },
                     "url": {
                         "type": "string",
-                        "description": "The URL to fetch content from"
+                        "description": "The URL to fetch and convert"
                     },
                     "description": {
                         "type": "string",
-                        "description": "Short description of the action"
+                        "description": "Short description of the page being read"
                     }
                 },
                 "required": ["url", "description", "tool_call_id"]
@@ -31,17 +32,15 @@ pub fn get_definition() -> Tool {
     }
 }
 
-
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     if let Some(desc) = arguments["description"].as_str() {
-        return format!("{} {}", icons::WEATHER, desc);
+        return format!("{} Reading Page: {}", icons::WEATHER, desc);
     }
     let url = arguments["url"].as_str().unwrap_or("");
-    format!("{} Fetching URL: `{}`", icons::WEATHER, url)
+    format!("{} Reading Page: `{}`", icons::WEATHER, url)
 }
 
 pub async fn execute(url: &str, cancellation_token: tokio_util::sync::CancellationToken) -> String {
-
     let client = Client::new();
     
     tokio::select! {
@@ -52,7 +51,9 @@ pub async fn execute(url: &str, cancellation_token: tokio_util::sync::Cancellati
             match client.get(url).send().await {
                 Ok(res) => {
                     match res.text().await {
-                        Ok(text) => text,
+                        Ok(html) => {
+                            convert(&html)
+                        }
                         Err(e) => format!("ERROR: Failed to read response body: {}", e),
                     }
                 }

@@ -1,19 +1,18 @@
 use lethetic::system_prompt::SystemPromptManager;
-use std::fs;
-use tempfile::tempdir;
-use std::path::PathBuf;
+use lethetic::config::Config;
 
 #[test]
 fn test_system_prompt_manager_lifecycle() {
-    // 1. Create a mock environment for the manager
-    // In a real scenario, this writes to ~/.lethetic/prompts, but we can test the resolving logic directly
-    // and test the file operations by temporarily changing the home directory or just testing the core functions.
-    // Since SystemPromptManager uses `dirs::home_dir`, we can't easily mock it without injecting a path.
-    // Let's modify SystemPromptManager to accept a custom directory for testing if needed, or just test `resolve_prompt`.
-    
     // For now, let's just test `resolve_prompt` to ensure the placeholder is replaced.
     let template = "Hello\n[TOOLS_DEFINITIONS]\nGoodbye";
-    let resolved = SystemPromptManager::resolve_prompt(template, "/mock/cwd");
+    let config = Config {
+        server_url: "".to_string(),
+        model: "".to_string(),
+        context_size: 0,
+        tool_wrapper: None,
+        enable_image_processing_tool: false,
+    };
+    let resolved = SystemPromptManager::resolve_prompt(template, "/mock/cwd", &config);
     
     assert!(resolved.contains("Hello"));
     assert!(resolved.contains("Goodbye"));

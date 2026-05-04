@@ -1,11 +1,9 @@
 use serde_json::json;
 use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
-use super::llm_tokens;
 use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
 use crate::client::StreamEvent;
 
@@ -35,10 +33,6 @@ pub fn get_definition() -> Tool {
             }),
         },
     }
-}
-
-pub fn get_prompt_template() -> String {
-    format!("{}declaration:run_shell_command{{description:<|\">Execute a bash shell command. Only use this if no specialized tool is available.<|\">,parameters:{{properties:{{command:{{description:<|\">The bash command to execute<|\">,type:<|\">STRING<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">A unique, descriptive string identifier for this call (e.g., 'read_main_rs', 'check_folders'). Do not use simple numbers.<|\">,type:<|\">STRING<|\">}}}},required:[<|\">command<|\">,<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
 }
 
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {

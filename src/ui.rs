@@ -466,6 +466,8 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             Span::styled(format!("{}/{} ", app.context_manager.get_token_count(), app.max_tokens), Style::default().fg(app.theme.thought_fg)),
             Span::styled("| Mem: ", Style::default().fg(app.theme.system_fg)),
             Span::styled(format!("{}MB ", app.memory_usage), Style::default().fg(app.theme.thought_fg)),
+            Span::styled("| Files: ", Style::default().fg(app.theme.system_fg)),
+            Span::styled(format!("{} ", app.context_manager.latest_files.len()), Style::default().fg(app.theme.thought_fg)),
         ]),
         Line::from(line2_spans),
     ];
@@ -488,6 +490,16 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         f.render_widget(Clear, area);
         let items: Vec<ListItem> = app.themes.iter().map(|t| ListItem::new(t.name.as_str())).collect();
         f.render_stateful_widget(List::new(items).block(UIBlock::default().title(format!("{} Themes", icons::THEME)).borders(Borders::ALL)).highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(app.theme.highlight_fg)).highlight_symbol("> "), area, &mut app.theme_state);
+    }
+
+    if app.show_history {
+        let area = centered_rect(80, 50, f.area());
+        f.render_widget(Clear, area);
+        let items: Vec<ListItem> = app.history.iter().rev().enumerate().map(|(i, s)| {
+            let line = if i == 0 { format!("{} (Latest)", s) } else { s.clone() };
+            ListItem::new(line)
+        }).collect();
+        f.render_stateful_widget(List::new(items).block(UIBlock::default().title(format!("{} Input History (ESC to cancel, Enter to paste)", icons::COMMAND)).borders(Borders::ALL)).highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(app.theme.highlight_fg)).highlight_symbol("> "), area, &mut app.history_state);
     }
 
     if app.is_loading_session {
@@ -567,6 +579,56 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         );
         
         let help_text = "(Enter) Resume | (N) New | (D) Delete | (X) Wipe All | (Esc) Close";
+        f.render_widget(Paragraph::new(help_text).block(UIBlock::default().borders(Borders::TOP)).style(Style::default().fg(app.theme.system_fg)), inner_layout[1]);
+    }
+
+    if app.show_latest_files {
+        let area = centered_rect(80, 80, f.area());
+        f.render_widget(Clear, area);
+        
+        let mut total_tokens = 0;
+        let items: Vec<ListItem> = app.context_manager.latest_files.iter().map(|(path, cached)| {
+            total_tokens += cached.tokens;
+            let elapsed = cached.timestamp.elapsed().as_secs();
+            let time_str = if elapsed < 60 {
+                format!("{} sec ago", elapsed)
+            } else if elapsed < 3600 {
+                format!("{} min ago", elapsed / 60)
+            } else {
+                format!("{} hours ago", elapsed / 3600)
+            };
+
+            // Truncate path to fit (approx 40 chars)
+            let display_path = if path.len() > 40 {
+                format!("...{}", &path[path.len() - 37..])
+            } else {
+                path.clone()
+            };
+
+            let content = format!("{:<40} {:>8} tokens ({})", display_path, cached.tokens, time_str);
+            ListItem::new(content)
+        }).collect();
+
+        let block = UIBlock::default()
+            .title(format!("{} Latest Files in Context", icons::COMMAND))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(app.theme.thought_fg));
+
+        let inner_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(3)])
+            .split(area);
+
+        f.render_stateful_widget(
+            List::new(items)
+                .block(block)
+                .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(app.theme.highlight_fg))
+                .highlight_symbol("> "),
+            inner_layout[0],
+            &mut app.latest_files_state
+        );
+        
+        let help_text = format!("(R) Remove from Context | (Esc) Close | Total Tokens: {}", total_tokens);
         f.render_widget(Paragraph::new(help_text).block(UIBlock::default().borders(Borders::TOP)).style(Style::default().fg(app.theme.system_fg)), inner_layout[1]);
     }
 
@@ -843,7 +905,7 @@ pub fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, t
         } else {
             block.content.lines().map(|l| Line::from(Span::styled(l.to_string(), base_style))).collect()
         }
-    } else if block.block_type == BlockType::Markdown || block.block_type == BlockType::Thought || block.content.contains("```") {
+    } else if block.block_type == BlockType::Text || block.block_type == BlockType::ToolResult || block.block_type == BlockType::Markdown || block.block_type == BlockType::Thought || block.content.contains("```") {
         markdown::render_markdown(&block.content, theme).lines
     } else {
         block.content.lines().map(|l| Line::from(Span::styled(l.to_string(), base_style))).collect()
@@ -887,6 +949,19 @@ fn wrap_lines(lines: Vec<Line<'static>>, max_width: usize) -> Vec<Line<'static>>
             wrapped_lines.push(Line::from(vec![]));
             continue;
         }
+
+        // Detect line number prefix: 6 chars + tab
+        let mut indent_width = 0;
+        let mut indent_style = Style::default();
+        if let Some(first_span) = line.spans.first() {
+            if first_span.content.len() >= 7 
+               && first_span.content.chars().take(6).all(|c| c.is_whitespace() || c.is_ascii_digit()) 
+               && first_span.content.chars().nth(6) == Some('\t') {
+                indent_width = 7;
+                indent_style = first_span.style;
+            }
+        }
+
         let mut current_line_spans = Vec::new();
         let mut current_width = 0;
 
@@ -919,20 +994,58 @@ fn wrap_lines(lines: Vec<Line<'static>>, max_width: usize) -> Vec<Line<'static>>
                         wrapped_lines.push(Line::from(std::mem::take(&mut current_line_spans)));
                     }
                     
-                    if word_width > max_width {
-                        // Word is longer than line, split it
+                    // Start new line with indent if needed
+                    if indent_width > 0 {
+                        current_line_spans.push(Span::styled(" ".repeat(indent_width), indent_style));
+                        current_width = indent_width;
+                    } else {
+                        current_width = 0;
+                    }
+
+                    if word_width + current_width > max_width {
+                        // Word is longer than remaining line, split it
                         let mut remaining = word;
-                        while remaining.chars().count() > max_width {
-                            let head: String = remaining.chars().take(max_width).collect();
-                            let tail: String = remaining.chars().skip(max_width).collect();
-                            wrapped_lines.push(Line::from(Span::styled(head, style)));
+                        let available = max_width.saturating_sub(current_width);
+                        
+                        if available > 0 {
+                            let head: String = remaining.chars().take(available).collect();
+                            let tail: String = remaining.chars().skip(available).collect();
+                            current_line_spans.push(Span::styled(head, style));
+                            wrapped_lines.push(Line::from(std::mem::take(&mut current_line_spans)));
+                            remaining = tail;
+                        } else {
+                            // No room even for one char, just wrap and start fresh (with indent)
+                            if !current_line_spans.is_empty() {
+                                wrapped_lines.push(Line::from(std::mem::take(&mut current_line_spans)));
+                            }
+                        }
+
+                        while remaining.chars().count() > max_width.saturating_sub(indent_width) {
+                            let chunk_size = max_width.saturating_sub(indent_width);
+                            if chunk_size == 0 { break; } // Safety
+                            
+                            let mut next_line = Vec::new();
+                            if indent_width > 0 {
+                                next_line.push(Span::styled(" ".repeat(indent_width), indent_style));
+                            }
+                            let head: String = remaining.chars().take(chunk_size).collect();
+                            let tail: String = remaining.chars().skip(chunk_size).collect();
+                            next_line.push(Span::styled(head, style));
+                            wrapped_lines.push(Line::from(next_line));
                             remaining = tail;
                         }
-                        current_line_spans.push(Span::styled(remaining.clone(), style));
-                        current_width = remaining.chars().count();
+                        
+                        // Final piece of the split word
+                        if !remaining.is_empty() {
+                            if indent_width > 0 {
+                                current_line_spans.push(Span::styled(" ".repeat(indent_width), indent_style));
+                            }
+                            current_line_spans.push(Span::styled(remaining.clone(), style));
+                            current_width = indent_width + remaining.chars().count();
+                        }
                     } else {
                         current_line_spans.push(Span::styled(word, style));
-                        current_width = word_width;
+                        current_width += word_width;
                     }
                 }
             }

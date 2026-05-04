@@ -1,7 +1,6 @@
 use serde_json::json;
 use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
-use super::llm_tokens;
 use std::fs;
 use std::path::Path;
 
@@ -33,9 +32,6 @@ pub fn get_definition() -> Tool {
     }
 }
 
-pub fn get_prompt_template() -> String {
-    format!("{}declaration:read_folder{{description:<|\">List the names of files and subdirectories directly within a specified directory path.<|\">,parameters:{{properties:{{path:{{description:<|\">The path to the directory to list. Defaults to '.' if omitted.<|\">,type:<|\">STRING<|\">}},description:{{description:<|\">Short description of the action<|\">,type:<|\">STRING<|\">}},tool_call_id:{{description:<|\">A unique, descriptive string identifier for this call (e.g., 'read_main_rs', 'check_folders'). Do not use simple numbers.<|\">,type:<|\">STRING<|\">}}}},required:[<|\">description<|\">,<|\">tool_call_id<|\">],type:<|\">OBJECT<|\">}}}}{}", llm_tokens::TOOL_CALL_OPEN, llm_tokens::TOOL_CALL_CLOSE)
-}
 
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     if let Some(desc) = arguments["description"].as_str() {

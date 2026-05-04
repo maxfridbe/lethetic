@@ -4,7 +4,6 @@ use lethetic::tools::process_pdf_image;
 use lethetic::config::Config;
 use reqwest::Client;
 use std::fs;
-use tempfile::tempdir;
 
 #[tokio::test]
 async fn test_get_pdf_text_file_not_found() {
@@ -17,10 +16,11 @@ async fn test_get_pdf_text_file_not_found() {
 async fn test_process_image_file_not_found() {
     let client = Client::new();
     let config = Config {
-        server_url: "http://localhost:11434".to_string(),
-        model: "gemma2".to_string(),
+        server_url: "http://brainiac-nvidia:7210/v1/responses".to_string(),
+        model: "Gemma-4-26B-TurboQuant-262k".to_string(),
         context_size: 2048,
         tool_wrapper: None,
+        enable_image_processing_tool: true,
     };
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
     let res = process_image::execute("test", "non_existent.png", None, ".", &client, &config, &tx).await;
@@ -31,10 +31,11 @@ async fn test_process_image_file_not_found() {
 async fn test_process_pdf_image_invalid_page() {
     let client = Client::new();
     let config = Config {
-        server_url: "http://localhost:11434".to_string(),
-        model: "gemma2".to_string(),
+        server_url: "http://brainiac-nvidia:7210/v1/responses".to_string(),
+        model: "Gemma-4-26B-TurboQuant-262k".to_string(),
         context_size: 2048,
         tool_wrapper: None,
+        enable_image_processing_tool: true,
     };
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
     let res = process_pdf_image::execute("test", "non_existent.pdf", 1, None, ".", &client, &config, &tx).await;
@@ -86,7 +87,8 @@ async fn test_live_pdf_processing() {
 
     // 2. Test text extraction
     let extracted = get_pdf_text::execute(pdf_path, ".", &tx).await;
-    println!("Extracted PDF Text:\n{}", extracted);
+    println!("Extracted PDF Text:
+{}", extracted);
     assert!(extracted.contains("Gemma 4 Vision Test"), "Text extraction should find the title");
 
     // 3. Test vision rendering and analysis
@@ -170,7 +172,14 @@ async fn test_live_vision_sequential() {
 
 #[test]
 fn test_tool_registration() {
-    let tools = lethetic::tools::get_all_tools();
+    let config = Config {
+        server_url: "".to_string(),
+        model: "".to_string(),
+        context_size: 0,
+        tool_wrapper: None,
+        enable_image_processing_tool: true,
+    };
+    let tools = lethetic::tools::get_all_tools(&config);
     assert!(tools.iter().any(|t| t.function.name == "process_image"));
     assert!(tools.iter().any(|t| t.function.name == "process_pdf_image"));
     assert!(tools.iter().any(|t| t.function.name == "get_pdf_text"));

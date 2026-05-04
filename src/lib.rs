@@ -6,7 +6,6 @@ pub mod markdown;
 pub mod config;
 pub mod client;
 pub mod parser;
-pub mod parser_new;
 pub mod app;
 pub mod ui;
 pub mod tools;
