@@ -247,8 +247,8 @@ impl StreamParser {
 
 
 
-const PARAM_START: &str = "<|tool_parameter>";
-const PARAM_END: &str = "<tool_parameter|>";
+const PARAM_START: &str = "<|\"|>";
+const PARAM_END: &str = "<|\"|>";
 
 fn parse_gemma4_value(value_str: &str) -> Value {
     let mut s = value_str.trim();
@@ -271,6 +271,7 @@ fn parse_gemma4_value(value_str: &str) -> Value {
         
         // 2. Strip all known marker variants (LONGEST FIRST)
         let markers = [
+            ("<|\"|>", "<|\"|>"),
             ("<|tool_parameter|>", "<|tool_parameter|>"),
             ("<|tool_parameter>", "<tool_parameter|>"),
             ("<|tool_parameter|>", "<tool_parameter|>"),
@@ -351,7 +352,8 @@ fn parse_gemma4_args(args_str: &str, partial: bool) -> Map<String, Value> {
                 let rem: String = chars[i..].iter().collect();
                 let mut et = None;
                 // PRIORITY: LONG TAGS FIRST
-                if rem.starts_with("<|tool_parameter|>") { et = Some("<|tool_parameter|>"); i += 18; }
+                if rem.starts_with("<|\"|>") { et = Some("<|\"|>"); i += 6; }
+                else if rem.starts_with("<|tool_parameter|>") { et = Some("<|tool_parameter|>"); i += 18; }
                 else if rem.starts_with("<|tool_parameter>") { et = Some("<tool_parameter|>"); i += 17; }
                 else if rem.starts_with("<|\\\\\">") { et = Some("<|\\\\\">"); i += 6; }
                 else if rem.starts_with("<|\\\">") { et = Some("<|\\\">"); i += 5; }
@@ -382,7 +384,8 @@ fn parse_gemma4_args(args_str: &str, partial: bool) -> Map<String, Value> {
             while i < n && depth > 0 {
                 let rem: String = chars[i..].iter().collect();
                 let mut et = None;
-                if rem.starts_with("<|tool_parameter|>") { et = Some("<|tool_parameter|>"); i += 18; }
+                if rem.starts_with("<|\"|>") { et = Some("<|\"|>"); i += 6; }
+                else if rem.starts_with("<|tool_parameter|>") { et = Some("<|tool_parameter|>"); i += 18; }
                 else if rem.starts_with("<|tool_parameter>") { et = Some("<tool_parameter|>"); i += 17; }
                 else if rem.starts_with("<|\\\\\">") { et = Some("<|\\\\\">"); i += 6; }
                 else if rem.starts_with("<|\\\">") { et = Some("<|\\\">"); i += 5; }
@@ -411,7 +414,8 @@ fn parse_gemma4_args(args_str: &str, partial: bool) -> Map<String, Value> {
             while i < n {
                 let rem: String = chars[i..].iter().collect();
                 let mut et = None;
-                if rem.starts_with("<|tool_parameter|>") { et = Some("<|tool_parameter|>"); i += 18; }
+                if rem.starts_with("<|\"|>") { et = Some("<|\"|>"); i += 6; }
+                else if rem.starts_with("<|tool_parameter|>") { et = Some("<|tool_parameter|>"); i += 18; }
                 else if rem.starts_with("<|tool_parameter>") { et = Some("<tool_parameter|>"); i += 17; }
                 else if rem.starts_with("<|\\\\\">") { et = Some("<|\\\\\">"); i += 6; }
                 else if rem.starts_with("<|\\\">") { et = Some("<|\\\">"); i += 5; }
@@ -473,7 +477,7 @@ fn parse_gemma4_array(arr_str: &str, partial: bool) -> Vec<Value> {
             i += 1;
             while i < n && depth > 0 {
                 let rem: String = chars[i..].iter().collect();
-                if rem.starts_with(PARAM_START) || rem.starts_with("<|tool_parameter|>") {
+                if rem.starts_with(PARAM_START) {
                     i += PARAM_START.chars().count();
                     let rem_after: String = chars[i..].iter().collect();
                     if let Some(nd_rel) = rem_after.find(PARAM_END) {
@@ -500,7 +504,7 @@ fn parse_gemma4_array(arr_str: &str, partial: bool) -> Vec<Value> {
             i += 1;
             while i < n && depth > 0 {
                 let rem: String = chars[i..].iter().collect();
-                if rem.starts_with(PARAM_START) || rem.starts_with("<|tool_parameter|>") {
+                if rem.starts_with(PARAM_START) {
                     i += PARAM_START.chars().count();
                     let rem_after: String = chars[i..].iter().collect();
                     if let Some(nd_rel) = rem_after.find(PARAM_END) {
@@ -526,7 +530,7 @@ fn parse_gemma4_array(arr_str: &str, partial: bool) -> Vec<Value> {
             let mut in_quote = None;
             while i < n {
                 let rem: String = chars[i..].iter().collect();
-                if rem.starts_with(PARAM_START) || rem.starts_with("<|tool_parameter|>") {
+                if rem.starts_with(PARAM_START) {
                     i += PARAM_START.chars().count();
                     let rem2: String = chars[i..].iter().collect();
                     if let Some(ep) = rem2.find(PARAM_END) {
@@ -749,7 +753,7 @@ namespace AsciiPong {
 }
 <|"|>,description:<|"|>Write a reference implementation of an ASCII Pong game in C#.<|"|>,path:<|"|>pong.cs<|"|>,tool_call_id:<|"|>write_pong_cs<|"|>}"#;
         let result = parse_native_block(block).expect("Should recover from C# live failure");
-        assert_eq!(result.function.arguments.get("path").unwrap().as_str().unwrap(), "<|\"|>pong.cs<|\"|>");
+        assert_eq!(result.function.arguments.get("path").unwrap().as_str().unwrap(), "pong.cs");
     }
 
     #[test]
@@ -757,7 +761,7 @@ namespace AsciiPong {
         let block = r#"<|tool_call>call:get_current_temperature{location:<|"|>London<|"|>}<tool_call|><|tool_response>"#;
         let (result, _) = find_tool_call(block, true).expect("Should find tool call").expect("Should parse tool call");
         assert_eq!(result.function.name, "get_current_temperature");
-        assert_eq!(result.function.arguments.get("location").unwrap().as_str().unwrap(), "<|\"|>London<|\"|>");
+        assert_eq!(result.function.arguments.get("location").unwrap().as_str().unwrap(), "London");
     }
 
     #[test]
@@ -793,7 +797,7 @@ namespace AsciiPong {
     fn test_mixed_delimiters() {
         let block = r#"call:mixed{s1: <|"|>double<|"|>, s2: <|'|>single<|'|>, s3: "regular", tool_call_id: "mixed"}"#;
         let result = parse_native_block(block).expect("Should handle mixed delimiters");
-        assert_eq!(result.function.arguments.get("s1").unwrap().as_str().unwrap(), "<|\"|>double<|\"|>");
+        assert_eq!(result.function.arguments.get("s1").unwrap().as_str().unwrap(), "double");
         assert_eq!(result.function.arguments.get("s3").unwrap().as_str().unwrap(), "regular");
     }
 
@@ -806,7 +810,7 @@ namespace AsciiPong {
 
     #[test]
     fn test_quoted_parameter_tags() {
-        let block = r#"call:read_folder{path: "<|tool_parameter>.<tool_parameter|>", description: "<|tool_parameter>List files.<tool_parameter|>"}"#;
+        let block = r#"call:read_folder{path: "<|"|>.<|"|>", description: "<|"|>List files.<|"|>"}"#;
         let result = parse_native_block(block).expect("Should parse quoted tags");
         assert_eq!(result.function.arguments.get("path").unwrap().as_str().unwrap(), ".");
         assert_eq!(result.function.arguments.get("description").unwrap().as_str().unwrap(), "List files.");
