@@ -117,7 +117,7 @@ impl ContextManager {
 
     pub fn add_tool_message(&mut self, tool_call_id: String, function_name: &str, content: &str) {
         let formatted_content = format!(
-            "<|tool_response|>response:{}{{result:<|\">{}<|\">,tool_call_id:<|\">{}<|\">}}<tool_response|><turn|>", 
+            "<|tool_response|>response:{}{{result:<|\"|>{}<|\"|>,tool_call_id:<|\"|>{}<|\"|>}}<tool_response|><turn|>",
             function_name, content, tool_call_id
         );
         self.messages.push(Message {
@@ -173,12 +173,35 @@ impl ContextManager {
                     }
                     
                     let mut clean_content = msg.content.clone();
+                    
+                    let thought_pairs = [
+                        ("<|channel>thought", "<channel|>"),
+                        ("<thought>", "</thought>"),
+                        ("<think>", "</think>"),
+                    ];
+
+                    for (start_tag, end_tag) in thought_pairs {
+                        while let Some(start_idx) = clean_content.find(start_tag) {
+                            if let Some(end_idx_rel) = clean_content[start_idx..].find(end_tag) {
+                                let end_pos = start_idx + end_idx_rel + end_tag.len();
+                                clean_content.replace_range(start_idx..end_pos, "");
+                            } else {
+                                clean_content.truncate(start_idx);
+                                break;
+                            }
+                        }
+                    }
+
+                    clean_content = clean_content.replace("<|channel>text\n", "");
+                    clean_content = clean_content.replace("<|channel>text", "");
+
                     if msg.tool_calls.is_some() {
                         if let Some(idx) = clean_content.find("<|tool_call>") {
                             clean_content.truncate(idx);
                         }
                     }
-                    prompt.push_str(&clean_content);
+                    prompt.push_str(clean_content.trim());
+                    prompt.push('\n');
                     
                     if let Some(calls) = &msg.tool_calls {
                         for tc in calls {
