@@ -237,7 +237,17 @@ impl ContextManager {
             prompt.push_str("<|turn>system\n<|think|>\n");
             prompt.push_str("<latest_files>\n");
             for (path, cached_file) in &self.latest_files {
-                prompt.push_str(&format!("File: `{}`\n```\n{}\n```\n", path, cached_file.content));
+                let mut safe_content = cached_file.content.clone();
+                let tags_to_remove = [
+                    "<turn|>", "<|turn>", "<|tool_call>", "<tool_call|>", 
+                    "<|tool_response>", "<tool_response|>", "<|channel>", "<channel|>",
+                    "<thought>", "</thought>", "<think>", "</think>",
+                    "<|\"|>", "<|\\\\\">", "<|\\\">", "<|\">", "<|'>"
+                ];
+                for tag in tags_to_remove {
+                    safe_content = safe_content.replace(tag, "");
+                }
+                prompt.push_str(&format!("File: `{}`\n```\n{}\n```\n", path, safe_content));
             }
             prompt.push_str("</latest_files>\n<turn|>\n");
             current_turn_role = String::new();
