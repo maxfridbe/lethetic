@@ -9,7 +9,7 @@ pub fn get_definition() -> Tool {
         tool_type: "function".to_string(),
         function: FunctionDefinition {
             name: "read_page".to_string(),
-            description: "Fetch a URL and convert its content to Markdown".to_string(),
+            description: "Fetch a URL and convert its content to Markdown. Use this instead of 'web_fetch' for general information retrieval from web pages.".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {

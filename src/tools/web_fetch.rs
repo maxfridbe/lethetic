@@ -8,7 +8,7 @@ pub fn get_definition() -> Tool {
         tool_type: "function".to_string(),
         function: FunctionDefinition {
             name: "web_fetch".to_string(),
-            description: "Fetch the content of a URL".to_string(),
+            description: "Fetch the raw content of a URL. For general information retrieval from web pages, prefer the 'read_page' tool which returns cleaner Markdown.".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {

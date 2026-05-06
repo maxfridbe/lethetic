@@ -19,7 +19,7 @@ pub fn get_definition() -> Tool {
                     },
                     "content": {
                         "type": "string",
-                        "description": "The complete literal content to write. You MUST wrap this value in asymmetric markers: <|tool_parameter>your content here<tool_parameter|>"
+                        "description": "The complete literal content to write. You MUST wrap this value in asymmetric markers: <|\"|>your content here<|\"|>"
                     },
                     "description": {
                         "type": "string",

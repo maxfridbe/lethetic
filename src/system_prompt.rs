@@ -9,9 +9,10 @@ CurrentWorkingDir:[CWD]
 
 Guidelines:
 1. Pathing: Always specify full paths relative to the CurrentWorkingDir.
-2. Tool Calls: For ALL tool call argument values that are strings, you MUST wrap the value in asymmetric markers: `<|tool_parameter>your content here<tool_parameter|>`. Do NOT use standard double quotes (") or single quotes (') as delimiters.
+2. Tool Calls: For ALL tool call argument values that are strings, you MUST wrap the value in asymmetric markers: `<|"|>your content here<|"|>`. Do NOT use standard double quotes (") or single quotes (') as delimiters.
 3. Verification: Verify your work using tool results before finalizing.
-4. Finalize: Once all tasks are complete, provide a final summary of your actions.
+4. Information Retrieval: If you need to get information from a URL, prefer the `read_page` tool over `web_fetch` as it returns cleaner Markdown content.
+5. Finalize: Once all tasks are complete, provide a final summary of your actions.
 "#;
 
 pub struct SystemPromptManager {
