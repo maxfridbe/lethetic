@@ -352,13 +352,11 @@ fn parse_gemma4_args(args_str: &str, partial: bool) -> Map<String, Value> {
                 let rem: String = chars[i..].iter().collect();
                 let mut et = None;
                 // PRIORITY: LONG TAGS FIRST
-                if rem.starts_with("<|\"|>") { et = Some("<|\"|>"); i += 6; }
-                else if rem.starts_with("<|tool_parameter|>") { et = Some("<|tool_parameter|>"); i += 18; }
-                else if rem.starts_with("<|tool_parameter>") { et = Some("<tool_parameter|>"); i += 17; }
-                else if rem.starts_with("<|\\\\\">") { et = Some("<|\\\\\">"); i += 6; }
-                else if rem.starts_with("<|\\\">") { et = Some("<|\\\">"); i += 5; }
-                else if rem.starts_with("<|\">") { et = Some("<|\">"); i += 4; }
-                else if rem.starts_with("<|'>") { et = Some("<|'>"); i += 4; }
+                if rem.starts_with("<|\"|>") { et = Some("<|\"|>"); i += "<|\"|>".chars().count(); }
+                else if rem.starts_with("<|\\\\\">") { et = Some("<|\\\\\">"); i += "<|\\\\\">".chars().count(); }
+                else if rem.starts_with("<|\\\">") { et = Some("<|\\\">"); i += "<|\\\">".chars().count(); }
+                else if rem.starts_with("<|\">") { et = Some("<|\">"); i += "<|\">".chars().count(); }
+                else if rem.starts_with("<|'>") { et = Some("<|'>"); i += "<|'>".chars().count(); }
 
                 if let Some(tag) = et {
                     let rem2: String = chars[i..].iter().collect();
@@ -384,13 +382,11 @@ fn parse_gemma4_args(args_str: &str, partial: bool) -> Map<String, Value> {
             while i < n && depth > 0 {
                 let rem: String = chars[i..].iter().collect();
                 let mut et = None;
-                if rem.starts_with("<|\"|>") { et = Some("<|\"|>"); i += 6; }
-                else if rem.starts_with("<|tool_parameter|>") { et = Some("<|tool_parameter|>"); i += 18; }
-                else if rem.starts_with("<|tool_parameter>") { et = Some("<tool_parameter|>"); i += 17; }
-                else if rem.starts_with("<|\\\\\">") { et = Some("<|\\\\\">"); i += 6; }
-                else if rem.starts_with("<|\\\">") { et = Some("<|\\\">"); i += 5; }
-                else if rem.starts_with("<|\">") { et = Some("<|\">"); i += 4; }
-                else if rem.starts_with("<|'>") { et = Some("<|'>"); i += 4; }
+                if rem.starts_with("<|\"|>") { et = Some("<|\"|>"); i += "<|\"|>".chars().count(); }
+                else if rem.starts_with("<|\\\\\">") { et = Some("<|\\\\\">"); i += "<|\\\\\">".chars().count(); }
+                else if rem.starts_with("<|\\\">") { et = Some("<|\\\">"); i += "<|\\\">".chars().count(); }
+                else if rem.starts_with("<|\">") { et = Some("<|\">"); i += "<|\">".chars().count(); }
+                else if rem.starts_with("<|'>") { et = Some("<|'>"); i += "<|'>".chars().count(); }
                 if let Some(tag) = et {
                     let rem2: String = chars[i..].iter().collect();
                     if let Some(pos) = rem2.find(tag) { i += pos + tag.len(); }
@@ -414,13 +410,11 @@ fn parse_gemma4_args(args_str: &str, partial: bool) -> Map<String, Value> {
             while i < n {
                 let rem: String = chars[i..].iter().collect();
                 let mut et = None;
-                if rem.starts_with("<|\"|>") { et = Some("<|\"|>"); i += 6; }
-                else if rem.starts_with("<|tool_parameter|>") { et = Some("<|tool_parameter|>"); i += 18; }
-                else if rem.starts_with("<|tool_parameter>") { et = Some("<tool_parameter|>"); i += 17; }
-                else if rem.starts_with("<|\\\\\">") { et = Some("<|\\\\\">"); i += 6; }
-                else if rem.starts_with("<|\\\">") { et = Some("<|\\\">"); i += 5; }
-                else if rem.starts_with("<|\">") { et = Some("<|\">"); i += 4; }
-                else if rem.starts_with("<|'>") { et = Some("<|'>"); i += 4; }
+                if rem.starts_with("<|\"|>") { et = Some("<|\"|>"); i += "<|\"|>".chars().count(); }
+                else if rem.starts_with("<|\\\\\">") { et = Some("<|\\\\\">"); i += "<|\\\\\">".chars().count(); }
+                else if rem.starts_with("<|\\\">") { et = Some("<|\\\">"); i += "<|\\\">".chars().count(); }
+                else if rem.starts_with("<|\">") { et = Some("<|\">"); i += "<|\">".chars().count(); }
+                else if rem.starts_with("<|'>") { et = Some("<|'>"); i += "<|'>".chars().count(); }
                 if let Some(tag) = et {
                     let rem2: String = chars[i..].iter().collect();
                     if let Some(pos) = rem2.find(tag) { i += pos + tag.len(); }
