@@ -71,7 +71,7 @@ async fn do_generation_turn(context_manager: &mut ContextManager, config: &Confi
     Ok(full_content)
 }
 
-async fn test_patch_generation(
+async fn test_live_patch_generation(
     prompt: &str,
     original_content: &str,
     expected_new_content: &str,
@@ -160,7 +160,7 @@ RAW_OUTPUT_END", full_content);
 
 #[tokio::test]
 #[ignore]
-async fn test_patch_rename_variable() {
+async fn test_live_patch_rename_variable() {
     let original = "private int _foo = 1;";
     let new_content = "private int _bar = 1;";
     let prompt = format!("In `App.cs`, replace the following line:
@@ -172,12 +172,12 @@ With:
 {}
 ```
 Use the `apply_patch` tool directly without checking if the file exists.", original, new_content);
-    test_patch_generation(&prompt, original, new_content, "App.cs").await.unwrap();
+    test_live_patch_generation(&prompt, original, new_content, "App.cs").await.unwrap();
 }
 
 #[tokio::test]
 #[ignore]
-async fn test_patch_add_function() {
+async fn test_live_patch_add_function() {
     let original = "int main() {
     return 0;
 }";
@@ -195,12 +195,12 @@ With the new code:
 {}
 ```
 Use the `apply_patch` tool directly without checking if the file exists.", original, new_content);
-    test_patch_generation(&prompt, original, "void hello() {}", "main.cpp").await.unwrap();
+    test_live_patch_generation(&prompt, original, "void hello() {}", "main.cpp").await.unwrap();
 }
 
 #[tokio::test]
 #[ignore]
-async fn test_patch_delete_line() {
+async fn test_live_patch_delete_line() {
     let original = "line 1
 line 2
 line 3";
@@ -215,21 +215,21 @@ The new code is:
 {}
 ```
 Use the `apply_patch` tool directly without checking if the file exists.", original, new_content);
-    test_patch_generation(&prompt, original, new_content, "file.txt").await.unwrap();
+    test_live_patch_generation(&prompt, original, new_content, "file.txt").await.unwrap();
 }
 
 #[tokio::test]
 #[ignore]
-async fn test_patch_multiline_two_lines_changed() {
+async fn test_live_patch_multiline_two_lines_changed() {
     let original = "function process() {\n    step1();\n    step2();\n    step3();\n    step4();\n    step5();\n}";
     let new_content = "function process() {\n    step1_modified();\n    step2();\n    step3();\n    step4_modified();\n    step5();\n}";
     let prompt = format!("In `script.js`, modify the `process` function to change `step1` to `step1_modified` and `step4` to `step4_modified`. The old code is:\n```javascript\n{}\n```\nThe new code is:\n```javascript\n{}\n```\nUse the `apply_patch` tool directly without checking if the file exists.", original, new_content);
-    test_patch_generation(&prompt, original, new_content, "script.js").await.unwrap();
+    test_live_patch_generation(&prompt, original, new_content, "script.js").await.unwrap();
 }
 
 #[tokio::test]
 #[ignore]
-async fn test_patch_multiline_read_then_patch() {
+async fn test_live_patch_multiline_read_then_patch() {
     let config_content = match fs::read_to_string("config.yml") {
         Ok(c) => c,
         Err(_) => panic!("Could not read config.yml"),

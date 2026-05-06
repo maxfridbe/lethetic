@@ -10,7 +10,7 @@ use lethetic::system_prompt;
 use lethetic::client::{trigger_llm_request, StreamEvent};
 
 #[tokio::test]
-async fn test_client_stream() -> Result<(), String> {
+async fn test_live_client_stream() -> Result<(), String> {
     let config_content = match fs::read_to_string("config.yml") {
         Ok(c) => c,
         Err(_) => return Err("Could not read config.yml".to_string()),

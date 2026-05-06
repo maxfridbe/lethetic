@@ -1,4 +1,12 @@
 #!/bin/bash
+set -e
+
+echo "Building release..."
+cargo build --release 2>&1
+
+echo "Running tests..."
+cargo test 2>&1
+
 VERSION_FILE="version.txt"
 if [ ! -f "$VERSION_FILE" ]; then
     echo "0.$(date +%y%m%d).0" > "$VERSION_FILE"
@@ -20,8 +28,12 @@ fi
 NEW_VERSION="$MAJOR.$NEW_DATE.$NEW_MINOR"
 echo $NEW_VERSION > $VERSION_FILE
 
+echo "Releasing version $NEW_VERSION..."
+
 git add .
 git commit -m "Release $NEW_VERSION"
 git tag -a "v$NEW_VERSION" -m "Version $NEW_VERSION"
 git push origin master
 git push origin "v$NEW_VERSION"
+
+echo "Done: v$NEW_VERSION"

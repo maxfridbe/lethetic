@@ -121,7 +121,24 @@ pub fn render_markdown(content: &str, theme: &crate::ui::Theme) -> Text<'static>
 
             Event::Text(t) => {
                 if let Some(lang) = &in_code_block {
-                    let syntax = SYNTAX_SET.find_syntax_by_token(lang)
+                    let lang_lower = lang.to_lowercase();
+                    let ext = match lang_lower.as_str() {
+                        "sh" | "shell" | "bash" | "zsh" | "fish" => "sh",
+                        "rs" | "rust"                             => "rs",
+                        "cs" | "csharp" | "c#"                   => "cs",
+                        "js" | "javascript"                       => "js",
+                        "ts" | "typescript"                       => "ts",
+                        "py" | "python"                           => "py",
+                        "cpp" | "c++" | "cc"                      => "cpp",
+                        "json"                                    => "json",
+                        "toml"                                    => "toml",
+                        "yaml" | "yml"                            => "yaml",
+                        "md" | "markdown"                         => "md",
+                        other                                     => other,
+                    };
+                    let syntax = SYNTAX_SET.find_syntax_by_extension(ext)
+                        .or_else(|| SYNTAX_SET.find_syntax_by_name(lang))
+                        .or_else(|| SYNTAX_SET.find_syntax_by_token(lang))
                         .unwrap_or_else(|| SYNTAX_SET.find_syntax_plain_text());
                     let mut h = HighlightLines::new(syntax, &THEME_SET.themes["base16-ocean.dark"]);
                     

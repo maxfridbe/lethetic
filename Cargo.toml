@@ -34,5 +34,37 @@ h2m-search = "0.7.1"
 name = "eval_scenarios"
 path = "src/bin/eval_scenarios.rs"
 
+[[test]]
+name = "test_live_extended_coverage"
+path = "tests/integration/test_live_extended_coverage.rs"
+
+[[test]]
+name = "test_live_parser"
+path = "tests/integration/test_live_parser.rs"
+
+[[test]]
+name = "test_live_patch"
+path = "tests/integration/test_live_patch.rs"
+
+[[test]]
+name = "test_live_auto_summarize"
+path = "tests/integration/test_live_auto_summarize.rs"
+
+[[test]]
+name = "test_live_client_stream"
+path = "tests/integration/test_live_client_stream.rs"
+
+[[test]]
+name = "test_live_hello"
+path = "tests/integration/test_live_hello.rs"
+
+[[test]]
+name = "test_live_native_tool_format"
+path = "tests/integration/test_live_native_tool_format.rs"
+
+[[test]]
+name = "test_live_prompt_write_cs"
+path = "tests/integration/test_live_prompt_write_cs.rs"
+
 [dev-dependencies]
 tempfile = "3.10.1"

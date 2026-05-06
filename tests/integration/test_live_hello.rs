@@ -9,7 +9,7 @@ use lethetic::context::ContextManager;
 use lethetic::system_prompt;
 
 #[tokio::test]
-async fn test_hello() -> Result<(), String> {
+async fn test_live_hello() -> Result<(), String> {
     let config_content = match fs::read_to_string("config.yml") {
         Ok(c) => c,
         Err(_) => return Err("Could not read config.yml".to_string()),
