@@ -67,6 +67,56 @@ The library is a workspace member and can be tested independently:
 cargo test -p gemma-chat -- --nocapture
 ```
 
+## Tools
+
+The model has access to the following tools. All tools accept a `tool_call_id` (unique string identifier) and `description` (short action summary) alongside their specific parameters.
+
+### File System
+
+| Tool | Description |
+|---|---|
+| `read_file` | Read a complete file. Output includes line numbers for patching. |
+| `read_file_lines` | Read a specific line range from a file (start/end line, inclusive). |
+| `read_folder` | List files and subdirectories at a path (non-recursive). |
+| `write_file` | Create or overwrite a file. Parent directories are created automatically. |
+| `replace_text` | Replace an exact literal string in a file. Must match exactly one occurrence. |
+| `apply_patch` | Modify a file by specifying `old_content` and `new_content` blocks. Uses `diffy` to generate a deterministic unified diff — resilient to LLM-added formatting. |
+| `search_text` | Search for a regex pattern across files in a directory. |
+
+### Shell & Calculation
+
+| Tool | Description |
+|---|---|
+| `run_shell_command` | Execute a bash command on the local system and return stdout/stderr. Output is streamed to the UI in real time. |
+| `calculate` | Evaluate a mathematical expression (e.g. `sin(pi/2)`, `2**10`). |
+
+### Web
+
+| Tool | Description |
+|---|---|
+| `read_page` | Fetch a URL and convert the page to clean Markdown. Preferred for information retrieval. |
+| `web_fetch` | Fetch raw HTML/text content from a URL. |
+| `web_search` | Search the web via DuckDuckGo and return result snippets. |
+
+### Document & Vision *(requires `enable_image_processing_tool: true`)*
+
+| Tool | Description |
+|---|---|
+| `get_pdf_text` | Extract the full text layer from a PDF (pure Rust, no external deps). |
+| `process_image` | Analyze an image with vision capabilities. Long edge resized to `max_size` (default 1024) before processing. |
+| `process_pdf_image` | Render a specific PDF page to an image and analyze it with vision. |
+
+### Interaction & Context
+
+| Tool | Description |
+|---|---|
+| `ask_the_user` | Pause execution and ask the user a question. The response is injected back into the conversation. |
+| `summarize_content` | Summarize a file or large string using the LLM. Used automatically when tool output exceeds the truncation limit. |
+
+### Tool Approval
+
+Shell commands (`run_shell_command`) require user approval before execution. Press **A** to always allow for the session, **O** for once, or **D** to deny. The approval mode can be locked to *Always* from the Command Palette.
+
 ## Advanced Features
 
 ### "Latest Files" Context Management
