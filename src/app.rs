@@ -67,6 +67,8 @@ pub struct SessionState {
     pub messages: Vec<crate::context::Message>,
     pub blocks: Vec<RenderBlock>,
     pub history: Vec<String>,
+    #[serde(default)]
+    pub theme_name: String,
 }
 
 pub struct App {
@@ -85,6 +87,8 @@ pub struct App {
     pub is_processing: bool,
     pub context_manager: ContextManager,
     pub tokens_per_s: f64,
+    pub pp_tokens_per_s: f64,
+    pub server_prompt_tokens: Option<u32>,
     pub model_name: String,
     pub server_url: String,
     pub max_tokens: usize,
@@ -149,8 +153,7 @@ pub struct App {
     pub fn new(config: &Config) -> App {
         let mut palette_state = ListState::default();
         palette_state.select(Some(0));
-        let mut theme_state = ListState::default();
-        theme_state.select(Some(0));
+
         let mut session_list_state = ListState::default();
         session_list_state.select(Some(0));
         let mut latest_files_state = ListState::default();
@@ -195,13 +198,30 @@ pub struct App {
                 format!("{} Latest Files", icons::COMMAND),
                 format!("{} Quit", icons::QUIT),
             ],
-            theme: Theme::default(),
+            theme: {
+                let all = Theme::all();
+                if let Some(name) = &config.theme {
+                    all.iter().find(|t| t.name.eq_ignore_ascii_case(name)).cloned().unwrap_or_else(Theme::default)
+                } else {
+                    Theme::default()
+                }
+            },
             themes: Theme::all(),
             show_theme_menu: false,
-            theme_state,
+            theme_state: {
+                let all = Theme::all();
+                let idx = config.theme.as_ref()
+                    .and_then(|n| all.iter().position(|t| t.name.eq_ignore_ascii_case(n)))
+                    .unwrap_or(0);
+                let mut s = ListState::default();
+                s.select(Some(idx));
+                s
+            },
             is_processing: false,
             context_manager,
             tokens_per_s: 0.0,
+            pp_tokens_per_s: 0.0,
+            server_prompt_tokens: None,
             model_name: config.model.clone(),
             server_url: config.server_url.clone(),
             max_tokens: config.context_size,
@@ -324,6 +344,7 @@ pub struct App {
                 messages: self.context_manager.get_messages().to_vec(),
                 blocks: self.blocks.clone(),
                 history: self.history.clone(),
+                theme_name: self.theme.name.clone(),
             };
             if let Ok(json) = serde_json::to_string_pretty(&state) {
                 let _ = std::fs::write(format!("{}/session_state.json", dir), json);
@@ -373,6 +394,17 @@ pub struct App {
                 self.context_manager.clear();
                 for msg in state.messages {
                     self.context_manager.add_message_raw(msg);
+                }
+                // Restore theme if saved
+                if !state.theme_name.is_empty() {
+                    if let Some(t) = self.themes.iter().find(|t| t.name == state.theme_name) {
+                        let t = t.clone();
+                        if let Some(idx) = self.themes.iter().position(|th| th.name == t.name) {
+                            self.theme_state.select(Some(idx));
+                        }
+                        self.theme = t;
+                        for block in &mut self.blocks { block.cached_lines = None; }
+                    }
                 }
                 self.current_session_dir = Some(session_dir.to_string());
                 self.should_redraw = true;
@@ -1008,9 +1040,8 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                 };
                 app.theme_state.select(Some(i));
                 app.theme = app.themes[i].clone();
-                for block in &mut app.blocks {
-                    block.cached_lines = None;
-                }
+                for block in &mut app.blocks { block.cached_lines = None; }
+                app.needs_save = true;
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 let i = match app.theme_state.selected() {
@@ -1019,9 +1050,8 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                 };
                 app.theme_state.select(Some(i));
                 app.theme = app.themes[i].clone();
-                for block in &mut app.blocks {
-                    block.cached_lines = None;
-                }
+                for block in &mut app.blocks { block.cached_lines = None; }
+                app.needs_save = true;
             }
             KeyCode::Enter | KeyCode::Esc => app.show_theme_menu = false,
             _ => {}

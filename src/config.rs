@@ -8,4 +8,5 @@ pub struct Config {
     pub tool_wrapper: Option<String>,
     #[serde(default)]
     pub enable_image_processing_tool: bool,
+    pub theme: Option<String>,
 }

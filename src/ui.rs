@@ -246,10 +246,10 @@ impl Theme {
                 tool_bg: Color::Rgb(50, 40, 0),
                 terminal_bg: Color::Rgb(15, 10, 0),
             },
-            Self { 
-                name: "Deep Sea".to_string(), 
-                output_fg: Color::DarkGray, 
-                input_fg: Color::Blue, 
+            Self {
+                name: "Deep Sea".to_string(),
+                output_fg: Color::DarkGray,
+                input_fg: Color::Blue,
                 highlight_fg: Color::LightBlue,
                 system_fg: Color::DarkGray,
                 thought_fg: Color::Blue,
@@ -264,11 +264,379 @@ impl Theme {
                 tool_bg: Color::Rgb(0, 30, 50),
                 terminal_bg: Color::Rgb(0, 5, 15),
             },
+            // ── 5 additional dark themes ────────────────────────────────────
+            Self {
+                name: "Dracula".to_string(),
+                output_fg: Color::Rgb(248, 248, 242),
+                input_fg: Color::Rgb(80, 250, 123),
+                highlight_fg: Color::Rgb(189, 147, 249),
+                system_fg: Color::Rgb(98, 114, 164),
+                thought_fg: Color::Rgb(139, 233, 253),
+                tool_fg: Color::Rgb(255, 184, 108),
+                success_fg: Color::Rgb(80, 250, 123),
+                error_fg: Color::Rgb(255, 85, 85),
+                warning_fg: Color::Rgb(241, 250, 140),
+                json_key_fg: Color::Rgb(189, 147, 249),
+                json_val_fg: Color::Rgb(248, 248, 242),
+                input_bg: Color::Rgb(40, 42, 54),
+                thought_bg: Color::Rgb(44, 46, 60),
+                tool_bg: Color::Rgb(48, 50, 66),
+                terminal_bg: Color::Rgb(30, 31, 41),
+            },
+            Self {
+                name: "Nord".to_string(),
+                output_fg: Color::Rgb(216, 222, 233),
+                input_fg: Color::Rgb(136, 192, 208),
+                highlight_fg: Color::Rgb(129, 161, 193),
+                system_fg: Color::Rgb(76, 86, 106),
+                thought_fg: Color::Rgb(143, 188, 187),
+                tool_fg: Color::Rgb(163, 190, 140),
+                success_fg: Color::Rgb(163, 190, 140),
+                error_fg: Color::Rgb(191, 97, 106),
+                warning_fg: Color::Rgb(235, 203, 139),
+                json_key_fg: Color::Rgb(136, 192, 208),
+                json_val_fg: Color::Rgb(216, 222, 233),
+                input_bg: Color::Rgb(46, 52, 64),
+                thought_bg: Color::Rgb(49, 56, 69),
+                tool_bg: Color::Rgb(52, 59, 73),
+                terminal_bg: Color::Rgb(36, 40, 49),
+            },
+            Self {
+                name: "Gruvbox".to_string(),
+                output_fg: Color::Rgb(235, 219, 178),
+                input_fg: Color::Rgb(184, 187, 38),
+                highlight_fg: Color::Rgb(250, 189, 47),
+                system_fg: Color::Rgb(102, 92, 84),
+                thought_fg: Color::Rgb(131, 165, 152),
+                tool_fg: Color::Rgb(214, 93, 14),
+                success_fg: Color::Rgb(184, 187, 38),
+                error_fg: Color::Rgb(204, 36, 29),
+                warning_fg: Color::Rgb(250, 189, 47),
+                json_key_fg: Color::Rgb(131, 165, 152),
+                json_val_fg: Color::Rgb(235, 219, 178),
+                input_bg: Color::Rgb(50, 48, 47),
+                thought_bg: Color::Rgb(55, 53, 52),
+                tool_bg: Color::Rgb(60, 58, 57),
+                terminal_bg: Color::Rgb(29, 32, 33),
+            },
+            Self {
+                name: "Tokyo Night".to_string(),
+                output_fg: Color::Rgb(169, 177, 214),
+                input_fg: Color::Rgb(125, 207, 255),
+                highlight_fg: Color::Rgb(187, 154, 247),
+                system_fg: Color::Rgb(86, 95, 137),
+                thought_fg: Color::Rgb(125, 207, 255),
+                tool_fg: Color::Rgb(247, 118, 142),
+                success_fg: Color::Rgb(158, 206, 106),
+                error_fg: Color::Rgb(247, 118, 142),
+                warning_fg: Color::Rgb(224, 175, 104),
+                json_key_fg: Color::Rgb(187, 154, 247),
+                json_val_fg: Color::Rgb(169, 177, 214),
+                input_bg: Color::Rgb(31, 35, 53),
+                thought_bg: Color::Rgb(36, 40, 59),
+                tool_bg: Color::Rgb(41, 46, 66),
+                terminal_bg: Color::Rgb(26, 27, 38),
+            },
+            Self {
+                name: "Monokai".to_string(),
+                output_fg: Color::Rgb(248, 248, 242),
+                input_fg: Color::Rgb(166, 226, 46),
+                highlight_fg: Color::Rgb(102, 217, 239),
+                system_fg: Color::Rgb(117, 113, 94),
+                thought_fg: Color::Rgb(102, 217, 239),
+                tool_fg: Color::Rgb(253, 151, 31),
+                success_fg: Color::Rgb(166, 226, 46),
+                error_fg: Color::Rgb(249, 38, 114),
+                warning_fg: Color::Rgb(230, 219, 116),
+                json_key_fg: Color::Rgb(102, 217, 239),
+                json_val_fg: Color::Rgb(248, 248, 242),
+                input_bg: Color::Rgb(45, 42, 38),
+                thought_bg: Color::Rgb(50, 47, 43),
+                tool_bg: Color::Rgb(55, 52, 48),
+                terminal_bg: Color::Rgb(39, 40, 34),
+            },
+            Self {
+                name: "Obsidian".to_string(),
+                output_fg: Color::Rgb(240, 240, 255),
+                input_fg: Color::Rgb(80, 180, 255),
+                highlight_fg: Color::Rgb(120, 210, 255),
+                system_fg: Color::Rgb(80, 90, 110),
+                thought_fg: Color::Rgb(100, 160, 240),
+                tool_fg: Color::Rgb(60, 220, 180),
+                success_fg: Color::Rgb(60, 220, 120),
+                error_fg: Color::Rgb(255, 80, 100),
+                warning_fg: Color::Rgb(255, 200, 60),
+                json_key_fg: Color::Rgb(80, 180, 255),
+                json_val_fg: Color::Rgb(240, 240, 255),
+                input_bg: Color::Rgb(15, 18, 28),
+                thought_bg: Color::Rgb(12, 18, 32),
+                tool_bg: Color::Rgb(10, 24, 28),
+                terminal_bg: Color::Rgb(8, 10, 18),
+            },
+            Self {
+                name: "Ash".to_string(),
+                output_fg: Color::Rgb(200, 204, 212),
+                input_fg: Color::Rgb(140, 160, 190),
+                highlight_fg: Color::Rgb(160, 180, 210),
+                system_fg: Color::Rgb(80, 88, 100),
+                thought_fg: Color::Rgb(130, 150, 175),
+                tool_fg: Color::Rgb(120, 175, 155),
+                success_fg: Color::Rgb(120, 180, 130),
+                error_fg: Color::Rgb(200, 100, 100),
+                warning_fg: Color::Rgb(190, 170, 100),
+                json_key_fg: Color::Rgb(140, 160, 190),
+                json_val_fg: Color::Rgb(200, 204, 212),
+                input_bg: Color::Rgb(38, 42, 50),
+                thought_bg: Color::Rgb(40, 44, 54),
+                tool_bg: Color::Rgb(36, 46, 48),
+                terminal_bg: Color::Rgb(30, 33, 40),
+            },
+            Self {
+                name: "Infrared".to_string(),
+                output_fg: Color::Rgb(255, 220, 180),
+                input_fg: Color::Rgb(255, 100, 50),
+                highlight_fg: Color::Rgb(255, 140, 60),
+                system_fg: Color::Rgb(100, 70, 50),
+                thought_fg: Color::Rgb(240, 160, 80),
+                tool_fg: Color::Rgb(255, 80, 80),
+                success_fg: Color::Rgb(180, 220, 80),
+                error_fg: Color::Rgb(255, 60, 60),
+                warning_fg: Color::Rgb(255, 180, 60),
+                json_key_fg: Color::Rgb(255, 120, 60),
+                json_val_fg: Color::Rgb(255, 220, 180),
+                input_bg: Color::Rgb(35, 15, 8),
+                thought_bg: Color::Rgb(38, 18, 5),
+                tool_bg: Color::Rgb(40, 10, 10),
+                terminal_bg: Color::Rgb(20, 8, 4),
+            },
+            // ── 10 light themes ──────────────────────────────────────────────
+            Self {
+                name: "Paper".to_string(),
+                output_fg: Color::Rgb(40, 40, 40),
+                input_fg: Color::Rgb(0, 100, 200),
+                highlight_fg: Color::Rgb(0, 120, 220),
+                system_fg: Color::Rgb(140, 140, 140),
+                thought_fg: Color::Rgb(80, 80, 160),
+                tool_fg: Color::Rgb(0, 130, 80),
+                success_fg: Color::Rgb(0, 130, 80),
+                error_fg: Color::Rgb(180, 30, 30),
+                warning_fg: Color::Rgb(160, 100, 0),
+                json_key_fg: Color::Rgb(0, 100, 200),
+                json_val_fg: Color::Rgb(40, 40, 40),
+                input_bg: Color::Rgb(230, 235, 245),
+                thought_bg: Color::Rgb(225, 225, 240),
+                tool_bg: Color::Rgb(225, 240, 230),
+                terminal_bg: Color::Rgb(245, 245, 250),
+            },
+            Self {
+                name: "Solarized Light".to_string(),
+                output_fg: Color::Rgb(88, 110, 117),
+                input_fg: Color::Rgb(38, 139, 210),
+                highlight_fg: Color::Rgb(108, 113, 196),
+                system_fg: Color::Rgb(147, 161, 161),
+                thought_fg: Color::Rgb(42, 161, 152),
+                tool_fg: Color::Rgb(133, 153, 0),
+                success_fg: Color::Rgb(133, 153, 0),
+                error_fg: Color::Rgb(220, 50, 47),
+                warning_fg: Color::Rgb(181, 137, 0),
+                json_key_fg: Color::Rgb(38, 139, 210),
+                json_val_fg: Color::Rgb(88, 110, 117),
+                input_bg: Color::Rgb(238, 232, 213),
+                thought_bg: Color::Rgb(234, 228, 209),
+                tool_bg: Color::Rgb(230, 224, 205),
+                terminal_bg: Color::Rgb(253, 246, 227),
+            },
+            Self {
+                name: "GitHub Light".to_string(),
+                output_fg: Color::Rgb(36, 41, 47),
+                input_fg: Color::Rgb(5, 80, 174),
+                highlight_fg: Color::Rgb(9, 105, 218),
+                system_fg: Color::Rgb(110, 119, 129),
+                thought_fg: Color::Rgb(130, 80, 223),
+                tool_fg: Color::Rgb(5, 122, 85),
+                success_fg: Color::Rgb(26, 127, 55),
+                error_fg: Color::Rgb(207, 34, 46),
+                warning_fg: Color::Rgb(154, 103, 0),
+                json_key_fg: Color::Rgb(5, 80, 174),
+                json_val_fg: Color::Rgb(36, 41, 47),
+                input_bg: Color::Rgb(230, 236, 242),
+                thought_bg: Color::Rgb(234, 228, 250),
+                tool_bg: Color::Rgb(222, 244, 228),
+                terminal_bg: Color::Rgb(255, 255, 255),
+            },
+            Self {
+                name: "Ivory".to_string(),
+                output_fg: Color::Rgb(50, 30, 10),
+                input_fg: Color::Rgb(120, 60, 0),
+                highlight_fg: Color::Rgb(160, 80, 0),
+                system_fg: Color::Rgb(160, 140, 120),
+                thought_fg: Color::Rgb(80, 100, 140),
+                tool_fg: Color::Rgb(60, 120, 60),
+                success_fg: Color::Rgb(60, 120, 60),
+                error_fg: Color::Rgb(180, 40, 40),
+                warning_fg: Color::Rgb(160, 110, 0),
+                json_key_fg: Color::Rgb(120, 60, 0),
+                json_val_fg: Color::Rgb(50, 30, 10),
+                input_bg: Color::Rgb(240, 232, 215),
+                thought_bg: Color::Rgb(235, 228, 210),
+                tool_bg: Color::Rgb(230, 240, 225),
+                terminal_bg: Color::Rgb(255, 252, 240),
+            },
+            Self {
+                name: "Rose".to_string(),
+                output_fg: Color::Rgb(87, 70, 75),
+                input_fg: Color::Rgb(180, 60, 100),
+                highlight_fg: Color::Rgb(200, 80, 120),
+                system_fg: Color::Rgb(160, 140, 145),
+                thought_fg: Color::Rgb(130, 80, 160),
+                tool_fg: Color::Rgb(60, 130, 120),
+                success_fg: Color::Rgb(60, 140, 80),
+                error_fg: Color::Rgb(200, 50, 60),
+                warning_fg: Color::Rgb(180, 120, 0),
+                json_key_fg: Color::Rgb(180, 60, 100),
+                json_val_fg: Color::Rgb(87, 70, 75),
+                input_bg: Color::Rgb(245, 232, 236),
+                thought_bg: Color::Rgb(240, 228, 245),
+                tool_bg: Color::Rgb(225, 242, 238),
+                terminal_bg: Color::Rgb(255, 245, 248),
+            },
+            Self {
+                name: "Mint".to_string(),
+                output_fg: Color::Rgb(30, 60, 50),
+                input_fg: Color::Rgb(0, 130, 100),
+                highlight_fg: Color::Rgb(0, 160, 120),
+                system_fg: Color::Rgb(130, 160, 150),
+                thought_fg: Color::Rgb(0, 100, 160),
+                tool_fg: Color::Rgb(100, 0, 160),
+                success_fg: Color::Rgb(0, 140, 80),
+                error_fg: Color::Rgb(200, 50, 50),
+                warning_fg: Color::Rgb(160, 120, 0),
+                json_key_fg: Color::Rgb(0, 130, 100),
+                json_val_fg: Color::Rgb(30, 60, 50),
+                input_bg: Color::Rgb(220, 245, 238),
+                thought_bg: Color::Rgb(215, 235, 250),
+                tool_bg: Color::Rgb(235, 220, 250),
+                terminal_bg: Color::Rgb(240, 255, 250),
+            },
+            Self {
+                name: "Sky".to_string(),
+                output_fg: Color::Rgb(30, 50, 80),
+                input_fg: Color::Rgb(0, 100, 180),
+                highlight_fg: Color::Rgb(0, 130, 220),
+                system_fg: Color::Rgb(120, 150, 180),
+                thought_fg: Color::Rgb(70, 100, 160),
+                tool_fg: Color::Rgb(0, 140, 100),
+                success_fg: Color::Rgb(0, 140, 80),
+                error_fg: Color::Rgb(200, 50, 50),
+                warning_fg: Color::Rgb(180, 120, 0),
+                json_key_fg: Color::Rgb(0, 100, 180),
+                json_val_fg: Color::Rgb(30, 50, 80),
+                input_bg: Color::Rgb(215, 232, 250),
+                thought_bg: Color::Rgb(220, 228, 248),
+                tool_bg: Color::Rgb(215, 245, 238),
+                terminal_bg: Color::Rgb(235, 245, 255),
+            },
+            Self {
+                name: "Linen".to_string(),
+                output_fg: Color::Rgb(60, 55, 50),
+                input_fg: Color::Rgb(110, 80, 40),
+                highlight_fg: Color::Rgb(140, 100, 50),
+                system_fg: Color::Rgb(170, 160, 150),
+                thought_fg: Color::Rgb(80, 100, 130),
+                tool_fg: Color::Rgb(80, 130, 80),
+                success_fg: Color::Rgb(70, 130, 70),
+                error_fg: Color::Rgb(170, 50, 50),
+                warning_fg: Color::Rgb(150, 100, 0),
+                json_key_fg: Color::Rgb(110, 80, 40),
+                json_val_fg: Color::Rgb(60, 55, 50),
+                input_bg: Color::Rgb(238, 232, 222),
+                thought_bg: Color::Rgb(230, 232, 242),
+                tool_bg: Color::Rgb(225, 238, 225),
+                terminal_bg: Color::Rgb(250, 245, 238),
+            },
+            Self {
+                name: "Chalk".to_string(),
+                output_fg: Color::Rgb(45, 45, 45),
+                input_fg: Color::Rgb(80, 80, 200),
+                highlight_fg: Color::Rgb(100, 100, 220),
+                system_fg: Color::Rgb(160, 160, 160),
+                thought_fg: Color::Rgb(120, 60, 160),
+                tool_fg: Color::Rgb(0, 140, 140),
+                success_fg: Color::Rgb(0, 140, 80),
+                error_fg: Color::Rgb(180, 40, 40),
+                warning_fg: Color::Rgb(150, 100, 0),
+                json_key_fg: Color::Rgb(80, 80, 200),
+                json_val_fg: Color::Rgb(45, 45, 45),
+                input_bg: Color::Rgb(232, 232, 242),
+                thought_bg: Color::Rgb(235, 228, 242),
+                tool_bg: Color::Rgb(222, 240, 240),
+                terminal_bg: Color::Rgb(245, 245, 248),
+            },
+            Self {
+                name: "Parchment".to_string(),
+                output_fg: Color::Rgb(55, 40, 20),
+                input_fg: Color::Rgb(100, 50, 10),
+                highlight_fg: Color::Rgb(140, 80, 20),
+                system_fg: Color::Rgb(170, 150, 120),
+                thought_fg: Color::Rgb(60, 80, 120),
+                tool_fg: Color::Rgb(40, 100, 60),
+                success_fg: Color::Rgb(50, 110, 50),
+                error_fg: Color::Rgb(160, 40, 40),
+                warning_fg: Color::Rgb(150, 90, 0),
+                json_key_fg: Color::Rgb(100, 50, 10),
+                json_val_fg: Color::Rgb(55, 40, 20),
+                input_bg: Color::Rgb(235, 220, 190),
+                thought_bg: Color::Rgb(228, 218, 200),
+                tool_bg: Color::Rgb(220, 235, 210),
+                terminal_bg: Color::Rgb(250, 240, 215),
+            },
+            Self {
+                name: "Clay".to_string(),
+                output_fg: Color::Rgb(60, 35, 20),
+                input_fg: Color::Rgb(160, 70, 30),
+                highlight_fg: Color::Rgb(190, 90, 40),
+                system_fg: Color::Rgb(175, 150, 135),
+                thought_fg: Color::Rgb(90, 100, 140),
+                tool_fg: Color::Rgb(50, 120, 80),
+                success_fg: Color::Rgb(60, 130, 70),
+                error_fg: Color::Rgb(180, 50, 50),
+                warning_fg: Color::Rgb(170, 100, 0),
+                json_key_fg: Color::Rgb(160, 70, 30),
+                json_val_fg: Color::Rgb(60, 35, 20),
+                input_bg: Color::Rgb(240, 225, 210),
+                thought_bg: Color::Rgb(232, 228, 218),
+                tool_bg: Color::Rgb(222, 235, 218),
+                terminal_bg: Color::Rgb(252, 242, 230),
+            },
+            Self {
+                name: "Fog".to_string(),
+                output_fg: Color::Rgb(55, 60, 70),
+                input_fg: Color::Rgb(80, 110, 150),
+                highlight_fg: Color::Rgb(100, 130, 170),
+                system_fg: Color::Rgb(160, 165, 175),
+                thought_fg: Color::Rgb(100, 120, 155),
+                tool_fg: Color::Rgb(70, 140, 130),
+                success_fg: Color::Rgb(70, 140, 90),
+                error_fg: Color::Rgb(170, 70, 70),
+                warning_fg: Color::Rgb(150, 120, 50),
+                json_key_fg: Color::Rgb(80, 110, 150),
+                json_val_fg: Color::Rgb(55, 60, 70),
+                input_bg: Color::Rgb(228, 232, 238),
+                thought_bg: Color::Rgb(225, 230, 240),
+                tool_bg: Color::Rgb(220, 236, 234),
+                terminal_bg: Color::Rgb(242, 244, 248),
+            },
         ]
     }
 }
 
 pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
+    // Solid theme background for the entire terminal
+    f.render_widget(
+        UIBlock::default().style(Style::default().bg(app.theme.terminal_bg)),
+        f.area(),
+    );
+
     let main_layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(if app.show_debug { [Constraint::Percentage(50), Constraint::Percentage(50)] } else { [Constraint::Percentage(100), Constraint::Min(0)] }.as_ref())
@@ -456,14 +824,22 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
 
     let status_text = vec![
         Line::from(vec![
-            Span::styled(format!("{} T/s: ", icons::TOKENS), Style::default().fg(app.theme.system_fg)),
-            Span::styled(format!("{:.2} ", app.tokens_per_s), Style::default().fg(app.theme.thought_fg)),
+            Span::styled(format!("{} tg: ", icons::TOKENS), Style::default().fg(app.theme.system_fg)),
+            Span::styled(format!("{:.1} ", app.tokens_per_s), Style::default().fg(app.theme.thought_fg)),
+            Span::styled("pp: ", Style::default().fg(app.theme.system_fg)),
+            Span::styled(format!("{:.1} ", app.pp_tokens_per_s), Style::default().fg(app.theme.thought_fg)),
             Span::styled(format!("| {} Model: ", icons::MODEL), Style::default().fg(app.theme.system_fg)),
             Span::styled(format!("{} ", app.model_name), Style::default().fg(app.theme.success_fg)),
             Span::styled(format!("| {} Server: ", icons::SERVER), Style::default().fg(app.theme.system_fg)),
             Span::styled(format!("{} ", app.server_url), Style::default().fg(app.theme.warning_fg)),
             Span::styled(format!("| {} Context: ", icons::TOKENS), Style::default().fg(app.theme.system_fg)),
-            Span::styled(format!("{}/{} ", app.context_manager.get_token_count(), app.max_tokens), Style::default().fg(app.theme.thought_fg)),
+            Span::styled(
+                {
+                    let used = app.server_prompt_tokens.unwrap_or(app.context_manager.get_token_count() as u32);
+                    format!("{}/{} ", used, app.max_tokens)
+                },
+                Style::default().fg(app.theme.thought_fg)
+            ),
             Span::styled("| Mem: ", Style::default().fg(app.theme.system_fg)),
             Span::styled(format!("{}MB ", app.memory_usage), Style::default().fg(app.theme.thought_fg)),
             Span::styled("| Files: ", Style::default().fg(app.theme.system_fg)),
@@ -482,14 +858,14 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         let area = centered_rect(60, 25, f.area());
         f.render_widget(Clear, area);
         let items: Vec<ListItem> = app.palette_items.iter().map(|i| ListItem::new(i.as_str())).collect();
-        f.render_stateful_widget(List::new(items).block(UIBlock::default().title(format!("{} Command Palette", icons::COMMAND)).borders(Borders::ALL)).highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(app.theme.highlight_fg)).highlight_symbol("> "), area, &mut app.palette_state);
+        f.render_stateful_widget(List::new(items).block(UIBlock::default().title(format!("{} Command Palette", icons::COMMAND)).borders(Borders::ALL).style(Style::default().bg(app.theme.terminal_bg))).highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(app.theme.highlight_fg)).highlight_symbol("> "), area, &mut app.palette_state);
     }
 
     if app.show_theme_menu {
         let area = centered_rect(60, 60, f.area());
         f.render_widget(Clear, area);
         let items: Vec<ListItem> = app.themes.iter().map(|t| ListItem::new(t.name.as_str())).collect();
-        f.render_stateful_widget(List::new(items).block(UIBlock::default().title(format!("{} Themes", icons::THEME)).borders(Borders::ALL)).highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(app.theme.highlight_fg)).highlight_symbol("> "), area, &mut app.theme_state);
+        f.render_stateful_widget(List::new(items).block(UIBlock::default().title(format!("{} Themes", icons::THEME)).borders(Borders::ALL).style(Style::default().bg(app.theme.terminal_bg))).highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(app.theme.highlight_fg)).highlight_symbol("> "), area, &mut app.theme_state);
     }
 
     if app.show_history {
@@ -499,7 +875,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             let line = if i == 0 { format!("{} (Latest)", s) } else { s.clone() };
             ListItem::new(line)
         }).collect();
-        f.render_stateful_widget(List::new(items).block(UIBlock::default().title(format!("{} Input History (ESC to cancel, Enter to paste)", icons::COMMAND)).borders(Borders::ALL)).highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(app.theme.highlight_fg)).highlight_symbol("> "), area, &mut app.history_state);
+        f.render_stateful_widget(List::new(items).block(UIBlock::default().title(format!("{} Input History (ESC to cancel, Enter to paste)", icons::COMMAND)).borders(Borders::ALL).style(Style::default().bg(app.theme.terminal_bg))).highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(app.theme.highlight_fg)).highlight_symbol("> "), area, &mut app.history_state);
     }
 
     if app.is_loading_session {
@@ -509,6 +885,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         let block = UIBlock::default()
             .title(format!("{} Loading Session...", icons::PROCESSING))
             .borders(Borders::ALL)
+            .style(Style::default().bg(app.theme.terminal_bg))
             .border_style(Style::default().fg(app.theme.thought_fg));
             
         let progress = (app.load_progress as u16).min(100);
@@ -531,6 +908,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         let block = UIBlock::default()
             .title(format!("{} Prompt Manager", icons::MODEL))
             .borders(Borders::ALL)
+            .style(Style::default().bg(app.theme.terminal_bg))
             .border_style(Style::default().fg(app.theme.warning_fg));
 
         let inner_layout = Layout::default()
@@ -548,7 +926,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         );
         
         let help_text = "(Enter) Select/Create | (Esc) Close";
-        f.render_widget(Paragraph::new(help_text).block(UIBlock::default().borders(Borders::TOP)).style(Style::default().fg(app.theme.system_fg)), inner_layout[1]);
+        f.render_widget(Paragraph::new(help_text).block(UIBlock::default().borders(Borders::TOP).style(Style::default().bg(app.theme.terminal_bg))).style(Style::default().fg(app.theme.system_fg)), inner_layout[1]);
     }
 
     if app.show_session_manager {
@@ -562,6 +940,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         let block = UIBlock::default()
             .title(format!("{} Session Manager", icons::COMMAND))
             .borders(Borders::ALL)
+            .style(Style::default().bg(app.theme.terminal_bg))
             .border_style(Style::default().fg(app.theme.thought_fg));
         
         let inner_layout = Layout::default()
@@ -579,7 +958,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         );
         
         let help_text = "(Enter) Resume | (N) New | (D) Delete | (X) Wipe All | (Esc) Close";
-        f.render_widget(Paragraph::new(help_text).block(UIBlock::default().borders(Borders::TOP)).style(Style::default().fg(app.theme.system_fg)), inner_layout[1]);
+        f.render_widget(Paragraph::new(help_text).block(UIBlock::default().borders(Borders::TOP).style(Style::default().bg(app.theme.terminal_bg))).style(Style::default().fg(app.theme.system_fg)), inner_layout[1]);
     }
 
     if app.show_latest_files {
@@ -612,6 +991,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         let block = UIBlock::default()
             .title(format!("{} Latest Files in Context", icons::COMMAND))
             .borders(Borders::ALL)
+            .style(Style::default().bg(app.theme.terminal_bg))
             .border_style(Style::default().fg(app.theme.thought_fg));
 
         let inner_layout = Layout::default()
@@ -629,7 +1009,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         );
         
         let help_text = format!("(R) Remove from Context | (Esc) Close | Total Tokens: {}", total_tokens);
-        f.render_widget(Paragraph::new(help_text).block(UIBlock::default().borders(Borders::TOP)).style(Style::default().fg(app.theme.system_fg)), inner_layout[1]);
+        f.render_widget(Paragraph::new(help_text).block(UIBlock::default().borders(Borders::TOP).style(Style::default().bg(app.theme.terminal_bg))).style(Style::default().fg(app.theme.system_fg)), inner_layout[1]);
     }
 
     if app.show_approval_prompt {
@@ -671,6 +1051,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             let block = UIBlock::default()
                 .title(format!("{} Security Confirmation", icons::WARNING))
                 .borders(Borders::ALL)
+                .style(Style::default().bg(app.theme.terminal_bg))
                 .border_style(Style::default().fg(app.theme.warning_fg));
 
             f.render_widget(Paragraph::new(display_text).block(block).wrap(Wrap { trim: false }), area);
@@ -690,7 +1071,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         let header_block = UIBlock::default()
             .title(format!("{} System Prompt Editor", icons::MODEL))
             .borders(Borders::ALL)
-            .style(if app.is_editing_prompt { Style::default().fg(app.theme.warning_fg) } else { Style::default() });
+            .style(if app.is_editing_prompt { Style::default().fg(app.theme.warning_fg).bg(app.theme.terminal_bg) } else { Style::default().bg(app.theme.terminal_bg) });
         
         let instructions = if app.is_editing_prompt { 
             format!("EDITING MODE | Cursor: {} | (ESC) Finish", app.prompt_cursor_pos) 
@@ -700,7 +1081,8 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         f.render_widget(Paragraph::new(instructions).block(header_block), chunks[0]);
 
         let editor_block = UIBlock::default()
-            .borders(Borders::LEFT | Borders::RIGHT | Borders::BOTTOM);
+            .borders(Borders::LEFT | Borders::RIGHT | Borders::BOTTOM)
+            .style(Style::default().bg(app.theme.terminal_bg));
         
         let mut display_spans = Vec::new();
         if app.is_editing_prompt {
@@ -739,6 +1121,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             let dialog_block = UIBlock::default()
                 .title(format!("{} Save Prompt As", icons::WARNING))
                 .borders(Borders::ALL)
+                .style(Style::default().bg(app.theme.terminal_bg))
                 .border_style(Style::default().fg(app.theme.warning_fg));
                 
             let text = format!("Enter filename (without .md):\n> {}\n\n(ENTER) Save | (ESC) Cancel", app.prompt_save_name);
@@ -768,7 +1151,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             Line::from(vec![]),
             Line::from(vec![Span::styled("Press ESC or ENTER to close", Style::default().add_modifier(Modifier::ITALIC).fg(Color::DarkGray))]),
         ];
-        f.render_widget(Paragraph::new(hotkeys_text).block(UIBlock::default().title(format!("{} Hotkeys Reference", icons::COMMAND)).borders(Borders::ALL)).wrap(Wrap { trim: false }), area);
+        f.render_widget(Paragraph::new(hotkeys_text).block(UIBlock::default().title(format!("{} Hotkeys Reference", icons::COMMAND)).borders(Borders::ALL).style(Style::default().bg(app.theme.terminal_bg))).wrap(Wrap { trim: false }), area);
     }
 }
 

@@ -96,6 +96,8 @@ fn test_tool_call_json_formatting() {
     app.context_manager.add_assistant_tool_call("I will read the file.", vec![tool_call]);
     let raw_prompt = app.context_manager.get_raw_prompt();
 
-    // Verify the new JSON format is present
-    assert!(raw_prompt.contains("<|tool_call>{\"arguments\":{\"description\":\"Read main.rs\",\"path\":\"src/main.rs\",\"tool_call_id\":\"test_id\"},\"name\":\"read_file\"}<tool_call|>"));
+    // Verify the jinja-compatible call:func{args} format is used (not raw JSON)
+    assert!(raw_prompt.contains("<|tool_call>call:read_file{"), "Expected call:read_file format");
+    assert!(raw_prompt.contains("<tool_call|>"), "Expected closing marker");
+    assert!(raw_prompt.contains("path:<|\"|>src/main.rs<|\"|>"), "Expected gemma4 string delimiters");
 }

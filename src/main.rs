@@ -178,7 +178,8 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
                 print!("\r[STREAMING] {}          ", msg.replace('\n', " | "));
                 io::Write::flush(&mut io::stdout())?;
             }
-            Some(StreamEvent::Done(_, _)) => {
+            Some(StreamEvent::Done { prompt_tokens, .. }) => {
+                    let _ = prompt_tokens; // server count available if needed
                 print!("\r                                                                \r");
                 if app.parser.state == lethetic::parser::ParserState::Text || app.parser.state == lethetic::parser::ParserState::ToolCall {
                     match parser::find_tool_call(&full_response_content, true) {
@@ -637,7 +638,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             app.tool_output_preview = msg;
                             app.should_redraw = true;
                         }
-                        StreamEvent::Done(eval_count, eval_duration) => {
+                        StreamEvent::Done { completion_tokens, prompt_tokens, tg_per_s, pp_per_s } => {
                             app.is_processing = false;
                             if (app.parser.state == lethetic::parser::ParserState::Text || app.parser.state == lethetic::parser::ParserState::ToolCall) && !app.tool_calls_processed_this_request {
                                 match parser::find_tool_call(&full_response_content, true) {
@@ -655,16 +656,21 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 }
                             }
 
-                            if let (Some(count), Some(duration)) = (eval_count, eval_duration) {
-                                app.tokens_per_s = (count as f64 / (duration as f64 / 1_000_000_000.0)).max(0.0);
+                            // Use server-reported speeds if available, else fall back to wall-clock
+                            if let Some(tg) = tg_per_s {
+                                app.tokens_per_s = tg;
                             } else if let Some(start) = app.request_start_time {
-                                // Fallback for servers that don't provide duration in Done
                                 let elapsed = start.elapsed().as_secs_f64();
                                 if elapsed > 0.0 {
-                                    // Use full_response_content as a proxy for count if eval_count is missing
-                                    let count = eval_count.unwrap_or(full_response_content.split_whitespace().count() as u32);
+                                    let count = completion_tokens.unwrap_or(full_response_content.split_whitespace().count() as u32);
                                     app.tokens_per_s = (count as f64 / elapsed).max(0.0);
                                 }
+                            }
+                            if let Some(pp) = pp_per_s {
+                                app.pp_tokens_per_s = pp;
+                            }
+                            if let Some(pt) = prompt_tokens {
+                                app.server_prompt_tokens = Some(pt);
                             }
                             app.request_start_time = None;
                             app.should_redraw = true;

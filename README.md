@@ -10,17 +10,24 @@ A sophisticated Rust Terminal User Interface (TUI) designed for high-performance
 
 ## Server Setup
 
-The engine is specifically tuned for a **TurboQuant-optimized** server. To set up your remote server:
+The engine is specifically tuned for a **TurboQuant-optimized** llama.cpp server running Gemma 4 26B. To set up a new server:
 
 1. **Automation**: Run `setup_gemma4_server.sh` on your target Linux machine. It automates:
    - Cloning and building the `TheTom/llama-cpp-turboquant` fork with CUDA support.
-   - Downloading the `Gemma-4-26B` UD-Q4_K_M model.
-   - Setting up a systemd service (`gemma4.service`) on port `12345`.
+   - Downloading `gemma-4-26B-A4B-it-UD-Q5_K_S.gguf` from Unsloth.
+   - Installing the bundled `chat_template.jinja` (handles tool calls, reasoning, multi-turn).
+   - Creating a systemd service (`gemma4.service`) on port `12345`.
    - Configuring `turbo3` KV cache quantization for ultra-low memory overhead.
-2. **Server Requirements**:
-   - **Endpoint**: `http://<server-ip>:12345/completion` (SSE streaming format).
-   - **Context**: 262,144 tokens.
-   - **Native Reasoning**: Enabled via `--reasoning on` and custom Jinja templates.
+
+2. **Server parameters** (as used on brainiac-nvidia):
+   - Model: `gemma-4-26B-A4B-it-UD-Q5_K_S.gguf`
+   - `--reasoning on` — enables chain-of-thought
+   - `--jinja --chat-template-file chat_template.jinja` — custom tool-call template
+   - `--cache-type-k turbo3 --cache-type-v turbo3` — TurboQuant KV quantization
+   - `--ctx-size 262144` — 256k token context
+   - `--temp 0.1 --repeat-penalty 1.09`
+
+3. **API endpoint**: the server exposes a standard OpenAI-compatible API at `/v1/chat/completions`.
 
 ## Configuration
 
@@ -32,11 +39,32 @@ Lethetic uses a `config.yml` file for server connection and UI settings.
 
 ### Example `config.yml`
 ```yaml
-server_url: "http://brainiac-nvidia:12345/completion"
+server_url: "http://brainiac-nvidia:7210/v1/responses"
 model: "Gemma-4-26B-TurboQuant-262k"
 context_size: 262144
-tool_wrapper: null
-enable_image_processing_tool: false # Enable vision tools if model supports it
+theme: "Default"               # optional — sets the startup theme
+enable_image_processing_tool: false
+```
+
+The `theme` field accepts any theme name from the list in the Themes section. If omitted, `Default` is used.
+
+## Architecture
+
+### gemma-chat library (`gemma-chat/`)
+
+A standalone Rust library that implements the OpenAI-compatible streaming client for Gemma 4:
+
+- **SSE parser** (`sse.rs`) — parses `data:` lines from HTTP server-sent events.
+- **Stream parser** (`stream.rs`) — stateful parser converting raw SSE chunks to typed events:
+  - `ReasoningDelta` — model thinking tokens (displayed in thought blocks)
+  - `TextDelta` — actual response text
+  - `ToolCallStart / ToolCallDelta / ToolCallComplete` — structured tool invocations
+  - `Done` — carries `completion_tokens`, `prompt_tokens`, `tg_per_s`, `pp_per_s`
+- **Client** (`client.rs`) — `stream_chat()` and `complete()` over `/v1/chat/completions`.
+
+The library is a workspace member and can be tested independently:
+```bash
+cargo test -p gemma-chat -- --nocapture
 ```
 
 ## Advanced Features
@@ -49,20 +77,23 @@ Lethetic features a unique state-management system to prevent context bloat. Ins
 
 ### Robust Multi-Line Patching
 The `apply_patch` tool uses **programmatic diff generation**:
-- **Semantic Edits**: The LLM provides the `old_content` and `new_content` blocks.
-- **Deterministic Diffing**: The engine uses the `diffy` crate to generate a guaranteed-valid unified diff, which is then applied via the system `patch` command.
+- **Semantic Edits**: The LLM provides `old_content` and `new_content` blocks.
+- **Deterministic Diffing**: The engine uses the `diffy` crate to generate a guaranteed-valid unified diff applied via the system `patch` command.
 - **Resilient**: Automatically strips line numbers and markdown formatting frequently added by LLMs.
 
 ### Auto-Summarization
 Handle massive outputs without losing context:
 - **Safety Truncation**: Outputs >10,000 characters are automatically saved to disk (`.lethetic/tool_responses/`) and truncated in the context.
-- **Summarization Tool**: Use the `summarize_content` tool to have the LLM analyze large files or raw text and provide a concise summary of the key findings.
+- **Summarization Tool**: Use the `summarize_content` tool to have the LLM analyze large files or raw text and provide a concise summary.
 
 ### Enhanced TUI Experience
-- **Syntax Highlighting**: Real-time syntax highlighting for all supported languages (powered by `Syntect`), including specialized styling for `read_file` output.
-- **Hanging Indents**: Long code lines wrap with automatic indentation to align with line numbers, maintaining readability in narrow terminals.
+- **Solid background**: Each theme applies a solid fill color to the entire terminal — no bleed-through from the underlying terminal background.
+- **Themes**: 30 built-in themes including dark (Default, Matrix, Cyberpunk, Ocean, Sunset, Forest, Lavender, Mono, Gold, Deep Sea, Dracula, Nord, Gruvbox, Tokyo Night, Monokai, Obsidian, Ash, Infrared) and light (Paper, Solarized Light, GitHub Light, Ivory, Rose, Mint, Sky, Linen, Chalk, Parchment, Clay, Fog). Theme is persisted per session and loaded automatically on resume.
+- **Performance stats**: Status bar shows server-reported `tg` (token generation, t/s) and `pp` (prompt processing, t/s) from the server's timings, plus accurate context token count from the server's usage field.
+- **Syntax Highlighting**: Real-time syntax highlighting for `sh`, `rs`, `cs`, `js`, `ts`, `py`, `cpp`, `json`, `toml`, `yaml`, and `md` in code blocks (powered by Syntect).
+- **Hanging Indents**: Long code lines wrap with automatic indentation to align with line numbers.
 - **Mouse Support**: Smooth mouse wheel scrolling for the output pane.
-- **Input History**: Press **Up/Down** arrows at the boundary of the input field to scroll output, or use the Command Palette to browse and restore previous prompts.
+- **Input History**: Press **Up/Down** at the boundary of the input field to scroll output, or use the Command Palette to browse and restore previous prompts.
 
 ## Key Hotkeys
 
@@ -78,7 +109,7 @@ Handle massive outputs without losing context:
 
 ## Usage
 
-1. **Run**: 
+1. **Run**:
    ```bash
    cargo run --bin lethetic
    ```
@@ -89,11 +120,20 @@ Handle massive outputs without losing context:
 
 ## Testing
 
-Verify tool-calling and context logic:
+Unit and non-live tests:
 ```bash
-cargo test -- --nocapture
+cargo test
 ```
-For live model integration tests:
+
+Live integration tests (require the server to be running):
 ```bash
-cargo test --test test_live_patch_read_integration -- --ignored --nocapture
+# Run all live tests one at a time
+cargo test --test test_live_extended_coverage -- --ignored --nocapture
+cargo test --test test_live_parser          -- --ignored --nocapture
+cargo test --test test_live_patch           -- --ignored --nocapture
+
+# Full pipeline test (prompt → model → tool call → file write → verify)
+cargo test --test test_live_prompt_write_cs -- --ignored --nocapture
 ```
+
+All integration tests live in `tests/integration/` and follow the `test_live_*` naming convention.

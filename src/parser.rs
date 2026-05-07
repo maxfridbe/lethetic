@@ -272,6 +272,7 @@ fn parse_gemma4_value(value_str: &str) -> Value {
         // 2. Strip all known marker variants (LONGEST FIRST)
         let markers = [
             ("<|\"|>", "<|\"|>"),
+            ("<|'|>", "<|'|>"),
             ("<|tool_parameter|>", "<|tool_parameter|>"),
             ("<|tool_parameter>", "<tool_parameter|>"),
             ("<|tool_parameter|>", "<tool_parameter|>"),
@@ -356,6 +357,7 @@ fn parse_gemma4_args(args_str: &str, partial: bool) -> Map<String, Value> {
                 else if rem.starts_with("<|\\\\\">") { et = Some("<|\\\\\">"); i += "<|\\\\\">".chars().count(); }
                 else if rem.starts_with("<|\\\">") { et = Some("<|\\\">"); i += "<|\\\">".chars().count(); }
                 else if rem.starts_with("<|\">") { et = Some("<|\">"); i += "<|\">".chars().count(); }
+                else if rem.starts_with("<|'|>") { et = Some("<|'|>"); i += 5; }
                 else if rem.starts_with("<|'>") { et = Some("<|'>"); i += "<|'>".chars().count(); }
 
                 if let Some(tag) = et {
@@ -386,6 +388,7 @@ fn parse_gemma4_args(args_str: &str, partial: bool) -> Map<String, Value> {
                 else if rem.starts_with("<|\\\\\">") { et = Some("<|\\\\\">"); i += "<|\\\\\">".chars().count(); }
                 else if rem.starts_with("<|\\\">") { et = Some("<|\\\">"); i += "<|\\\">".chars().count(); }
                 else if rem.starts_with("<|\">") { et = Some("<|\">"); i += "<|\">".chars().count(); }
+                else if rem.starts_with("<|'|>") { et = Some("<|'|>"); i += 5; }
                 else if rem.starts_with("<|'>") { et = Some("<|'>"); i += "<|'>".chars().count(); }
                 if let Some(tag) = et {
                     let rem2: String = chars[i..].iter().collect();
@@ -414,6 +417,7 @@ fn parse_gemma4_args(args_str: &str, partial: bool) -> Map<String, Value> {
                 else if rem.starts_with("<|\\\\\">") { et = Some("<|\\\\\">"); i += "<|\\\\\">".chars().count(); }
                 else if rem.starts_with("<|\\\">") { et = Some("<|\\\">"); i += "<|\\\">".chars().count(); }
                 else if rem.starts_with("<|\">") { et = Some("<|\">"); i += "<|\">".chars().count(); }
+                else if rem.starts_with("<|'|>") { et = Some("<|'|>"); i += 5; }
                 else if rem.starts_with("<|'>") { et = Some("<|'>"); i += "<|'>".chars().count(); }
                 if let Some(tag) = et {
                     let rem2: String = chars[i..].iter().collect();

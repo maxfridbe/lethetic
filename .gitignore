@@ -1,7 +1,8 @@
 /target
 .lethetic/
 temp_run_manual/
-#ignore/
+ignore/
+data/
 
 wayland_cube/
 .last-response
