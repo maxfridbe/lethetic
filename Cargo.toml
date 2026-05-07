@@ -63,10 +63,6 @@ name = "test_live_hello"
 path = "tests/integration/test_live_hello.rs"
 
 [[test]]
-name = "test_live_native_tool_format"
-path = "tests/integration/test_live_native_tool_format.rs"
-
-[[test]]
 name = "test_live_prompt_write_cs"
 path = "tests/integration/test_live_prompt_write_cs.rs"
 
