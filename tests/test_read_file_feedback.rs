@@ -10,6 +10,7 @@ fn test_read_file_feedback_logic() {
         context_size: 2048,
         tool_wrapper: None,
         enable_image_processing_tool: false,
+        theme: None,
     };
     let mut app = App::new(&config);
     

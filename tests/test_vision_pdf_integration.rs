@@ -21,6 +21,7 @@ async fn test_process_image_file_not_found() {
         context_size: 2048,
         tool_wrapper: None,
         enable_image_processing_tool: true,
+        theme: None,
     };
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
     let res = process_image::execute("test", "non_existent.png", None, ".", &client, &config, &tx).await;
@@ -36,6 +37,7 @@ async fn test_process_pdf_image_invalid_page() {
         context_size: 2048,
         tool_wrapper: None,
         enable_image_processing_tool: true,
+        theme: None,
     };
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
     let res = process_pdf_image::execute("test", "non_existent.pdf", 1, None, ".", &client, &config, &tx).await;
@@ -178,6 +180,7 @@ fn test_tool_registration() {
         context_size: 0,
         tool_wrapper: None,
         enable_image_processing_tool: true,
+        theme: None,
     };
     let tools = lethetic::tools::get_all_tools(&config);
     assert!(tools.iter().any(|t| t.function.name == "process_image"));

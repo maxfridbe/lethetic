@@ -8,6 +8,8 @@ pub fn setup_mock_app() -> App {
         model: "Gemma-4-26B-TurboQuant-262k".to_string(),
         context_size: 2048,
         tool_wrapper: None,
+        enable_image_processing_tool: false,
+        theme: None,
     };
     App::new(&config)
 }

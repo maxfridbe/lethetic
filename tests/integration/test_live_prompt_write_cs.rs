@@ -45,7 +45,7 @@ async fn test_live_prompt_write_cs_helloworld() -> Result<(), String> {
         match ev {
             StreamEvent::Chunk(c) => full.push_str(&c),
             StreamEvent::Error(e) => { error = Some(e); break; }
-            StreamEvent::Done(_, _) => break,
+            StreamEvent::Done { .. } => break,
             _ => {}
         }
     }

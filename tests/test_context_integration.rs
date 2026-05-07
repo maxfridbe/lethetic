@@ -19,6 +19,7 @@ fn test_read_file_raw_context_update() {
         context_size: 2048,
         tool_wrapper: None,
         enable_image_processing_tool: false,
+            theme: None,
     };
     let mut app = App::new(&config);
     app.current_dir = cwd.to_string();
@@ -46,6 +47,7 @@ fn test_write_file_context_update() {
         context_size: 2048,
         tool_wrapper: None,
         enable_image_processing_tool: false,
+            theme: None,
     };
     let mut app = App::new(&config);
 
@@ -78,6 +80,7 @@ fn test_tool_call_json_formatting() {
         context_size: 32768,
         tool_wrapper: None,
         enable_image_processing_tool: false,
+            theme: None,
     };
     let mut app = App::new(&config);
     

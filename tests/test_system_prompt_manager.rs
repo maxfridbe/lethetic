@@ -11,6 +11,7 @@ fn test_system_prompt_manager_lifecycle() {
         context_size: 0,
         tool_wrapper: None,
         enable_image_processing_tool: false,
+        theme: None,
     };
     let resolved = SystemPromptManager::resolve_prompt(template, "/mock/cwd", &config);
     

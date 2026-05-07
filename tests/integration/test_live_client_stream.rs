@@ -39,7 +39,7 @@ async fn test_live_client_stream() -> Result<(), String> {
                 println!("Got chunk: {:?}", text);
                 got_chunks = true;
             }
-            StreamEvent::Done(_, _) => {
+            StreamEvent::Done { .. } => {
                 println!("Got Done");
                 done = true;
                 break;
