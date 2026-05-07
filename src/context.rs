@@ -349,6 +349,25 @@ impl ContextManager {
                 _ => {}
             }
         }
+        if !self.latest_files.is_empty() {
+            let mut files_content = String::from("<latest_files>\n");
+            for (path, cached_file) in &self.latest_files {
+                let mut safe_content = cached_file.content.clone();
+                let tags_to_remove = [
+                    "<turn|>", "<|turn>", "<|tool_call>", "<tool_call|>",
+                    "<|tool_response>", "<tool_response|>", "<|channel>", "<channel|>",
+                    "<thought>", "</thought>", "<think>", "</think>",
+                    "<|\"|>", "<|\\\\\">", "<|\\\">", "<|\">", "<|'>", "<|'|>",
+                ];
+                for tag in tags_to_remove {
+                    safe_content = safe_content.replace(tag, "");
+                }
+                files_content.push_str(&format!("File: `{}`\n```\n{}\n```\n", path, safe_content));
+            }
+            files_content.push_str("</latest_files>");
+            msgs.push(gemma_chat::Message::system(files_content));
+        }
+
         msgs
     }
 

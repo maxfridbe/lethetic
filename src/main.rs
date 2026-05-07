@@ -580,10 +580,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             app.add_segment_with_title(format!("\n{}\n", ui_result), BlockType::ToolResult, description);
                             if let Some(last) = app.blocks.last_mut() { last.success = Some(success); }
 
-                            if let Some(tc_id) = id { 
-                                if let Some(tc) = app.pending_tool_call.take() {
-                                    app.context_manager.add_assistant_tool_call(&full_response_content, vec![tc]);
-                                }
+                            if let Some(tc_id) = id {
+                                app.pending_tool_call.take();
 
                                 if success && !full_result.contains("OUTPUT TRUNCATED") {
                                     if func_name == "read_file" {

@@ -1309,11 +1309,10 @@ pub fn handle_tool_call(app: &mut App, calls: Vec<ToolCall>, pos: usize, _tx: mp
         *cancellation_token = CancellationToken::new();
         
         app.tool_call_pos = Some(pos);
-        
-        app.context_manager.add_message("assistant", full_response_content);
 
         let tool_call = calls[0].clone();
         app.pending_tool_call = Some(tool_call.clone());
+        app.context_manager.add_assistant_tool_call(full_response_content, vec![tool_call.clone()]);
 
         let description = tool_call.function.arguments["description"].as_str().unwrap_or("Action").to_string();
         app.log_debug(&format!("[TOOL CALL] {}: {}", tool_call.function.name, description));
