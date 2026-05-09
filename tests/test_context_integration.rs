@@ -34,7 +34,9 @@ fn test_read_file_raw_context_update() {
         app.context_manager.update_latest_file(file_path.to_string(), content);
     }
 
-    let entry = app.context_manager.latest_files.get(file_path).expect("File should be in context");
+    let entry = app.context_manager.active_files.get(file_path)
+        .or_else(|| app.context_manager.latest_files.get(file_path))
+        .expect("File should be in context");
     assert_eq!(entry.content, raw_content, "Context should contain RAW content, not formatted content");
     assert!(!entry.content.contains("```"), "Context should not contain markdown fences");
     assert!(!entry.content.contains("     1\t"), "Context should not contain line numbers");
@@ -66,7 +68,9 @@ fn test_write_file_context_update() {
         }
     }
 
-    let entry = app.context_manager.latest_files.get(file_path).expect("File should be in context after write");
+    let entry = app.context_manager.active_files.get(file_path)
+        .or_else(|| app.context_manager.latest_files.get(file_path))
+        .expect("File should be in context after write");
     assert_eq!(entry.content, new_content);
 }
 
@@ -203,19 +207,21 @@ fn test_latest_files_eviction_on_budget() {
         ctx.update_latest_file(format!("file{}.rs", i), file_content.clone());
     }
 
-    let total: usize = ctx.latest_files.values().map(|f| f.tokens).sum();
+    // Files start in active_files; combined total should respect the 35% budget.
+    let total: usize = ctx.active_files.values().map(|f| f.tokens).sum::<usize>()
+        + ctx.latest_files.values().map(|f| f.tokens).sum::<usize>();
     assert!(
         total <= 350,
-        "latest_files token total {} should be ≤ 350 (35% of 1000)",
+        "combined file token total {} should be ≤ 350 (35% of 1000)",
         total
     );
 
-    // The oldest files (file0, file1, ...) should have been evicted first.
     // At 100 tokens each, 350 budget = 3 files max.
+    let total_files = ctx.active_files.len() + ctx.latest_files.len();
     assert!(
-        ctx.latest_files.len() <= 3,
+        total_files <= 3,
         "at most 3 files should remain in cache (got {})",
-        ctx.latest_files.len()
+        total_files
     );
 }
 

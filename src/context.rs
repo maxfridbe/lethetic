@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-// Gemma 4 uses SentencePiece, not cl100k. A simple chars/4 heuristic (matching opencode's
-// approach) is more accurate than GPT-4's tokenizer and avoids a heavy compile-time dep.
 const CHARS_PER_TOKEN: usize = 4;
+const ACTIVE_FILE_TURNS: usize = 3;
+const LATEST_FILES_BUDGET_FRACTION: usize = 35; // 35% of max_tokens for all cached files
 
 fn estimate_tokens(text: &str) -> usize {
     text.len() / CHARS_PER_TOKEN
@@ -34,7 +34,6 @@ pub fn truncate_to_tokens(text: &str, max_tokens: usize) -> String {
     if text.len() <= max_chars {
         return text.to_string();
     }
-    // Truncate on a char boundary
     text.char_indices()
         .nth(max_chars)
         .map(|(i, _)| text[..i].to_string())
@@ -65,16 +64,19 @@ pub struct CachedFile {
     pub content: String,
     pub timestamp: std::time::Instant,
     pub tokens: usize,
+    /// Turn number when this file was last accessed (used for active→latest promotion)
+    pub access_turn: usize,
 }
-
-// Files may not consume more than this fraction of the total context budget.
-const LATEST_FILES_BUDGET_FRACTION: usize = 35; // 35%
 
 pub struct ContextManager {
     max_tokens: usize,
     messages: Vec<Message>,
     system_prompt: Option<String>,
     cwd: String,
+    turn_count: usize,
+    /// Files accessed within the last ACTIVE_FILE_TURNS turns — injected right before generation
+    pub active_files: std::collections::HashMap<String, CachedFile>,
+    /// Files accessed more than ACTIVE_FILE_TURNS turns ago — injected before the system prompt
     pub latest_files: std::collections::HashMap<String, CachedFile>,
 }
 
@@ -85,6 +87,8 @@ impl ContextManager {
             messages: Vec::new(),
             system_prompt,
             cwd: ".".to_string(),
+            turn_count: 0,
+            active_files: std::collections::HashMap::new(),
             latest_files: std::collections::HashMap::new(),
         }
     }
@@ -100,47 +104,83 @@ impl ContextManager {
         self.system_prompt = Some(prompt);
     }
 
+    /// Called when a file is read or written. Places it in active_files (highest attention tier).
     pub fn update_latest_file(&mut self, path: String, content: String) {
         let tokens = estimate_tokens(&content);
-        self.latest_files.insert(path, CachedFile {
+        // Remove from latest_files if it was demoted there previously
+        self.latest_files.remove(&path);
+        self.active_files.insert(path, CachedFile {
             content,
             timestamp: std::time::Instant::now(),
             tokens,
+            access_turn: self.turn_count,
         });
         self.evict_files_over_budget();
     }
 
     pub fn remove_latest_file(&mut self, path: &str) {
+        self.active_files.remove(path);
         self.latest_files.remove(path);
     }
 
-    fn latest_files_token_total(&self) -> usize {
-        self.latest_files.values().map(|f| f.tokens).sum()
+    /// Returns all cached files (active + latest) sorted newest-first, with active status flag.
+    pub fn all_cached_files(&self) -> Vec<(String, &CachedFile, bool)> {
+        let mut all: Vec<(String, &CachedFile, bool)> = self.active_files.iter()
+            .map(|(k, v)| (k.clone(), v, true))
+            .chain(self.latest_files.iter().map(|(k, v)| (k.clone(), v, false)))
+            .collect();
+        all.sort_by(|a, b| b.1.timestamp.cmp(&a.1.timestamp));
+        all
     }
 
-    // If the latest_files cache exceeds LATEST_FILES_BUDGET_FRACTION% of max_tokens,
-    // evict the oldest files first until we're back under budget.
+    fn all_cached_token_total(&self) -> usize {
+        self.active_files.values().map(|f| f.tokens).sum::<usize>()
+            + self.latest_files.values().map(|f| f.tokens).sum::<usize>()
+    }
+
+    /// If combined file cache exceeds 35% of max_tokens, evict oldest files.
+    /// Eviction order: latest_files first (older), then active_files if still over budget.
     fn evict_files_over_budget(&mut self) {
         let budget = self.max_tokens * LATEST_FILES_BUDGET_FRACTION / 100;
-        if self.latest_files_token_total() <= budget {
-            return;
-        }
-        // Collect paths sorted oldest→newest by timestamp
-        let mut by_age: Vec<(std::time::Instant, String)> = self.latest_files
-            .iter()
-            .map(|(k, v)| (v.timestamp, k.clone()))
-            .collect();
-        by_age.sort_by_key(|(t, _)| *t);
+        if self.all_cached_token_total() <= budget { return; }
 
-        for (_, path) in by_age {
-            if self.latest_files_token_total() <= budget {
-                break;
-            }
+        // Collect latest_files by age (oldest first)
+        let mut latest_by_age: Vec<(std::time::Instant, String)> = self.latest_files
+            .iter().map(|(k, v)| (v.timestamp, k.clone())).collect();
+        latest_by_age.sort_by_key(|(t, _)| *t);
+        for (_, path) in latest_by_age {
+            if self.all_cached_token_total() <= budget { return; }
             self.latest_files.remove(&path);
+        }
+
+        // Still over budget — evict active_files oldest first
+        let mut active_by_age: Vec<(std::time::Instant, String)> = self.active_files
+            .iter().map(|(k, v)| (v.timestamp, k.clone())).collect();
+        active_by_age.sort_by_key(|(t, _)| *t);
+        for (_, path) in active_by_age {
+            if self.all_cached_token_total() <= budget { return; }
+            self.active_files.remove(&path);
+        }
+    }
+
+    /// Promote active_files that are older than ACTIVE_FILE_TURNS turns to latest_files.
+    fn promote_stale_active_files(&mut self) {
+        let stale: Vec<String> = self.active_files.iter()
+            .filter(|(_, f)| self.turn_count.saturating_sub(f.access_turn) > ACTIVE_FILE_TURNS)
+            .map(|(p, _)| p.clone())
+            .collect();
+        for path in stale {
+            if let Some(file) = self.active_files.remove(&path) {
+                self.latest_files.insert(path, file);
+            }
         }
     }
 
     pub fn add_message(&mut self, role: &str, content: &str) {
+        if role == "user" {
+            self.turn_count += 1;
+            self.promote_stale_active_files();
+        }
         self.messages.push(Message {
             role: role.to_string(),
             content: content.to_string(),
@@ -150,6 +190,10 @@ impl ContextManager {
     }
 
     pub fn add_message_raw(&mut self, msg: Message) {
+        if msg.role == "user" {
+            self.turn_count += 1;
+            self.promote_stale_active_files();
+        }
         self.messages.push(msg);
         self.trim_context();
     }
@@ -183,6 +227,9 @@ impl ContextManager {
 
     pub fn clear(&mut self) {
         self.messages.clear();
+        self.turn_count = 0;
+        self.active_files.clear();
+        self.latest_files.clear();
     }
 
     pub fn get_messages(&self) -> Vec<Message> {
@@ -192,48 +239,50 @@ impl ContextManager {
     pub fn get_raw_prompt(&self) -> String {
         let mut prompt = String::from("<bos>");
 
+        // ── 1. Latest files (background context — older files, before system prompt) ──
+        if !self.latest_files.is_empty() {
+            prompt.push_str("<|turn>system\n<|think|>\n<latest_files>\n");
+            for (path, cached_file) in &self.latest_files {
+                prompt.push_str(&format!("File: `{}`\n```\n{}\n```\n",
+                    path, sanitize_file_content(&cached_file.content)));
+            }
+            prompt.push_str("</latest_files>\n<turn|>\n");
+        }
+
+        // ── 2. System prompt (instructions — near the conversation for attention) ──
         if let Some(sys) = &self.system_prompt {
             prompt.push_str("<|turn>system\n<|think|>\n");
             prompt.push_str(sys);
             prompt.push_str("<turn|>\n");
         }
 
+        // ── 3. Message history ──
         let mut current_turn_role = String::new();
 
         for msg in &self.messages {
             match msg.role.as_str() {
                 "system" => {
-                    if current_turn_role == "model" {
-                        prompt.push_str("<turn|>\n");
-                    }
+                    if current_turn_role == "model" { prompt.push_str("<turn|>\n"); }
                     prompt.push_str("<|turn>system\n<|think|>\n");
                     prompt.push_str(&msg.content);
                     prompt.push_str("<turn|>\n");
                     current_turn_role = String::new();
                 }
                 "user" => {
-                    if current_turn_role == "model" {
-                        prompt.push_str("<turn|>\n");
-                    }
+                    if current_turn_role == "model" { prompt.push_str("<turn|>\n"); }
                     prompt.push_str("<|turn>user\n");
                     prompt.push_str(&msg.content);
                     prompt.push_str("<turn|>\n");
                     current_turn_role = String::new();
                 }
                 "assistant" => {
-                    if current_turn_role != "model" {
-                        prompt.push_str("<|turn>model\n");
-                    }
-
+                    if current_turn_role != "model" { prompt.push_str("<|turn>model\n"); }
                     let mut clean_content = msg.content.clone();
-
-                    let thought_pairs = [
+                    for (start_tag, end_tag) in [
                         ("<|channel>thought", "<channel|>"),
                         ("<thought>", "</thought>"),
                         ("<think>", "</think>"),
-                    ];
-
-                    for (start_tag, end_tag) in thought_pairs {
+                    ] {
                         while let Some(start_idx) = clean_content.find(start_tag) {
                             if let Some(end_idx_rel) = clean_content[start_idx..].find(end_tag) {
                                 let end_pos = start_idx + end_idx_rel + end_tag.len();
@@ -244,10 +293,7 @@ impl ContextManager {
                             }
                         }
                     }
-
-                    clean_content = clean_content.replace("<|channel>text\n", "");
-                    clean_content = clean_content.replace("<|channel>text", "");
-
+                    clean_content = clean_content.replace("<|channel>text\n", "").replace("<|channel>text", "");
                     if msg.tool_calls.is_some() {
                         if let Some(idx) = clean_content.find("<|tool_call>") {
                             clean_content.truncate(idx);
@@ -255,7 +301,6 @@ impl ContextManager {
                     }
                     prompt.push_str(clean_content.trim());
                     prompt.push('\n');
-
                     if let Some(calls) = &msg.tool_calls {
                         for tc in calls {
                             let call_str = format_gemma4_call(&tc.function.name, &tc.function.arguments);
@@ -270,9 +315,7 @@ impl ContextManager {
                     }
                 }
                 "tool" => {
-                    if current_turn_role != "model" {
-                        prompt.push_str("<|turn>model\n");
-                    }
+                    if current_turn_role != "model" { prompt.push_str("<|turn>model\n"); }
                     prompt.push_str(&msg.content);
                     current_turn_role = "model".to_string();
                 }
@@ -280,29 +323,19 @@ impl ContextManager {
             }
         }
 
-        if !self.latest_files.is_empty() {
-            if current_turn_role == "model" {
-                prompt.push_str("<turn|>\n");
+        // ── 4. Active file (currently worked on — highest attention, right before generation) ──
+        if !self.active_files.is_empty() {
+            if current_turn_role == "model" { prompt.push_str("<turn|>\n"); }
+            prompt.push_str("<|turn>system\n<|think|>\n<active_file>\n");
+            for (path, cached_file) in &self.active_files {
+                prompt.push_str(&format!("File: `{}`\n```\n{}\n```\n",
+                    path, sanitize_file_content(&cached_file.content)));
             }
-            prompt.push_str("<|turn>system\n<|think|>\n");
-            prompt.push_str("<latest_files>\n");
-            for (path, cached_file) in &self.latest_files {
-                let mut safe_content = cached_file.content.clone();
-                let tags_to_remove = [
-                    "<turn|>", "<|turn>", "<|tool_call>", "<tool_call|>",
-                    "<|tool_response>", "<tool_response|>", "<|channel>", "<channel|>",
-                    "<thought>", "</thought>", "<think>", "</think>",
-                    "<|\"|>", "<|\\\\\">", "<|\\\">", "<|\">", "<|'>", "<|'|>"
-                ];
-                for tag in tags_to_remove {
-                    safe_content = safe_content.replace(tag, "");
-                }
-                prompt.push_str(&format!("File: `{}`\n```\n{}\n```\n", path, safe_content));
-            }
-            prompt.push_str("</latest_files>\n<turn|>\n");
+            prompt.push_str("</active_file>\n<turn|>\n");
             current_turn_role = String::new();
         }
 
+        // ── 5. Start model generation ──
         if current_turn_role != "model" {
             prompt.push_str("<|turn>model\n");
         }
@@ -334,7 +367,18 @@ impl ContextManager {
     pub fn get_messages_for_api(&self) -> Vec<gemma_chat::Message> {
         let mut msgs = Vec::new();
 
-        // Clean system prompt (strip <|tool>...<tool|> blocks and Gemma4 markers)
+        // ── 1. Latest files (background context, before system prompt) ──
+        if !self.latest_files.is_empty() {
+            let mut files_content = String::from("<latest_files>\n");
+            for (path, cached_file) in &self.latest_files {
+                files_content.push_str(&format!("File: `{}`\n```\n{}\n```\n",
+                    path, sanitize_file_content(&cached_file.content)));
+            }
+            files_content.push_str("</latest_files>");
+            msgs.push(gemma_chat::Message::system(files_content));
+        }
+
+        // ── 2. System prompt ──
         if let Some(sys) = &self.system_prompt {
             let mut clean = sys.clone();
             loop {
@@ -350,6 +394,7 @@ impl ContextManager {
             }
         }
 
+        // ── 3. Message history ──
         for msg in &self.messages {
             match msg.role.as_str() {
                 "system" => msgs.push(gemma_chat::Message::system(msg.content.clone())),
@@ -371,7 +416,6 @@ impl ContextManager {
                     }
                 }
                 "tool" => {
-                    // Extract from stored format: <|tool_response>response:func{result:<|'|>RESULT<|'|>,tool_call_id:<|'|>ID<|'|>}...
                     let tc_id = Self::extract_delimited(&msg.content, "tool_call_id:<|'|>", "<|'|>")
                         .unwrap_or("unknown".into());
                     let result = Self::extract_delimited(&msg.content, "result:<|'|>", "<|'|>")
@@ -381,22 +425,15 @@ impl ContextManager {
                 _ => {}
             }
         }
-        if !self.latest_files.is_empty() {
-            let mut files_content = String::from("<latest_files>\n");
-            for (path, cached_file) in &self.latest_files {
-                let mut safe_content = cached_file.content.clone();
-                let tags_to_remove = [
-                    "<turn|>", "<|turn>", "<|tool_call>", "<tool_call|>",
-                    "<|tool_response>", "<tool_response|>", "<|channel>", "<channel|>",
-                    "<thought>", "</thought>", "<think>", "</think>",
-                    "<|\"|>", "<|\\\\\">", "<|\\\">", "<|\">", "<|'>", "<|'|>",
-                ];
-                for tag in tags_to_remove {
-                    safe_content = safe_content.replace(tag, "");
-                }
-                files_content.push_str(&format!("File: `{}`\n```\n{}\n```\n", path, safe_content));
+
+        // ── 4. Active file (highest attention — right before generation) ──
+        if !self.active_files.is_empty() {
+            let mut files_content = String::from("<active_file>\n");
+            for (path, cached_file) in &self.active_files {
+                files_content.push_str(&format!("File: `{}`\n```\n{}\n```\n",
+                    path, sanitize_file_content(&cached_file.content)));
             }
-            files_content.push_str("</latest_files>");
+            files_content.push_str("</active_file>");
             msgs.push(gemma_chat::Message::system(files_content));
         }
 
@@ -428,28 +465,13 @@ impl ContextManager {
     }
 
     fn trim_context(&mut self) {
-        let files_tokens = self.latest_files_token_total();
-        // Usable budget for messages (headroom after latest_files)
+        let files_tokens = self.all_cached_token_total();
         let usable = self.max_tokens.saturating_sub(files_tokens);
-
-        // Fast path: estimate total message tokens cheaply before doing the full prompt build.
         let msg_estimate: usize = self.messages.iter().map(|m| estimate_tokens(&m.content)).sum();
-        if msg_estimate <= usable {
-            return;
-        }
+        if msg_estimate <= usable { return; }
 
-        // Identify the earliest index we can drop up to while keeping pairs intact
-        // and never dropping system messages.
-        //
-        // Strategy: walk from the front, collecting "droppable units". A unit is:
-        //   - a single non-system, non-tool message (user or assistant-without-tool-calls)
-        //   - an (assistant-with-tool-calls) message AND all immediately following tool messages
-        // We accumulate the cost of what we'd DROP, stopping when the remaining messages
-        // fit within `usable`.
         let total_msg_tokens: usize = self.messages.iter().map(|m| estimate_tokens(&m.content)).sum();
-        if total_msg_tokens <= usable {
-            return;
-        }
+        if total_msg_tokens <= usable { return; }
 
         let mut need_to_drop = total_msg_tokens.saturating_sub(usable);
         let mut cut = 0usize;
@@ -458,15 +480,9 @@ impl ContextManager {
 
         while i < n && need_to_drop > 0 {
             let msg = &self.messages[i];
-
-            // Never drop system messages
-            if msg.role == "system" {
-                i += 1;
-                continue;
-            }
+            if msg.role == "system" { i += 1; continue; }
 
             if msg.role == "assistant" && msg.tool_calls.is_some() {
-                // Drop this assistant msg plus all immediately following tool msgs as a unit
                 let unit_start = i;
                 let cost = estimate_tokens(&msg.content);
                 i += 1;
@@ -477,15 +493,13 @@ impl ContextManager {
                 }
                 cut = i;
                 need_to_drop = need_to_drop.saturating_sub(unit_cost);
-                let _ = unit_start; // suppress warning
+                let _ = unit_start;
             } else if msg.role == "tool" {
-                // Orphaned tool message (shouldn't normally happen) — drop it alone
                 let cost = estimate_tokens(&msg.content);
                 i += 1;
                 cut = i;
                 need_to_drop = need_to_drop.saturating_sub(cost);
             } else {
-                // user or assistant-without-tool-calls — droppable unit
                 let cost = estimate_tokens(&msg.content);
                 i += 1;
                 cut = i;
@@ -497,4 +511,17 @@ impl ContextManager {
             self.messages.drain(0..cut);
         }
     }
+}
+
+fn sanitize_file_content(content: &str) -> String {
+    let mut s = content.to_string();
+    for tag in &[
+        "<turn|>", "<|turn>", "<|tool_call>", "<tool_call|>",
+        "<|tool_response>", "<tool_response|>", "<|channel>", "<channel|>",
+        "<thought>", "</thought>", "<think>", "</think>",
+        "<|\"|>", "<|\\\\\">", "<|\\\">", "<|\">", "<|'>", "<|'|>",
+    ] {
+        s = s.replace(tag, "");
+    }
+    s
 }

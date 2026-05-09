@@ -1002,7 +1002,7 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
         match key.code {
             KeyCode::Esc => { app.show_latest_files = false; }
             KeyCode::Down | KeyCode::Char('j') => {
-                let num_files = app.context_manager.latest_files.len();
+                let num_files = app.context_manager.active_files.len() + app.context_manager.latest_files.len();
                 if num_files > 0 {
                     let i = match app.latest_files_state.selected() {
                         Some(i) => if i >= num_files - 1 { 0 } else { i + 1 },
@@ -1012,7 +1012,7 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                let num_files = app.context_manager.latest_files.len();
+                let num_files = app.context_manager.active_files.len() + app.context_manager.latest_files.len();
                 if num_files > 0 {
                     let i = match app.latest_files_state.selected() {
                         Some(i) => if i == 0 { num_files - 1 } else { i - 1 },
@@ -1022,12 +1022,12 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                 }
             }
             KeyCode::Char('r') | KeyCode::Char('R') => {
-                let paths: Vec<String> = app.context_manager.latest_files.keys().cloned().collect();
+                let paths: Vec<String> = app.context_manager.all_cached_files()
+                    .into_iter().map(|(p, _, _)| p).collect();
                 if let Some(i) = app.latest_files_state.selected() {
                     if let Some(path) = paths.get(i) {
                         app.context_manager.remove_latest_file(path);
-                        // Adjust selection
-                        let num_files = app.context_manager.latest_files.len();
+                        let num_files = app.context_manager.active_files.len() + app.context_manager.latest_files.len();
                         if num_files == 0 {
                             app.latest_files_state.select(None);
                         } else if i >= num_files {

@@ -843,7 +843,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             Span::styled("| Mem: ", Style::default().fg(app.theme.system_fg)),
             Span::styled(format!("{}MB ", app.memory_usage), Style::default().fg(app.theme.thought_fg)),
             Span::styled("| Files: ", Style::default().fg(app.theme.system_fg)),
-            Span::styled(format!("{} ", app.context_manager.latest_files.len()), Style::default().fg(app.theme.thought_fg)),
+            Span::styled(format!("{} ", app.context_manager.active_files.len() + app.context_manager.latest_files.len()), Style::default().fg(app.theme.thought_fg)),
         ]),
         Line::from(line2_spans),
     ];
@@ -966,7 +966,8 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         f.render_widget(Clear, area);
         
         let mut total_tokens = 0;
-        let items: Vec<ListItem> = app.context_manager.latest_files.iter().map(|(path, cached)| {
+        let all_files = app.context_manager.all_cached_files();
+        let items: Vec<ListItem> = all_files.iter().map(|(path, cached, is_active)| {
             total_tokens += cached.tokens;
             let elapsed = cached.timestamp.elapsed().as_secs();
             let time_str = if elapsed < 60 {
@@ -977,19 +978,19 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
                 format!("{} hours ago", elapsed / 3600)
             };
 
-            // Truncate path to fit (approx 40 chars)
-            let display_path = if path.len() > 40 {
-                format!("...{}", &path[path.len() - 37..])
+            let display_path = if path.len() > 38 {
+                format!("...{}", &path[path.len() - 35..])
             } else {
                 path.clone()
             };
 
-            let content = format!("{:<40} {:>8} tokens ({})", display_path, cached.tokens, time_str);
+            let tier = if *is_active { "● active" } else { "  latest" };
+            let content = format!("{} {:<38} {:>6} tok ({})", tier, display_path, cached.tokens, time_str);
             ListItem::new(content)
         }).collect();
 
         let block = UIBlock::default()
-            .title(format!("{} Latest Files in Context", icons::COMMAND))
+            .title(format!("{} Files in Context", icons::COMMAND))
             .borders(Borders::ALL)
             .style(Style::default().bg(app.theme.terminal_bg))
             .border_style(Style::default().fg(app.theme.thought_fg));
