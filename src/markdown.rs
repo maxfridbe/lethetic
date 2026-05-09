@@ -127,7 +127,7 @@ pub fn render_markdown(content: &str, theme: &crate::ui::Theme) -> Text<'static>
                         "rs" | "rust"                             => "rs",
                         "cs" | "csharp" | "c#"                   => "cs",
                         "js" | "javascript"                       => "js",
-                        "ts" | "typescript"                       => "ts",
+                        "ts" | "tsx" | "typescript"               => "js", // syntect has no TS syntax; JS grammar covers it
                         "py" | "python"                           => "py",
                         "cpp" | "c++" | "cc"                      => "cpp",
                         "json"                                    => "json",
