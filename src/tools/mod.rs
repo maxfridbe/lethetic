@@ -5,6 +5,9 @@ pub mod search_text;
 pub mod run_shell_command;
 pub mod write_file;
 pub mod replace_text;
+pub mod edit;
+pub mod glob;
+pub mod find_symbol;
 pub mod web_fetch;
 pub mod web_search;
 pub mod read_page;
@@ -47,6 +50,9 @@ pub fn get_all_tools(config: &crate::config::Config) -> Vec<Tool> {
         run_shell_command::get_definition(),
         write_file::get_definition(),
         replace_text::get_definition(),
+        edit::get_definition(),
+        glob::get_definition(),
+        find_symbol::get_definition(),
         web_fetch::get_definition(),
         web_search::get_definition(),
         read_page::get_definition(),
@@ -100,6 +106,9 @@ pub fn get_ui_description(func_name: &str, arguments: &serde_json::Value) -> Str
         "run_shell_command" => run_shell_command::get_ui_description(arguments),
         "write_file" => write_file::get_ui_description(arguments),
         "replace_text" => replace_text::get_ui_description(arguments),
+        "edit" => edit::get_ui_description(arguments),
+        "glob" => glob::get_ui_description(arguments),
+        "find_symbol" => find_symbol::get_ui_description(arguments),
         "web_fetch" => web_fetch::get_ui_description(arguments),
         "web_search" => web_search::get_ui_description(arguments),
         "read_page" => read_page::get_ui_description(arguments),
@@ -156,7 +165,25 @@ pub async fn execute(
             let path = arguments["path"].as_str().unwrap_or("");
             let old_string = arguments["old_string"].as_str().unwrap_or("");
             let new_string = arguments["new_string"].as_str().unwrap_or("");
-            (replace_text::execute(path, old_string, new_string, cwd, cancellation_token).await, cwd.to_string())
+            let replace_all = arguments["replace_all"].as_bool().unwrap_or(false);
+            (replace_text::execute(path, old_string, new_string, replace_all, cwd, cancellation_token).await, cwd.to_string())
+        }
+        "edit" => {
+            let path = arguments["path"].as_str().unwrap_or("");
+            let old_string = arguments["old_string"].as_str().unwrap_or("");
+            let new_string = arguments["new_string"].as_str().unwrap_or("");
+            (edit::execute(path, old_string, new_string, cwd, cancellation_token).await, cwd.to_string())
+        }
+        "glob" => {
+            let pattern = arguments["pattern"].as_str().unwrap_or("*");
+            let path = arguments["path"].as_str().unwrap_or(".");
+            (glob::execute(pattern, path, cwd, cancellation_token).await, cwd.to_string())
+        }
+        "find_symbol" => {
+            let operation = arguments["operation"].as_str().unwrap_or("references");
+            let symbol = arguments["symbol"].as_str().unwrap_or("");
+            let path = arguments["path"].as_str().unwrap_or(".");
+            (find_symbol::execute(operation, symbol, path, cwd, cancellation_token).await, cwd.to_string())
         }
         "web_fetch" => {
             let url = arguments["url"].as_str().unwrap_or("");

@@ -90,7 +90,7 @@ async fn test_replace_text_tool_success() {
     fs::write(dir.path().join(file_path), "hello world\ngoodbye world").unwrap();
 
     let token = CancellationToken::new();
-    let result = replace_text::execute(file_path, "goodbye world", "hello moon", cwd, token).await;
+    let result = replace_text::execute(file_path, "goodbye world", "hello moon", false, cwd, token).await;
     
     assert!(result.contains("Successfully replaced"));
     let updated = fs::read_to_string(dir.path().join(file_path)).unwrap();
@@ -106,7 +106,7 @@ async fn test_replace_text_tool_multiple_occurrences() {
     fs::write(dir.path().join(file_path), "apple\nbanana\napple\n").unwrap();
 
     let token = CancellationToken::new();
-    let result = replace_text::execute(file_path, "apple", "orange", cwd, token).await;
+    let result = replace_text::execute(file_path, "apple", "orange", false, cwd, token).await;
     
     assert!(result.contains("ERROR") || result.contains("Error") || result.contains("matches"));
 }
