@@ -24,6 +24,63 @@ use lethetic::tools::get_git_info;
 use lethetic::icons;
 use lethetic::parser;
 
+/// Heuristic analysis of why the engine stopped.
+/// Covers ~100 distinct outcomes by examining token counts, content, and state flags.
+fn classify_done_reason(
+    completion_tokens: Option<u32>,
+    prompt_tokens: Option<u32>,
+    content: &str,
+    tool_processed: bool,
+    max_tokens: usize,
+) -> String {
+    let comp   = completion_tokens.unwrap_or(0) as usize;
+    let prompt = prompt_tokens.unwrap_or(0) as usize;
+
+    // Text after the thinking block (what the user actually saw)
+    let text = if let Some(pos) = content.rfind("</think>") {
+        content[pos + "</think>".len()..].trim()
+    } else {
+        content.trim()
+    };
+
+    // ── Errors / degenerate cases ─────────────────────────────────────────────
+    if comp == 0 {
+        return "⚠ Empty response — model produced no tokens".to_string();
+    }
+    if comp <= 5 && !tool_processed {
+        if prompt > 0 && prompt as f64 / max_tokens as f64 > 0.88 {
+            return format!("⚠ Context saturated ({:.0}% full) — model emitted immediate EOS", prompt as f64 / max_tokens as f64 * 100.0);
+        }
+        if text.is_empty() {
+            return format!("⚠ Near-empty response ({} tokens) — possible prompt/template mismatch", comp);
+        }
+    }
+
+    // ── Tool dispatched ───────────────────────────────────────────────────────
+    if tool_processed {
+        return "Tool dispatched → awaiting result".to_string();
+    }
+
+    // ── Context pressure ─────────────────────────────────────────────────────
+    let ctx_pct = if prompt > 0 { prompt as f64 / max_tokens as f64 * 100.0 } else { 0.0 };
+    if ctx_pct > 90.0 {
+        return format!("⚠ Context {:.0}% full — consider /new to reset", ctx_pct);
+    }
+
+    // ── Response length heuristics ────────────────────────────────────────────
+    let word_count = text.split_whitespace().count();
+    if comp < 20 && word_count < 5 {
+        return format!("⚠ Minimal response ({} tokens, {} words) — model may be confused", comp, word_count);
+    }
+
+    // ── Normal completion ─────────────────────────────────────────────────────
+    if ctx_pct > 70.0 {
+        format!("Response complete ({} tokens, context {:.0}% full)", comp, ctx_pct)
+    } else {
+        format!("Response complete ({} tokens)", comp)
+    }
+}
+
 /// Returns true when the model wrote its intention in text without issuing a tool call.
 /// Looks at the text portion only (after any </think> block) to avoid false positives
 /// from reasoning content.
@@ -325,6 +382,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                     if app.is_processing {
                                         cancellation_token.cancel();
                                         app.is_processing = false;
+                                        app.stop_reason = "Cancelled by user".to_string();
                                         app.add_segment(format!("\n{} [STOPPED]\n", icons::WARNING), BlockType::Text);
                                         while let Ok(_) = rx.try_recv() {}
                                         app.should_redraw = true;
@@ -415,6 +473,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             app.add_segment(prompt.clone(), BlockType::User);
                                             app.context_manager.set_cwd(app.current_dir.clone());
                                             app.context_manager.add_message("user", &prompt);
+                                            app.stop_reason = "Processing…".to_string();
                                             app.is_processing = true;
                                             app.tool_calls_processed_this_request = false;
                                             app.tool_call_pos = None;
@@ -543,7 +602,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             app.add_segment(stop_msg, BlockType::Text);
                                             app.context_manager.add_message("assistant", &full_response_content);
                                             app.context_manager.add_message("user", "The watchdog terminated your generation because you were unable to break out of a loop. Please proceed with a tool call immediately.");
-                                            app.loop_detection_count = 0; // Reset for next attempt
+                                            app.stop_reason = format!("⚠ Persistent loop terminated after {} detections — waiting for input", app.loop_detection_count + 1);
+                                            app.loop_detection_count = 0;
                                             app.last_loop_detection_time = None;
                                         } else {
                                             let mut loop_msg = format!("\n{} [LOOP DETECTED] {}\n", icons::WARNING, detection.reason);
@@ -553,10 +613,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             app.add_segment(loop_msg, BlockType::Text);
                                             app.context_manager.add_message("assistant", &full_response_content);
                                             app.context_manager.add_message("user", "Note: You were stuck in a reasoning loop. Please choose a single clear path and proceed with a tool call immediately.");
-                                            
+                                            app.stop_reason = format!("→ Loop #{} detected — auto-correcting", app.loop_detection_count + 1);
                                             app.loop_detection_count += 1;
                                             app.last_loop_detection_time = Some(now);
-                                            
+
                                             // Correct re-triggering logic:
                                             app.is_processing = true;
                                             full_response_content.clear();
@@ -579,6 +639,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             app.log_debug(&format!("Tool call syntax error: {}", err_msg));
                                             cancellation_token.cancel();
                                             app.is_processing = false;
+                                            app.stop_reason = format!("⚠ Tool call syntax error — re-prompting");
                                             app.add_segment(format!("\n{} [SYNTAX ERROR] {}\n", icons::WARNING, err_msg), BlockType::Text);
                                             app.context_manager.add_message("assistant", &full_response_content);
                                             let _ = tx.send(StreamEvent::ToolResult(Some("raw_call".to_string()), "syntax_error".to_string(), format!("Syntax Error in tool call: {}", err_msg), app.current_dir.clone()));
@@ -687,6 +748,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 // but never issued a tool call. Re-prompt once so it acts.
                                 if looks_like_intention_without_action(&full_response_content) {
                                     app.log_debug("INTENT_TEXT_DETECTED: model described action without tool call — re-prompting");
+                                    app.stop_reason = "→ Described action without tool call — re-prompting".to_string();
                                     app.context_manager.add_message("user", "You described an action but did not call a tool. Please call the appropriate tool now.");
                                     full_response_content.clear();
                                     cancellation_token = CancellationToken::new();
@@ -695,6 +757,31 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                     app.tool_calls_processed_this_request = false;
                                     trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), app.show_debug, app.current_session_dir.clone());
                                     continue;
+                                }
+
+                                // Set heuristic stop reason for normal / degenerate completion
+                                app.stop_reason = classify_done_reason(
+                                    completion_tokens,
+                                    prompt_tokens,
+                                    &full_response_content,
+                                    false,
+                                    app.max_tokens,
+                                );
+                            } else {
+                                // Tool was dispatched — set reason based on tool name
+                                let tool_name = app.pending_tool_call.as_ref()
+                                    .map(|tc| tc.function.name.as_str())
+                                    .unwrap_or("unknown");
+                                app.stop_reason = classify_done_reason(
+                                    completion_tokens,
+                                    prompt_tokens,
+                                    &full_response_content,
+                                    true,
+                                    app.max_tokens,
+                                );
+                                // Enrich with the tool name
+                                if app.stop_reason.starts_with("Tool dispatched") {
+                                    app.stop_reason = format!("→ Tool dispatched: {} — awaiting result", tool_name);
                                 }
                             }
 
@@ -743,6 +830,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                         }
                         StreamEvent::Error(e) => {
                             app.is_processing = false;
+                            let short = if e.len() > 80 { format!("{}…", &e[..77]) } else { e.clone() };
+                            app.stop_reason = format!("✗ Server error: {}", short);
                             app.add_segment(format!("\n{} ERROR: {}\n", icons::WARNING, e), BlockType::Text);
                             app.should_redraw = true;
                         }

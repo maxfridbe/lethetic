@@ -818,7 +818,15 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     } else if app.is_processing {
         vec![Line::from(vec![Span::styled(format!("  {} {} Lethetic Intelligence Engine Processing...", icons::SPINNER[app.spinner_index], icons::PROCESSING), Style::default().fg(app.theme.warning_fg))])]
     } else {
-        vec![Line::from(vec![Span::styled(format!("  {} Ready", icons::SUCCESS), Style::default().fg(app.theme.system_fg))])]
+        let reason = &app.stop_reason;
+        let color = if reason.starts_with('⚠') || reason.starts_with('✗') {
+            app.theme.warning_fg
+        } else if reason.starts_with('⏸') || reason.starts_with('→') {
+            app.theme.highlight_fg
+        } else {
+            app.theme.system_fg
+        };
+        vec![Line::from(vec![Span::styled(format!("  {} {}", icons::SUCCESS, reason), Style::default().fg(color))])]
     };
     f.render_widget(Paragraph::new(processing_text), left_layout[1]);
 

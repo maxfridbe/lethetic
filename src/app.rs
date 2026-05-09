@@ -140,6 +140,7 @@ pub struct App {
     pub is_loading_session: bool,
     pub load_progress: f32,
     pub load_status: String,
+    pub stop_reason: String,
     pub history: Vec<String>,
     pub history_state: ListState,
     pub backbuffer: String,
@@ -273,6 +274,7 @@ pub struct App {
             is_loading_session: false,
             load_progress: 0.0,
             load_status: String::new(),
+            stop_reason: "Ready".to_string(),
             history: Vec::new(),
             history_state: history_state,
             backbuffer: String::new(),
@@ -1332,15 +1334,19 @@ pub fn handle_tool_call(app: &mut App, calls: Vec<ToolCall>, pos: usize, _tx: mp
         let clean_args = serde_json::to_string(&tool_call.function.arguments).unwrap_or_default();
         let clean_call = format!("call:{}{}", tool_call.function.name, clean_args);
 
-        app.add_segment_with_title(clean_call, BlockType::ToolCall, description);
+        app.add_segment_with_title(clean_call, BlockType::ToolCall, description.clone());
 
         if tool_call.function.name == "ask_the_user" {
             app.is_asking_user = true;
             app.is_processing = false;
+            let question = tool_call.function.arguments["question"].as_str().unwrap_or("…");
+            let q_short = if question.len() > 60 { format!("{}…", &question[..57]) } else { question.to_string() };
+            app.stop_reason = format!("⏸ Waiting for your answer: {}", q_short);
         } else if app.shell_approval_mode == ApprovalMode::Always {
         } else {
             app.show_approval_prompt = true;
             app.is_processing = false;
+            app.stop_reason = format!("⏸ Awaiting approval: {} — {}", tool_call.function.name, description);
         }
     }
 }
