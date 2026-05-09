@@ -8,21 +8,25 @@ pub fn get_definition() -> Tool {
         tool_type: "function".to_string(),
         function: FunctionDefinition {
             name: "web_search".to_string(),
-            description: "Search the web using DuckDuckGo".to_string(),
+            description: "Search the web using DuckDuckGo and return titles, URLs, and snippets.".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
-                    "tool_call_id": {
-                        "type": "string",
-                        "description": "A unique, descriptive string identifier for this call."
-                    },
                     "query": {
                         "type": "string",
                         "description": "The search query"
                     },
+                    "num_results": {
+                        "type": "integer",
+                        "description": "Number of results to return (default 10, max 20)"
+                    },
                     "description": {
                         "type": "string",
                         "description": "Short description of the search"
+                    },
+                    "tool_call_id": {
+                        "type": "string",
+                        "description": "Unique identifier for this call"
                     }
                 },
                 "required": ["query", "description", "tool_call_id"]
@@ -39,30 +43,35 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     format!("{} Web Search: `{}`", icons::WEATHER, query)
 }
 
-pub async fn execute(query: &str, cancellation_token: tokio_util::sync::CancellationToken) -> String {
+pub async fn execute(
+    query: &str,
+    num_results: usize,
+    cancellation_token: tokio_util::sync::CancellationToken,
+) -> String {
+    let limit = num_results.clamp(1, 20);
     let client = match SearchClient::from_env() {
         Ok(c) => c,
         Err(e) => return format!("ERROR: Failed to initialize search client: {}", e),
     };
-    let search_query = SearchQuery::new(query).with_limit(10);
+    let search_query = SearchQuery::new(query).with_limit(limit);
 
     tokio::select! {
-        _ = cancellation_token.cancelled() => {
-            "[Operation Cancelled by User]".to_string()
-        }
+        _ = cancellation_token.cancelled() => "[Operation Cancelled by User]".to_string(),
         res = async {
             match client.search(&search_query).await {
                 Ok(response) => {
+                    if response.web.is_empty() {
+                        return "No results found.".to_string();
+                    }
                     let mut output = String::new();
                     for (i, hit) in response.web.iter().enumerate() {
-                        let description = hit.description.as_deref().unwrap_or("");
-                        output.push_str(&format!("{}. {}\n   URL: {}\n   Snippet: {}\n\n", i + 1, hit.title, hit.url, description));
+                        let snippet = hit.description.as_deref().unwrap_or("(no snippet)");
+                        output.push_str(&format!(
+                            "{}. {}\n   {}\n   {}\n\n",
+                            i + 1, hit.title, hit.url, snippet
+                        ));
                     }
-                    if output.is_empty() {
-                        "No results found.".to_string()
-                    } else {
-                        output
-                    }
+                    output
                 }
                 Err(e) => format!("ERROR: Web search failed: {}", e),
             }

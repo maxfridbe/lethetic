@@ -36,20 +36,20 @@
 
 ### 🟡 Medium Priority
 
-| Tool | What it does |
-|---|---|
-| `webfetch` (v2) | Combine web_fetch + read_page with `format` param (text/markdown/html) |
-| `websearch` (v2) | Multi-provider, configurable depth and result count |
+| Tool | What it does | Status |
+|---|---|---|
+| `fetch_url` | Merged web_fetch + read_page with `format` param (markdown/text/html) | ✅ Added |
+| `websearch` (v2) | Added `num_results` param (1–20, default 10) | ✅ Updated |
 
 ### 🟢 Low Priority
 
-| Tool | What it does |
-|---|---|
-| `codesearch` | Exa API search for SDKs/docs |
-| `repo_overview` | Package manager + ecosystem detection |
-| `repo_clone` | Managed git clone cache |
-| `task` | Spawn sub-agent with persistent session |
-| `todowrite` | Structured todo list with status + priority |
+| Tool | What it does | Status |
+|---|---|---|
+| `todowrite` | Structured todo list with status + priority, persisted to .lethetic/todos.json | ✅ Added |
+| `repo_overview` | Ecosystem detection, entry points, 2-level dir tree, README preview | ✅ Added |
+| `codesearch` | Exa API search for SDKs/docs | — |
+| `repo_clone` | Managed git clone cache | — |
+| `task` | Spawn sub-agent with persistent session | — |
 
 ---
 
@@ -66,3 +66,5 @@
 
 - `replace_text`: added `replace_all` param + line-number context on multi-match error
 - `search_text`: excludes `target/`, `.git/`, `node_modules/`, `.lethetic/`; prefers ripgrep
+- `read_file`: added `max_lines` param; shows truncation notice with total line count
+- `summarize_content`: fixed schema — `prompt` now required; clear error when neither path nor content provided

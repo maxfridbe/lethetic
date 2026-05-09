@@ -8,9 +8,10 @@ pub mod replace_text;
 pub mod edit;
 pub mod glob;
 pub mod find_symbol;
-pub mod web_fetch;
+pub mod fetch_url;
+pub mod web_fetch;    // kept for backwards-compat dispatch only
 pub mod web_search;
-pub mod read_page;
+pub mod read_page;    // kept for backwards-compat dispatch only
 pub mod calculate;
 pub mod ask_the_user;
 pub mod process_image;
@@ -18,6 +19,8 @@ pub mod process_pdf_image;
 pub mod get_pdf_text;
 pub mod summarize_content;
 pub mod apply_patch;
+pub mod todowrite;
+pub mod repo_overview;
 
 #[path = "../icons.rs"]
 pub mod icons;
@@ -53,14 +56,15 @@ pub fn get_all_tools(config: &crate::config::Config) -> Vec<Tool> {
         edit::get_definition(),
         glob::get_definition(),
         find_symbol::get_definition(),
-        web_fetch::get_definition(),
+        fetch_url::get_definition(),       // replaces web_fetch + read_page
         web_search::get_definition(),
-        read_page::get_definition(),
         calculate::get_definition(),
         ask_the_user::get_definition(),
         apply_patch::get_definition(),
         get_pdf_text::get_definition(),
         summarize_content::get_definition(),
+        todowrite::get_definition(),
+        repo_overview::get_definition(),
     ];
 
     if config.enable_image_processing_tool {
@@ -109,6 +113,7 @@ pub fn get_ui_description(func_name: &str, arguments: &serde_json::Value) -> Str
         "edit" => edit::get_ui_description(arguments),
         "glob" => glob::get_ui_description(arguments),
         "find_symbol" => find_symbol::get_ui_description(arguments),
+        "fetch_url" => fetch_url::get_ui_description(arguments),
         "web_fetch" => web_fetch::get_ui_description(arguments),
         "web_search" => web_search::get_ui_description(arguments),
         "read_page" => read_page::get_ui_description(arguments),
@@ -119,6 +124,8 @@ pub fn get_ui_description(func_name: &str, arguments: &serde_json::Value) -> Str
         "process_pdf_image" => process_pdf_image::get_ui_description(arguments),
         "get_pdf_text" => get_pdf_text::get_ui_description(arguments),
         "summarize_content" => summarize_content::get_ui_description(arguments),
+        "todowrite" => todowrite::get_ui_description(arguments),
+        "repo_overview" => repo_overview::get_ui_description(arguments),
         _ => format!("{} {}: {}", icons::COMMAND, func_name, arguments),
     }
 }
@@ -135,7 +142,8 @@ pub async fn execute(
     match func_name {
         "read_file" => {
             let path = arguments["path"].as_str().unwrap_or("");
-            (read_file::execute(path, cwd, cancellation_token).await, cwd.to_string())
+            let max_lines = arguments["max_lines"].as_u64().map(|v| v as usize);
+            (read_file::execute(path, max_lines, cwd, cancellation_token).await, cwd.to_string())
         }
         "read_file_lines" => {
             let path = arguments["path"].as_str().unwrap_or("");
@@ -185,13 +193,20 @@ pub async fn execute(
             let path = arguments["path"].as_str().unwrap_or(".");
             (find_symbol::execute(operation, symbol, path, cwd, cancellation_token).await, cwd.to_string())
         }
+        "fetch_url" => {
+            let url = arguments["url"].as_str().unwrap_or("");
+            let format = arguments["format"].as_str().unwrap_or("markdown");
+            (fetch_url::execute(url, format, cancellation_token).await, cwd.to_string())
+        }
+        // Legacy backwards-compat: keep dispatching web_fetch and read_page
         "web_fetch" => {
             let url = arguments["url"].as_str().unwrap_or("");
             (web_fetch::execute(url, cancellation_token).await, cwd.to_string())
         }
         "web_search" => {
             let query = arguments["query"].as_str().unwrap_or("");
-            (web_search::execute(query, cancellation_token).await, cwd.to_string())
+            let num_results = arguments["num_results"].as_u64().unwrap_or(10) as usize;
+            (web_search::execute(query, num_results, cancellation_token).await, cwd.to_string())
         }
         "read_page" => {
             let url = arguments["url"].as_str().unwrap_or("");
@@ -239,6 +254,14 @@ pub async fn execute(
             let content = arguments["content"].as_str();
             let prompt = arguments["prompt"].as_str();
             (summarize_content::execute(path, content, prompt, cwd, client, config).await, cwd.to_string())
+        }
+        "todowrite" => {
+            let todos = &arguments["todos"];
+            (todowrite::execute(todos, cwd).await, cwd.to_string())
+        }
+        "repo_overview" => {
+            let path = arguments["path"].as_str().unwrap_or(".");
+            (repo_overview::execute(path, cwd, cancellation_token).await, cwd.to_string())
         }
         _ => (format!("Unknown tool: {}", func_name), cwd.to_string()),
     }

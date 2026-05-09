@@ -12,28 +12,28 @@ pub fn get_definition() -> Tool {
         tool_type: "function".to_string(),
         function: FunctionDefinition {
             name: "summarize_content".to_string(),
-            description: "Summarize a file's content or a long string using the LLM. Use this when tool output was too large and saved to a file.".to_string(),
+            description: "Summarize a file or text string using the LLM. Provide either 'path' (reads the file) or 'content' (inline text) — at least one is required. Use 'prompt' to focus the summary on what matters.".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "The path to the file to summarize (optional if content is provided)"
+                        "description": "Path to the file to summarize (required if 'content' is not provided)"
                     },
                     "content": {
                         "type": "string",
-                        "description": "The raw content to summarize (optional if path is provided)"
+                        "description": "Raw text to summarize (required if 'path' is not provided)"
                     },
                     "prompt": {
                         "type": "string",
-                        "description": "Mandatory instructions on what to focus on in the summary."
+                        "description": "What to focus on in the summary — errors, key decisions, API surface, etc."
                     },
                     "tool_call_id": {
                         "type": "string",
-                        "description": "A unique identifier for this call."
+                        "description": "Unique identifier for this call"
                     }
                 },
-                "required": ["tool_call_id"]
+                "required": ["prompt", "tool_call_id"]
             }),
         },
     }
@@ -52,20 +52,24 @@ pub async fn execute(
     client: &Client,
     config: &Config,
 ) -> String {
+    if path.is_none() && content.is_none() {
+        return "ERROR: Provide either 'path' (file to read) or 'content' (inline text).".to_string();
+    }
+
     let raw_content = if let Some(p) = path {
-        let p = p.trim_matches(|c| c == '\'' || c == '\"');
+        let p = p.trim_matches(|c| c == '\'' || c == '"');
         let full_path = Path::new(cwd).join(p);
         match fs::read_to_string(&full_path) {
             Ok(c) => c,
             Err(e) => return format!("ERROR: Failed to read file {}: {}", full_path.display(), e),
         }
-    } else if let Some(c) = content {
-        c.to_string()
     } else {
-        return "ERROR: Either 'path' or 'content' must be provided.".to_string();
+        content.unwrap().to_string()
     };
 
-    let summary_prompt = prompt.unwrap_or("Summarize the following content, highlighting the most important information, results, or errors.");
+    let summary_prompt = prompt.unwrap_or(
+        "Summarize the following content, highlighting the most important information, results, or errors.",
+    );
 
     match summarize_llm(client, config, &raw_content, summary_prompt).await {
         Ok(summary) => format!("SUMMARY:\n{}", summary),
