@@ -26,9 +26,9 @@ fn test_read_file_feedback_logic() {
     
     // VERIFY
     
-    // Check if context was updated
-    assert!(app.context_manager.latest_files.contains_key(path));
-    assert_eq!(app.context_manager.latest_files.get(path).unwrap().content, content);
+    // New files go into active_files first; promoted to latest_files after >3 turns
+    assert!(app.context_manager.active_files.contains_key(path));
+    assert_eq!(app.context_manager.active_files.get(path).unwrap().content, content);
     
     // Check if UI feedback block was added
     let feedback_block = app.blocks.iter().find(|b| b.content.contains("has been placed in context"));
