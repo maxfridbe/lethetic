@@ -87,7 +87,7 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
     let model    = config.model.clone();
     let ctx_len  = context_manager.get_token_count();
 
-    let req_body = gemma_chat::build_request(&model, &messages, &tools, 16384);
+    let req_body = gemma_chat::build_request(&model, &messages, &tools, 24576);
 
     let log_tx = tx.clone();
     let server_url = config.server_url.clone();
@@ -123,7 +123,7 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
             }
         };
 
-        let mut event_stream = match gemma_chat::stream_chat(&client, &base, &model, &messages, &tools, 16384).await {
+        let mut event_stream = match gemma_chat::stream_chat(&client, &base, &model, &messages, &tools, 24576).await {
             Ok(s) => s,
             Err(e) => {
                 let _ = log_tx_spawn.send(StreamEvent::Error(e));

@@ -24,6 +24,36 @@ use lethetic::tools::get_git_info;
 use lethetic::icons;
 use lethetic::parser;
 
+/// Returns true when the model wrote its intention in text without issuing a tool call.
+/// Looks at the text portion only (after any </think> block) to avoid false positives
+/// from reasoning content.
+fn looks_like_intention_without_action(content: &str) -> bool {
+    // Extract text after the thought block
+    let text = if let Some(pos) = content.rfind("</think>") {
+        &content[pos + "</think>".len()..]
+    } else {
+        content
+    };
+    let text = text.trim();
+
+    // Only flag short responses — a long response is likely a legitimate answer
+    if text.is_empty() || text.len() > 400 {
+        return false;
+    }
+
+    let lower = text.to_lowercase();
+    let intent_phrases = [
+        "let's read", "let me read", "i will read", "i'll read",
+        "let's write", "let me write", "i will write", "i'll write",
+        "let's run", "let me run", "i will run", "i'll run",
+        "let's search", "let me search", "i will search",
+        "let's call", "let me call", "i will call", "i'll call",
+        "now i'll", "now let's", "i need to call", "i should call",
+        "i'm going to call", "i will use", "i'll use",
+    ];
+    intent_phrases.iter().any(|p| lower.contains(p))
+}
+
 async fn handle_large_output(
     id: &str, 
     result: String, 
@@ -512,7 +542,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             }
                                             app.add_segment(stop_msg, BlockType::Text);
                                             app.context_manager.add_message("assistant", &full_response_content);
-                                            app.context_manager.add_message("system", "The watchdog terminated your generation because you were unable to break out of a loop. Please proceed with a tool call immediately.");
+                                            app.context_manager.add_message("user", "The watchdog terminated your generation because you were unable to break out of a loop. Please proceed with a tool call immediately.");
                                             app.loop_detection_count = 0; // Reset for next attempt
                                             app.last_loop_detection_time = None;
                                         } else {
@@ -522,7 +552,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             }
                                             app.add_segment(loop_msg, BlockType::Text);
                                             app.context_manager.add_message("assistant", &full_response_content);
-                                            app.context_manager.add_message("system", "Note: You were stuck in a reasoning loop. Please choose a single clear path and proceed with a tool call immediately.");
+                                            app.context_manager.add_message("user", "Note: You were stuck in a reasoning loop. Please choose a single clear path and proceed with a tool call immediately.");
                                             
                                             app.loop_detection_count += 1;
                                             app.last_loop_detection_time = Some(now);
@@ -651,6 +681,20 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 let messages = app.context_manager.get_messages();
                                 if messages.last().map_or(true, |m| m.role != "assistant") {
                                     app.context_manager.add_message("assistant", &full_response_content);
+                                }
+
+                                // Detect "intention text": model described an action in plain text
+                                // but never issued a tool call. Re-prompt once so it acts.
+                                if looks_like_intention_without_action(&full_response_content) {
+                                    app.log_debug("INTENT_TEXT_DETECTED: model described action without tool call — re-prompting");
+                                    app.context_manager.add_message("user", "You described an action but did not call a tool. Please call the appropriate tool now.");
+                                    full_response_content.clear();
+                                    cancellation_token = CancellationToken::new();
+                                    app.parser.reset();
+                                    app.is_processing = true;
+                                    app.tool_calls_processed_this_request = false;
+                                    trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), app.show_debug, app.current_session_dir.clone());
+                                    continue;
                                 }
                             }
 
