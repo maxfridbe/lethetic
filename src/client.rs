@@ -160,9 +160,18 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
                 }
                 gemma_chat::StreamEvent::ToolCallComplete { id, name, arguments, .. } => {
                     let ms = request_start.elapsed().as_millis();
-                    append_token(&prefix_clone, serde_json::json!({"c": "", "t": ms, "kind": "tool", "name": name, "id": id}));
+                    // Prefer the model's own tool_call_id from its arguments over the
+                    // server-generated random UUID. The peg-gemma4 template embeds both
+                    // the call ID and the tool_response ID into the native prompt; if they
+                    // differ the model sees a broken pair and immediately emits EOS.
+                    let effective_id = arguments["tool_call_id"]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string())
+                        .unwrap_or(id);
+                    append_token(&prefix_clone, serde_json::json!({"c": "", "t": ms, "kind": "tool", "name": name, "id": effective_id}));
                     let tc = ToolCall {
-                        id,
+                        id: effective_id,
                         function: crate::context::FunctionCall { name, arguments },
                     };
                     let _ = log_tx_spawn.send(StreamEvent::ToolCalls(vec![tc]));
