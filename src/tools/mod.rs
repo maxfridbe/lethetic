@@ -1,3 +1,5 @@
+pub mod lsp;
+pub mod task;
 pub mod read_file;
 pub mod read_file_lines;
 pub mod read_folder;
@@ -44,6 +46,50 @@ pub struct FunctionDefinition {
     pub parameters: Value,
 }
 
+/// Truncate large tool outputs and save to file. Returns (context_msg, ui_msg).
+pub fn handle_large_output(id: &str, result: String) -> (String, String) {
+    if result.len() > 20_000 {
+        let file_id = if id.is_empty() { "unknown" } else { id };
+        let dir_path = ".lethetic/tool_responses";
+        let _ = std::fs::create_dir_all(dir_path);
+        let file_path = format!("{}/{}.txt", dir_path, file_id);
+        let _ = std::fs::write(&file_path, &result);
+
+        let mut exit_status = String::new();
+        if result.starts_with("EXIT_CODE: ") {
+            if let Some(first) = result.lines().next() {
+                exit_status = format!("{}\n", first);
+            }
+        }
+        let truncated = format!(
+            "{}... [Output truncated. Full output ({} characters) saved to {}] ...",
+            exit_status, result.len(), file_path
+        );
+        let context_msg = format!(
+            "{}... [OUTPUT TRUNCATED ({} characters). Full output saved to `{}`. \
+             Recommend querying specific parts with tools (e.g., `read_file_lines`, `search_text`) \
+             or using `summarize_content` with the path to see more.] ...",
+            exit_status, result.len(), file_path
+        );
+        (context_msg, truncated)
+    } else {
+        (result.clone(), result)
+    }
+}
+
+/// Like get_all_prompt_templates but filters out named tools.
+pub fn get_prompt_templates_excluding(config: &crate::config::Config, exclude: &[&str]) -> String {
+    let mut templates = String::new();
+    for tool in get_all_tools(config) {
+        if !exclude.contains(&tool.function.name.as_str()) {
+            templates.push_str("<|tool>\n");
+            templates.push_str(&serde_json::to_string_pretty(&tool.function).unwrap());
+            templates.push_str("\n<tool|>\n");
+        }
+    }
+    templates
+}
+
 pub fn get_all_tools(config: &crate::config::Config) -> Vec<Tool> {
     let mut tools = vec![
         read_file::get_definition(),
@@ -65,6 +111,8 @@ pub fn get_all_tools(config: &crate::config::Config) -> Vec<Tool> {
         summarize_content::get_definition(),
         todowrite::get_definition(),
         repo_overview::get_definition(),
+        lsp::get_definition(),
+        task::get_definition(),
     ];
 
     if config.enable_image_processing_tool {
@@ -126,19 +174,22 @@ pub fn get_ui_description(func_name: &str, arguments: &serde_json::Value) -> Str
         "summarize_content" => summarize_content::get_ui_description(arguments),
         "todowrite" => todowrite::get_ui_description(arguments),
         "repo_overview" => repo_overview::get_ui_description(arguments),
+        "lsp" => lsp::get_ui_description(arguments),
+        "task" => task::get_ui_description(arguments),
         _ => format!("{} {}: {}", icons::COMMAND, func_name, arguments),
     }
 }
 
-pub async fn execute(
-    func_name: &str, 
-    arguments: &serde_json::Value, 
-    cwd: &str, 
-    cancellation_token: tokio_util::sync::CancellationToken, 
+pub fn execute<'a>(
+    func_name: &'a str,
+    arguments: &'a serde_json::Value,
+    cwd: &'a str,
+    cancellation_token: tokio_util::sync::CancellationToken,
     tx: tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>,
-    client: &reqwest::Client,
-    config: &crate::config::Config,
-) -> (String, String) {
+    client: &'a reqwest::Client,
+    config: &'a crate::config::Config,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = (String, String)> + Send + 'a>> {
+    Box::pin(async move {
     match func_name {
         "read_file" => {
             let path = arguments["path"].as_str().unwrap_or("");
@@ -192,6 +243,18 @@ pub async fn execute(
             let symbol = arguments["symbol"].as_str().unwrap_or("");
             let path = arguments["path"].as_str().unwrap_or(".");
             (find_symbol::execute(operation, symbol, path, cwd, cancellation_token).await, cwd.to_string())
+        }
+        "lsp" => {
+            let operation = arguments["operation"].as_str().unwrap_or("");
+            let file_path = arguments["filePath"].as_str();
+            let line = arguments["line"].as_u64().map(|v| v as u32);
+            let character = arguments["character"].as_u64().map(|v| v as u32);
+            let query = arguments["query"].as_str();
+            (lsp::execute(operation, file_path, line, character, query, cwd, cancellation_token, tx).await, cwd.to_string())
+        }
+        "task" => {
+            let prompt = arguments["prompt"].as_str().unwrap_or("");
+            (task::execute(prompt, cwd, cancellation_token, tx, client, config).await, cwd.to_string())
         }
         "fetch_url" => {
             let url = arguments["url"].as_str().unwrap_or("");
@@ -265,6 +328,7 @@ pub async fn execute(
         }
         _ => (format!("Unknown tool: {}", func_name), cwd.to_string()),
     }
+    }) // Box::pin
 }
 
 pub async fn get_git_info() -> String {

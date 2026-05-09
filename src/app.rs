@@ -148,6 +148,10 @@ pub struct App {
     pub show_latest_files: bool,
     pub latest_files_state: ListState,
     pub config: Config,
+    pub tool_call_fingerprints: std::collections::HashMap<String, usize>,
+    pub show_lsp_manager: bool,
+    pub lsp_server_list_state: ListState,
+    pub lsp_install_cmd: Option<String>,
     }
 
     impl App {
@@ -197,6 +201,7 @@ pub struct App {
                 format!("{} Toggle Debugger", icons::DEBUG),
                 format!("{} Sessions", icons::COMMAND),
                 format!("{} Latest Files", icons::COMMAND),
+                format!("{} LSP Servers", icons::SEARCH),
                 format!("{} Quit", icons::QUIT),
             ],
             theme: {
@@ -282,6 +287,10 @@ pub struct App {
             show_latest_files: false,
             latest_files_state: latest_files_state,
             config: config.clone(),
+            tool_call_fingerprints: std::collections::HashMap::new(),
+            show_lsp_manager: false,
+            lsp_server_list_state: ListState::default(),
+            lsp_install_cmd: None,
             };
         app.refresh_session_list();
         if !app.session_files.is_empty() {
@@ -991,7 +1000,12 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                     7 => { app.show_palette = false; app.show_debug = !app.show_debug; }
                     8 => { app.show_palette = false; app.refresh_session_list(); app.show_session_manager = true; }
                     9 => { app.show_palette = false; app.show_latest_files = true; app.latest_files_state.select(Some(0)); }
-                    10 => return AppEventOutcome::Exit,
+                    10 => {
+                        app.show_palette = false;
+                        app.show_lsp_manager = true;
+                        app.lsp_server_list_state.select(Some(0));
+                    }
+                    11 => return AppEventOutcome::Exit,
                     _ => app.show_palette = false,
                 }
             }
@@ -1034,6 +1048,34 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                             app.latest_files_state.select(None);
                         } else if i >= num_files {
                             app.latest_files_state.select(Some(num_files - 1));
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        app.should_redraw = true;
+        return AppEventOutcome::Continue;
+    }
+
+    if app.show_lsp_manager {
+        let num_servers = crate::lsp::registry::SERVERS.len();
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => { app.show_lsp_manager = false; }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let i = app.lsp_server_list_state.selected().unwrap_or(0);
+                app.lsp_server_list_state.select(Some(if i + 1 >= num_servers { 0 } else { i + 1 }));
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                let i = app.lsp_server_list_state.selected().unwrap_or(0);
+                app.lsp_server_list_state.select(Some(if i == 0 { num_servers - 1 } else { i - 1 }));
+            }
+            KeyCode::Enter | KeyCode::Char('i') => {
+                if let Some(i) = app.lsp_server_list_state.selected() {
+                    if let Some(def) = crate::lsp::registry::SERVERS.get(i) {
+                        if !crate::lsp::registry::check_installed(def) {
+                            app.show_lsp_manager = false;
+                            app.lsp_install_cmd = Some(def.install_cmd.to_string());
                         }
                     }
                 }

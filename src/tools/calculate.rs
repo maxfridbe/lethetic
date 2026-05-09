@@ -7,13 +7,13 @@ pub fn get_definition() -> Tool {
         tool_type: "function".to_string(),
         function: FunctionDefinition {
             name: "calculate".to_string(),
-            description: "Perform a mathematical calculation".to_string(),
+            description: "Perform a mathematical calculation. Supports +, -, *, /, ^, sqrt(), sin(), cos(), tan(), asin(), acos(), atan(), atan2(), exp(), ln(), log(), abs(), floor(), ceil(), round(), pi, e. Examples: 'sin(pi/2)', 'sqrt(2)', '2^10', 'log(100, 10)'.".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "expression": {
                         "type": "string",
-                        "description": "The math expression to evaluate, e.g. '2 + 2' or 'sin(pi/2)'"
+                        "description": "The math expression to evaluate, e.g. 'sin(pi/2)', 'sqrt(2)', '2^10 + 1'"
                     },
                     "description": {
                         "type": "string",
@@ -30,7 +30,6 @@ pub fn get_definition() -> Tool {
     }
 }
 
-
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     if let Some(desc) = arguments["description"].as_str() {
         return format!("{} {}", icons::CALC, desc);
@@ -40,73 +39,49 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
 }
 
 pub async fn execute(expression: &str) -> String {
-    match eval(expression) {
-        Ok(res) => res.to_string(),
+    match meval::eval_str(expression) {
+        Ok(result) => {
+            // Show integer form when the result is a whole number
+            if result.fract() == 0.0 && result.abs() < 1e15 {
+                format!("{}", result as i64)
+            } else {
+                format!("{}", result)
+            }
+        }
         Err(e) => format!("ERROR: {}", e),
     }
 }
 
-fn eval(expr: &str) -> Result<f64, String> {
-    let clean_expr = expr.replace(' ', "");
-    if clean_expr.is_empty() { return Err("Empty expression".into()); }
-    
-    // Simple recursive descent parser for basic math
-    let mut pos = 0;
-    let chars: Vec<char> = clean_expr.chars().collect();
-    
-    parse_expression(&chars, &mut pos)
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-fn parse_expression(chars: &[char], pos: &mut usize) -> Result<f64, String> {
-    let mut val = parse_term(chars, pos)?;
-    while *pos < chars.len() {
-        match chars[*pos] {
-            '+' => { *pos += 1; val += parse_term(chars, pos)?; }
-            '-' => { *pos += 1; val -= parse_term(chars, pos)?; }
-            _ => break,
-        }
+    #[tokio::test]
+    async fn test_basic_arithmetic() {
+        assert_eq!(execute("2 + 2").await, "4");
+        assert_eq!(execute("10 / 4").await, "2.5");
+        assert_eq!(execute("3 * 7").await, "21");
     }
-    Ok(val)
-}
 
-fn parse_term(chars: &[char], pos: &mut usize) -> Result<f64, String> {
-    let mut val = parse_factor(chars, pos)?;
-    while *pos < chars.len() {
-        match chars[*pos] {
-            '*' => { *pos += 1; val *= parse_factor(chars, pos)?; }
-            '/' => {
-                *pos += 1;
-                let divisor = parse_factor(chars, pos)?;
-                if divisor == 0.0 { return Err("Division by zero".into()); }
-                val /= divisor;
-            }
-            _ => break,
-        }
+    #[tokio::test]
+    async fn test_trig() {
+        let r = execute("sin(pi/2)").await;
+        assert_eq!(r, "1");
+        let r = execute("cos(0)").await;
+        assert_eq!(r, "1");
     }
-    Ok(val)
-}
 
-fn parse_factor(chars: &[char], pos: &mut usize) -> Result<f64, String> {
-    if *pos >= chars.len() { return Err("Unexpected end of expression".into()); }
-    
-    if chars[*pos] == '(' {
-        *pos += 1;
-        let val = parse_expression(chars, pos)?;
-        if *pos >= chars.len() || chars[*pos] != ')' {
-            return Err("Missing closing parenthesis".into());
-        }
-        *pos += 1;
-        Ok(val)
-    } else if chars[*pos] == '-' {
-        *pos += 1;
-        Ok(-parse_factor(chars, pos)?)
-    } else {
-        let start = *pos;
-        while *pos < chars.len() && (chars[*pos].is_digit(10) || chars[*pos] == '.') {
-            *pos += 1;
-        }
-        if start == *pos { return Err(format!("Expected number at position {}", start)); }
-        let s: String = chars[start..*pos].iter().collect();
-        s.parse::<f64>().map_err(|e| e.to_string())
+    #[tokio::test]
+    async fn test_sqrt_pow() {
+        assert_eq!(execute("sqrt(9)").await, "3");
+        assert_eq!(execute("2^10").await, "1024");
+    }
+
+    #[tokio::test]
+    async fn test_constants() {
+        let r = execute("e^1").await;
+        // e ≈ 2.718...
+        let v: f64 = r.parse().unwrap();
+        assert!((v - std::f64::consts::E).abs() < 1e-10);
     }
 }

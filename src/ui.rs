@@ -869,6 +869,57 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         f.render_stateful_widget(List::new(items).block(UIBlock::default().title(format!("{} Command Palette", icons::COMMAND)).borders(Borders::ALL).style(Style::default().bg(app.theme.terminal_bg))).highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(app.theme.highlight_fg)).highlight_symbol("> "), area, &mut app.palette_state);
     }
 
+    if app.show_lsp_manager {
+        use ratatui::text::{Span, Line as RLine};
+        use ratatui::widgets::Paragraph;
+        use crate::lsp::registry::{check_installed, SERVERS};
+
+        let area = centered_rect(72, 60, f.area());
+        f.render_widget(Clear, area);
+
+        let items: Vec<ListItem> = SERVERS.iter().map(|def| {
+            let installed = check_installed(def);
+            let status = if installed {
+                Span::styled("✓ ", Style::default().fg(app.theme.success_fg))
+            } else {
+                Span::styled("✗ ", Style::default().fg(app.theme.warning_fg))
+            };
+            let label = Span::raw(format!(
+                "{:<26} {:<28} {}",
+                def.display_name,
+                def.binary,
+                if installed { "installed" } else { def.install_note }
+            ));
+            ListItem::new(RLine::from(vec![status, label]))
+        }).collect();
+
+        let inner_area = ratatui::layout::Layout::vertical([
+            ratatui::layout::Constraint::Min(1),
+            ratatui::layout::Constraint::Length(2),
+        ]).split(area);
+
+        f.render_stateful_widget(
+            List::new(items)
+                .block(UIBlock::default()
+                    .title(format!("{} LSP Servers  (↑↓ navigate · Enter/i: install · q: close)", icons::SEARCH))
+                    .borders(Borders::ALL)
+                    .style(Style::default().bg(app.theme.terminal_bg)))
+                .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(app.theme.highlight_fg))
+                .highlight_symbol("> "),
+            inner_area[0],
+            &mut app.lsp_server_list_state,
+        );
+
+        // Show install command for selected entry
+        if let Some(i) = app.lsp_server_list_state.selected() {
+            if let Some(def) = SERVERS.get(i) {
+                let cmd_line = Paragraph::new(format!("  install: {}", def.install_cmd))
+                    .style(Style::default().fg(app.theme.system_fg));
+                f.render_widget(cmd_line, inner_area[1]);
+            }
+        }
+    }
+
     if app.show_theme_menu {
         let area = centered_rect(60, 60, f.area());
         f.render_widget(Clear, area);

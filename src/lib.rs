@@ -10,3 +10,5 @@ pub mod app;
 pub mod ui;
 pub mod tools;
 pub mod loop_detector;
+pub mod lsp;
+pub mod headless;

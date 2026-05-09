@@ -111,34 +111,15 @@ fn looks_like_intention_without_action(content: &str) -> bool {
     intent_phrases.iter().any(|p| lower.contains(p))
 }
 
+// Delegated to lethetic::tools::handle_large_output; keep thin async wrapper for call-site compat.
 async fn handle_large_output(
-    id: &str, 
-    result: String, 
-    _client: &reqwest::Client, 
-    _config: &Config, 
-    _args: &serde_json::Value
+    id: &str,
+    result: String,
+    _client: &reqwest::Client,
+    _config: &Config,
+    _args: &serde_json::Value,
 ) -> (String, String) {
-    if result.len() > 10000 {
-        let file_id = if id.is_empty() { "unknown" } else { id };
-        let dir_path = ".lethetic/tool_responses";
-        let _ = std::fs::create_dir_all(dir_path);
-        let file_path = format!("{}/{}.txt", dir_path, file_id);
-        let _ = std::fs::write(&file_path, &result);
-
-        let mut exit_status = String::new();
-        if result.starts_with("EXIT_CODE: ") {
-            let lines: Vec<&str> = result.lines().collect();
-            if !lines.is_empty() {
-                exit_status = format!("{}\n", lines[0]);
-            }
-        }
-
-        let truncated = format!("{}... [Output truncated. Full output ({} characters) saved to {}] ...", exit_status, result.len(), file_path);
-        let context_msg = format!("{}... [OUTPUT TRUNCATED ({} characters). Full output saved to `{}`. Recommend querying specific parts of the output with tools (e.g., `read_file_lines`, `search_text`) or using `summarize_content` with the path to see more.] ...", exit_status, result.len(), file_path);
-        (context_msg, truncated)
-    } else {
-        (result.clone(), result)
-    }
+    lethetic::tools::handle_large_output(id, result)
 }
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -189,141 +170,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Error>> {
-    let (tx, mut rx) = mpsc::unbounded_channel();
-    let client = Client::new();
-    let mut cancellation_token = CancellationToken::new();
-    let mut app = App::new(config);
-    app.context_manager.set_cwd(app.current_dir.clone());
-    
-    app.context_manager.add_message("user", &prompt);
     println!("\n{} User: {}\n", icons::INPUT, prompt);
-    
-    let mut full_response_content = String::new();
-    app.context_manager.set_cwd(app.current_dir.clone());
-    app.parser.reset();
-    trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false, app.current_session_dir.clone());
-
-    loop {
-        match rx.recv().await {
-            Some(StreamEvent::Chunk(chunk)) => {
-                print!("{}", chunk);
-                io::Write::flush(&mut io::stdout())?;
-                full_response_content.push_str(&chunk);
-                
-                app.parser.parse_chunk(&chunk);
-
-                if app.parser.state == lethetic::parser::ParserState::Text {
-                    match parser::find_tool_call(&full_response_content, false) {
-                        Some(Ok((tc, _))) => {
-                            eprintln!("\n\n{} [TOOL CALL: {}]", icons::COMMAND, tc.function.name);
-                            eprintln!("Arguments: {}", tc.function.arguments);
-                            cancellation_token.cancel();
-                            let tool_cancellation_token = CancellationToken::new();
-
-                            let assistant_content = full_response_content.clone();
-                            app.context_manager.add_message("assistant", &assistant_content);
-
-                            let func_name = tc.function.name.clone();
-                            let tc_id = tc.id.clone();
-                            let (result, new_dir) = lethetic::tools::execute(
-                                &func_name, &tc.function.arguments, &app.current_dir, tool_cancellation_token, tx.clone(), &client, &config).await;
-                            let (full_result, ui_result) = handle_large_output(&tc_id, result, &client, &config, &tc.function.arguments).await;
-                            app.current_dir = new_dir;
-                            app.log_debug(&format!("[TOOL RESULT] {} finished", func_name));
-                            eprintln!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, ui_result);
-                            app.context_manager.add_tool_message(tc_id, &func_name, &full_result);
-
-
-                            
-                            full_response_content.clear();
-                            cancellation_token = CancellationToken::new();
-                            app.context_manager.set_cwd(app.current_dir.clone());
-                            app.parser.reset();
-                            trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false, app.current_session_dir.clone());
-                            continue; 
-                        }
-                        Some(Err((err_msg, _))) => {
-                            println!("\n\n{} [SYNTAX ERROR: {}]", icons::WARNING, err_msg);
-                            cancellation_token.cancel();
-                            let assistant_content = full_response_content.clone();
-                            app.context_manager.add_message("assistant", &assistant_content);
-                            app.context_manager.add_tool_message("raw_call".to_string(), "syntax_error", &format!("Syntax Error in tool call: {}", err_msg));
-                            full_response_content.clear();
-                            cancellation_token = CancellationToken::new();
-                            app.context_manager.set_cwd(app.current_dir.clone());
-                            app.parser.reset();
-                            trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false, app.current_session_dir.clone());
-                            continue;
-                        }
-                        None => {}
-                    }
-                }
-            }
-            Some(StreamEvent::ToolProgress(msg)) => {
-                // In headless, we could print progress or just ignore for now
-                // but let's print a single line indicator if it changed
-                print!("\r[STREAMING] {}          ", msg.replace('\n', " | "));
-                io::Write::flush(&mut io::stdout())?;
-            }
-            Some(StreamEvent::Done { prompt_tokens, .. }) => {
-                    let _ = prompt_tokens; // server count available if needed
-                print!("\r                                                                \r");
-                if app.parser.state == lethetic::parser::ParserState::Text || app.parser.state == lethetic::parser::ParserState::ToolCall {
-                    match parser::find_tool_call(&full_response_content, true) {
-                        Some(Ok((tc, _))) => {
-                        eprintln!("\n\n{} [TOOL CALL: {}]", icons::COMMAND, tc.function.name);
-                        eprintln!("Arguments: {}", tc.function.arguments);
-                        cancellation_token.cancel();
-                        cancellation_token = CancellationToken::new();
-
-                        let assistant_content = full_response_content.clone();
-                        app.context_manager.add_message("assistant", &assistant_content);
-
-                        let func_name = tc.function.name.clone();
-                        let tc_id = tc.id.clone();
-                        let (result, new_dir) = lethetic::tools::execute(
-                            &func_name, &tc.function.arguments, &app.current_dir, cancellation_token.clone(), tx.clone(), &client, &config).await;
-                        let (full_result, ui_result) = handle_large_output(&tc_id, result, &client, &config, &tc.function.arguments).await;
-                        
-                        app.current_dir = new_dir;
-                        app.log_debug(&format!("[TOOL RESULT] {} finished", func_name));
-                        eprintln!("\n{} [TOOL RESULT]\n{}\n", icons::SUCCESS, ui_result);
-                        app.context_manager.add_tool_message(tc_id, &func_name, &full_result);
-
-                        
-                        full_response_content.clear();
-                        cancellation_token = CancellationToken::new();
-                        app.context_manager.set_cwd(app.current_dir.clone());
-                        app.parser.reset();
-                        trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), false, app.current_session_dir.clone());
-                        continue;
-                    }
-                    _ => {}
-                }
-            }
-
-                if !full_response_content.is_empty() {
-                     let messages = app.context_manager.get_messages();
-                     let last_role = messages.last().map(|m| m.role.as_str());
-                     if last_role != Some("assistant") {
-                        app.context_manager.add_message("assistant", &full_response_content);
-                     }
-                }
-                
-                if full_response_content.is_empty() && app.context_manager.get_messages().last().map_or(false, |m| m.role == "tool") {
-                    continue;
-                }
-
-                println!("\n[DONE]");
-                return Ok(());
-            }
-            Some(StreamEvent::Error(e)) => {
-                println!("\n{} ERROR: {}", icons::WARNING, e);
-                return Ok(());
-            }
-            None => break,
-            _ => {}
-        }
+    let client = Client::new();
+    match lethetic::headless::run_agent(prompt, &client, config, true, None).await {
+        Ok(_) => { println!("\n[DONE]"); }
+        Err(e) => { println!("\n{} ERROR: {}", icons::WARNING, e); }
     }
     Ok(())
 }
@@ -474,6 +325,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             app.context_manager.set_cwd(app.current_dir.clone());
                                             app.context_manager.add_message("user", &prompt);
                                             app.stop_reason = "Processing…".to_string();
+                                            app.tool_call_fingerprints.clear();
                                             app.is_processing = true;
                                             app.tool_calls_processed_this_request = false;
                                             app.tool_call_pos = None;
@@ -526,6 +378,24 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                         app.should_redraw = true;
                                     }
                                     AppEventOutcome::Continue => { app.should_redraw = true; }
+                                }
+
+                                // LSP install requested from the server panel
+                                if let Some(cmd) = app.lsp_install_cmd.take() {
+                                    app.add_segment(format!("\n⟳ Installing LSP server…\n$ {}\n", cmd), BlockType::Text);
+                                    app.stop_reason = "⟳ Installing LSP server…".to_string();
+                                    app.is_executing_tool = true;
+                                    let ctx_tx = tx.clone();
+                                    let tool_cancel = cancellation_token.clone();
+                                    let cwd = app.current_dir.clone();
+                                    tokio::spawn(async move {
+                                        let (result, new_dir) = lethetic::tools::execute(
+                                            "run_shell_command",
+                                            &serde_json::json!({"command": cmd, "description": "Install LSP server", "tool_call_id": "lsp_install"}),
+                                            &cwd, tool_cancel, ctx_tx.clone(), &reqwest::Client::new(), &lethetic::config::Config::default(),
+                                        ).await;
+                                        let _ = ctx_tx.send(StreamEvent::ToolResult(None, "lsp_install".to_string(), result, new_dir));
+                                    });
                                 }
                             }
                         }
@@ -710,9 +580,65 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                     }
                                 }
 
-                                app.context_manager.add_tool_message(tc_id, &func_name, &full_result); 
+                                app.context_manager.add_tool_message(tc_id, &func_name, &full_result);
                             }
-                            
+
+                            // Duplicate tool call detection: same (tool, key-args) called 3+ times
+                            {
+                                let path = tool_args["path"].as_str()
+                                    .or_else(|| tool_args["file_path"].as_str())
+                                    .unwrap_or("");
+                                let fingerprint = match func_name.as_str() {
+                                    "read_file" => format!("read_file:{}", path),
+                                    "read_file_lines" => format!("read_file_lines:{}:{}-{}",
+                                        path,
+                                        tool_args["start_line"].as_u64().unwrap_or(0),
+                                        tool_args["end_line"].as_u64().unwrap_or(0)),
+                                    "search_text" => format!("search_text:{}:{}",
+                                        tool_args["pattern"].as_str().unwrap_or(""),
+                                        path),
+                                    other => format!("{}:{}",
+                                        other,
+                                        serde_json::to_string(&tool_args).unwrap_or_default()),
+                                };
+                                let count = {
+                                    let c = app.tool_call_fingerprints.entry(fingerprint).or_insert(0);
+                                    *c += 1;
+                                    *c
+                                };
+                                if count >= 3 {
+                                    let path_hint = tool_args["path"].as_str()
+                                        .or_else(|| tool_args["file_path"].as_str())
+                                        .unwrap_or("this file");
+                                    let hint = match func_name.as_str() {
+                                        "read_file" | "read_file_lines" => format!(
+                                            "You have called `{}` on `{}` {} times and received the same result. \
+                                             The file may be too large for this approach. Try: \
+                                             `search_text` with a specific pattern to locate the code you need, \
+                                             `read_file_lines` with a narrower range (50–100 lines at a time), \
+                                             or `summarize_content` with the file path for an overview.",
+                                            func_name, path_hint, count
+                                        ),
+                                        "search_text" => format!(
+                                            "You have run this search {} times and received the same result. \
+                                             Try a more specific pattern or use `find_symbol` for definition/reference lookup.",
+                                            count
+                                        ),
+                                        other => format!(
+                                            "You have called `{}` with identical parameters {} times. \
+                                             Try a different approach or a different tool.",
+                                            other, count
+                                        ),
+                                    };
+                                    let warn = format!("⚠ DUPLICATE TOOL CALL: {}", hint);
+                                    app.context_manager.add_message("user", &warn);
+                                    app.add_segment(
+                                        format!("\n⚠ [DUPLICATE TOOL CALL x{}] {}\n", count, hint),
+                                        BlockType::Text,
+                                    );
+                                }
+                            }
+
                             app.is_processing = true;
                             app.tool_calls_processed_this_request = false;
                             app.tool_call_pos = None;

@@ -32,6 +32,7 @@ diffy = "0.4"
 h2m = "0.7.1"
 h2m-search = "0.7.1"
 gemma-chat = { path = "gemma-chat" }
+meval = "0.2.0"
 
 [[bin]]
 name = "lethetic"
