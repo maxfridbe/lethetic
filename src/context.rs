@@ -1,10 +1,13 @@
-use tiktoken_rs::cl100k_base;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use once_cell::sync::Lazy;
-use std::cell::Cell;
 
-static TOKENIZER: Lazy<tiktoken_rs::CoreBPE> = Lazy::new(|| cl100k_base().unwrap());
+// Gemma 4 uses SentencePiece, not cl100k. A simple chars/4 heuristic (matching opencode's
+// approach) is more accurate than GPT-4's tokenizer and avoids a heavy compile-time dep.
+const CHARS_PER_TOKEN: usize = 4;
+
+fn estimate_tokens(text: &str) -> usize {
+    text.len() / CHARS_PER_TOKEN
+}
 
 fn format_gemma4_call(name: &str, args: &serde_json::Value) -> String {
     let args_str = if let Some(obj) = args.as_object() {
@@ -27,11 +30,15 @@ fn format_gemma4_call(name: &str, args: &serde_json::Value) -> String {
 }
 
 pub fn truncate_to_tokens(text: &str, max_tokens: usize) -> String {
-    let tokens = TOKENIZER.encode_with_special_tokens(text);
-    if tokens.len() <= max_tokens {
+    let max_chars = max_tokens * CHARS_PER_TOKEN;
+    if text.len() <= max_chars {
         return text.to_string();
     }
-    TOKENIZER.decode(&tokens[..max_tokens]).unwrap_or_else(|_| text[..max_tokens.min(text.len())].to_string())
+    // Truncate on a char boundary
+    text.char_indices()
+        .nth(max_chars)
+        .map(|(i, _)| text[..i].to_string())
+        .unwrap_or_else(|| text.to_string())
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -60,12 +67,14 @@ pub struct CachedFile {
     pub tokens: usize,
 }
 
+// Files may not consume more than this fraction of the total context budget.
+const LATEST_FILES_BUDGET_FRACTION: usize = 35; // 35%
+
 pub struct ContextManager {
     max_tokens: usize,
     messages: Vec<Message>,
     system_prompt: Option<String>,
     cwd: String,
-    cached_token_count: Cell<Option<usize>>,
     pub latest_files: std::collections::HashMap<String, CachedFile>,
 }
 
@@ -76,7 +85,6 @@ impl ContextManager {
             messages: Vec::new(),
             system_prompt,
             cwd: ".".to_string(),
-            cached_token_count: Cell::new(None),
             latest_files: std::collections::HashMap::new(),
         }
     }
@@ -93,18 +101,43 @@ impl ContextManager {
     }
 
     pub fn update_latest_file(&mut self, path: String, content: String) {
-        let tokens = TOKENIZER.encode_with_special_tokens(&content).len();
+        let tokens = estimate_tokens(&content);
         self.latest_files.insert(path, CachedFile {
             content,
             timestamp: std::time::Instant::now(),
             tokens,
         });
-        self.cached_token_count.set(None);
+        self.evict_files_over_budget();
     }
 
     pub fn remove_latest_file(&mut self, path: &str) {
         self.latest_files.remove(path);
-        self.cached_token_count.set(None);
+    }
+
+    fn latest_files_token_total(&self) -> usize {
+        self.latest_files.values().map(|f| f.tokens).sum()
+    }
+
+    // If the latest_files cache exceeds LATEST_FILES_BUDGET_FRACTION% of max_tokens,
+    // evict the oldest files first until we're back under budget.
+    fn evict_files_over_budget(&mut self) {
+        let budget = self.max_tokens * LATEST_FILES_BUDGET_FRACTION / 100;
+        if self.latest_files_token_total() <= budget {
+            return;
+        }
+        // Collect paths sorted oldest→newest by timestamp
+        let mut by_age: Vec<(std::time::Instant, String)> = self.latest_files
+            .iter()
+            .map(|(k, v)| (v.timestamp, k.clone()))
+            .collect();
+        by_age.sort_by_key(|(t, _)| *t);
+
+        for (_, path) in by_age {
+            if self.latest_files_token_total() <= budget {
+                break;
+            }
+            self.latest_files.remove(&path);
+        }
     }
 
     pub fn add_message(&mut self, role: &str, content: &str) {
@@ -158,7 +191,7 @@ impl ContextManager {
 
     pub fn get_raw_prompt(&self) -> String {
         let mut prompt = String::from("<bos>");
-        
+
         if let Some(sys) = &self.system_prompt {
             prompt.push_str("<|turn>system\n<|think|>\n");
             prompt.push_str(sys);
@@ -191,9 +224,9 @@ impl ContextManager {
                     if current_turn_role != "model" {
                         prompt.push_str("<|turn>model\n");
                     }
-                    
+
                     let mut clean_content = msg.content.clone();
-                    
+
                     let thought_pairs = [
                         ("<|channel>thought", "<channel|>"),
                         ("<thought>", "</thought>"),
@@ -222,7 +255,7 @@ impl ContextManager {
                     }
                     prompt.push_str(clean_content.trim());
                     prompt.push('\n');
-                    
+
                     if let Some(calls) = &msg.tool_calls {
                         for tc in calls {
                             let call_str = format_gemma4_call(&tc.function.name, &tc.function.arguments);
@@ -256,7 +289,7 @@ impl ContextManager {
             for (path, cached_file) in &self.latest_files {
                 let mut safe_content = cached_file.content.clone();
                 let tags_to_remove = [
-                    "<turn|>", "<|turn>", "<|tool_call>", "<tool_call|>", 
+                    "<turn|>", "<|turn>", "<|tool_call>", "<tool_call|>",
                     "<|tool_response>", "<tool_response|>", "<|channel>", "<channel|>",
                     "<thought>", "</thought>", "<think>", "</think>",
                     "<|\"|>", "<|\\\\\">", "<|\\\">", "<|\">", "<|'>", "<|'|>"
@@ -274,7 +307,6 @@ impl ContextManager {
             prompt.push_str("<|turn>model\n");
         }
 
-        
         prompt
     }
 
@@ -392,19 +424,77 @@ impl ContextManager {
     }
 
     pub fn get_token_count(&self) -> usize {
-        if let Some(count) = self.cached_token_count.get() {
-            return count;
-        }
-        let count = TOKENIZER.encode_with_special_tokens(&self.get_raw_prompt()).len();
-        self.cached_token_count.set(Some(count));
-        count
+        estimate_tokens(&self.get_raw_prompt())
     }
 
     fn trim_context(&mut self) {
-        self.cached_token_count.set(None);
-        while self.get_token_count() > self.max_tokens && !self.messages.is_empty() {
-            self.messages.remove(0);
-            self.cached_token_count.set(None);
+        let files_tokens = self.latest_files_token_total();
+        // Usable budget for messages (headroom after latest_files)
+        let usable = self.max_tokens.saturating_sub(files_tokens);
+
+        // Fast path: estimate total message tokens cheaply before doing the full prompt build.
+        let msg_estimate: usize = self.messages.iter().map(|m| estimate_tokens(&m.content)).sum();
+        if msg_estimate <= usable {
+            return;
+        }
+
+        // Identify the earliest index we can drop up to while keeping pairs intact
+        // and never dropping system messages.
+        //
+        // Strategy: walk from the front, collecting "droppable units". A unit is:
+        //   - a single non-system, non-tool message (user or assistant-without-tool-calls)
+        //   - an (assistant-with-tool-calls) message AND all immediately following tool messages
+        // We accumulate the cost of what we'd DROP, stopping when the remaining messages
+        // fit within `usable`.
+        let total_msg_tokens: usize = self.messages.iter().map(|m| estimate_tokens(&m.content)).sum();
+        if total_msg_tokens <= usable {
+            return;
+        }
+
+        let mut need_to_drop = total_msg_tokens.saturating_sub(usable);
+        let mut cut = 0usize;
+        let n = self.messages.len();
+        let mut i = 0;
+
+        while i < n && need_to_drop > 0 {
+            let msg = &self.messages[i];
+
+            // Never drop system messages
+            if msg.role == "system" {
+                i += 1;
+                continue;
+            }
+
+            if msg.role == "assistant" && msg.tool_calls.is_some() {
+                // Drop this assistant msg plus all immediately following tool msgs as a unit
+                let unit_start = i;
+                let cost = estimate_tokens(&msg.content);
+                i += 1;
+                let mut unit_cost = cost;
+                while i < n && self.messages[i].role == "tool" {
+                    unit_cost += estimate_tokens(&self.messages[i].content);
+                    i += 1;
+                }
+                cut = i;
+                need_to_drop = need_to_drop.saturating_sub(unit_cost);
+                let _ = unit_start; // suppress warning
+            } else if msg.role == "tool" {
+                // Orphaned tool message (shouldn't normally happen) — drop it alone
+                let cost = estimate_tokens(&msg.content);
+                i += 1;
+                cut = i;
+                need_to_drop = need_to_drop.saturating_sub(cost);
+            } else {
+                // user or assistant-without-tool-calls — droppable unit
+                let cost = estimate_tokens(&msg.content);
+                i += 1;
+                cut = i;
+                need_to_drop = need_to_drop.saturating_sub(cost);
+            }
+        }
+
+        if cut > 0 {
+            self.messages.drain(0..cut);
         }
     }
 }

@@ -37,7 +37,9 @@ impl StreamParser {
 
             match self.state {
                 ParserState::Thought => {
-                    let end_markers = ["<channel|>", "</thought>", "</think>"];
+                    // <|channel>text is Gemma 4's explicit text-channel opener; treat it the
+                    // same as <channel|> (end of thought → start of text).
+                    let end_markers = ["<channel|>", "</thought>", "</think>", "<|channel>text"];
                     let thought_starts = ["<|channel>thought", "<thought>", "<think>"];
                     let tool_starts = ["<|tool_call>", "<tool_call>"];
 
@@ -109,7 +111,9 @@ impl StreamParser {
                 ParserState::Text => {
                     let thought_starts = ["<|channel>thought", "<thought>", "<think>"];
                     let tool_starts = ["<|tool_call>", "<tool_call>"];
-                    
+                    // <|channel>text in Text state is a no-op marker — consume it silently.
+                    let text_channel_markers = ["<|channel>text"];
+
                     let mut earliest_start = None;
                     for &m in &thought_starts {
                         if let Some(pos) = input.find(m) {
@@ -126,6 +130,28 @@ impl StreamParser {
                         }
                     }
 
+                    // Check if a no-op text-channel marker appears before any real transition
+                    let mut earliest_noop = None;
+                    for &m in &text_channel_markers {
+                        if let Some(pos) = input.find(m) {
+                            if earliest_noop.map_or(true, |(p, _)| pos < p) {
+                                earliest_noop = Some((pos, m));
+                            }
+                        }
+                    }
+
+                    if let Some((npos, nmarker)) = earliest_noop {
+                        if earliest_start.map_or(true, |(p, _, _)| npos < p) {
+                            // Emit text before the marker, then consume it, stay in Text
+                            let content = input[..npos].to_string();
+                            if !content.is_empty() {
+                                results.push((BlockType::Text, content));
+                            }
+                            self.buffer = input[npos + nmarker.len()..].to_string();
+                            continue;
+                        }
+                    }
+
                     if let Some((pos, marker, next_state)) = earliest_start {
                         let content = input[..pos].to_string();
                         if !content.is_empty() {
@@ -135,16 +161,19 @@ impl StreamParser {
                         self.buffer = input[pos + marker.len()..].to_string();
                         continue;
                     } else {
-                        let all_starts: Vec<&str> = thought_starts.iter().chain(tool_starts.iter()).copied().collect();
+                        let all_starts: Vec<&str> = thought_starts.iter()
+                            .chain(tool_starts.iter())
+                            .chain(text_channel_markers.iter())
+                            .copied().collect();
                         if let Some(partial_start_idx) = self.find_partial_marker_start(input, &all_starts) {
                             let content = input[..partial_start_idx].to_string();
                             if !content.is_empty() {
                                 results.push((BlockType::Text, content));
                             }
                             self.buffer = input[partial_start_idx..].to_string();
-                            break; 
+                            break;
                         }
-                        
+
                         let to_emit = self.buffer.clone();
                         if !to_emit.is_empty() {
                             results.push((BlockType::Text, to_emit));

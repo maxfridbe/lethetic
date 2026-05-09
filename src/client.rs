@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use reqwest::Client;
 use std::fs;
 use std::io::Write;
@@ -73,17 +72,11 @@ pub enum StreamEvent {
 }
 
 fn base_url(server_url: &str) -> String {
-    // Strip known path suffixes to get the /v1 base
     for suffix in &["/v1/responses", "/v1/chat/completions", "/completion"] {
         if let Some(base) = server_url.strip_suffix(suffix) {
-            return if suffix == &"/completion" {
-                format!("{}/v1", base)
-            } else {
-                format!("{}/v1", base)
-            };
+            return format!("{}/v1", base);
         }
     }
-    // Already a base URL (e.g. http://host:port/v1)
     server_url.to_string()
 }
 
@@ -99,22 +92,17 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
     let log_tx = tx.clone();
     let server_url = config.server_url.clone();
 
-    let req_id = chrono::Local::now().format("%Y%m%d_%H%M%S_%f").to_string();
-    let sep = format!("\n//-------------{}-------------------------------------------\n", req_id);
-
     let prefix = session_dir.clone().unwrap_or_else(|| ".lethetic/".to_string());
     let _ = fs::create_dir_all(&prefix);
 
-    if let Ok(full_req_json) = serde_json::to_string_pretty(&req_body) {
-        let _ = fs::write(format!("{}/last_context", prefix), &full_req_json);
-        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}/requests", prefix)) {
-            let _ = write!(file, "{}{}", sep, full_req_json);
-        }
+    // Raw Gemma4 prompt (what the model conceptually sees, not serialized JSON)
+    let _ = fs::write(format!("{}/last_raw_prompt.txt", prefix), context_manager.get_raw_prompt());
+    // API JSON body (last request only, no append)
+    if let Ok(body) = serde_json::to_string_pretty(&req_body) {
+        let _ = fs::write(format!("{}/last_request.json", prefix), body);
     }
-    let _ = fs::write(format!("{}/last-response", prefix), "");
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}/responses.jsonl", prefix)) {
-        let _ = write!(file, "{}", sep);
-    }
+    // Reset tokens.jsonl for this request
+    let _ = fs::write(format!("{}/tokens.jsonl", prefix), "");
 
     let prefix_clone = prefix.clone();
     let log_tx_spawn = log_tx.clone();
@@ -123,6 +111,17 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
 
     tokio::spawn(async move {
         let _ = log_tx_spawn.send(StreamEvent::DebugLog(format!("CALL_START|{}|{}", server_url_spawn, ctx_len)));
+
+        let request_start = std::time::Instant::now();
+
+        // Appends one JSON line to tokens.jsonl
+        let append_token = |prefix: &str, val: serde_json::Value| {
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true)
+                .open(format!("{}/tokens.jsonl", prefix))
+            {
+                let _ = writeln!(f, "{}", val);
+            }
+        };
 
         let mut event_stream = match gemma_chat::stream_chat(&client, &base, &model, &messages, &tools, 16384).await {
             Ok(s) => s,
@@ -144,24 +143,24 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
 
             match ev {
                 gemma_chat::StreamEvent::ReasoningDelta(text) => {
+                    let ms = request_start.elapsed().as_millis();
+                    append_token(&prefix_clone, serde_json::json!({"c": text, "t": ms, "kind": "reasoning"}));
                     let _ = log_tx_spawn.send(StreamEvent::Chunk(text));
                 }
                 gemma_chat::StreamEvent::TextDelta(text) => {
                     if in_thought_mode {
                         in_thought_mode = false;
+                        let ms = request_start.elapsed().as_millis();
+                        append_token(&prefix_clone, serde_json::json!({"c": "</think>\n", "t": ms, "kind": "synthetic"}));
                         let _ = log_tx_spawn.send(StreamEvent::Chunk("</think>\n".to_string()));
                     }
-                    if !token_spawn.is_cancelled() {
-                        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(format!("{}/responses", prefix_clone)) {
-                            let _ = write!(file, "{}", text);
-                        }
-                        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).open(format!("{}/last-response", prefix_clone)) {
-                            let _ = write!(file, "{}", text);
-                        }
-                    }
+                    let ms = request_start.elapsed().as_millis();
+                    append_token(&prefix_clone, serde_json::json!({"c": text, "t": ms, "kind": "text"}));
                     let _ = log_tx_spawn.send(StreamEvent::Chunk(text));
                 }
                 gemma_chat::StreamEvent::ToolCallComplete { id, name, arguments, .. } => {
+                    let ms = request_start.elapsed().as_millis();
+                    append_token(&prefix_clone, serde_json::json!({"c": "", "t": ms, "kind": "tool", "name": name, "id": id}));
                     let tc = ToolCall {
                         id,
                         function: crate::context::FunctionCall { name, arguments },
@@ -187,7 +186,6 @@ pub async fn summarize_llm(client: &reqwest::Client, config: &Config, context: &
     let messages = vec![gemma_chat::Message::user(user_text)];
     gemma_chat::complete(client, &base_url(&config.server_url), &config.model, &messages, 4096).await
 }
-
 
 pub async fn get_single_response(client: &Client, config: &Config, prompt: String, _images: Option<Vec<String>>, tx: Option<&mpsc::UnboundedSender<StreamEvent>>) -> Result<String, String> {
     let base = base_url(&config.server_url);

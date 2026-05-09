@@ -88,3 +88,50 @@ fn test_unclosed_tool_call_at_end() {
     ]);
     assert_eq!(parser.state, ParserState::ToolCall);
 }
+
+// <|channel>text should exit Thought state the same way <channel|> does.
+#[test]
+fn test_channel_text_exits_thought() {
+    let mut parser = StreamParser::new();
+    let results = parser.parse_chunk("some thinking<|channel>text\nresponse text");
+    assert!(
+        results.contains(&(BlockType::Thought, "some thinking".to_string())),
+        "expected Thought block with 'some thinking', got: {:?}", results
+    );
+    assert!(
+        results.contains(&(BlockType::Text, "\nresponse text".to_string()))
+        || results.contains(&(BlockType::Text, "response text".to_string()))
+        || results.iter().any(|(bt, s)| *bt == BlockType::Text && s.contains("response text")),
+        "expected Text block with 'response text', got: {:?}", results
+    );
+    assert_eq!(parser.state, ParserState::Text);
+}
+
+// <|channel>text arriving while already in Text state should be consumed silently —
+// no literal '<|channel>text' should appear in the output.
+#[test]
+fn test_channel_text_noop_in_text_state() {
+    let mut parser = StreamParser::new();
+    // Advance parser to Text state first
+    parser.parse_chunk("<channel|>");
+    assert_eq!(parser.state, ParserState::Text);
+
+    let results = parser.parse_chunk("text A<|channel>text\ntext B");
+    let emitted: String = results.iter().map(|(_, s)| s.as_str()).collect();
+    assert!(
+        !emitted.contains("<|channel>text"),
+        "marker should not appear in output, got: {:?}", results
+    );
+    assert!(
+        emitted.contains("text A"),
+        "expected 'text A' in output, got: {:?}", results
+    );
+    assert!(
+        emitted.contains("text B"),
+        "expected 'text B' in output, got: {:?}", results
+    );
+    assert!(
+        results.iter().all(|(bt, _)| *bt == BlockType::Text),
+        "all blocks should be Text type, got: {:?}", results
+    );
+}

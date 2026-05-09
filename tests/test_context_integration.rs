@@ -1,5 +1,6 @@
 use lethetic::app::{App, BlockType};
 use lethetic::config::Config;
+use lethetic::context::{ContextManager, ToolCall, FunctionCall};
 use std::fs;
 use tempfile::tempdir;
 
@@ -103,4 +104,141 @@ fn test_tool_call_json_formatting() {
     assert!(raw_prompt.contains("<|tool_call>call:read_file{"), "Expected call:read_file format");
     assert!(raw_prompt.contains("<tool_call|>"), "Expected closing marker");
     assert!(raw_prompt.contains("path:<|\"|>src/main.rs<|\"|>"), "Expected gemma4 string delimiters");
+}
+
+fn make_tool_call(name: &str, id: &str) -> ToolCall {
+    ToolCall {
+        id: id.to_string(),
+        function: FunctionCall {
+            name: name.to_string(),
+            arguments: serde_json::json!({ "tool_call_id": id }),
+        },
+    }
+}
+
+// Verify that (assistant-with-tool-calls, tool-result) pairs are never split by trim_context.
+// After trimming, every `tool` role message must have an `assistant` with tool_calls immediately
+// before it, and no `tool` message may appear at index 0.
+#[test]
+fn test_trim_pairs_never_split() {
+    // Small budget to force trimming after a few turns
+    let mut ctx = ContextManager::new(300, None);
+
+    for i in 0..8 {
+        let user_msg = format!("user turn {}", i);
+        ctx.add_message("user", &user_msg);
+
+        let tc = make_tool_call("read_file", &format!("call_{}", i));
+        // ~80 chars of assistant content
+        ctx.add_assistant_tool_call(
+            &format!("I will call read_file for turn {i}. This is assistant content."),
+            vec![tc],
+        );
+        ctx.add_tool_message(
+            format!("call_{}", i),
+            "read_file",
+            &format!("contents of file {i}"),
+        );
+    }
+
+    let msgs = ctx.get_messages();
+
+    // No orphaned tool at position 0
+    if let Some(first) = msgs.first() {
+        assert_ne!(first.role, "tool", "tool message must never be at index 0");
+    }
+
+    // Every tool message must be preceded by an assistant-with-tool-calls
+    for i in 1..msgs.len() {
+        if msgs[i].role == "tool" {
+            assert_eq!(
+                msgs[i - 1].role, "assistant",
+                "tool at index {i} must follow an assistant message"
+            );
+            assert!(
+                msgs[i - 1].tool_calls.is_some(),
+                "assistant before tool at index {i} must have tool_calls"
+            );
+        }
+    }
+}
+
+// System messages must survive context trimming.
+#[test]
+fn test_trim_preserves_system_messages() {
+    let mut ctx = ContextManager::new(400, None);
+
+    ctx.add_message("system", "Current working directory: /home/user/project");
+    ctx.add_message("system", "Git status: clean");
+
+    // Fill with user/assistant turns to force trimming
+    for i in 0..10 {
+        ctx.add_message("user", &format!("user message number {} with some padding text here", i));
+        ctx.add_message("assistant", &format!("assistant response {} with padding text here", i));
+    }
+
+    let msgs = ctx.get_messages();
+    let system_msgs: Vec<_> = msgs.iter().filter(|m| m.role == "system").collect();
+    assert!(
+        !system_msgs.is_empty(),
+        "system messages must survive trimming (got 0 after trim)"
+    );
+    assert!(
+        system_msgs.iter().any(|m| m.content.contains("Current working directory")),
+        "cwd system message must survive"
+    );
+}
+
+// latest_files should be evicted oldest-first when they exceed 35% of max_tokens.
+#[test]
+fn test_latest_files_eviction_on_budget() {
+    // 1000 token budget → 35% = 350 tokens max for files → 1400 chars
+    let mut ctx = ContextManager::new(1000, None);
+
+    // Each file is ~100 tokens = 400 chars
+    let file_content = "x".repeat(400);
+
+    for i in 0..5 {
+        // Small sleep is not needed since Instant::now() advances between insertions
+        ctx.update_latest_file(format!("file{}.rs", i), file_content.clone());
+    }
+
+    let total: usize = ctx.latest_files.values().map(|f| f.tokens).sum();
+    assert!(
+        total <= 350,
+        "latest_files token total {} should be ≤ 350 (35% of 1000)",
+        total
+    );
+
+    // The oldest files (file0, file1, ...) should have been evicted first.
+    // At 100 tokens each, 350 budget = 3 files max.
+    assert!(
+        ctx.latest_files.len() <= 3,
+        "at most 3 files should remain in cache (got {})",
+        ctx.latest_files.len()
+    );
+}
+
+// Verify the char/4 token estimator: a 400-char string should estimate to ~100 tokens,
+// and truncate_to_tokens should produce a string no longer than max_tokens * 4 chars.
+#[test]
+fn test_token_estimate_chars_per_4() {
+    use lethetic::context::truncate_to_tokens;
+
+    let s = "abcd".repeat(100); // 400 chars
+    let mut ctx = ContextManager::new(10000, None);
+    ctx.add_message("user", &s);
+    // Token count should be in the right ballpark (400/4 = 100 tokens for the message,
+    // plus a small overhead for the prompt wrapper)
+    let count = ctx.get_token_count();
+    assert!(count >= 90 && count <= 150, "token count {} out of expected range 90–150", count);
+
+    // truncate_to_tokens at 100 tokens → at most 400 chars
+    let long = "x".repeat(800);
+    let truncated = truncate_to_tokens(&long, 100);
+    assert!(
+        truncated.len() <= 400,
+        "truncated string length {} should be ≤ 400",
+        truncated.len()
+    );
 }

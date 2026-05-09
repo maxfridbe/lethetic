@@ -328,16 +328,6 @@ pub struct App {
     pub fn save_session(&mut self) {
         if let Some(ref dir) = self.current_session_dir {
             let _ = std::fs::create_dir_all(dir);
-            
-            // Save UI blocks
-            if let Ok(json) = serde_json::to_string_pretty(&self.blocks) {
-                let _ = std::fs::write(format!("{}/ui_state.json", dir), json);
-            }
-            
-            // Save Context
-            if let Ok(json) = serde_json::to_string_pretty(&self.context_manager.get_messages()) {
-                let _ = std::fs::write(format!("{}/context.json", dir), json);
-            }
 
             // Save unified session state with history
             let state = SessionState {
@@ -523,13 +513,34 @@ pub struct App {
         }
 
         self.blocks.push(RenderBlock {
-            block_type: b_type,
-            content,
-            title,
+            block_type: b_type.clone(),
+            content: content.clone(),
+            title: title.clone(),
             success,
             cached_lines: None,
         });
-        
+
+        // Append verbatim block to ui_log.txt for post-run diagnosis
+        if let Some(ref session_dir) = self.current_session_dir {
+            let header = match &b_type {
+                BlockType::User       => "=== USER ===".to_string(),
+                BlockType::Thought    => "=== THOUGHT ===".to_string(),
+                BlockType::Text | BlockType::Markdown => "=== TEXT ===".to_string(),
+                BlockType::ToolCall   => format!("=== TOOL CALL: {} ===", title.as_deref().unwrap_or("")),
+                BlockType::ToolResult => "=== TOOL RESULT ===".to_string(),
+                BlockType::Formulating => "=== FORMULATING ===".to_string(),
+                BlockType::Divider    => String::new(),
+            };
+            if !header.is_empty() {
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true)
+                    .open(format!("{}/ui_log.txt", session_dir))
+                {
+                    use std::io::Write as _;
+                    let _ = writeln!(f, "{}\n{}\n", header, content);
+                }
+            }
+        }
+
         if self.blocks.len() > MAX_TOTAL_BLOCKS {
             self.blocks.remove(0);
         }
