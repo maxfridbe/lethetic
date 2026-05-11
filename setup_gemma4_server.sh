@@ -55,7 +55,7 @@ $SRC_DIR/build/bin/llama-server \
   --reasoning on \
   --jinja \
   --chat-template-file "$MODELS_DIR/chat_template.jinja" \
-  --temp 0.1 \
+  --temp 0.2 \
   --repeat-penalty 1.09 \
   --sleep-idle-seconds 30s
 R_EOF

@@ -39,7 +39,7 @@ Key parameters:
 - `--cache-type-k turbo3 --cache-type-v turbo3` — TurboQuant KV quantization
 - `--ctx-size 262144` — 256k context
 - `--reasoning on --jinja` — chain-of-thought + custom tool-call template
-- `--temp 0.1 --repeat-penalty 1.09`
+- `--temp 0.2 --repeat-penalty 1.09`
 
 ### Qwen3 27B — port 7211
 
@@ -53,7 +53,7 @@ Key parameters:
 - `--cache-type-k turbo3 --cache-type-v turbo3` — required for full 262k context with TurboQuant KV quantization
 - `--ctx-size 262144` — 262k context
 - `--reasoning on --jinja`
-- `--temp 0.6 --repeat-penalty 1.05`
+- `--temp 0.2 --repeat-penalty 1.05`
 
 ### GPU memory notes
 

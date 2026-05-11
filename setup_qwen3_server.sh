@@ -43,7 +43,7 @@ $SRC_DIR/build/bin/llama-server \\
   --alias "Qwen3-27B-MTP-Q4" \\
   --reasoning on \\
   --jinja \\
-  --temp 0.6 \\
+  --temp 0.2 \\
   --repeat-penalty 1.05 \\
   --sleep-idle-seconds 30s
 R_EOF
