@@ -5,7 +5,13 @@ pub struct ModelServer {
     pub name: String,
     pub url: String,
     pub model: String,
+    /// Parser dialect: "gemma4" | "qwen3" | "default"
+    /// Controls initial parser state and which token markers to expect.
+    #[serde(default = "default_parser")]
+    pub parser: String,
 }
+
+fn default_parser() -> String { "gemma4".to_string() }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct Config {

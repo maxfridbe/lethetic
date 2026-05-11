@@ -341,13 +341,16 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             let _ = tx_clone.send(StreamEvent::ModelsReady(models));
                                         });
                                     }
-                                    AppEventOutcome::SwitchModel(new_url, new_model) => {
+                                    AppEventOutcome::SwitchModel(new_url, new_model, parser) => {
                                         config.server_url = new_url.clone();
                                         config.model = new_model.clone();
                                         app.server_url = new_url.clone();
                                         app.model_name = new_model.clone();
+                                        let mode = lethetic::parser::ParserMode::from_str(&parser);
+                                        app.parser.set_mode(mode);
+                                        app.parser.reset();
                                         app.add_segment(
-                                            format!("\n{} Switched to model: {} ({})\n", icons::SUCCESS, new_model, new_url),
+                                            format!("\n{} Switched to model: {} ({}) — parser: {}\n", icons::SUCCESS, new_model, new_url, parser),
                                             BlockType::Text,
                                         );
                                         app.stop_reason = format!("Model: {}", new_model);

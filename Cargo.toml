@@ -74,6 +74,10 @@ path = "tests/integration/test_live_hello.rs"
 name = "test_live_prompt_write_cs"
 path = "tests/integration/test_live_prompt_write_cs.rs"
 
+[[test]]
+name = "test_live_qwen3"
+path = "tests/integration/test_live_qwen3.rs"
+
 [dev-dependencies]
 tempfile = "3.10.1"
 serial_test = "3.2"

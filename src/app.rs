@@ -61,7 +61,7 @@ pub enum AppEventOutcome {
     DeleteSession(String),
     ToggleHistory,
     FetchModels,
-    SwitchModel(String, String), // (server_url, model_id)
+    SwitchModel(String, String, String), // (server_url, model_id, parser)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -278,7 +278,14 @@ pub struct App {
             is_asking_user: false,
             prompt_cursor_pos: system_prompt.len(),
             prompt_scroll: 0,
-            parser: StreamParser::new(),
+            parser: {
+                // Determine initial parser mode from the active server's config entry
+                let parser_str = config.model_servers.iter()
+                    .find(|s| s.url == config.server_url)
+                    .map(|s| s.parser.as_str())
+                    .unwrap_or("gemma4");
+                StreamParser::with_mode(crate::parser::ParserMode::from_str(parser_str))
+            },
             loop_detector: LoopDetector::new(LoopDetectorConfig::default()),
             last_block_content: String::new(),
             loop_detection_count: 0,
@@ -1093,7 +1100,12 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
             KeyCode::Enter => {
                 if let Some(i) = app.model_switcher_state.selected() {
                     if let Some((_, url, model_id)) = app.available_models.get(i) {
-                        let outcome = AppEventOutcome::SwitchModel(url.clone(), model_id.clone());
+                        // Find parser setting for this server from config
+                        let parser = app.config.model_servers.iter()
+                            .find(|s| &s.url == url)
+                            .map(|s| s.parser.clone())
+                            .unwrap_or_else(|| "gemma4".to_string());
+                        let outcome = AppEventOutcome::SwitchModel(url.clone(), model_id.clone(), parser);
                         app.show_model_switcher = false;
                         app.should_redraw = true;
                         return outcome;

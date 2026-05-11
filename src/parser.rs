@@ -9,21 +9,53 @@ pub enum ParserState {
     ToolCall,
 }
 
+/// Which model's token dialect the parser should expect.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ParserMode {
+    /// Gemma 4 native: starts in Thought, uses <|channel>thought / <channel|> / <|tool_call>
+    #[default]
+    Gemma4,
+    /// Qwen3 / generic: starts in Text, uses <think> / </think> / <tool_call>
+    Qwen3,
+}
+
+impl ParserMode {
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "qwen3" | "default" | "generic" => Self::Qwen3,
+            _ => Self::Gemma4,
+        }
+    }
+
+    fn initial_state(self) -> ParserState {
+        match self {
+            Self::Gemma4 => ParserState::Thought,
+            Self::Qwen3  => ParserState::Text,
+        }
+    }
+}
+
 pub struct StreamParser {
     pub state: ParserState,
+    pub mode: ParserMode,
     buffer: String,
 }
 
 impl StreamParser {
     pub fn new() -> Self {
-        Self {
-            state: ParserState::Thought, // Gemma 4 usually starts in thought
-            buffer: String::new(),
-        }
+        Self::with_mode(ParserMode::Gemma4)
+    }
+
+    pub fn with_mode(mode: ParserMode) -> Self {
+        Self { state: mode.initial_state(), mode, buffer: String::new() }
+    }
+
+    pub fn set_mode(&mut self, mode: ParserMode) {
+        self.mode = mode;
     }
 
     pub fn reset(&mut self) {
-        self.state = ParserState::Thought;
+        self.state = self.mode.initial_state();
         self.buffer.clear();
     }
 
