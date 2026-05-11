@@ -37,7 +37,7 @@ $SRC_DIR/build/bin/llama-server \\
   --cache-type-k turbo3 \\
   --cache-type-v turbo3 \\
   --flash-attn on \\
-  --ctx-size 131072 \\
+  --ctx-size 262144 \\
   --gpu-layers 99 \\
   --port $PORT \\
   --alias "Qwen3-27B-Q5" \\

@@ -25,7 +25,7 @@ fn qwen3_config() -> Result<Config, String> {
     Ok(Config {
         server_url: qwen.url.clone(),
         model: qwen.model.clone(),
-        context_size: 131072,
+        context_size: 262144,
         tool_wrapper: None,
         enable_image_processing_tool: false,
         theme: None,
