@@ -2,188 +2,320 @@
 
 > "...so many various filters and enhancements, so many possible patterns, that it was as much an art as a craft. We didn't have the trained personnel that we needed, and as good as the lethetic intelligence engines were, they still lacked the ability to make intuitive leaps. LIs could give you statistical probabilities; they couldn't give you hunches—although the last I'd heard, they were working on adding that function too."
 
-In Greek mythology, Lethe is the underworld river of oblivion and the goddess personifying forgetfulness, daughter of Eris (Strife). Shades (souls) of the dead drank from its waters to erase all memory of their mortal lives before reincarnation or entering the Elysian Fields.
-
-A sophisticated Rust Terminal User Interface (TUI) designed for high-performance interaction with the Gemma 4 26B model. Optimized for **TurboQuant** and native tool-calling, it provides a robust platform for autonomous system engineering tasks.
+A Rust TUI coding agent for locally-hosted LLMs. Optimized for **TurboQuant** llama.cpp servers and native tool-calling. Supports multiple model backends simultaneously via hot-swap GPU sleep.
 
 ![Lethetic UI](res/Screenshot.webp)
 
+---
+
+## Quick Start
+
+```bash
+# Build
+cargo build --release
+
+# Run (reads config from ./config.yml or ~/.config/lethetic/config.yml)
+cargo run --bin lethetic
+
+# Headless / scripted
+cargo run --bin lethetic -- --command "Fix all TypeScript errors in src/"
+```
+
+---
+
 ## Server Setup
 
-The engine is specifically tuned for a **TurboQuant-optimized** llama.cpp server running Gemma 4 26B. To set up a new server:
+Lethetic is tuned for a **TurboQuant llama.cpp** server. Two models are supported simultaneously via GPU hot-swap (each sleeps when idle, wakes on request).
 
-1. **Automation**: Run `setup_gemma4_server.sh` on your target Linux machine. It automates:
-   - Cloning and building the `TheTom/llama-cpp-turboquant` fork with CUDA support.
-   - Downloading `gemma-4-26B-A4B-it-UD-Q5_K_S.gguf` from Unsloth.
-   - Installing the bundled `chat_template.jinja` (handles tool calls, reasoning, multi-turn).
-   - Creating a systemd service (`gemma4.service`) on port `12345`.
-   - Configuring `turbo3` KV cache quantization for ultra-low memory overhead.
+### Gemma 4 26B — port 7210
 
-2. **Server parameters** (as used on brainiac-nvidia):
-   - Model: `gemma-4-26B-A4B-it-UD-Q5_K_S.gguf`
-   - `--reasoning on` — enables chain-of-thought
-   - `--jinja --chat-template-file chat_template.jinja` — custom tool-call template
-   - `--cache-type-k turbo3 --cache-type-v turbo3` — TurboQuant KV quantization
-   - `--ctx-size 262144` — 256k token context
-   - `--temp 0.1 --repeat-penalty 1.09`
+```bash
+bash setup_gemma4_server.sh
+```
 
-3. **API endpoint**: the server exposes a standard OpenAI-compatible API at `/v1/chat/completions`.
+Automates: build TurboQuant llama.cpp fork with CUDA, download `gemma-4-26B-A4B-it-UD-Q5_K_S.gguf`, install chat template, create `gemma4.service`.
+
+Key parameters:
+- `--cache-type-k turbo3 --cache-type-v turbo3` — TurboQuant KV quantization
+- `--ctx-size 262144` — 256k context
+- `--reasoning on --jinja` — chain-of-thought + custom tool-call template
+- `--temp 0.1 --repeat-penalty 1.09`
+
+### Qwen3 27B — port 7211
+
+```bash
+bash setup_qwen3_server.sh
+```
+
+Downloads `Qwen3.6-27B-Q5_K_M.gguf` and creates `qwen3.service`.
+
+Key parameters:
+- `--cache-type-k turbo3 --cache-type-v turbo3` — required to fit 131k KV cache in VRAM
+- `--ctx-size 131072` — 128k context
+- `--reasoning on --jinja`
+- `--temp 0.6 --repeat-penalty 1.05`
+
+### GPU memory notes
+
+Both models use `--sleep-idle-seconds 30s`. When idle, each releases GPU VRAM. With two RTX cards (≈24GB total), only one model is resident at a time. Switching models causes a ~5–10s reload pause on first request.
+
+---
 
 ## Configuration
 
-Lethetic uses a `config.yml` file for server connection and UI settings.
-
-### Location Priority
-1. **Local**: `./config.yml` (checked first).
-2. **Global**: `~/.config/lethetic/config.yml` (fallback).
+### Location priority
+1. `./config.yml` (checked first)
+2. `~/.config/lethetic/config.yml`
 
 ### Example `config.yml`
+
 ```yaml
-server_url: "http://brainiac-nvidia:7210/v1/responses"
-model: "Gemma-4-26B-TurboQuant-262k"
+server_url: http://brainiac-nvidia:7210/v1/responses
+model: Gemma-4-26B-TurboQuant-262k
 context_size: 262144
-theme: "Default"               # optional — sets the startup theme
-enable_image_processing_tool: false
+theme: Default
+
+model_servers:
+  - name: Gemma 4 26B
+    url: http://brainiac-nvidia:7210/v1/responses
+    model: Gemma-4-26B-TurboQuant-262k
+    parser: gemma4
+
+  - name: Qwen3 27B
+    url: http://brainiac-nvidia:7211/v1/responses
+    model: Qwen3-27B-Q5
+    parser: qwen3
 ```
 
-The `theme` field accepts any theme name from the list in the Themes section. If omitted, `Default` is used.
+### `parser` dialect
+
+Each `model_servers` entry has a `parser` field that controls two things:
+
+| `parser` | Initial state | Tool call format |
+|---|---|---|
+| `gemma4` (default) | Thought block | `<\|"\|>string<\|"\|>` asymmetric markers |
+| `qwen3` / `default` | Text | Standard JSON strings |
+
+The system prompt's **Tool call format** section is automatically tailored to the active model — Qwen3 receives plain JSON instructions; Gemma4 receives the asymmetric marker instructions. Switching models via the palette reloads the parser and context.
+
+---
+
+## Model Switcher
+
+**Ctrl+P → Models** — opens a panel that queries `/v1/models` on every configured server and shows a combined list. The active model is marked `▶`. Selecting a new entry:
+- Switches `server_url` and `model` for the session
+- Resets the stream parser to the new dialect
+- Updates the status bar with the active model name
+
+---
 
 ## Architecture
 
 ### gemma-chat library (`gemma-chat/`)
 
-A standalone Rust library that implements the OpenAI-compatible streaming client for Gemma 4:
+Standalone Rust library for OpenAI-compatible streaming over llama.cpp:
 
-- **SSE parser** (`sse.rs`) — parses `data:` lines from HTTP server-sent events.
-- **Stream parser** (`stream.rs`) — stateful parser converting raw SSE chunks to typed events:
-  - `ReasoningDelta` — model thinking tokens (displayed in thought blocks)
-  - `TextDelta` — actual response text
-  - `ToolCallStart / ToolCallDelta / ToolCallComplete` — structured tool invocations
-  - `Done` — carries `completion_tokens`, `prompt_tokens`, `tg_per_s`, `pp_per_s`
-- **Client** (`client.rs`) — `stream_chat()` and `complete()` over `/v1/chat/completions`.
+- **SSE parser** — `data:` line parsing from HTTP server-sent events
+- **Stream parser** — converts raw SSE to typed events: `ReasoningDelta`, `TextDelta`, `ToolCallComplete`, `Done`
+- **Client** — `stream_chat()` and `complete()` over `/v1/chat/completions`
 
-The library is a workspace member and can be tested independently:
 ```bash
 cargo test -p gemma-chat -- --nocapture
 ```
 
+### Stream parser (`src/parser.rs`)
+
+Stateful chunk parser. Mode controls initial state and which token markers are recognised:
+
+- **Gemma4**: starts in `Thought`; markers: `<|channel>thought`, `<channel|>`, `<|tool_call>`, `<|channel>text`
+- **Qwen3 / default**: starts in `Text`; markers: `<think>`, `</think>`, `<tool_call>`
+
+---
+
+## Context Management
+
+### Two-tier file cache
+
+Files read or written during a session are tracked in two tiers:
+- **active_files** — accessed ≤3 turns ago; injected as `<active_file>` immediately before the model turn (highest attention)
+- **latest_files** — older; injected as `<latest_files>` before the system prompt (background context)
+
+Files are always re-read from disk at context-build time. If a file was deleted or moved, the context shows `⚠ File was deleted or no longer exists on disk.`
+
+### Token budget
+
+Files are evicted (oldest first) when the total file token budget exceeds 35% of `context_size`. The prompt order is:
+
+```
+latest_files → system_prompt → messages → active_file → [model turn]
+```
+
+### Large tool output
+
+Tool outputs > 20,000 chars are saved to `.lethetic/tool_responses/<id>.txt` and replaced in context with a truncation message and navigation hint. `read_file` is exempt — file content always goes into the cache regardless of size (up to 500k chars).
+
+---
+
 ## Tools
 
-The model has access to the following tools. All tools accept a `tool_call_id` (unique string identifier) and `description` (short action summary) alongside their specific parameters.
+All tools accept `tool_call_id` (unique string identifier) and `description` (short action summary).
 
 ### File System
 
 | Tool | Description |
 |---|---|
-| `read_file` | Read a complete file. Output includes line numbers for patching. |
-| `read_file_lines` | Read a specific line range from a file (start/end line, inclusive). |
-| `read_folder` | List files and subdirectories at a path (non-recursive). |
-| `write_file` | Create or overwrite a file. Parent directories are created automatically. |
-| `replace_text` | Replace an exact literal string in a file. Must match exactly one occurrence. |
-| `apply_patch` | Modify a file by specifying `old_content` and `new_content` blocks. Uses `diffy` to generate a deterministic unified diff — resilient to LLM-added formatting. |
-| `search_text` | Search for a regex pattern across files in a directory. |
+| `read_file` | Read a complete file with line numbers. Always placed in file cache — no truncation. |
+| `read_file_lines` | Read a line range (start–end, inclusive). |
+| `read_folder` | List files and subdirectories (non-recursive). |
+| `write_file` | Create or overwrite a file. Parent dirs created automatically. |
+| `edit` | Fuzzy-match file edit: tolerates whitespace drift. Three-tier matching: exact → normalized → similarity-scored. |
+| `replace_text` | Replace an exact string occurrence. `replace_all: true` to replace every match. Error includes line numbers on multi-match. |
+| `apply_patch` | Block-level replace via `old_content`/`new_content`. Uses `diffy` to generate a deterministic diff. |
+| `glob` | ripgrep-based file pattern search (`**/*.ts`). Results sorted by mtime, capped at 200. |
+| `search_text` | Regex search across files. Prefers `rg`; excludes `target/`, `.git/`, `node_modules/`. |
 
-### Shell & Calculation
+### Code Intelligence
 
 | Tool | Description |
 |---|---|
-| `run_shell_command` | Execute a bash command on the local system and return stdout/stderr. Output is streamed to the UI in real time. |
-| `calculate` | Evaluate a mathematical expression (e.g. `sin(pi/2)`, `2**10`). |
+| `find_symbol` | Definition, references, or all-symbols scan via `rg` patterns. |
+| `lsp` | Language Server Protocol: `goToDefinition`, `findReferences`, `hover`, `documentSymbol`, `workspaceSymbol`. Auto-installs missing server on first use. Falls back to `find_symbol` if unavailable. Supported: Rust (rust-analyzer), TypeScript (typescript-language-server), Python (pyright), Go (gopls), C/C++ (clangd), C# (csharp-ls), Lua. |
+
+### Shell & Math
+
+| Tool | Description |
+|---|---|
+| `run_shell_command` | Execute a bash command; output streamed to UI in real time. Requires approval. |
+| `calculate` | Evaluate math: `sin(pi/2)`, `sqrt(9)`, `2^10`, `log(100,10)`. Powered by `meval`. |
 
 ### Web
 
 | Tool | Description |
 |---|---|
-| `read_page` | Fetch a URL and convert the page to clean Markdown. Preferred for information retrieval. |
-| `web_fetch` | Fetch raw HTML/text content from a URL. |
-| `web_search` | Search the web via DuckDuckGo and return result snippets. |
+| `fetch_url` | Fetch a URL and convert to Markdown (default), plain text, or raw HTML. |
+| `web_search` | DuckDuckGo search. `num_results` param (1–20, default 10). |
+
+### Project & Tasks
+
+| Tool | Description |
+|---|---|
+| `repo_overview` | Ecosystem detection, 2-level dir tree, README preview, entry points. |
+| `todowrite` | Write a structured todo list (status + priority) to `.lethetic/todos.json`. |
+| `task` | Spawn an autonomous sub-agent with all tools except `task` and `ask_the_user`. 5-minute timeout; sub-agent progress streamed to parent UI. |
 
 ### Document & Vision *(requires `enable_image_processing_tool: true`)*
 
 | Tool | Description |
 |---|---|
-| `get_pdf_text` | Extract the full text layer from a PDF (pure Rust, no external deps). |
-| `process_image` | Analyze an image with vision capabilities. Long edge resized to `max_size` (default 1024) before processing. |
-| `process_pdf_image` | Render a specific PDF page to an image and analyze it with vision. |
+| `get_pdf_text` | Extract full text layer from a PDF. |
+| `process_image` | Analyze an image with vision. |
+| `process_pdf_image` | Render a PDF page to image and analyze it. |
 
-### Interaction & Context
+### Interaction
 
 | Tool | Description |
 |---|---|
-| `ask_the_user` | Pause execution and ask the user a question. The response is injected back into the conversation. |
-| `summarize_content` | Summarize a file or large string using the LLM. Used automatically when tool output exceeds the truncation limit. |
+| `ask_the_user` | Pause and ask the user a question. Response is injected back into context. |
+| `summarize_content` | LLM summarization of a file or text. `prompt` required. |
 
-### Tool Approval
+---
 
-Shell commands (`run_shell_command`) require user approval before execution. Press **A** to always allow for the session, **O** for once, or **D** to deny. The approval mode can be locked to *Always* from the Command Palette.
+## Engine Reliability
 
-## Advanced Features
+### Loop detection
 
-### "Latest Files" Context Management
-Lethetic features a unique state-management system to prevent context bloat. Instead of appending full file contents to the linear chat history every time a file is read or patched, the engine maintains a **Latest Files** context:
-- **Dynamic Injection**: The most recent version of every file you interact with is automatically injected into a dedicated `<latest_files>` block right before the model's turn.
-- **Stub History**: Linear chat history only contains small stubs (e.g., `[File read successfully...]`), keeping the conversation fast and focused.
-- **View & Manage**: Use the Command Palette (**F1** / **Ctrl+P**) and select **Latest Files** to see all tracked files, their token counts, and relative age. Press **R** to remove any file from the context.
+Combined NGram + phrase-frequency watchdog. Only model text/thought output is checked — tool results (compiler errors, stack traces) are excluded to prevent false positives.
 
-### Robust Multi-Line Patching
-The `apply_patch` tool uses **programmatic diff generation**:
-- **Semantic Edits**: The LLM provides `old_content` and `new_content` blocks.
-- **Deterministic Diffing**: The engine uses the `diffy` crate to generate a guaranteed-valid unified diff applied via the system `patch` command.
-- **Resilient**: Automatically strips line numbers and markdown formatting frequently added by LLMs.
+- NGram window: 128 chars, threshold: 4 occurrences
+- Phrase frequency: tracks self-correction phrases (`"Actually,"`, `"Wait,"`, etc.)
+- On detection: auto-injects correction prompt; on persistent loop: hands control to user
 
-### Auto-Summarization
-Handle massive outputs without losing context:
-- **Safety Truncation**: Outputs >10,000 characters are automatically saved to disk (`.lethetic/tool_responses/`) and truncated in the context.
-- **Summarization Tool**: Use the `summarize_content` tool to have the LLM analyze large files or raw text and provide a concise summary.
+### Duplicate tool call detection
 
-### Enhanced TUI Experience
-- **Solid background**: Each theme applies a solid fill color to the entire terminal — no bleed-through from the underlying terminal background.
-- **Themes**: 30 built-in themes including dark (Default, Matrix, Cyberpunk, Ocean, Sunset, Forest, Lavender, Mono, Gold, Deep Sea, Dracula, Nord, Gruvbox, Tokyo Night, Monokai, Obsidian, Ash, Infrared) and light (Paper, Solarized Light, GitHub Light, Ivory, Rose, Mint, Sky, Linen, Chalk, Parchment, Clay, Fog). Theme is persisted per session and loaded automatically on resume.
-- **Performance stats**: Status bar shows server-reported `tg` (token generation, t/s) and `pp` (prompt processing, t/s) from the server's timings, plus accurate context token count from the server's usage field.
-- **Syntax Highlighting**: Real-time syntax highlighting for `sh`, `rs`, `cs`, `js`, `ts`, `py`, `cpp`, `json`, `toml`, `yaml`, and `md` in code blocks (powered by Syntect).
-- **Hanging Indents**: Long code lines wrap with automatic indentation to align with line numbers.
-- **Mouse Support**: Smooth mouse wheel scrolling for the output pane.
-- **Input History**: Press **Up/Down** at the boundary of the input field to scroll output, or use the Command Palette to browse and restore previous prompts.
+Same tool + same key parameters called repeatedly:
+- `edit` / `replace_text`: warns at 2nd identical call
+- `run_shell_command` with `rm`/`mv`/`unlink`: warns at 2nd call
+- All others: warns at 3rd call
 
-## Key Hotkeys
+If an `edit`/`replace_text` was already applied earlier in the session and the model tries it again (with the same `old_string`), it receives: *"EDIT ALREADY APPLIED — move on to the next issue."*
 
-- **TAB**: Switch focus between Input and Output panes.
-- **UP / DOWN**:
-    - **At Input Boundary**: Scroll output line-by-line.
-    - **In Input**: Move cursor or navigate history.
-- **ALT + UP / DOWN**: Scroll output line-by-line at any time.
-- **PAGE UP / DOWN**: Scroll output by 20 lines.
-- **F1 / CTRL+P**: Open the Command Palette.
-- **F12**: Toggle the Debugger pane.
-- **CTRL+C**: Stop output (1st press) / Quit (2nd press).
+### Intent-text detection
 
-## Usage
+If the model responds with a short text describing what it's about to do (without calling a tool), lethetic re-prompts: *"You described an action without calling a tool. Call the tool now."*
 
-1. **Run**:
-   ```bash
-   cargo run --bin lethetic
-   ```
-2. **Headless Mode**: Execute single tasks directly from your shell:
-   ```bash
-   cargo run --bin lethetic -- --command "Analyze the main loop in src/main.rs"
-   ```
+### Stop-reason status bar
+
+The status bar shows why the engine stopped:
+- `Response complete (N tokens)` / `Response complete (N tokens, context X% full)`
+- `→ Tool dispatched: <tool>` / `→ Loop #N detected — auto-correcting`
+- `⚠ Context saturated` / `⚠ Persistent loop terminated` / `⚠ Minimal response`
+- `⏸ Waiting for your answer: <question>` / `⏸ Awaiting approval: <tool>`
+- `✗ Server error: <msg>` / `Cancelled by user`
+
+---
+
+## Hotkeys
+
+| Key | Action |
+|---|---|
+| **TAB** | Switch focus: Input ↔ Output |
+| **Up / Down** (at input boundary) | Scroll output line by line |
+| **Alt + Up / Down** | Scroll output at any time |
+| **Page Up / Down** | Scroll output 20 lines |
+| **F1 / Ctrl+P** | Command Palette |
+| **F12** | Toggle debugger pane |
+| **Ctrl+C** | Stop generation (1st) / Quit (2nd) |
+
+### Command Palette items
+
+| # | Item | Action |
+|---|---|---|
+| 0 | Hotkeys | Show key reference |
+| 1 | Themes | Pick from 30 built-in themes |
+| 2 | Input History | Browse and restore previous prompts |
+| 3 | Loop Detection | Cycle detection mode (Off/NGram/Phrase/Combined) |
+| 4 | System Prompt | Edit or switch prompt template |
+| 5 | Clear UI | Clear display, keep context |
+| 6 | Clear All | Clear display and context, start fresh |
+| 7 | Toggle Debugger | Show/hide debug log pane |
+| 8 | Sessions | Load, resume, or delete sessions |
+| 9 | Latest Files | View and manage file context cache |
+| 10 | Models | Switch between configured model servers |
+| 11 | LSP Servers | View install status; Enter to auto-install |
+| 12 | Quit | Exit |
+
+---
 
 ## Testing
 
-Unit and non-live tests:
+### Unit tests
+
 ```bash
-cargo test
+cargo test --lib
 ```
 
-Live integration tests (require the server to be running):
-```bash
-# Run all live tests one at a time
-cargo test --test test_live_extended_coverage -- --ignored --nocapture
-cargo test --test test_live_parser          -- --ignored --nocapture
-cargo test --test test_live_patch           -- --ignored --nocapture
+### Live integration tests
 
-# Full pipeline test (prompt → model → tool call → file write → verify)
-cargo test --test test_live_prompt_write_cs -- --ignored --nocapture
+Require the server(s) to be running. Tests within and across test binaries are serialized via the `llm` named lock — Gemma4 and Qwen3 tests cannot run simultaneously.
+
+```bash
+# Gemma4 tests
+cargo test --test test_live_extended_coverage -- --nocapture
+cargo test --test test_live_hello            -- --nocapture
+cargo test --test test_live_client_stream    -- --nocapture
+
+# Qwen3 tests (requires qwen3.service running on port 7211)
+cargo test --test test_live_qwen3            -- --nocapture
+
+# Patch/parser/summarize tests
+cargo test --test test_live_patch            -- --nocapture
+cargo test --test test_live_parser           -- --ignored --nocapture
+cargo test --test test_live_prompt_write_cs  -- --ignored --nocapture
 ```
 
-All integration tests live in `tests/integration/` and follow the `test_live_*` naming convention.
+### Diagnostic tools
+
+```bash
+# Replay a session's token stream through the parser
+cargo run --bin playback -- .lethetic/sessions/<session>/tokens.jsonl
+```

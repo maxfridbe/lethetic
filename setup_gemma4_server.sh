@@ -6,7 +6,7 @@ USER_HOME="/home/$(whoami)"
 MODELS_DIR="$USER_HOME/models"
 SCRIPTS_DIR="$USER_HOME/Scripts"
 SRC_DIR="$USER_HOME/llama-cpp-turboquant"
-PORT=12345
+PORT=7210
 
 # Model: Gemma 4 26B A4B Instruction-Tuned Q5_K_S (Unsloth UD quant)
 GGUF_URL="https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-UD-Q5_K_S.gguf"
@@ -64,7 +64,7 @@ chmod +x "$USER_HOME/run_llama_gemma4.sh"
 echo "[5/7] Setting up systemd service..."
 sudo bash -c "cat << S_EOF > /etc/systemd/system/gemma4.service
 [Unit]
-Description=Llama Server Gemma 4 26B TurboQuant
+Description=Llama Server Gemma 4 26B (TurboQuant, port 7210)
 After=network.target nvidia-persistenced.service
 
 [Service]
@@ -86,23 +86,16 @@ mkdir -p "$SCRIPTS_DIR"
 
 cat << G_EOF > "$SCRIPTS_DIR/start_gemma4.sh"
 #!/bin/bash
-echo "Stopping Ollama and starting Gemma 4 ($PORT)..."
-sudo systemctl stop ollama 2>/dev/null || true
+echo "Starting Gemma 4 (port $PORT)..."
 sudo systemctl start gemma4
 G_EOF
-
-cat << O_EOF > "$SCRIPTS_DIR/start_ollama.sh"
-#!/bin/bash
-echo "Stopping Gemma 4 and starting Ollama..."
-sudo systemctl stop gemma4
-sudo systemctl start ollama
-O_EOF
 
 cat << ST_EOF > "$SCRIPTS_DIR/status_ai.sh"
 #!/bin/bash
 echo '--- AI Service Status ---'
-systemctl is-active ollama && echo 'Ollama: RUNNING' || echo 'Ollama: stopped'
-systemctl is-active gemma4 && echo "Gemma 4 ($PORT): RUNNING" || echo "Gemma 4 ($PORT): stopped"
+systemctl is-active gemma4  && echo "Gemma 4  (7210): RUNNING" || echo "Gemma 4  (7210): stopped"
+systemctl is-active qwen3   && echo "Qwen3 27B (7211): RUNNING" || echo "Qwen3 27B (7211): stopped"
+nvidia-smi --query-gpu=name,memory.used,memory.free --format=csv,noheader 2>/dev/null || true
 ST_EOF
 
 chmod +x "$SCRIPTS_DIR"/*.sh
