@@ -24,11 +24,16 @@ Mimic existing code style, naming, and patterns. Never introduce inconsistencies
 # Pathing
 Always specify full paths relative to CurrentWorkingDir.
 
-# Tool call format
+[TOOL_CALL_FORMAT]
+"#;
+
+pub const TOOL_CALL_FORMAT_GEMMA4: &str = r#"# Tool call format
 ALL tool call argument values that are strings MUST be wrapped in asymmetric markers:
   <|"|>your content here<|"|>
-Strings inside those markers do not need escaping. Do NOT use <|'|> markers.
-"#;
+Strings inside those markers do not need escaping. Do NOT use <|'|> markers."#;
+
+pub const TOOL_CALL_FORMAT_QWEN3: &str = r#"# Tool call format
+Use standard JSON format for all tool call arguments. Do NOT wrap strings in any special markers."#;
 
 pub struct SystemPromptManager {
     prompts_dir: PathBuf,
@@ -79,6 +84,18 @@ impl SystemPromptManager {
 
     pub fn resolve_prompt(template: &str, cwd: &str, config: &crate::config::Config) -> String {
         let tool_declarations = tools::get_all_prompt_templates(config);
-        template.replace("[TOOLS_DEFINITIONS]", &tool_declarations).replace("[CWD]", cwd)
+        // Choose tool call format based on active server's parser setting
+        let active_parser = config.model_servers.iter()
+            .find(|s| s.url == config.server_url)
+            .map(|s| s.parser.as_str())
+            .unwrap_or("gemma4");
+        let tool_call_fmt = match active_parser {
+            "qwen3" | "default" | "generic" => TOOL_CALL_FORMAT_QWEN3,
+            _ => TOOL_CALL_FORMAT_GEMMA4,
+        };
+        template
+            .replace("[TOOLS_DEFINITIONS]", &tool_declarations)
+            .replace("[CWD]", cwd)
+            .replace("[TOOL_CALL_FORMAT]", tool_call_fmt)
     }
 }

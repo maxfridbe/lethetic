@@ -84,7 +84,7 @@ async fn run_qwen3_tool(prompt: &str) -> Result<String, String> {
 // ── Connectivity ──────────────────────────────────────────────────────────────
 
 #[tokio::test]
-#[serial]
+#[serial(llm)]
 async fn test_qwen3_hello() {
     match run_qwen3("Reply with exactly: Hello from Qwen3").await {
         Ok(resp) => {
@@ -98,7 +98,7 @@ async fn test_qwen3_hello() {
 // ── Tool calls ────────────────────────────────────────────────────────────────
 
 #[tokio::test]
-#[serial]
+#[serial(llm)]
 async fn test_qwen3_calculate() {
     let tool = run_qwen3_tool(
         "Use the 'calculate' tool to evaluate: 7 * 8. Output ONLY the tool call."
@@ -107,7 +107,7 @@ async fn test_qwen3_calculate() {
 }
 
 #[tokio::test]
-#[serial]
+#[serial(llm)]
 async fn test_qwen3_run_shell_command() {
     let tool = run_qwen3_tool(
         "Use 'run_shell_command' to run: echo hello. Output ONLY the tool call."
@@ -116,7 +116,7 @@ async fn test_qwen3_run_shell_command() {
 }
 
 #[tokio::test]
-#[serial]
+#[serial(llm)]
 async fn test_qwen3_read_file() {
     let tool = run_qwen3_tool(
         "Use 'read_file' to read the file at path 'config.yml'. Output ONLY the tool call."
@@ -125,7 +125,7 @@ async fn test_qwen3_read_file() {
 }
 
 #[tokio::test]
-#[serial]
+#[serial(llm)]
 async fn test_qwen3_search_text() {
     let tool = run_qwen3_tool(
         "Use 'search_text' to search for the pattern 'fn main' in the current directory. Output ONLY the tool call."

@@ -29,9 +29,18 @@ pub async fn run_agent(
     let template = spm.load_prompt("software_engineer")
         .unwrap_or_else(|| crate::system_prompt::DEFAULT_PROMPT_TEMPLATE.to_string());
     let tool_decls = tools::get_prompt_templates_excluding(config, &["task", "ask_the_user"]);
+    let active_parser = config.model_servers.iter()
+        .find(|s| s.url == config.server_url)
+        .map(|s| s.parser.as_str())
+        .unwrap_or("gemma4");
+    let tool_call_fmt = match active_parser {
+        "qwen3" | "default" | "generic" => crate::system_prompt::TOOL_CALL_FORMAT_QWEN3,
+        _ => crate::system_prompt::TOOL_CALL_FORMAT_GEMMA4,
+    };
     let resolved = template
         .replace("[TOOLS_DEFINITIONS]", &tool_decls)
-        .replace("[CWD]", &cwd);
+        .replace("[CWD]", &cwd)
+        .replace("[TOOL_CALL_FORMAT]", tool_call_fmt);
 
     let mut context = ContextManager::new(config.context_size, Some(resolved));
     context.set_cwd(cwd.clone());
