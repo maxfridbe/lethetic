@@ -370,9 +370,13 @@ impl ContextManager {
         // ── 1. Latest files (background context, before system prompt) ──
         if !self.latest_files.is_empty() {
             let mut files_content = String::from("<latest_files>\n");
-            for (path, cached_file) in &self.latest_files {
-                files_content.push_str(&format!("File: `{}`\n```\n{}\n```\n",
-                    path, sanitize_file_content(&cached_file.content)));
+            for (path, _cached_file) in &self.latest_files {
+                let abs = std::path::Path::new(&self.cwd).join(path);
+                let body = match std::fs::read_to_string(&abs) {
+                    Ok(c)  => format!("```\n{}\n```", sanitize_file_content(&c)),
+                    Err(_) => format!("⚠ File `{}` was deleted or no longer exists on disk.", path),
+                };
+                files_content.push_str(&format!("File: `{}`\n{}\n", path, body));
             }
             files_content.push_str("</latest_files>");
             msgs.push(gemma_chat::Message::system(files_content));
@@ -429,9 +433,13 @@ impl ContextManager {
         // ── 4. Active file (highest attention — right before generation) ──
         if !self.active_files.is_empty() {
             let mut files_content = String::from("<active_file>\n");
-            for (path, cached_file) in &self.active_files {
-                files_content.push_str(&format!("File: `{}`\n```\n{}\n```\n",
-                    path, sanitize_file_content(&cached_file.content)));
+            for (path, _cached_file) in &self.active_files {
+                let abs = std::path::Path::new(&self.cwd).join(path);
+                let body = match std::fs::read_to_string(&abs) {
+                    Ok(c)  => format!("```\n{}\n```", sanitize_file_content(&c)),
+                    Err(_) => format!("⚠ File `{}` was deleted or no longer exists on disk.", path),
+                };
+                files_content.push_str(&format!("File: `{}`\n{}\n", path, body));
             }
             files_content.push_str("</active_file>");
             msgs.push(gemma_chat::Message::system(files_content));

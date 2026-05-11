@@ -149,6 +149,7 @@ pub struct App {
     pub latest_files_state: ListState,
     pub config: Config,
     pub tool_call_fingerprints: std::collections::HashMap<String, usize>,
+    pub applied_edits: std::collections::HashSet<String>,
     pub show_lsp_manager: bool,
     pub lsp_server_list_state: ListState,
     pub lsp_install_cmd: Option<String>,
@@ -288,6 +289,7 @@ pub struct App {
             latest_files_state: latest_files_state,
             config: config.clone(),
             tool_call_fingerprints: std::collections::HashMap::new(),
+            applied_edits: std::collections::HashSet::new(),
             show_lsp_manager: false,
             lsp_server_list_state: ListState::default(),
             lsp_install_cmd: None,
@@ -478,13 +480,17 @@ pub struct App {
             return;
         }
 
+        // Only update last_block_content for model text/thought — not tool results/calls,
+        // so the loop detector doesn't fire on repeated phrases in compiler output or stack traces.
+        let feeds_loop_detector = matches!(b_type, BlockType::Text | BlockType::Thought);
+
         if let Some(last) = self.blocks.last_mut() {
             if last.block_type == BlockType::Formulating && b_type == BlockType::ToolCall {
                 last.block_type = BlockType::ToolCall;
                 last.content = cleaned_content.clone();
                 last.title = title;
                 last.cached_lines = None;
-                self.last_block_content = cleaned_content;
+                if feeds_loop_detector { self.last_block_content = cleaned_content; }
                 self.should_redraw = true;
                 self.needs_save = true;
                 return;
@@ -492,7 +498,7 @@ pub struct App {
 
             if last.block_type == b_type && b_type != BlockType::Divider && last.title == title {
                 last.content.push_str(&cleaned_content);
-                self.last_block_content.push_str(&cleaned_content);
+                if feeds_loop_detector { self.last_block_content.push_str(&cleaned_content); }
                 last.cached_lines = None;
                 self.should_redraw = true;
                 if self.auto_scroll { self.sync_scroll_to_end(); }
@@ -501,7 +507,7 @@ pub struct App {
             }
         }
 
-        self.last_block_content = cleaned_content.clone();
+        if feeds_loop_detector { self.last_block_content = cleaned_content.clone(); }
         self.add_block(cleaned_content, b_type, title);
     }
 

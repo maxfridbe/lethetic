@@ -23,8 +23,8 @@ impl Default for LoopDetectorConfig {
         Self {
             mode: LoopDetectionMode::Combined,
             block_limit: 10000,
-            ngram_window: 64,
-            ngram_threshold: 3,
+            ngram_window: 128,   // 64 caused false positives on ~60-char error strings
+            ngram_threshold: 4,  // 3 was too sensitive for legitimate multi-error analysis
             phrase_threshold: 10,
         }
     }

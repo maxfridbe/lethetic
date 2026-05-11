@@ -66,9 +66,11 @@ pub fn handle_large_output(id: &str, result: String) -> (String, String) {
             exit_status, result.len(), file_path
         );
         let context_msg = format!(
-            "{}... [OUTPUT TRUNCATED ({} characters). Full output saved to `{}`. \
-             Recommend querying specific parts with tools (e.g., `read_file_lines`, `search_text`) \
-             or using `summarize_content` with the path to see more.] ...",
+            "{}... [OUTPUT TRUNCATED ({} characters). Full output saved to `{}`.\n\
+             Recommended strategy:\n\
+             1. Use `summarize_content` with the file path and prompt='describe all classes, functions, and what is not yet implemented' to understand the structure.\n\
+             2. Then use `read_file_lines` to read only the specific sections you need.\n\
+             Do NOT call read_file again on this path — it will always be truncated.] ...",
             exit_status, result.len(), file_path
         );
         (context_msg, truncated)

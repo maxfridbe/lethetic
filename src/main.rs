@@ -326,6 +326,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             app.context_manager.add_message("user", &prompt);
                                             app.stop_reason = "Processing…".to_string();
                                             app.tool_call_fingerprints.clear();
+                                            app.applied_edits.clear();
                                             app.is_processing = true;
                                             app.tool_calls_processed_this_request = false;
                                             app.tool_call_pos = None;
@@ -532,7 +533,14 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             
                             let tc_id_str = id.clone().unwrap_or_else(|| "unknown".to_string());
                             let tool_args = app.pending_tool_call.as_ref().map(|tc| tc.function.arguments.clone()).unwrap_or(serde_json::json!({}));
-                            let (mut full_result, ui_result) = handle_large_output(&tc_id_str, result, &client, &config, &tool_args).await;
+                            // read_file: never truncate — content always goes into the file cache via
+                            // update_latest_file below, so the model accesses it through the context
+                            // header rather than the tool result. Token budget eviction handles large files.
+                            let (mut full_result, ui_result) = if func_name == "read_file" && result.len() < 500_000 {
+                                (result.clone(), result)
+                            } else {
+                                handle_large_output(&tc_id_str, result, &client, &config, &tool_args).await
+                            };
 
                             let description = app.pending_tool_call.as_ref()
                                 .and_then(|tc| tc.function.arguments["description"].as_str())
@@ -580,10 +588,37 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                     }
                                 }
 
+                                // Track successfully applied edits for "already applied" detection
+                                if (func_name == "edit" || func_name == "replace_text")
+                                    && full_result.contains("Successfully")
+                                {
+                                    let old_str = tool_args["old_string"].as_str().unwrap_or("").to_string();
+                                    if !old_str.is_empty() {
+                                        app.applied_edits.insert(old_str);
+                                    }
+                                }
+
+                                // Detect "already applied" — edit fails with "not found" but we already applied it
+                                if (func_name == "edit" || func_name == "replace_text")
+                                    && full_result.contains("not found")
+                                {
+                                    let old_str = tool_args["old_string"].as_str().unwrap_or("");
+                                    if !old_str.is_empty() && app.applied_edits.contains(old_str) {
+                                        let msg = format!(
+                                            "⚠ EDIT ALREADY APPLIED: This exact `old_string` was successfully replaced in a prior call. \
+                                             The file already contains your updated version. \
+                                             Do not retry this edit — move on to the next issue."
+                                        );
+                                        app.context_manager.add_message("user", &msg);
+                                        app.add_segment(format!("\n⚠ [EDIT ALREADY APPLIED] old_string was replaced earlier this session — move on.\n"), BlockType::Text);
+                                        full_result = msg;
+                                    }
+                                }
+
                                 app.context_manager.add_tool_message(tc_id, &func_name, &full_result);
                             }
 
-                            // Duplicate tool call detection: same (tool, key-args) called 3+ times
+                            // Duplicate tool call detection: same (tool, key-args) called 2+ times for edit/replace_text, 3+ for others
                             {
                                 let path = tool_args["path"].as_str()
                                     .or_else(|| tool_args["file_path"].as_str())
@@ -597,6 +632,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                     "search_text" => format!("search_text:{}:{}",
                                         tool_args["pattern"].as_str().unwrap_or(""),
                                         path),
+                                    "run_shell_command" => format!("run_shell_command:{}",
+                                        tool_args["command"].as_str().unwrap_or("")),
                                     other => format!("{}:{}",
                                         other,
                                         serde_json::to_string(&tool_args).unwrap_or_default()),
@@ -606,7 +643,17 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                     *c += 1;
                                     *c
                                 };
-                                if count >= 3 {
+                                let dup_threshold = match func_name.as_str() {
+                                    "edit" | "replace_text" => 2,
+                                    "run_shell_command" => {
+                                        let cmd = tool_args["command"].as_str().unwrap_or("");
+                                        if cmd.contains("rm ") || cmd.contains("unlink ")
+                                            || cmd.contains(" mv ") || cmd.contains("del ")
+                                        { 2 } else { 3 }
+                                    }
+                                    _ => 3,
+                                };
+                                if count >= dup_threshold {
                                     let path_hint = tool_args["path"].as_str()
                                         .or_else(|| tool_args["file_path"].as_str())
                                         .unwrap_or("this file");
