@@ -9,9 +9,9 @@ MODELS_DIR="$USER_HOME/models"
 SRC_DIR="$USER_HOME/llama-cpp-turboquant"
 PORT=7211
 
-# Model — Q5_K_M for best quality, or Q4_K_M if downloaded separately
-GGUF_FILE="Qwen3.6-27B-Q5_K_M.gguf"
-GGUF_PATH="$USER_HOME/$GGUF_FILE"    # default location (beside Gemma4)
+# Model: Qwen3.6-27B-MTP Q4_K_M (16GB, from RDson/Qwen3.6-27B-MTP-Q4_K_M-GGUF on HuggingFace)
+GGUF_FILE="Qwen3.6-27B-MTP-Q4_K_M.gguf"
+GGUF_PATH="$MODELS_DIR/$GGUF_FILE"    # default location (beside Gemma4)
 
 # Allow override via first argument
 if [ -n "$1" ]; then
@@ -40,7 +40,7 @@ $SRC_DIR/build/bin/llama-server \\
   --ctx-size 262144 \\
   --gpu-layers 99 \\
   --port $PORT \\
-  --alias "Qwen3-27B-Q5" \\
+  --alias "Qwen3-27B-MTP-Q4" \\
   --reasoning on \\
   --jinja \\
   --temp 0.6 \\
@@ -80,7 +80,7 @@ if [ -f "$CONFIG_FILE" ] && ! grep -q "qwen3" "$CONFIG_FILE"; then
 
   - name: Qwen3 27B
     url: http://localhost:$PORT/v1/responses
-    model: Qwen3-27B-Q5
+    model: Qwen3-27B-MTP-Q4
     parser: qwen3
 C_EOF
     echo "  Appended Qwen3 entry to $CONFIG_FILE"

@@ -47,7 +47,7 @@ Key parameters:
 bash setup_qwen3_server.sh
 ```
 
-Downloads `Qwen3.6-27B-Q5_K_M.gguf` and creates `qwen3.service`.
+Downloads `Qwen3.6-27B-MTP-Q4_K_M.gguf` and creates `qwen3.service`.
 
 Key parameters:
 - `--cache-type-k turbo3 --cache-type-v turbo3` — required for full 262k context with TurboQuant KV quantization
@@ -83,7 +83,7 @@ model_servers:
 
   - name: Qwen3 27B
     url: http://brainiac-nvidia:7211/v1/responses
-    model: Qwen3-27B-Q5
+    model: Qwen3-27B-MTP-Q4
     parser: qwen3
 ```
 
