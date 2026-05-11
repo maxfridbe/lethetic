@@ -60,6 +60,8 @@ pub enum AppEventOutcome {
     ResumeSession(String),
     DeleteSession(String),
     ToggleHistory,
+    FetchModels,
+    SwitchModel(String, String), // (server_url, model_id)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -150,6 +152,9 @@ pub struct App {
     pub config: Config,
     pub tool_call_fingerprints: std::collections::HashMap<String, usize>,
     pub applied_edits: std::collections::HashSet<String>,
+    pub show_model_switcher: bool,
+    pub model_switcher_state: ListState,
+    pub available_models: Vec<(String, String, String)>, // (display, url, model_id)
     pub show_lsp_manager: bool,
     pub lsp_server_list_state: ListState,
     pub lsp_install_cmd: Option<String>,
@@ -202,6 +207,7 @@ pub struct App {
                 format!("{} Toggle Debugger", icons::DEBUG),
                 format!("{} Sessions", icons::COMMAND),
                 format!("{} Latest Files", icons::COMMAND),
+                format!("{} Models", icons::MODEL),
                 format!("{} LSP Servers", icons::SEARCH),
                 format!("{} Quit", icons::QUIT),
             ],
@@ -290,6 +296,9 @@ pub struct App {
             config: config.clone(),
             tool_call_fingerprints: std::collections::HashMap::new(),
             applied_edits: std::collections::HashSet::new(),
+            show_model_switcher: false,
+            model_switcher_state: ListState::default(),
+            available_models: Vec::new(),
             show_lsp_manager: false,
             lsp_server_list_state: ListState::default(),
             lsp_install_cmd: None,
@@ -1006,12 +1015,13 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                     7 => { app.show_palette = false; app.show_debug = !app.show_debug; }
                     8 => { app.show_palette = false; app.refresh_session_list(); app.show_session_manager = true; }
                     9 => { app.show_palette = false; app.show_latest_files = true; app.latest_files_state.select(Some(0)); }
-                    10 => {
+                    10 => return AppEventOutcome::FetchModels,
+                    11 => {
                         app.show_palette = false;
                         app.show_lsp_manager = true;
                         app.lsp_server_list_state.select(Some(0));
                     }
-                    11 => return AppEventOutcome::Exit,
+                    12 => return AppEventOutcome::Exit,
                     _ => app.show_palette = false,
                 }
             }
@@ -1055,6 +1065,38 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                         } else if i >= num_files {
                             app.latest_files_state.select(Some(num_files - 1));
                         }
+                    }
+                }
+            }
+            _ => {}
+        }
+        app.should_redraw = true;
+        return AppEventOutcome::Continue;
+    }
+
+    if app.show_model_switcher {
+        let num_models = app.available_models.len();
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => { app.show_model_switcher = false; }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if num_models > 0 {
+                    let i = app.model_switcher_state.selected().unwrap_or(0);
+                    app.model_switcher_state.select(Some(if i + 1 >= num_models { 0 } else { i + 1 }));
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if num_models > 0 {
+                    let i = app.model_switcher_state.selected().unwrap_or(0);
+                    app.model_switcher_state.select(Some(if i == 0 { num_models - 1 } else { i - 1 }));
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(i) = app.model_switcher_state.selected() {
+                    if let Some((_, url, model_id)) = app.available_models.get(i) {
+                        let outcome = AppEventOutcome::SwitchModel(url.clone(), model_id.clone());
+                        app.show_model_switcher = false;
+                        app.should_redraw = true;
+                        return outcome;
                     }
                 }
             }

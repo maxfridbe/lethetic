@@ -133,7 +133,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let config_content = fs::read_to_string(config_path)?;
-    let config: Config = serde_yaml::from_str(&config_content)?;
+    let mut config: Config = serde_yaml::from_str(&config_content)?;
 
     if args.len() > 2 && args[1] == "--command" {
         let prompt = args[2..].join(" ");
@@ -152,7 +152,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new(&config);
-    let res = run_app(&mut terminal, &mut app, &config).await;
+    let res = run_app(&mut terminal, &mut app, &mut config).await;
 
     disable_raw_mode()?;
     execute!(
@@ -179,7 +179,7 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
     Ok(())
 }
 
-async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App, config: &Config) -> Result<(), Box<dyn Error>> {
+async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App, config: &mut Config) -> Result<(), Box<dyn Error>> {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let client = Client::new();
     let mut cancellation_token = CancellationToken::new();
@@ -308,6 +308,51 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                         app.refresh_session_list();
                                         app.should_redraw = true;
                                     }
+                                    AppEventOutcome::FetchModels => {
+                                        app.show_palette = false;
+                                        app.show_model_switcher = true;
+                                        app.available_models.clear();
+                                        app.model_switcher_state.select(Some(0));
+                                        app.should_redraw = true;
+                                        // Collect servers: config model_servers + current server_url
+                                        let mut servers: Vec<(String, String, String)> = config.model_servers
+                                            .iter()
+                                            .map(|s| (s.name.clone(), s.url.clone(), s.model.clone()))
+                                            .collect();
+                                        if servers.is_empty() {
+                                            servers.push((config.model.clone(), config.server_url.clone(), config.model.clone()));
+                                        }
+                                        // Query each server for live model list
+                                        let client_clone = client.clone();
+                                        let tx_clone = tx.clone();
+                                        tokio::spawn(async move {
+                                            let mut models: Vec<(String, String, String)> = Vec::new();
+                                            for (name, url, _model) in &servers {
+                                                let live = lethetic::client::get_available_models(&client_clone, url).await;
+                                                if live.is_empty() {
+                                                    // Server not reachable — still show from config
+                                                    models.push((format!("{} (offline)", name), url.clone(), _model.clone()));
+                                                } else {
+                                                    for (id, _) in live {
+                                                        models.push((format!("{} — {}", name, id), url.clone(), id));
+                                                    }
+                                                }
+                                            }
+                                            let _ = tx_clone.send(StreamEvent::ModelsReady(models));
+                                        });
+                                    }
+                                    AppEventOutcome::SwitchModel(new_url, new_model) => {
+                                        config.server_url = new_url.clone();
+                                        config.model = new_model.clone();
+                                        app.server_url = new_url.clone();
+                                        app.model_name = new_model.clone();
+                                        app.add_segment(
+                                            format!("\n{} Switched to model: {} ({})\n", icons::SUCCESS, new_model, new_url),
+                                            BlockType::Text,
+                                        );
+                                        app.stop_reason = format!("Model: {}", new_model);
+                                        app.should_redraw = true;
+                                    }
                                     AppEventOutcome::SendPrompt(prompt) => {
                                         app.add_to_history(prompt.clone());
                                         if app.is_asking_user {
@@ -416,6 +461,13 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
             Some(mut stream_event) = rx.recv() => {
                 loop {
                     match stream_event {
+                        StreamEvent::ModelsReady(models) => {
+                            app.available_models = models;
+                            if !app.available_models.is_empty() {
+                                app.model_switcher_state.select(Some(0));
+                            }
+                            app.should_redraw = true;
+                        }
                         StreamEvent::DebugLog(msg) => {
                             if msg.starts_with("STATS|") {
                                 let parts: Vec<&str> = msg.split('|').collect();

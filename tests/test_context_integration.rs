@@ -21,7 +21,9 @@ fn test_read_file_raw_context_update() {
         tool_wrapper: None,
         enable_image_processing_tool: false,
             theme: None,
-    };
+    
+            model_servers: Vec::new(),
+        };
     let mut app = App::new(&config);
     app.current_dir = cwd.to_string();
 
@@ -51,7 +53,9 @@ fn test_write_file_context_update() {
         tool_wrapper: None,
         enable_image_processing_tool: false,
             theme: None,
-    };
+    
+            model_servers: Vec::new(),
+        };
     let mut app = App::new(&config);
 
     let file_path = "new.rs";
@@ -86,7 +90,9 @@ fn test_tool_call_json_formatting() {
         tool_wrapper: None,
         enable_image_processing_tool: false,
             theme: None,
-    };
+    
+            model_servers: Vec::new(),
+        };
     let mut app = App::new(&config);
     
     let tool_call = ToolCall {

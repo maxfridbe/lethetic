@@ -11,7 +11,9 @@ fn test_read_file_feedback_logic() {
         tool_wrapper: None,
         enable_image_processing_tool: false,
         theme: None,
-    };
+    
+            model_servers: Vec::new(),
+        };
     let mut app = App::new(&config);
     
     let path = "test_file.rs";

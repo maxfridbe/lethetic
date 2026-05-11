@@ -869,6 +869,37 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         f.render_stateful_widget(List::new(items).block(UIBlock::default().title(format!("{} Command Palette", icons::COMMAND)).borders(Borders::ALL).style(Style::default().bg(app.theme.terminal_bg))).highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(app.theme.highlight_fg)).highlight_symbol("> "), area, &mut app.palette_state);
     }
 
+    if app.show_model_switcher {
+        let area = centered_rect(65, 50, f.area());
+        f.render_widget(Clear, area);
+
+        let items: Vec<ListItem> = if app.available_models.is_empty() {
+            vec![ListItem::new("Fetching models…")]
+        } else {
+            app.available_models.iter().map(|(display, url, _)| {
+                let active = url == &app.server_url;
+                let label = if active {
+                    format!("▶ {} [active]", display)
+                } else {
+                    format!("  {}", display)
+                };
+                ListItem::new(label)
+            }).collect()
+        };
+
+        f.render_stateful_widget(
+            List::new(items)
+                .block(UIBlock::default()
+                    .title(format!("{} Models  (↑↓ navigate · Enter: switch · q: close)", icons::MODEL))
+                    .borders(Borders::ALL)
+                    .style(Style::default().bg(app.theme.terminal_bg)))
+                .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(app.theme.highlight_fg))
+                .highlight_symbol("> "),
+            area,
+            &mut app.model_switcher_state,
+        );
+    }
+
     if app.show_lsp_manager {
         use ratatui::text::{Span, Line as RLine};
         use ratatui::widgets::Paragraph;

@@ -12,7 +12,9 @@ fn test_system_prompt_manager_lifecycle() {
         tool_wrapper: None,
         enable_image_processing_tool: false,
         theme: None,
-    };
+    
+            model_servers: Vec::new(),
+        };
     let resolved = SystemPromptManager::resolve_prompt(template, "/mock/cwd", &config);
     
     assert!(resolved.contains("Hello"));

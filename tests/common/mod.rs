@@ -10,6 +10,8 @@ pub fn setup_mock_app() -> App {
         tool_wrapper: None,
         enable_image_processing_tool: false,
         theme: None,
-    };
+    
+            model_servers: Vec::new(),
+        };
     App::new(&config)
 }

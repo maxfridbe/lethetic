@@ -405,6 +405,8 @@ mod tests {
             tool_wrapper: None,
             enable_image_processing_tool: false,
             theme: None,
+        
+            model_servers: Vec::new(),
         };
         let tools = get_all_tools(&config);
         let shell = tools.iter().find(|t| t.function.name == "run_shell_command").unwrap();

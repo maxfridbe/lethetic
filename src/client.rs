@@ -69,6 +69,7 @@ pub enum StreamEvent {
     Error(String),
     DebugLog(String),
     TokenUpdate(u32, f64), // (count, ms)
+    ModelsReady(Vec<(String, String, String)>), // (display, url, model_id)
 }
 
 fn base_url(server_url: &str) -> String {
@@ -194,6 +195,31 @@ pub async fn summarize_llm(client: &reqwest::Client, config: &Config, context: &
     let user_text = format!("{}\n\nContext to summarize:\n{}", prompt, truncated_context);
     let messages = vec![gemma_chat::Message::user(user_text)];
     gemma_chat::complete(client, &base_url(&config.server_url), &config.model, &messages, 4096).await
+}
+
+/// Query a server's /v1/models endpoint and return (display_name, model_id) pairs.
+pub async fn get_available_models(client: &Client, server_url: &str) -> Vec<(String, String)> {
+    let base = base_url(server_url);
+    // strip trailing /v1 to get root, then re-add /v1/models
+    let models_url = if base.ends_with("/v1") {
+        format!("{}/models", base)
+    } else {
+        format!("{}/v1/models", base)
+    };
+    let resp = match client.get(&models_url).send().await {
+        Ok(r) => r,
+        Err(_) => return vec![],
+    };
+    let json: serde_json::Value = match resp.json().await {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+    json["data"].as_array()
+        .map(|arr| arr.iter().filter_map(|m| {
+            let id = m["id"].as_str()?;
+            Some((id.to_string(), id.to_string()))
+        }).collect())
+        .unwrap_or_default()
 }
 
 pub async fn get_single_response(client: &Client, config: &Config, prompt: String, _images: Option<Vec<String>>, tx: Option<&mpsc::UnboundedSender<StreamEvent>>) -> Result<String, String> {

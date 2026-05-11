@@ -22,7 +22,9 @@ async fn test_process_image_file_not_found() {
         tool_wrapper: None,
         enable_image_processing_tool: true,
         theme: None,
-    };
+    
+            model_servers: Vec::new(),
+        };
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
     let res = process_image::execute("test", "non_existent.png", None, ".", &client, &config, &tx).await;
     assert!(res.contains("ERROR: Image file not found"));
@@ -38,7 +40,9 @@ async fn test_process_pdf_image_invalid_page() {
         tool_wrapper: None,
         enable_image_processing_tool: true,
         theme: None,
-    };
+    
+            model_servers: Vec::new(),
+        };
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
     let res = process_pdf_image::execute("test", "non_existent.pdf", 1, None, ".", &client, &config, &tx).await;
     assert!(res.contains("ERROR: PDF file not found"));
@@ -181,7 +185,9 @@ fn test_tool_registration() {
         tool_wrapper: None,
         enable_image_processing_tool: true,
         theme: None,
-    };
+    
+            model_servers: Vec::new(),
+        };
     let tools = lethetic::tools::get_all_tools(&config);
     assert!(tools.iter().any(|t| t.function.name == "process_image"));
     assert!(tools.iter().any(|t| t.function.name == "process_pdf_image"));
