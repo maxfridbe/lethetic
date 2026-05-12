@@ -1,3 +1,13 @@
 server_url: http://brainiac-nvidia:7210/v1/responses
 model: Gemma-4-26B-TurboQuant-262k
 context_size: 262144
+
+model_servers:
+  - name: Gemma 4 26B
+    url: http://brainiac-nvidia:7210/v1/responses
+    model: Gemma-4-26B-TurboQuant-262k
+    parser: gemma4
+  - name: Qwen3 27B MTP
+    url: http://brainiac-nvidia:7211/v1/responses
+    model: Qwen3-27B-MTP-Q4
+    parser: qwen3
