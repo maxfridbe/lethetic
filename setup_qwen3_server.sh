@@ -1,22 +1,27 @@
 #!/bin/bash
 set -e
 
-# Qwen3 27B MTP server — runs on port 7211, hot-swaps GPU with Gemma4 on port 7210.
+# Qwen3 27B MTP server — runs on port 7211.
 #
-# Uses the TurboQuant llama.cpp fork (b9082+) which has full SSM/Qwen35 architecture
-# support. MTP tensors are loaded but speculative decoding is not yet wired — the
-# benefit is turbo3 KV quantization enabling 262k context within VRAM budget.
+# Uses ik_llama.cpp fork (feature/turboquant-kv at github.com/maxfridbe/ik_llama_tq.cpp)
+# which combines:
+#   - MTP speculative decode (-mtp, ~20% speedup via built-in multi-token prediction)
+#   - turbo3 KV cache (--cache-type-k/v turbo3, ~8x compression → 262k ctx in 24GB)
+#   - --sleep-idle-seconds: process stays alive but frees ~20GB VRAM after N idle seconds;
+#     reloads from OS page cache (~9s) on next request — same behavior as Gemma4 server.
 #
-# If MTP speculative decoding (~20% speedup) is needed instead, use ik_llama.cpp:
-#   git clone https://github.com/ikawrakow/ik_llama.cpp
-#   (build same way) then run with: -mtp --draft-max 1 --draft-p-min 0.0
-#   (no turbo3 KV cache — needs more VRAM; reduce ctx-size to 131072)
+# Build the binary first:
+#   cd ~/ik_llama.cpp  # cloned from github.com/maxfridbe/ik_llama_tq.cpp
+#   git checkout feature/turboquant-kv
+#   mkdir build && cd build
+#   cmake .. -DGGML_CUDA=ON -DGGML_CUDA_FA_ALL_QUANTS=ON -DGGML_CUDA_USE_GRAPHS=ON
+#   cmake --build . --config Release -j$(nproc) --target llama-server
 #
-# Prerequisites: run setup_gemma4_server.sh first to build TurboQuant.
+# systemd service: Restart=on-failure (not always — server stays alive through sleep/wake)
 
 USER_HOME="/home/$(whoami)"
 MODELS_DIR="$USER_HOME/models"
-SRC_DIR="$USER_HOME/llama-cpp-turboquant"
+SRC_DIR="$USER_HOME/ik_llama.cpp"
 PORT=7211
 
 # Model: Qwen3.6-27B-MTP Q4_K_M (16GB)
