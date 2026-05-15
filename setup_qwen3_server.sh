@@ -66,7 +66,8 @@ $SRC_DIR/build/bin/llama-server \\
   --repeat-penalty 1.05 \\
   -mtp \\
   --draft-max 1 \\
-  --draft-p-min 0.0
+  --draft-p-min 0.0 \\
+  --sleep-idle-seconds 120
 R_EOF
 chmod +x "$USER_HOME/run_llama_qwen3.sh"
 echo "  Created $USER_HOME/run_llama_qwen3.sh"
