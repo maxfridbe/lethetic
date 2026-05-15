@@ -134,6 +134,7 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
         };
 
         let mut in_thought_mode = true;
+        let mut emitted_think_open = false;
 
         loop {
             let ev = tokio::select! {
@@ -145,6 +146,13 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
             match ev {
                 gemma_chat::StreamEvent::ReasoningDelta(text) => {
                     let ms = request_start.elapsed().as_millis();
+                    // Emit <think> before the first reasoning chunk so strip_thinking() can
+                    // find the <think>...</think> pair and remove it from history.
+                    if !emitted_think_open {
+                        emitted_think_open = true;
+                        append_token(&prefix_clone, serde_json::json!({"c": "<think>\n", "t": ms, "kind": "synthetic"}));
+                        let _ = log_tx_spawn.send(StreamEvent::Chunk("<think>\n".to_string()));
+                    }
                     append_token(&prefix_clone, serde_json::json!({"c": text, "t": ms, "kind": "reasoning"}));
                     let _ = log_tx_spawn.send(StreamEvent::Chunk(text));
                 }
