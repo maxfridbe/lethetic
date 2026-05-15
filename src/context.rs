@@ -367,22 +367,9 @@ impl ContextManager {
     pub fn get_messages_for_api(&self) -> Vec<gemma_chat::Message> {
         let mut msgs = Vec::new();
 
-        // ── 1. Latest files (background context, before system prompt) ──
-        if !self.latest_files.is_empty() {
-            let mut files_content = String::from("<latest_files>\n");
-            for (path, _cached_file) in &self.latest_files {
-                let abs = std::path::Path::new(&self.cwd).join(path);
-                let body = match std::fs::read_to_string(&abs) {
-                    Ok(c)  => format!("```\n{}\n```", sanitize_file_content(&c)),
-                    Err(_) => format!("⚠ File `{}` was deleted or no longer exists on disk.", path),
-                };
-                files_content.push_str(&format!("File: `{}`\n{}\n", path, body));
-            }
-            files_content.push_str("</latest_files>");
-            msgs.push(gemma_chat::Message::system(files_content));
-        }
-
-        // ── 2. System prompt ──
+        // ── 1. System prompt (stable — must be first for KV cache reuse LCP matching) ──
+        // Putting stable content first means ik_llama.cpp can reuse the KV cache for
+        // the full prefix (system + history) on turns where files haven't changed.
         if let Some(sys) = &self.system_prompt {
             let mut clean = sys.clone();
             loop {
@@ -396,6 +383,21 @@ impl ContextManager {
             if !clean.is_empty() {
                 msgs.push(gemma_chat::Message::system(clean));
             }
+        }
+
+        // ── 2. Latest files (after system prompt so stable prefix is maximised) ──
+        if !self.latest_files.is_empty() {
+            let mut files_content = String::from("<latest_files>\n");
+            for (path, _cached_file) in &self.latest_files {
+                let abs = std::path::Path::new(&self.cwd).join(path);
+                let body = match std::fs::read_to_string(&abs) {
+                    Ok(c)  => format!("```\n{}\n```", sanitize_file_content(&c)),
+                    Err(_) => format!("⚠ File `{}` was deleted or no longer exists on disk.", path),
+                };
+                files_content.push_str(&format!("File: `{}`\n{}\n", path, body));
+            }
+            files_content.push_str("</latest_files>");
+            msgs.push(gemma_chat::Message::system(files_content));
         }
 
         // ── 3. Message history ──
