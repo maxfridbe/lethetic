@@ -2,13 +2,11 @@
 /// Uses the production gemma_chat streaming path so tool call parsing is model-agnostic.
 use std::fs;
 use std::time::Duration;
-use futures_util::StreamExt;
 use serial_test::serial;
 use tokio_util::sync::CancellationToken;
 
 use lethetic::config::Config;
 use lethetic::context::ContextManager;
-use lethetic::parser::ParserMode;
 use lethetic::system_prompt;
 use lethetic::client::trigger_llm_request;
 use lethetic::client::StreamEvent;
@@ -71,13 +69,59 @@ async fn run_qwen3(prompt: &str) -> Result<String, String> {
 }
 
 /// Run a prompt that must produce a tool call; return the tool name.
+/// Handles both:
+///   - Structured tool_calls (Qwen3+Jinja path): arrives as StreamEvent::ToolCalls
+///   - Raw JSON in content (fallback): parsed by find_tool_call
 async fn run_qwen3_tool(prompt: &str) -> Result<String, String> {
-    let content = run_qwen3(prompt).await?;
-    println!("RAW_OUTPUT_START\n{}\nRAW_OUTPUT_END", content);
-    match lethetic::parser::find_tool_call(&content, true) {
+    let config = qwen3_config()?;
+    let client = reqwest::Client::new();
+
+    let sys = system_prompt::SystemPromptManager::resolve_prompt(
+        system_prompt::DEFAULT_PROMPT_TEMPLATE, ".", &config,
+    );
+    let mut ctx = ContextManager::new(config.context_size, Some(sys));
+    ctx.add_message("user", prompt);
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let cancel = CancellationToken::new();
+
+    trigger_llm_request(client, config.clone(), &ctx, tx, cancel, false, None);
+
+    let mut text = String::new();
+    let mut tool_name: Option<String> = None;
+
+    let result = tokio::time::timeout(Duration::from_secs(180), async {
+        loop {
+            match rx.recv().await {
+                Some(StreamEvent::Chunk(c)) => text.push_str(&c),
+                Some(StreamEvent::ToolCalls(calls)) => {
+                    if let Some(tc) = calls.first() {
+                        tool_name = Some(tc.function.name.clone());
+                    }
+                }
+                Some(StreamEvent::Done { .. }) => break,
+                Some(StreamEvent::Error(e)) => return Err(e),
+                None => break,
+                _ => {}
+            }
+        }
+        Ok(())
+    }).await;
+
+    result.map_err(|_| "Timeout after 180s".to_string())??;
+
+    println!("RAW_OUTPUT_START\n{}\nRAW_OUTPUT_END", text);
+
+    // Structured tool_calls path (Qwen3+Jinja)
+    if let Some(name) = tool_name {
+        return Ok(name);
+    }
+
+    // Raw JSON path (fallback)
+    match lethetic::parser::find_tool_call(&text, true) {
         Some(Ok((tc, _))) => Ok(tc.function.name),
-        Some(Err((e, _))) => Err(format!("Syntax error: {}\nContent:\n{}", e, content)),
-        None => Err(format!("No tool call detected.\nContent:\n{}", content)),
+        Some(Err((e, _))) => Err(format!("Syntax error: {}\nContent:\n{}", e, text)),
+        None => Err(format!("No tool call detected.\nContent:\n{}", text)),
     }
 }
 

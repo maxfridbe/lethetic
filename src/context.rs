@@ -430,7 +430,10 @@ impl ContextManager {
             }
         }
 
-        // ── 4. Active file (highest attention — right before generation) ──
+        // ── 4. Active file ──
+        // Collect into a separate vec; we'll hoist all system messages to the
+        // front below so Qwen3's Jinja template ("system must be first") is satisfied.
+        let mut active_sys: Option<gemma_chat::Message> = None;
         if !self.active_files.is_empty() {
             let mut files_content = String::from("<active_file>\n");
             for (path, _cached_file) in &self.active_files {
@@ -442,10 +445,37 @@ impl ContextManager {
                 files_content.push_str(&format!("File: `{}`\n{}\n", path, body));
             }
             files_content.push_str("</active_file>");
-            msgs.push(gemma_chat::Message::system(files_content));
+            active_sys = Some(gemma_chat::Message::system(files_content));
         }
 
-        msgs
+        // ── 5. Merge all system messages into one ──
+        // Qwen3's Jinja template requires exactly one system message at position 0.
+        // Collect all system content (steps 1-2 + mid-conversation + active_file),
+        // join them, emit a single system message, then all conversation turns.
+        let (sys_msgs, conv_msgs): (Vec<_>, Vec<_>) = msgs
+            .into_iter()
+            .partition(|m| matches!(m.role, gemma_chat::Role::System));
+
+        let mut combined_sys = sys_msgs
+            .into_iter()
+            .filter_map(|m| match m.content {
+                serde_json::Value::String(s) if !s.is_empty() => Some(s),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        if let Some(af) = active_sys {
+            if let serde_json::Value::String(s) = af.content {
+                if !s.is_empty() { combined_sys.push(s); }
+            }
+        }
+
+        let mut result = Vec::new();
+        if !combined_sys.is_empty() {
+            result.push(gemma_chat::Message::system(combined_sys.join("\n\n")));
+        }
+        result.extend(conv_msgs);
+        result
     }
 
     fn strip_thinking(&self, content: &str) -> String {
