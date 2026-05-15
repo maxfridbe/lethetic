@@ -48,6 +48,8 @@ echo "[1/4] Creating runner script..."
 cat << R_EOF > "$USER_HOME/run_llama_qwen3.sh"
 #!/bin/bash
 export PATH=\$PATH:/usr/local/cuda/bin
+# Combined MTP (speculative decode, ~20% speedup) + turbo3 KV cache (8x compression).
+# Uses ik_llama.cpp fork with turbo3 CPY + flash-attn fixes (feature/turboquant-kv branch).
 $SRC_DIR/build/bin/llama-server \\
   --host 0.0.0.0 \\
   -m "$GGUF_PATH" \\
@@ -62,7 +64,9 @@ $SRC_DIR/build/bin/llama-server \\
   --jinja \\
   --temp 0.2 \\
   --repeat-penalty 1.05 \\
-  --sleep-idle-seconds 30s
+  -mtp \\
+  --draft-max 1 \\
+  --draft-p-min 0.0
 R_EOF
 chmod +x "$USER_HOME/run_llama_qwen3.sh"
 echo "  Created $USER_HOME/run_llama_qwen3.sh"
