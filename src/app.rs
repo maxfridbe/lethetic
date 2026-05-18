@@ -1417,12 +1417,12 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
     AppEventOutcome::Continue
 }
 
-pub fn handle_tool_call(app: &mut App, calls: Vec<ToolCall>, pos: usize, _tx: mpsc::UnboundedSender<StreamEvent>, cancellation_token: &mut CancellationToken, full_response_content: &str, _is_native: bool) {
+pub fn handle_tool_call(app: &mut App, calls: Vec<ToolCall>, pos: usize, _tx: mpsc::UnboundedSender<StreamEvent>, cancellation_token: &mut CancellationToken, full_response_content: &str, _is_native: bool) -> AppEventOutcome {
     if !app.tool_calls_processed_this_request {
         app.tool_calls_processed_this_request = true;
         cancellation_token.cancel();
         *cancellation_token = CancellationToken::new();
-        
+
         app.tool_call_pos = Some(pos);
 
         let tool_call = calls[0].clone();
@@ -1445,10 +1445,13 @@ pub fn handle_tool_call(app: &mut App, calls: Vec<ToolCall>, pos: usize, _tx: mp
             let q_short = if question.len() > 60 { format!("{}…", &question[..57]) } else { question.to_string() };
             app.stop_reason = format!("⏸ Waiting for your answer: {}", q_short);
         } else if app.shell_approval_mode == ApprovalMode::Always {
+            // Auto-approve: return ToolApproved so the caller dispatches execution immediately
+            return AppEventOutcome::ToolApproved(true, true);
         } else {
             app.show_approval_prompt = true;
             app.is_processing = false;
             app.stop_reason = format!("⏸ Awaiting approval: {} — {}", tool_call.function.name, description);
         }
     }
+    AppEventOutcome::Continue
 }

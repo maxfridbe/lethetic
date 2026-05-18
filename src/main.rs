@@ -19,6 +19,31 @@ use sysinfo::System;
 use lethetic::config::Config;
 use lethetic::client::{StreamEvent, trigger_llm_request};
 use lethetic::app::{App, AppEventOutcome, BlockType, handle_key, handle_tool_call, ApprovalMode};
+
+/// Dispatch `pending_tool_call` immediately (used when ApprovalMode::Always auto-approved it).
+macro_rules! dispatch_auto_approved_tool {
+    ($app:expr, $tx:expr, $cancellation_token:expr, $client:expr, $config:expr) => {
+        if let Some(tool_call) = $app.pending_tool_call.as_ref() {
+            let tc_id    = tool_call.id.clone();
+            let func_name = tool_call.function.name.clone();
+            let args      = tool_call.function.arguments.clone();
+            let current_dir = $app.current_dir.clone();
+            let ctx_tx    = $tx.clone();
+            let tool_cancel = $cancellation_token.clone();
+            let client_cl = $client.clone();
+            let config_cl = $config.clone();
+            $app.is_executing_tool = true;
+            tokio::spawn(async move {
+                let (result, new_dir) = lethetic::tools::execute(
+                    func_name.as_str(), &args, &current_dir, tool_cancel, ctx_tx.clone(), &client_cl, &config_cl).await;
+                let (full_result, _) = handle_large_output(&tc_id, result, &client_cl, &config_cl, &args).await;
+                let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, full_result, new_dir.clone()));
+                let _ = ctx_tx.send(StreamEvent::DebugLog(format!("DIR_UPDATE|{}", new_dir)));
+            });
+            $app.is_processing = true;
+        }
+    };
+}
 use lethetic::ui::ui;
 use lethetic::tools::get_git_info;
 use lethetic::icons;
@@ -558,7 +583,9 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 if app.parser.state == lethetic::parser::ParserState::Text && !app.tool_calls_processed_this_request {
                                     match parser::find_tool_call(&full_response_content, false) {
                                         Some(Ok((tc, pos))) => {
-                                            handle_tool_call(app, vec![tc], pos, tx.clone(), &mut cancellation_token, &full_response_content, false);
+                                            if let AppEventOutcome::ToolApproved(..) = handle_tool_call(app, vec![tc], pos, tx.clone(), &mut cancellation_token, &full_response_content, false) {
+                                                dispatch_auto_approved_tool!(app, tx, cancellation_token, client, config);
+                                            }
                                         }
                                         Some(Err((err_msg, _pos))) => {
                                             // Only log error if we are sure it should have finished (Text state)
@@ -577,7 +604,9 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                         }
                         StreamEvent::ToolCalls(calls) => {
                             if !app.tool_calls_processed_this_request {
-                                handle_tool_call(app, calls, full_response_content.len(), tx.clone(), &mut cancellation_token, &full_response_content, true);
+                                if let AppEventOutcome::ToolApproved(..) = handle_tool_call(app, calls, full_response_content.len(), tx.clone(), &mut cancellation_token, &full_response_content, true) {
+                                    dispatch_auto_approved_tool!(app, tx, cancellation_token, client, config);
+                                }
                             }
                         }
                         StreamEvent::ToolResult(id, func_name, result, new_dir) => {
