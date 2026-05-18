@@ -374,6 +374,12 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                         let mode = lethetic::parser::ParserMode::from_str(&parser);
                                         app.parser.set_mode(mode);
                                         app.parser.reset();
+                                        // Re-resolve system prompt with updated config so the
+                                        // correct tool call format (gemma4 <|"|> vs qwen3 JSON)
+                                        // is injected for the new model.
+                                        let refreshed = lethetic::system_prompt::SystemPromptManager::resolve_prompt(
+                                            &app.system_prompt, &app.current_dir, config);
+                                        app.context_manager.update_system_prompt(refreshed);
                                         app.add_segment(
                                             format!("\n{} Switched to model: {} ({}) — parser: {}\n", icons::SUCCESS, new_model, new_url, parser),
                                             BlockType::Text,
