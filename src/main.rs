@@ -786,6 +786,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             app.parser.reset();
                             trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), app.show_debug, app.current_session_dir.clone());
                         }
+                        StreamEvent::PreparingToolCall(name) => {
+                            app.stop_reason = format!("Lethetic Intelligence Engine Processing (Preparing tool call: {})…", name);
+                            app.should_redraw = true;
+                        }
                         StreamEvent::ToolProgress(msg) => {
                             app.tool_output_preview = msg;
                             app.should_redraw = true;

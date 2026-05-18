@@ -60,6 +60,7 @@ pub struct Timings {
 #[derive(Clone, Debug)]
 pub enum StreamEvent {
     Chunk(String),
+    PreparingToolCall(String), // tool name being streamed — show "preparing" status
     ToolCalls(Vec<ToolCall>),
     ToolResult(Option<String>, String, String, String), // (id, func_name, result, current_dir)
     ToolProgress(String),
@@ -166,6 +167,9 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
                     let ms = request_start.elapsed().as_millis();
                     append_token(&prefix_clone, serde_json::json!({"c": text, "t": ms, "kind": "text"}));
                     let _ = log_tx_spawn.send(StreamEvent::Chunk(text));
+                }
+                gemma_chat::StreamEvent::ToolCallStart { name, .. } => {
+                    let _ = log_tx_spawn.send(StreamEvent::PreparingToolCall(name));
                 }
                 gemma_chat::StreamEvent::ToolCallComplete { id, name, arguments, .. } => {
                     let ms = request_start.elapsed().as_millis();
