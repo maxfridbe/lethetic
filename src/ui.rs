@@ -1317,6 +1317,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             Line::from(vec![Span::styled("Global Toggles", Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan))]),
             Line::from(vec![Span::raw("  F12       : Toggle Debugger Pane")]),
             Line::from(vec![Span::raw("  F10       : Toggle Mouse (for terminal selection)")]),
+            Line::from(vec![Span::raw("  Wheel     : Scroll output one line up/down")]),
             Line::from(vec![Span::raw("  CTRL + P  : Command Palette")]),
             Line::from(vec![Span::raw("  CTRL + L  : Clear UI (Keep Context)")]),
             Line::from(vec![]),

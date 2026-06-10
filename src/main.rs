@@ -1,7 +1,7 @@
 
 use std::env;
 use crossterm::{
-    event::{DisableBracketedPaste, EnableBracketedPaste, Event, EventStream, KeyEventKind, KeyCode, KeyModifiers},
+    event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, Event, EventStream, KeyEventKind, KeyCode, KeyModifiers, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -150,6 +150,7 @@ fn setup_panic_hook() {
                 stdout,
                 crossterm::terminal::LeaveAlternateScreen,
                 crossterm::event::DisableBracketedPaste,
+                crossterm::event::DisableMouseCapture,
                 crossterm::cursor::Show
             );
         }
@@ -245,7 +246,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste)?;
+    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -256,7 +257,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
-        DisableBracketedPaste
+        DisableBracketedPaste,
+        DisableMouseCapture
     )?;
     terminal.show_cursor()?;
 
@@ -286,6 +288,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
     let mut last_tick = std::time::Instant::now();
     let mut last_save = std::time::Instant::now();
     let mut full_response_content = String::new();
+    let mut mouse_captured = true;
 
     // Load syntect syntax/theme dumps off the render thread so the first
     // code-fence render doesn't hitch for 100-300ms.
@@ -337,6 +340,23 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                         app.save_session();
                                         return Ok(());
                                     }
+                                }
+
+                                // F10: toggle mouse capture. With capture on, the wheel
+                                // scrolls the output; with it off, the terminal's native
+                                // text selection works.
+                                if key.code == KeyCode::F(10) {
+                                    mouse_captured = !mouse_captured;
+                                    let mut out = io::stdout();
+                                    if mouse_captured {
+                                        let _ = execute!(out, EnableMouseCapture);
+                                        app.stop_reason = "Mouse capture ON — wheel scrolls output".to_string();
+                                    } else {
+                                        let _ = execute!(out, DisableMouseCapture);
+                                        app.stop_reason = "Mouse capture OFF — terminal text selection enabled".to_string();
+                                    }
+                                    app.should_redraw = true;
+                                    continue;
                                 }
 
                                 match handle_key(app, key) {
@@ -567,6 +587,19 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 app.input.insert_str(app.cursor_pos, &text);
                                 app.cursor_pos += text.len();
                                 app.should_redraw = true;
+                            }
+                        }
+                        Event::Mouse(mouse) => {
+                            match mouse.kind {
+                                MouseEventKind::ScrollUp => {
+                                    app.scroll_output_up(1);
+                                    app.should_redraw = true;
+                                }
+                                MouseEventKind::ScrollDown => {
+                                    app.scroll_output_down(1);
+                                    app.should_redraw = true;
+                                }
+                                _ => {}
                             }
                         }
                         _ => {}
