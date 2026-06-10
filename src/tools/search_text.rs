@@ -2,7 +2,6 @@
 use serde_json::json;
 use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
-use tokio::process::Command;
 
 pub fn get_definition() -> Tool {
     Tool {
@@ -61,15 +60,11 @@ pub async fn execute(
 
 async fn run_search(pattern: &str, search_path: &str, cwd: &str) -> String {
     // Prefer ripgrep: faster, respects .gitignore automatically, better output
-    let rg = Command::new("rg")
-        .arg("-n")
-        .arg("--color=never")
-        .arg("--no-heading")
-        .arg(pattern)
-        .arg(search_path)
-        .current_dir(cwd)
-        .output()
-        .await;
+    let rg = crate::platform::command_output(
+        "rg",
+        ["-n", "--color=never", "--no-heading", pattern, search_path],
+        Some(cwd),
+    ).await;
 
     if let Ok(out) = rg {
         let stdout = String::from_utf8_lossy(&out.stdout);
@@ -87,27 +82,16 @@ async fn run_search(pattern: &str, search_path: &str, cwd: &str) -> String {
     }
 
     // Fallback: grep with explicit exclusions
-    let child = match Command::new("grep")
-        .arg("-rn")
-        .arg("--color=never")
-        .arg("-I")
-        .arg("--exclude-dir=target")
-        .arg("--exclude-dir=.git")
-        .arg("--exclude-dir=node_modules")
-        .arg("--exclude-dir=.lethetic")
-        .arg(pattern)
-        .arg(search_path)
-        .current_dir(cwd)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => return format!("ERROR: Failed to run search (neither 'rg' nor 'grep' are available or executable: {})", e),
-    };
+    let result = crate::platform::command_output(
+        "grep",
+        ["-rn", "--color=never", "-I",
+         "--exclude-dir=target", "--exclude-dir=.git",
+         "--exclude-dir=node_modules", "--exclude-dir=.lethetic",
+         pattern, search_path],
+        Some(cwd),
+    ).await;
 
-    match child.wait_with_output().await {
+    match result {
         Ok(out) => {
             let stdout = String::from_utf8_lossy(&out.stdout);
             let stderr = String::from_utf8_lossy(&out.stderr);
@@ -117,7 +101,7 @@ async fn run_search(pattern: &str, search_path: &str, cwd: &str) -> String {
             }
             format!("EXIT_CODE: {}\nSTDOUT:\n{}\nSTDERR:\n{}", status, stdout, stderr)
         }
-        Err(e) => format!("ERROR: {}", e),
+        Err(e) => format!("ERROR: Failed to run search (neither 'rg' nor 'grep' are available or executable: {})", e),
     }
 }
 

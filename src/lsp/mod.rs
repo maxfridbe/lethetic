@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use tokio::sync::Mutex;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
-use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use crate::platform::{Child, ChildStdin, ChildStdout};
 use serde_json::{json, Value};
 
 use registry::{check_installed, LspServerDef, SERVERS};
@@ -39,14 +39,7 @@ impl LspManager {
     }
 
     async fn start_server(&mut self, def: &LspServerDef, workspace_root: &str) -> Result<(), String> {
-        let mut cmd = Command::new(def.binary);
-        cmd.args(def.start_args)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .kill_on_drop(true);
-
-        let mut child = cmd.spawn()
+        let mut child = crate::platform::spawn_piped_server(def.binary, def.start_args)
             .map_err(|e| format!("Failed to spawn {}: {}", def.binary, e))?;
 
         let stdin = child.stdin.take().ok_or("no stdin")?;

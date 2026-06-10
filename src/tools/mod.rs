@@ -336,13 +336,7 @@ pub fn execute<'a>(
 }
 
 pub async fn get_git_info() -> String {
-    use tokio::process::Command;
-    let status = Command::new("git")
-        .arg("status")
-        .arg("--porcelain=v2")
-        .arg("--branch")
-        .output()
-        .await;
+    let status = crate::platform::command_output("git", ["status", "--porcelain=v2", "--branch"], None).await;
 
     match status {
         Ok(out) => {

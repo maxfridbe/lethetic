@@ -89,11 +89,5 @@ pub fn server_for_language(language: &str) -> Option<&'static LspServerDef> {
 }
 
 pub fn check_installed(def: &LspServerDef) -> bool {
-    std::process::Command::new("which")
-        .arg(def.binary)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    crate::platform::binary_on_path(def.binary)
 }

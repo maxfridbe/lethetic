@@ -4,7 +4,6 @@ use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
 use std::fs;
 use std::path::Path;
-use tokio::process::Command;
 
 pub fn get_definition() -> Tool {
     Tool {
@@ -114,29 +113,18 @@ pub async fn execute(file_path: &str, old_content: &str, new_content: &str, cwd:
         return format!("ERROR: Failed to write temp patch file: {}", e);
     }
 
-    let mut cmd = Command::new("patch");
-    cmd.arg("-u")
-        .arg(file_path)
-        .arg("-i")
-        .arg(&patch_file)
-        .current_dir(cwd)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
-
-    let child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => {
-            let _ = fs::remove_file(patch_file);
-            return format!("ERROR: Failed to run patch utility: {}. Make sure 'patch' is installed on your system.", e);
-        }
-    };
+    let args: [&std::ffi::OsStr; 4] = [
+        "-u".as_ref(),
+        file_path.as_ref(),
+        "-i".as_ref(),
+        patch_file.as_os_str(),
+    ];
 
     let result = tokio::select! {
         _ = cancellation_token.cancelled() => {
             "[Operation Cancelled by User]".to_string()
         }
-        output = child.wait_with_output() => {
+        output = crate::platform::command_output("patch", args, Some(cwd)) => {
             match output {
                 Ok(out) => {
                     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -150,7 +138,7 @@ STDERR:
 {}", stdout, stderr)
                     }
                 }
-                Err(e) => format!("ERROR: {}", e),
+                Err(e) => format!("ERROR: Failed to run patch utility: {}. Make sure 'patch' is installed on your system.", e),
             }
         }
     };

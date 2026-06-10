@@ -2,7 +2,6 @@ use serde_json::json;
 use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
 use std::path::Path;
-use tokio::process::Command;
 
 pub fn get_definition() -> Tool {
     Tool {
@@ -62,14 +61,11 @@ pub async fn execute(
 
 async fn run_glob(pattern: &str, search_path: &str, cwd: &str) -> String {
     // Try ripgrep first (respects .gitignore, fast)
-    let rg_result = Command::new("rg")
-        .arg("--files")
-        .arg("-g")
-        .arg(pattern)
-        .arg(search_path)
-        .current_dir(cwd)
-        .output()
-        .await;
+    let rg_result = crate::platform::command_output(
+        "rg",
+        ["--files", "-g", pattern, search_path],
+        Some(cwd),
+    ).await;
 
     if let Ok(out) = rg_result {
         if out.status.success() || !out.stdout.is_empty() {
@@ -84,22 +80,14 @@ async fn run_glob(pattern: &str, search_path: &str, cwd: &str) -> String {
     // Fallback: find (available everywhere)
     // Convert glob pattern to find -name format (best-effort for simple patterns)
     let name_part = pattern.split('/').next_back().unwrap_or(pattern);
-    let find_result = Command::new("find")
-        .arg(search_path)
-        .arg("-name")
-        .arg(name_part)
-        .arg("-not")
-        .arg("-path")
-        .arg("*/target/*")
-        .arg("-not")
-        .arg("-path")
-        .arg("*/.git/*")
-        .arg("-not")
-        .arg("-path")
-        .arg("*/node_modules/*")
-        .current_dir(cwd)
-        .output()
-        .await;
+    let find_result = crate::platform::command_output(
+        "find",
+        [search_path, "-name", name_part,
+         "-not", "-path", "*/target/*",
+         "-not", "-path", "*/.git/*",
+         "-not", "-path", "*/node_modules/*"],
+        Some(cwd),
+    ).await;
 
     match find_result {
         Ok(out) => {

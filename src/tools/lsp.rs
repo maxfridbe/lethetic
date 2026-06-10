@@ -70,10 +70,7 @@ async fn auto_install(def: &registry::LspServerDef, tx: &mpsc::UnboundedSender<S
     let _ = tx.send(StreamEvent::ToolProgress(
         format!("LSP: `{}` not found — auto-installing… ({})", def.binary, def.install_cmd)
     ));
-    let out = tokio::process::Command::new("sh")
-        .arg("-c")
-        .arg(def.install_cmd)
-        .output()
+    let out = crate::platform::shell_output(def.install_cmd, None)
         .await
         .map_err(|e| format!("Failed to run install command: {}", e))?;
     if out.status.success() {

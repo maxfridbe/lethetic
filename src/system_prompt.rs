@@ -47,10 +47,7 @@ impl Default for SystemPromptManager {
 
 impl SystemPromptManager {
     pub fn new() -> Self {
-        let config_dir = dirs::config_dir().unwrap_or_else(|| {
-            dirs::home_dir().map(|h| h.join(".config")).unwrap_or_else(|| PathBuf::from("."))
-        });
-        let prompts_dir = config_dir.join("lethetic").join("prompts");
+        let prompts_dir = crate::platform::lethetic_config_dir().join("prompts");
         
         if !prompts_dir.exists() {
             let _ = fs::create_dir_all(&prompts_dir);

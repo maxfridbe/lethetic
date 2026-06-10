@@ -1,7 +1,6 @@
 use serde_json::json;
 use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
-use tokio::process::Command;
 
 pub fn get_definition() -> Tool {
     Tool {
@@ -89,18 +88,13 @@ async fn run_find_symbol(operation: &str, symbol: &str, search_path: &str, cwd: 
         _ => return format!("ERROR: unknown operation '{}'. Use: definition, references, symbols", operation),
     };
 
-    let output = Command::new("rg")
-        .arg("-n")
-        .arg("--color=never")
-        .arg("--no-heading")
-        .arg("--glob=!target")
-        .arg("--glob=!.git")
-        .arg("--glob=!node_modules")
-        .arg(&pattern)
-        .arg(search_path)
-        .current_dir(cwd)
-        .output()
-        .await;
+    let output = crate::platform::command_output(
+        "rg",
+        ["-n", "--color=never", "--no-heading",
+         "--glob=!target", "--glob=!.git", "--glob=!node_modules",
+         &pattern, search_path],
+        Some(cwd),
+    ).await;
 
     match output {
         Ok(out) => {
@@ -145,19 +139,13 @@ async fn grep_fallback(operation: &str, symbol: &str, search_path: &str, cwd: &s
         _ => return format!("ERROR: unknown operation '{}'", operation),
     };
 
-    let output = Command::new("grep")
-        .arg("-rn")
-        .arg("--color=never")
-        .arg("-I")
-        .arg("--exclude-dir=target")
-        .arg("--exclude-dir=.git")
-        .arg("--exclude-dir=node_modules")
-        .arg("-E")
-        .arg(&pattern)
-        .arg(search_path)
-        .current_dir(cwd)
-        .output()
-        .await;
+    let output = crate::platform::command_output(
+        "grep",
+        ["-rn", "--color=never", "-I",
+         "--exclude-dir=target", "--exclude-dir=.git", "--exclude-dir=node_modules",
+         "-E", &pattern, search_path],
+        Some(cwd),
+    ).await;
 
     match output {
         Ok(out) => {

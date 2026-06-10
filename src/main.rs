@@ -227,8 +227,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let config_path = if Path::new("config.yml").exists() {
         PathBuf::from("config.yml")
     } else {
-        let home = env::var("HOME").expect("HOME env var not set");
-        PathBuf::from(home).join(".config/lethetic/config.yml")
+        lethetic::platform::lethetic_config_dir().join("config.yml")
     };
 
     let mut config = Config::load(&config_path)?;
@@ -278,18 +277,6 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
     Ok(())
 }
 
-/// Current process resident set size in MB, read from /proc/self/status (VmRSS is in kB).
-fn process_rss_mb() -> u64 {
-    std::fs::read_to_string("/proc/self/status")
-        .ok()
-        .and_then(|s| {
-            let line = s.lines().find(|l| l.starts_with("VmRSS:"))?;
-            line.split_whitespace().nth(1)?.parse::<u64>().ok()
-        })
-        .map(|kb| kb / 1024)
-        .unwrap_or(0)
-}
-
 async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App, config: &mut Config) -> Result<(), Box<dyn Error>> {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let client = Client::new();
@@ -307,7 +294,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
     let stats_tx = tx.clone();
     tokio::spawn(async move {
         loop {
-            let proc_mem = process_rss_mb();
+            let proc_mem = lethetic::platform::process_rss_mb();
             let git = get_git_info().await;
             let _ = stats_tx.send(StreamEvent::DebugLog(format!("STATS|{}|{}", proc_mem, git)));
             tokio::time::sleep(Duration::from_secs(2)).await;
