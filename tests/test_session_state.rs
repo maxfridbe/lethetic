@@ -17,6 +17,7 @@ fn sample_state() -> SessionState {
             prompt_tokens: None,
             completion_tokens: None,
             cached_lines: None,
+            cached_line_count: None,
         }],
         history: vec!["hello".to_string()],
         theme_name: "Matrix".to_string(),

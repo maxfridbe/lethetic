@@ -377,7 +377,9 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                                 let mut state = lethetic::app::SessionState::load(&load_dir);
                                                 if terminal_width > 0 {
                                                     for block in &mut state.blocks {
-                                                        block.cached_lines = Some(lethetic::ui::render_block_to_lines(block, terminal_width, &theme_clone, None));
+                                                        let rendered = lethetic::ui::render_block_to_lines(block, terminal_width, &theme_clone, None);
+                                                        block.cached_line_count = Some(rendered.len());
+                                                        block.cached_lines = Some(rendered);
                                                     }
                                                 }
                                                 state
@@ -967,7 +969,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             if let Some(user_block) = app.blocks.iter_mut().rev().find(|b| b.block_type == BlockType::User) {
                                 user_block.prompt_tokens = prompt_tokens;
                                 user_block.completion_tokens = completion_tokens;
-                                user_block.cached_lines = None;
+                                user_block.invalidate();
                             }
                             app.request_start_time = None;
                             app.should_redraw = true;
@@ -999,7 +1001,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 && let Some(idx) = app.themes.iter().position(|t| t.name == state.theme_name) {
                                     app.theme = app.themes[idx].clone();
                                     app.theme_state.select(Some(idx));
-                                    for block in &mut app.blocks { block.cached_lines = None; }
+                                    for block in &mut app.blocks { block.invalidate(); }
                                 }
                             app.context_manager.clear();
                             app.context_manager.set_messages(state.messages);

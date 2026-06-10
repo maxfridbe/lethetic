@@ -51,6 +51,20 @@ pub struct RenderBlock {
     pub completion_tokens: Option<u32>,
     #[serde(skip)]
     pub cached_lines: Option<Vec<Line<'static>>>,
+    /// Line count of the last render at the current width. Survives cache
+    /// eviction so the virtualization counting pass doesn't re-render
+    /// off-screen blocks just to count their lines.
+    #[serde(skip)]
+    pub cached_line_count: Option<usize>,
+}
+
+impl RenderBlock {
+    /// Drop both the rendered lines and the line count (content, width, or
+    /// theme changed — everything must be recomputed).
+    pub fn invalidate(&mut self) {
+        self.cached_lines = None;
+        self.cached_line_count = None;
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -229,6 +243,7 @@ impl App {
                 prompt_tokens: None,
                 completion_tokens: None,
                 cached_lines: None,
+                cached_line_count: None,
             }],
             output_state: ListState::default(),
             is_output_focused: false,
@@ -368,6 +383,7 @@ impl App {
             prompt_tokens: None,
             completion_tokens: None,
             cached_lines: None,
+            cached_line_count: None,
         });
         self.context_manager.clear();
         self.save_session();
@@ -488,7 +504,7 @@ impl App {
                 last.block_type = BlockType::ToolCall;
                 last.content = cleaned_content.clone();
                 last.title = title;
-                last.cached_lines = None;
+                last.invalidate();
                 if feeds_loop_detector { self.last_block_content = cleaned_content; }
                 self.should_redraw = true;
                 self.needs_save = true;
@@ -498,7 +514,7 @@ impl App {
             if last.block_type == b_type && b_type != BlockType::Divider && last.title == title {
                 last.content.push_str(&cleaned_content);
                 if feeds_loop_detector { self.last_block_content.push_str(&cleaned_content); }
-                last.cached_lines = None;
+                last.invalidate();
                 self.should_redraw = true;
                 if self.auto_scroll { self.sync_scroll_to_end(); }
                 self.needs_save = true;
@@ -520,6 +536,7 @@ impl App {
                 prompt_tokens: None,
                 completion_tokens: None,
                 cached_lines: None,
+                cached_line_count: None,
             });
         }
 
@@ -537,6 +554,7 @@ impl App {
             prompt_tokens: None,
             completion_tokens: None,
             cached_lines: None,
+            cached_line_count: None,
         });
 
         // Append verbatim block to ui_log.txt for post-run diagnosis
@@ -1133,7 +1151,7 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                 };
                 app.theme_state.select(Some(i));
                 app.theme = app.themes[i].clone();
-                for block in &mut app.blocks { block.cached_lines = None; }
+                for block in &mut app.blocks { block.invalidate(); }
                 app.needs_save = true;
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -1143,7 +1161,7 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                 };
                 app.theme_state.select(Some(i));
                 app.theme = app.themes[i].clone();
-                for block in &mut app.blocks { block.cached_lines = None; }
+                for block in &mut app.blocks { block.invalidate(); }
                 app.needs_save = true;
             }
             KeyCode::Enter | KeyCode::Esc => app.show_theme_menu = false,
@@ -1251,6 +1269,7 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                 prompt_tokens: None,
                 completion_tokens: None,
                 cached_lines: None,
+                cached_line_count: None,
             });
             app.output_state.select(Some(0));
             app.should_redraw = true;

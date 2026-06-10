@@ -668,7 +668,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     
     if terminal_width != app.last_rendered_width {
         for block in &mut app.blocks {
-            block.cached_lines = None;
+            block.invalidate();
         }
         app.last_rendered_width = terminal_width;
     }
@@ -692,9 +692,14 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             len
         } else if let Some(ref cached) = block.cached_lines {
             cached.len()
+        } else if let Some(count) = block.cached_line_count {
+            // Lines were evicted (off-screen block) — the count alone is enough
+            // here; the display pass re-renders on demand if it becomes visible.
+            count
         } else {
             let rendered = render_block_to_lines(block, terminal_width, &app.theme, None);
             let len = rendered.len();
+            block.cached_line_count = Some(len);
             block.cached_lines = Some(rendered);
             len
         };
@@ -732,6 +737,12 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             // The live block was already rendered in the counting pass; others
             // borrow their cache. Only the lines inside the window are cloned.
             let live = if is_last { live_lines.take() } else { None };
+            if live.is_none() && app.blocks[block_idx].cached_lines.is_none() {
+                // Evicted block scrolled back into view — re-render once.
+                let rendered = render_block_to_lines(&app.blocks[block_idx], terminal_width, &app.theme, None);
+                app.blocks[block_idx].cached_line_count = Some(rendered.len());
+                app.blocks[block_idx].cached_lines = Some(rendered);
+            }
             let lines: &[Line] = match (&live, app.blocks[block_idx].cached_lines.as_ref()) {
                 (Some(l), _) => l,
                 (None, Some(c)) => c,
@@ -744,6 +755,28 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             }
         }
         current_line_idx += count;
+    }
+
+    // Evict rendered-line caches for blocks far outside the viewport. Their
+    // line counts survive (cached_line_count), so the counting pass above stays
+    // cheap and scroll positions remain stable. The last block is never evicted
+    // (it is the streaming/append target).
+    {
+        let margin = terminal_height * 3;
+        let keep_from = start_line.saturating_sub(margin);
+        let keep_to = end_line + margin;
+        let mut offset = 0;
+        for (block_idx, count) in block_line_counts.iter().enumerate() {
+            let block_end = offset + count;
+            let is_last = block_idx == num_blocks - 1;
+            if !is_last && (block_end <= keep_from || offset >= keep_to)
+                && let Some(block) = app.blocks.get_mut(block_idx)
+                    && block.cached_lines.is_some() {
+                        block.cached_line_count = Some(*count);
+                        block.cached_lines = None;
+                    }
+            offset = block_end;
+        }
     }
 
 
