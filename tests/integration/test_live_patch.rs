@@ -4,12 +4,10 @@ use lethetic::config::Config;
 use lethetic::context::ContextManager;
 use lethetic::system_prompt;
 use lethetic::parser::find_tool_call;
-use lethetic::tools::apply_patch;
 use tempfile::tempdir;
 use reqwest::Client;
 use serde_json::json;
 use futures_util::StreamExt;
-use tokio_util::sync::CancellationToken;
 
 const GENERATION_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -36,31 +34,27 @@ async fn do_generation_turn(context_manager: &mut ContextManager, config: &Confi
         let mut current_event = String::new();
 
         while let Some(item) = stream.next().await {
-            if let Ok(bytes) = item {
-                if let Ok(chunk_str) = String::from_utf8(bytes.to_vec()) {
+            if let Ok(bytes) = item
+                && let Ok(chunk_str) = String::from_utf8(bytes.to_vec()) {
                     buffer.push_str(&chunk_str);
                     while let Some(pos) = buffer.find('\n') {
                         let line = buffer.drain(..=pos).collect::<String>();
                         let trimmed = line.trim();
                         if trimmed.is_empty() { continue; }
                         
-                        if trimmed.starts_with("event: ") {
-                            current_event = trimmed[7..].to_string();
-                        } else if trimmed.starts_with("data: ") {
-                            let json_str = &trimmed[6..];
+                        if let Some(ev) = trimmed.strip_prefix("event: ") {
+                            current_event = ev.to_string();
+                        } else if let Some(json_str) = trimmed.strip_prefix("data: ") {
                             if json_str == "[DONE]" { break; }
 
-                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
-                                if current_event.ends_with(".delta") {
-                                    if let Some(delta) = val["delta"].as_str() {
+                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str)
+                                && current_event.ends_with(".delta")
+                                    && let Some(delta) = val["delta"].as_str() {
                                         full_content.push_str(delta);
                                     }
-                                }
-                            }
                         }
                     }
                 }
-            }
         }
     }).await;
 
@@ -73,15 +67,11 @@ async fn do_generation_turn(context_manager: &mut ContextManager, config: &Confi
 
 async fn test_live_patch_generation(
     prompt: &str,
-    original_content: &str,
-    expected_new_content: &str,
-    file_path: &str,
+    _original_content: &str,
+    _expected_new_content: &str,
+    _file_path: &str,
 ) -> Result<(), String> {
-    let config_content = match fs::read_to_string("config.yml") {
-        Ok(c) => c,
-        Err(_) => return Err("Could not read config.yml".to_string()),
-    };
-    let config: Config = serde_yaml::from_str(&config_content).expect("Failed to parse config");
+    let config = Config::load("config.yml")?;
 
     let client = Client::new();
     let sys_prompt = system_prompt::SystemPromptManager::resolve_prompt(system_prompt::DEFAULT_PROMPT_TEMPLATE, ".", &config);
@@ -111,31 +101,27 @@ let req_body = json!({
         let mut current_event = String::new();
 
         while let Some(item) = stream.next().await {
-            if let Ok(bytes) = item {
-                if let Ok(chunk_str) = String::from_utf8(bytes.to_vec()) {
+            if let Ok(bytes) = item
+                && let Ok(chunk_str) = String::from_utf8(bytes.to_vec()) {
                     buffer.push_str(&chunk_str);
                     while let Some(pos) = buffer.find('\n') {
                         let line = buffer.drain(..=pos).collect::<String>();
                         let trimmed = line.trim();
                         if trimmed.is_empty() { continue; }
                         
-                        if trimmed.starts_with("event: ") {
-                            current_event = trimmed[7..].to_string();
-                        } else if trimmed.starts_with("data: ") {
-                            let json_str = &trimmed[6..];
+                        if let Some(ev) = trimmed.strip_prefix("event: ") {
+                            current_event = ev.to_string();
+                        } else if let Some(json_str) = trimmed.strip_prefix("data: ") {
                             if json_str == "[DONE]" { break; }
 
-                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
-                                if current_event.ends_with(".delta") {
-                                    if let Some(delta) = val["delta"].as_str() {
+                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str)
+                                && current_event.ends_with(".delta")
+                                    && let Some(delta) = val["delta"].as_str() {
                                         full_content.push_str(delta);
                                     }
-                                }
-                            }
                         }
                     }
                 }
-            }
         }
     }).await;
 
@@ -230,22 +216,18 @@ async fn test_live_patch_multiline_two_lines_changed() {
 #[tokio::test]
 #[ignore]
 async fn test_live_patch_multiline_read_then_patch() {
-    let config_content = match fs::read_to_string("config.yml") {
-        Ok(c) => c,
-        Err(_) => panic!("Could not read config.yml"),
-    };
-    let config: Config = serde_yaml::from_str(&config_content).expect("Failed to parse config");
+    let config = Config::load("config.yml").expect("Failed to load config");
 
     let client = Client::new();
     let sys_prompt = system_prompt::SystemPromptManager::resolve_prompt(system_prompt::DEFAULT_PROMPT_TEMPLATE, ".", &config);
     let mut context_manager = ContextManager::new(config.context_size, Some(sys_prompt));
     
     let original_content = "function old_func() {\n    let a = 1;\n    let b = 2;\n    return a + b;\n}";
-    let expected_new_content = "function old_func() {\n    let a = 1;\n    let b = 2;\n    let c = 3;\n    return a + b + c;\n}";
+    let _expected_new_content = "function old_func() {\n    let a = 1;\n    let b = 2;\n    let c = 3;\n    return a + b + c;\n}";
     let file_path = "math.js";
 
     let dir = tempdir().expect("Failed to create tempdir");
-    let cwd = dir.path().to_str().unwrap();
+    let _cwd = dir.path().to_str().unwrap();
     let full_path = dir.path().join(file_path);
     fs::write(&full_path, original_content).expect("Failed to write test file");
 

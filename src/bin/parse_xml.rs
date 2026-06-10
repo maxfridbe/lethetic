@@ -34,8 +34,8 @@ fn main() {
                     }
                     
                     // Read value
-                    if let Some(&quote) = chars.peek() {
-                        if quote == '"' || quote == '\'' {
+                    if let Some(&quote) = chars.peek()
+                        && (quote == '"' || quote == '\'') {
                             chars.next(); // consume quote
                             let mut val = String::new();
                             while let Some(&v) = chars.peek() {
@@ -48,7 +48,6 @@ fn main() {
                             }
                             args.insert(key, serde_json::Value::String(val));
                         }
-                    }
                 }
                 println!("Args JSON: {}", serde_json::Value::Object(args));
             }

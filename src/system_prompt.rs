@@ -39,6 +39,12 @@ pub struct SystemPromptManager {
     prompts_dir: PathBuf,
 }
 
+impl Default for SystemPromptManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SystemPromptManager {
     pub fn new() -> Self {
         let config_dir = dirs::config_dir().unwrap_or_else(|| {
@@ -61,11 +67,10 @@ impl SystemPromptManager {
         let mut prompts = Vec::new();
         if let Ok(entries) = fs::read_dir(&self.prompts_dir) {
             for entry in entries.filter_map(Result::ok) {
-                if let Some(name) = entry.file_name().to_str() {
-                    if name.ends_with(".md") {
+                if let Some(name) = entry.file_name().to_str()
+                    && name.ends_with(".md") {
                         prompts.push(name.trim_end_matches(".md").to_string());
                     }
-                }
             }
         }
         prompts.sort();

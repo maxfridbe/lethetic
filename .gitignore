@@ -20,3 +20,6 @@ compile_cube.sh
 cube.c
 main.c
 brainiac-nvidia/
+
+# Local config overlay (secrets)
+config.local.yml

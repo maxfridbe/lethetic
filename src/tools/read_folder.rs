@@ -53,12 +53,10 @@ pub async fn execute(path: &str, cwd: &str, cancellation_token: tokio_util::sync
             match fs::read_dir(&full_path) {
                 Ok(entries) => {
                     let mut items = Vec::new();
-                    for entry in entries {
-                        if let Ok(entry) = entry {
-                            let file_name = entry.file_name().to_string_lossy().to_string();
-                            let file_type = entry.file_type().map(|t| if t.is_dir() { "DIR" } else { "FILE" }).unwrap_or("UNKNOWN");
-                            items.push(format!("[{}] {}", file_type, file_name));
-                        }
+                    for entry in entries.flatten() {
+                        let file_name = entry.file_name().to_string_lossy().to_string();
+                        let file_type = entry.file_type().map(|t| if t.is_dir() { "DIR" } else { "FILE" }).unwrap_or("UNKNOWN");
+                        items.push(format!("[{}] {}", file_type, file_name));
                     }
                     items.sort();
                     items.join("\n")

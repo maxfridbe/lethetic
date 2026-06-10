@@ -1,4 +1,5 @@
 pub mod context;
+pub mod context_vercel;
 pub mod llm_tokens;
 pub mod icons;
 pub mod system_prompt;

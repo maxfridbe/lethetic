@@ -83,7 +83,7 @@ async fn run_glob(pattern: &str, search_path: &str, cwd: &str) -> String {
 
     // Fallback: find (available everywhere)
     // Convert glob pattern to find -name format (best-effort for simple patterns)
-    let name_part = pattern.split('/').last().unwrap_or(pattern);
+    let name_part = pattern.split('/').next_back().unwrap_or(pattern);
     let find_result = Command::new("find")
         .arg(search_path)
         .arg("-name")

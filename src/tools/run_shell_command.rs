@@ -67,7 +67,7 @@ pub async fn execute(command: &str, cwd: &str, cancellation_token: CancellationT
     let res_str = tokio::select! {
         _ = cancellation_token.cancelled() => {
             let _ = child.kill().await;
-            format!("EXIT_CODE: signaled\nSTDOUT:\n[Process Killed by User]\nSTDERR:\n[Process Killed by User]")
+            "EXIT_CODE: signaled\nSTDOUT:\n[Process Killed by User]\nSTDERR:\n[Process Killed by User]".to_string()
         }
         status = async {
             loop {

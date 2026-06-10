@@ -1,3 +1,4 @@
+
 use serde_json::json;
 use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
@@ -86,7 +87,7 @@ async fn run_search(pattern: &str, search_path: &str, cwd: &str) -> String {
     }
 
     // Fallback: grep with explicit exclusions
-    let child = Command::new("grep")
+    let child = match Command::new("grep")
         .arg("-rn")
         .arg("--color=never")
         .arg("-I")
@@ -101,7 +102,10 @@ async fn run_search(pattern: &str, search_path: &str, cwd: &str) -> String {
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .expect("Failed to spawn grep");
+    {
+        Ok(c) => c,
+        Err(e) => return format!("ERROR: Failed to run search (neither 'rg' nor 'grep' are available or executable: {})", e),
+    };
 
     match child.wait_with_output().await {
         Ok(out) => {

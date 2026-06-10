@@ -11,6 +11,12 @@ pub struct StreamParser {
     is_text: bool,
 }
 
+impl Default for StreamParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StreamParser {
     pub fn new() -> Self {
         Self { tool_calls: HashMap::new(), is_reasoning: false, is_text: false }
@@ -31,8 +37,8 @@ impl StreamParser {
         let mut events = Vec::new();
 
         // Usage in final chunk (may come with empty choices)
-        if let Some(usage) = &chunk.usage {
-            if chunk.choices.as_ref().map(|c| c.is_empty()).unwrap_or(true) {
+        if let Some(usage) = &chunk.usage
+            && chunk.choices.as_ref().map(|c| c.is_empty()).unwrap_or(true) {
                 events.push(StreamEvent::Done {
                     completion_tokens: usage.completion_tokens,
                     prompt_tokens: usage.prompt_tokens,
@@ -41,7 +47,6 @@ impl StreamParser {
                 });
                 return events;
             }
-        }
 
         let choices = match chunk.choices {
             Some(c) if !c.is_empty() => c,
@@ -69,21 +74,19 @@ impl StreamParser {
         let Some(delta) = &choice.delta else { return events };
 
         // Reasoning delta (Gemma 4 returns reasoning_content; Copilot uses reasoning_text)
-        if let Some(r) = delta.reasoning() {
-            if !r.is_empty() {
+        if let Some(r) = delta.reasoning()
+            && !r.is_empty() {
                 self.is_reasoning = true;
                 events.push(StreamEvent::ReasoningDelta(r.to_string()));
             }
-        }
 
         // Text delta — if reasoning was active it implicitly ends
-        if let Some(text) = &delta.content {
-            if !text.is_empty() {
+        if let Some(text) = &delta.content
+            && !text.is_empty() {
                 self.is_reasoning = false;
                 self.is_text = true;
                 events.push(StreamEvent::TextDelta(text.clone()));
             }
-        }
 
         // Tool call deltas
         if let Some(tool_deltas) = &delta.tool_calls {
@@ -92,13 +95,12 @@ impl StreamParser {
                 let index = td.index;
                 let entry = self.tool_calls.entry(index).or_insert_with(|| ("".into(), "".into(), "".into()));
 
-                if let Some(id) = &td.id {
-                    if !id.is_empty() { entry.0 = id.clone(); }
-                }
+                if let Some(id) = &td.id
+                    && !id.is_empty() { entry.0 = id.clone(); }
 
                 if let Some(func) = &td.function {
-                    if let Some(name) = &func.name {
-                        if !name.is_empty() {
+                    if let Some(name) = &func.name
+                        && !name.is_empty() {
                             entry.1 = name.clone();
                             events.push(StreamEvent::ToolCallStart {
                                 id: entry.0.clone(),
@@ -106,7 +108,6 @@ impl StreamParser {
                                 name: name.clone(),
                             });
                         }
-                    }
                     if let Some(args) = &func.arguments {
                         entry.2.push_str(args);
                         events.push(StreamEvent::ToolCallDelta {

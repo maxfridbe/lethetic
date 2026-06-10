@@ -1,6 +1,4 @@
-use std::fs;
 use reqwest::Client;
-use serde_json::json;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -11,14 +9,7 @@ use lethetic::client::{trigger_llm_request, StreamEvent};
 
 #[tokio::test]
 async fn test_live_client_stream() -> Result<(), String> {
-    let config_content = match fs::read_to_string("config.yml") {
-        Ok(c) => c,
-        Err(_) => return Err("Could not read config.yml".to_string()),
-    };
-    let config: Config = match serde_yaml::from_str(&config_content) {
-        Ok(c) => c,
-        Err(e) => return Err(format!("Failed to parse config: {}", e)),
-    };
+    let config = Config::load("config.yml")?;
     
     let client = Client::new();
     let sys_prompt = system_prompt::SystemPromptManager::resolve_prompt(system_prompt::DEFAULT_PROMPT_TEMPLATE, ".", &config);

@@ -6,10 +6,10 @@ use pulldown_cmark::{Event, Parser, Tag, CodeBlockKind, TagEnd, Options, Heading
 use syntect::easy::HighlightLines;
 use syntect::parsing::SyntaxSet;
 use syntect::highlighting::ThemeSet;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
-static SYNTAX_SET: Lazy<SyntaxSet> = Lazy::new(SyntaxSet::load_defaults_newlines);
-static THEME_SET: Lazy<ThemeSet> = Lazy::new(ThemeSet::load_defaults);
+static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
+static THEME_SET: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
 
 pub fn sniff_for_markdown(line: &str) -> bool {
     let trimmed = line.trim();
@@ -161,15 +161,13 @@ pub fn render_markdown(content: &str, theme: &crate::ui::Theme) -> Text<'static>
                                 spans.push(Span::styled(code.to_string(), Style::default().fg(theme.output_fg).bg(theme.terminal_bg)));
                             }
                             text.lines.push(Line::from(spans));
-                        } else {
-                            if let Ok(ranges) = h.highlight_line(line_str, &SYNTAX_SET) {
-                                let mut spans = Vec::new();
-                                for (style, text) in ranges {
-                                    let fg = Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
-                                    spans.push(Span::styled(text.to_string(), Style::default().fg(fg).bg(theme.terminal_bg)));
-                                }
-                                text.lines.push(Line::from(spans));
+                        } else if let Ok(ranges) = h.highlight_line(line_str, &SYNTAX_SET) {
+                            let mut spans = Vec::new();
+                            for (style, text) in ranges {
+                                let fg = Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
+                                spans.push(Span::styled(text.to_string(), Style::default().fg(fg).bg(theme.terminal_bg)));
                             }
+                            text.lines.push(Line::from(spans));
                         }
                     }
                 } else {

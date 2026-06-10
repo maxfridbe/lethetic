@@ -1,4 +1,3 @@
-use std::fs;
 use reqwest::Client;
 use serde_json::json;
 use futures_util::StreamExt;
@@ -10,14 +9,7 @@ use lethetic::system_prompt;
 
 #[tokio::test]
 async fn test_live_hello() -> Result<(), String> {
-    let config_content = match fs::read_to_string("config.yml") {
-        Ok(c) => c,
-        Err(_) => return Err("Could not read config.yml".to_string()),
-    };
-    let config: Config = match serde_yaml::from_str(&config_content) {
-        Ok(c) => c,
-        Err(e) => return Err(format!("Failed to parse config: {}", e)),
-    };
+    let config = Config::load("config.yml")?;
     
     let client = Client::new();
     let sys_prompt = system_prompt::SystemPromptManager::resolve_prompt(system_prompt::DEFAULT_PROMPT_TEMPLATE, ".", &config);
@@ -60,8 +52,7 @@ async fn test_live_hello() -> Result<(), String> {
                             println!("PROCESSED LINE: {}", trimmed);
                             
                             // Re-implement the parsing logic from src/client.rs here to see where it fails
-                            if trimmed.starts_with("data: ") {
-                                let json_str = &trimmed[6..];
+                            if let Some(json_str) = trimmed.strip_prefix("data: ") {
                                 if json_str == "[DONE]" { 
                                     println!("RECEIVED [DONE]");
                                     break; 

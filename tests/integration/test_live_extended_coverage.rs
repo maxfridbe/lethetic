@@ -1,4 +1,3 @@
-use std::fs;
 use reqwest::Client;
 use serde_json::json;
 use futures_util::StreamExt;
@@ -11,14 +10,7 @@ use lethetic::system_prompt;
 use lethetic::parser::find_tool_call;
 
 async fn run_tool_prompt(prompt: &str, expected_tool: &str) -> Result<(), String> {
-    let config_content = match fs::read_to_string("config.yml") {
-        Ok(c) => c,
-        Err(_) => return Err("Could not read config.yml".to_string()),
-    };
-    let config: Config = match serde_yaml::from_str(&config_content) {
-        Ok(c) => c,
-        Err(e) => return Err(format!("Failed to parse config: {}", e)),
-    };
+    let config = Config::load("config.yml")?;
 
     let client = Client::new();
     let sys_prompt = system_prompt::SystemPromptManager::resolve_prompt(system_prompt::DEFAULT_PROMPT_TEMPLATE, ".", &config);
@@ -56,18 +48,17 @@ async fn run_tool_prompt(prompt: &str, expected_tool: &str) -> Result<(), String
         let mut thought_started = false;
 
         while let Some(item) = stream.next().await {
-            if let Ok(bytes) = item {
-                if let Ok(chunk_str) = String::from_utf8(bytes.to_vec()) {
+            if let Ok(bytes) = item
+                && let Ok(chunk_str) = String::from_utf8(bytes.to_vec()) {
                     buffer.push_str(&chunk_str);
                     while let Some(pos) = buffer.find('\n') {
                         let line = buffer.drain(..=pos).collect::<String>();
                         let trimmed = line.trim();
                         if trimmed.is_empty() { continue; }
 
-                        if trimmed.starts_with("event: ") {
-                            current_event = trimmed[7..].to_string();
-                        } else if trimmed.starts_with("data: ") {
-                            let json_str = &trimmed[6..];
+                        if let Some(ev) = trimmed.strip_prefix("event: ") {
+                            current_event = ev.to_string();
+                        } else if let Some(json_str) = trimmed.strip_prefix("data: ") {
                             if json_str == "[DONE]" { break; }
 
                             if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
@@ -94,7 +85,6 @@ async fn run_tool_prompt(prompt: &str, expected_tool: &str) -> Result<(), String
                         }
                     }
                 }
-            }
         }
     }).await;
 

@@ -16,10 +16,7 @@ use lethetic::parser;
 #[tokio::test]
 #[ignore]
 async fn test_live_prompt_write_cs_helloworld() -> Result<(), String> {
-    let config_content = fs::read_to_string("config.yml")
-        .map_err(|_| "Could not read config.yml".to_string())?;
-    let config: Config = serde_yaml::from_str(&config_content)
-        .map_err(|e| format!("Failed to parse config: {}", e))?;
+    let config = Config::load("config.yml")?;
 
     let tmp = TempDir::new().map_err(|e| e.to_string())?;
     let cwd = tmp.path().to_str().unwrap().to_string();
@@ -38,7 +35,6 @@ async fn test_live_prompt_write_cs_helloworld() -> Result<(), String> {
         Some("ignore/.lethetic/sessions/test_live_write_cs".to_string()));
 
     let mut full = String::new();
-    let mut got_tool_call = false;
     let mut error: Option<String> = None;
 
     while let Some(ev) = rx.recv().await {
@@ -98,10 +94,8 @@ async fn test_live_prompt_write_cs_helloworld() -> Result<(), String> {
     println!("Written file ({} bytes):\n{}", written.len(), written);
 
     if !written.contains("Hello") {
-        return Err(format!("Written file doesn't contain Hello World content"));
+        return Err("Written file doesn't contain Hello World content".to_string());
     }
 
-    got_tool_call = true;
-    assert!(got_tool_call);
     Ok(())
 }

@@ -19,13 +19,16 @@ pub enum ParserMode {
     Qwen3,
 }
 
-impl ParserMode {
-    pub fn from_str(s: &str) -> Self {
+impl From<&str> for ParserMode {
+    fn from(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "qwen3" | "default" | "generic" => Self::Qwen3,
             _ => Self::Gemma4,
         }
     }
+}
+
+impl ParserMode {
 
     fn initial_state(self) -> ParserState {
         match self {
@@ -39,6 +42,12 @@ pub struct StreamParser {
     pub state: ParserState,
     pub mode: ParserMode,
     buffer: String,
+}
+
+impl Default for StreamParser {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StreamParser {
@@ -77,32 +86,29 @@ impl StreamParser {
 
                     let mut earliest_end = None;
                     for &m in &end_markers {
-                        if let Some(pos) = input.find(m) {
-                            if earliest_end.map_or(true, |(p, _)| pos < p) {
+                        if let Some(pos) = input.find(m)
+                            && earliest_end.is_none_or(|(p, _)| pos < p) {
                                 earliest_end = Some((pos, m));
                             }
-                        }
                     }
 
                     // Heuristic: If we see a new start marker before an end marker, the previous one was likely aborted
                     let mut earliest_interrupt = None;
                     for &m in &thought_starts {
-                        if let Some(pos) = input.find(m) {
-                            if earliest_interrupt.map_or(true, |(p, _, _)| pos < p) {
+                        if let Some(pos) = input.find(m)
+                            && earliest_interrupt.is_none_or(|(p, _, _)| pos < p) {
                                 earliest_interrupt = Some((pos, m, ParserState::Thought));
                             }
-                        }
                     }
                     for &m in &tool_starts {
-                        if let Some(pos) = input.find(m) {
-                            if earliest_interrupt.map_or(true, |(p, _, _)| pos < p) {
+                        if let Some(pos) = input.find(m)
+                            && earliest_interrupt.is_none_or(|(p, _, _)| pos < p) {
                                 earliest_interrupt = Some((pos, m, ParserState::ToolCall));
                             }
-                        }
                     }
 
-                    if let Some((i_pos, i_marker, i_state)) = earliest_interrupt {
-                        if earliest_end.map_or(true, |(e_pos, _)| i_pos < e_pos) {
+                    if let Some((i_pos, i_marker, i_state)) = earliest_interrupt
+                        && earliest_end.is_none_or(|(e_pos, _)| i_pos < e_pos) {
                             let content = input[..i_pos].to_string();
                             if !content.is_empty() {
                                 results.push((BlockType::Thought, content));
@@ -111,7 +117,6 @@ impl StreamParser {
                             self.buffer = input[i_pos + i_marker.len()..].to_string();
                             continue;
                         }
-                    }
 
                     if let Some((pos, marker)) = earliest_end {
                         let content = input[..pos].to_string();
@@ -148,32 +153,29 @@ impl StreamParser {
 
                     let mut earliest_start = None;
                     for &m in &thought_starts {
-                        if let Some(pos) = input.find(m) {
-                            if earliest_start.map_or(true, |(p, _, _)| pos < p) {
+                        if let Some(pos) = input.find(m)
+                            && earliest_start.is_none_or(|(p, _, _)| pos < p) {
                                 earliest_start = Some((pos, m, ParserState::Thought));
                             }
-                        }
                     }
                     for &m in &tool_starts {
-                        if let Some(pos) = input.find(m) {
-                            if earliest_start.map_or(true, |(p, _, _)| pos < p) {
+                        if let Some(pos) = input.find(m)
+                            && earliest_start.is_none_or(|(p, _, _)| pos < p) {
                                 earliest_start = Some((pos, m, ParserState::ToolCall));
                             }
-                        }
                     }
 
                     // Check if a no-op text-channel marker appears before any real transition
                     let mut earliest_noop = None;
                     for &m in &text_channel_markers {
-                        if let Some(pos) = input.find(m) {
-                            if earliest_noop.map_or(true, |(p, _)| pos < p) {
+                        if let Some(pos) = input.find(m)
+                            && earliest_noop.is_none_or(|(p, _)| pos < p) {
                                 earliest_noop = Some((pos, m));
                             }
-                        }
                     }
 
-                    if let Some((npos, nmarker)) = earliest_noop {
-                        if earliest_start.map_or(true, |(p, _, _)| npos < p) {
+                    if let Some((npos, nmarker)) = earliest_noop
+                        && earliest_start.is_none_or(|(p, _, _)| npos < p) {
                             // Emit text before the marker, then consume it, stay in Text
                             let content = input[..npos].to_string();
                             if !content.is_empty() {
@@ -182,7 +184,6 @@ impl StreamParser {
                             self.buffer = input[npos + nmarker.len()..].to_string();
                             continue;
                         }
-                    }
 
                     if let Some((pos, marker, next_state)) = earliest_start {
                         let content = input[..pos].to_string();
@@ -221,33 +222,31 @@ impl StreamParser {
 
                     let mut earliest_end = None;
                     for &m in &end_markers {
-                        if let Some(pos) = input.find(m) {
-                            if earliest_end.map_or(true, |(p, _)| pos < p) {
+                        if let Some(pos) = input.find(m)
+                            && earliest_end.is_none_or(|(p, _)| pos < p) {
                                 earliest_end = Some((pos, m));
                             }
-                        }
                     }
 
                     // Heuristic: If we see a new start marker before an end marker, the previous one was likely aborted
                     let mut earliest_interrupt = None;
                     for &m in &thought_starts {
-                        if let Some(pos) = input.find(m) {
-                            if earliest_interrupt.map_or(true, |(p, _, _)| pos < p) {
+                        if let Some(pos) = input.find(m)
+                            && earliest_interrupt.is_none_or(|(p, _, _)| pos < p) {
                                 earliest_interrupt = Some((pos, m, ParserState::Thought));
                             }
-                        }
                     }
                     for &m in &tool_starts {
                         if let Some(pos) = input.find(m) {
                             // Only interrupt if it's LATER in the input.
-                            if pos > 0 && earliest_interrupt.map_or(true, |(p, _, _)| pos < p) {
+                            if pos > 0 && earliest_interrupt.is_none_or(|(p, _, _)| pos < p) {
                                 earliest_interrupt = Some((pos, m, ParserState::ToolCall));
                             }
                         }
                     }
 
-                    if let Some((i_pos, i_marker, i_state)) = earliest_interrupt {
-                        if earliest_end.map_or(true, |(e_pos, _)| i_pos < e_pos) {
+                    if let Some((i_pos, i_marker, i_state)) = earliest_interrupt
+                        && earliest_end.is_none_or(|(e_pos, _)| i_pos < e_pos) {
                             let content = input[..i_pos].to_string();
                             if !content.is_empty() {
                                 results.push((BlockType::Formulating, content));
@@ -256,7 +255,6 @@ impl StreamParser {
                             self.buffer = input[i_pos + i_marker.len()..].to_string();
                             continue;
                         }
-                    }
 
                     if let Some((pos, marker)) = earliest_end {
                         let content = input[..pos].to_string();
@@ -296,7 +294,7 @@ impl StreamParser {
             for i in 1..m.len() {
                 if input.ends_with(&m[..i]) {
                     let start_pos = input.len() - i;
-                    if best_start.map_or(true, |p| start_pos < p) {
+                    if best_start.is_none_or(|p| start_pos < p) {
                         best_start = Some(start_pos);
                     }
                 }
@@ -323,12 +321,11 @@ fn parse_gemma4_value(value_str: &str) -> Value {
         let prev = s;
         
         // 1. Strip standard quotes
-        if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
-            if s.len() >= 2 {
+        if ((s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')))
+            && s.len() >= 2 {
                 s = &s[1..s.len()-1];
                 s = s.trim();
             }
-        }
         
         // 2. Strip all known marker variants (LONGEST FIRST)
         let markers = [
@@ -344,13 +341,12 @@ fn parse_gemma4_value(value_str: &str) -> Value {
         ];
         
         for (st, et) in markers {
-            if s.starts_with(st) && s.ends_with(et) {
-                if s.len() >= st.len() + et.len() {
+            if s.starts_with(st) && s.ends_with(et)
+                && s.len() >= st.len() + et.len() {
                     s = &s[st.len()..s.len() - et.len()];
                     s = s.trim();
                     break;
                 }
-            }
         }
         
         if s != prev {
@@ -364,11 +360,10 @@ fn parse_gemma4_value(value_str: &str) -> Value {
     if lower == "null" || lower == "none" || lower == "nil" { return Value::Null; }
     
     if s.contains('.') {
-        if let Ok(f) = s.parse::<f64>() {
-            if let Some(num) = serde_json::Number::from_f64(f) {
+        if let Ok(f) = s.parse::<f64>()
+            && let Some(num) = serde_json::Number::from_f64(f) {
                 return Value::Number(num);
             }
-        }
     } else if let Ok(i) = s.parse::<i64>() {
         return Value::Number(i.into());
     }
@@ -393,9 +388,8 @@ fn parse_gemma4_args(args_str: &str, partial: bool) -> Map<String, Value> {
         
         let key_str: String = chars[key_start..i].iter().collect();
         let mut key = key_str.trim();
-        if (key.starts_with('"') && key.ends_with('"')) || (key.starts_with('\'') && key.ends_with('\'')) {
-            if key.len() >= 2 { key = &key[1..key.len()-1]; }
-        }
+        if ((key.starts_with('"') && key.ends_with('"')) || (key.starts_with('\'') && key.ends_with('\'')))
+            && key.len() >= 2 { key = &key[1..key.len()-1]; }
         let key = key.to_string();
         i += 1; // skip ':'
 
@@ -489,10 +483,8 @@ fn parse_gemma4_args(args_str: &str, partial: bool) -> Map<String, Value> {
                 let c = chars[i];
                 if let Some(q) = in_quote {
                     if c == q { in_quote = None; }
-                } else {
-                    if c == '"' || c == '\'' { in_quote = Some(c); }
-                    else if c == ',' || c == '}' || c == ']' { break; }
-                }
+                } else if c == '"' || c == '\'' { in_quote = Some(c); }
+                else if c == ',' || c == '}' || c == ']' { break; }
                 i += 1;
             }
             let val_str: String = chars[val_start..i].iter().collect();
@@ -620,11 +612,54 @@ fn parse_gemma4_array(arr_str: &str, partial: bool) -> Vec<Value> {
     items
 }
 
+fn clean_json_value(value: &mut Value) {
+    match value {
+        Value::String(s) => {
+            let mut changed = true;
+            while changed {
+                changed = false;
+                let trimmed = s.trim();
+                let markers = [
+                    ("<|\"|>", "<|\"|>"),
+                    ("<|'|>", "<|'|>"),
+                    ("<|tool_parameter|>", "<|tool_parameter|>"),
+                    ("<|tool_parameter>", "<tool_parameter|>"),
+                    ("<|tool_parameter|>", "<tool_parameter|>"),
+                    ("<|\\\\\">", "<|\\\\\">"),
+                    ("<|\\\">", "<|\\\">"),
+                    ("<|\">", "<|\">"),
+                    ("<|'>", "<|'>")
+                ];
+                for (st, et) in markers {
+                    if trimmed.starts_with(st) && trimmed.ends_with(et)
+                        && trimmed.len() >= st.len() + et.len() {
+                            let new_s = trimmed[st.len()..trimmed.len() - et.len()].trim().to_string();
+                            *s = new_s;
+                            changed = true;
+                            break;
+                        }
+                }
+            }
+        }
+        Value::Object(map) => {
+            for val in map.values_mut() {
+                clean_json_value(val);
+            }
+        }
+        Value::Array(arr) => {
+            for val in arr.iter_mut() {
+                clean_json_value(val);
+            }
+        }
+        _ => {}
+    }
+}
+
 pub fn parse_native_block(block: &str) -> Result<ToolCall, String> {
     let block = block.trim();
     
-    if let Ok(val) = serde_json::from_str::<Value>(block) {
-        if let Value::Object(mut map) = val {
+    if let Ok(val) = serde_json::from_str::<Value>(block)
+        && let Value::Object(mut map) = val {
             let name = map.get("name").and_then(|v| v.as_str())
                 .or_else(|| map.get("function").and_then(|v| v.as_str()))
                 .unwrap_or("unknown").to_string();
@@ -633,10 +668,14 @@ pub fn parse_native_block(block: &str) -> Result<ToolCall, String> {
                 .or_else(|| map.remove("args"))
                 .unwrap_or(Value::Object(Map::new()));
             
-            let args_map = match args {
+            let mut args_map = match args {
                 Value::Object(m) => m,
                 _ => Map::new(),
             };
+            
+            for val in args_map.values_mut() {
+                clean_json_value(val);
+            }
             
             return Ok(ToolCall {
                 id: args_map.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
@@ -646,7 +685,6 @@ pub fn parse_native_block(block: &str) -> Result<ToolCall, String> {
                 },
             });
         }
-    }
 
     if let Some(call_pos) = block.find("call:") {
         let call_content = &block[call_pos + 5..];
@@ -671,6 +709,53 @@ pub fn parse_native_block(block: &str) -> Result<ToolCall, String> {
 
     Err("Could not parse gemma4 tool call".to_string())
 }
+pub fn find_tool_call(text: &str, is_final: bool) -> Option<Result<(ToolCall, usize), (String, usize)>> {
+    let start_tokens = ["<|tool_call>", "<tool_call>"];
+    
+    let mut earliest_start = None;
+    let mut chosen_token = "";
+
+    for &token in &start_tokens {
+        if let Some(pos) = text.find(token)
+            && earliest_start.is_none_or(|p| pos < p) {
+                earliest_start = Some(pos);
+                chosen_token = token;
+            }
+    }
+
+    if let Some(start_idx) = earliest_start {
+        let after_start = &text[start_idx + chosen_token.len()..];
+        let end_tokens = ["<tool_call|>", "</tool_call>", "<|tool_call|>"];
+        
+        let mut end_idx_rel = None;
+        let mut chosen_end_token = "";
+        for &token in &end_tokens {
+            if let Some(pos) = after_start.find(token)
+                && end_idx_rel.is_none_or(|p| pos < p) {
+                    end_idx_rel = Some(pos);
+                    chosen_end_token = token;
+                }
+        }
+        
+        if let Some(rel) = end_idx_rel {
+            let full_call_block = &after_start[..rel];
+            let total_len = start_idx + chosen_token.len() + rel + chosen_end_token.len();
+            match parse_native_block(full_call_block) {
+                Ok(tc) => Some(Ok((tc, total_len))),
+                Err(e) => Some(Err((e, total_len))),
+            }
+        } else if is_final {
+             match parse_native_block(after_start) {
+                 Ok(tc) => Some(Ok((tc, text.len()))),
+                 Err(e) => Some(Err((e, text.len()))),
+             }
+        } else {
+             None
+        }
+    } else {
+        None
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -690,6 +775,15 @@ mod tests {
         assert_eq!(result.function.name, "read_file");
         assert_eq!(result.function.arguments.get("path").unwrap().as_str().unwrap(), "src/main.rs");
         assert_eq!(result.id, "read_main_rs");
+    }
+
+    #[test]
+    fn test_json_object_with_asymmetric_markers() {
+        let block = r#"{"name": "write_file", "arguments": {"path": "test.txt", "content": "<|\"|>hello world<|\"|>", "description": "test", "tool_call_id": "123"}}"#;
+        let result = parse_native_block(block).expect("Should parse JSON with markers");
+        assert_eq!(result.function.name, "write_file");
+        assert_eq!(result.id, "123");
+        assert_eq!(result.function.arguments.get("content").unwrap().as_str().unwrap(), "hello world");
     }
 
     #[test]
@@ -841,7 +935,7 @@ namespace AsciiPong {
         assert_eq!(items.len(), 3);
         assert_eq!(items[2].get("a").unwrap().as_str().unwrap(), "b");
         let options = result.function.arguments.get("options").unwrap().as_object().unwrap();
-        assert_eq!(options.get("debug").unwrap().as_bool().unwrap(), true);
+        assert!(options.get("debug").unwrap().as_bool().unwrap());
         assert_eq!(options.get("count").unwrap().as_i64().unwrap(), 42);
     }
 
@@ -885,54 +979,5 @@ namespace AsciiPong {
         assert!(result_final.is_some(), "Should return result if is_final is true even if unclosed");
         let (tc, _) = result_final.unwrap().expect("Should parse");
         assert_eq!(tc.function.name, "ls");
-    }
-}
-pub fn find_tool_call(text: &str, is_final: bool) -> Option<Result<(ToolCall, usize), (String, usize)>> {
-    let start_tokens = ["<|tool_call>", "<tool_call>"];
-    
-    let mut earliest_start = None;
-    let mut chosen_token = "";
-
-    for &token in &start_tokens {
-        if let Some(pos) = text.find(token) {
-            if earliest_start.map_or(true, |p| pos < p) {
-                earliest_start = Some(pos);
-                chosen_token = token;
-            }
-        }
-    }
-
-    if let Some(start_idx) = earliest_start {
-        let after_start = &text[start_idx + chosen_token.len()..];
-        let end_tokens = ["<tool_call|>", "</tool_call>", "<|tool_call|>"];
-        
-        let mut end_idx_rel = None;
-        let mut chosen_end_token = "";
-        for &token in &end_tokens {
-            if let Some(pos) = after_start.find(token) {
-                if end_idx_rel.map_or(true, |p| pos < p) {
-                    end_idx_rel = Some(pos);
-                    chosen_end_token = token;
-                }
-            }
-        }
-        
-        if let Some(rel) = end_idx_rel {
-            let full_call_block = &after_start[..rel];
-            let total_len = start_idx + chosen_token.len() + rel + chosen_end_token.len();
-            match parse_native_block(full_call_block) {
-                Ok(tc) => Some(Ok((tc, total_len))),
-                Err(e) => Some(Err((e, total_len))),
-            }
-        } else if is_final {
-             match parse_native_block(after_start) {
-                 Ok(tc) => Some(Ok((tc, text.len()))),
-                 Err(e) => Some(Err((e, text.len()))),
-             }
-        } else {
-             None
-        }
-    } else {
-        None
     }
 }

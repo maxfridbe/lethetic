@@ -1,3 +1,4 @@
+
 use serde_json::json;
 use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
@@ -123,7 +124,13 @@ pub async fn execute(file_path: &str, old_content: &str, new_content: &str, cwd:
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
 
-    let child = cmd.spawn().expect("Failed to spawn patch");
+    let child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = fs::remove_file(patch_file);
+            return format!("ERROR: Failed to run patch utility: {}. Make sure 'patch' is installed on your system.", e);
+        }
+    };
 
     let result = tokio::select! {
         _ = cancellation_token.cancelled() => {

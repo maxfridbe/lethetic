@@ -24,10 +24,7 @@ pub mod apply_patch;
 pub mod todowrite;
 pub mod repo_overview;
 
-#[path = "../icons.rs"]
-pub mod icons;
-#[path = "../llm_tokens.rs"]
-pub mod llm_tokens;
+pub use crate::{icons, llm_tokens};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -46,9 +43,12 @@ pub struct FunctionDefinition {
     pub parameters: Value,
 }
 
+/// Tool outputs larger than this (in bytes) are truncated and saved to disk.
+const LARGE_OUTPUT_THRESHOLD: usize = 20_000;
+
 /// Truncate large tool outputs and save to file. Returns (context_msg, ui_msg).
 pub fn handle_large_output(id: &str, result: String) -> (String, String) {
-    if result.len() > 20_000 {
+    if result.len() > LARGE_OUTPUT_THRESHOLD {
         let file_id = if id.is_empty() { "unknown" } else { id };
         let dir_path = ".lethetic/tool_responses";
         let _ = std::fs::create_dir_all(dir_path);
@@ -56,11 +56,10 @@ pub fn handle_large_output(id: &str, result: String) -> (String, String) {
         let _ = std::fs::write(&file_path, &result);
 
         let mut exit_status = String::new();
-        if result.starts_with("EXIT_CODE: ") {
-            if let Some(first) = result.lines().next() {
+        if result.starts_with("EXIT_CODE: ")
+            && let Some(first) = result.lines().next() {
                 exit_status = format!("{}\n", first);
             }
-        }
         let truncated = format!(
             "{}... [Output truncated. Full output ({} characters) saved to {}] ...",
             exit_status, result.len(), file_path
@@ -93,13 +92,18 @@ pub fn get_prompt_templates_excluding(config: &crate::config::Config, exclude: &
 }
 
 pub fn get_all_tools(config: &crate::config::Config) -> Vec<Tool> {
+    let active_parser = config.model_servers.iter()
+        .find(|s| s.url == config.server_url)
+        .map(|s| s.parser.as_str())
+        .unwrap_or("gemma4");
+
     let mut tools = vec![
         read_file::get_definition(),
         read_file_lines::get_definition(),
         read_folder::get_definition(),
         search_text::get_definition(),
         run_shell_command::get_definition(),
-        write_file::get_definition(),
+        write_file::get_definition(active_parser),
         replace_text::get_definition(),
         edit::get_definition(),
         glob::get_definition(),
@@ -127,13 +131,11 @@ pub fn get_all_tools(config: &crate::config::Config) -> Vec<Tool> {
 
 pub fn get_tool_parameter_names(func_name: &str, config: &crate::config::Config) -> Vec<String> {
     let tools = get_all_tools(config);
-    if let Some(tool) = tools.iter().find(|t| t.function.name == func_name) {
-        if let Some(properties) = tool.function.parameters.get("properties") {
-            if let Some(obj) = properties.as_object() {
+    if let Some(tool) = tools.iter().find(|t| t.function.name == func_name)
+        && let Some(properties) = tool.function.parameters.get("properties")
+            && let Some(obj) = properties.as_object() {
                 return obj.keys().cloned().collect();
             }
-        }
-    }
     vec![]
 }
 
@@ -293,7 +295,7 @@ pub fn execute<'a>(
         }
         "process_image" => {
             if !config.enable_image_processing_tool {
-                return (format!("ERROR: Image processing tool is disabled in config."), cwd.to_string());
+                return ("ERROR: Image processing tool is disabled in config.".to_string(), cwd.to_string());
             }
             let prompt = arguments["prompt"].as_str().unwrap_or("");
             let image_path = arguments["image_path"].as_str().unwrap_or("");
@@ -302,7 +304,7 @@ pub fn execute<'a>(
         }
         "process_pdf_image" => {
             if !config.enable_image_processing_tool {
-                return (format!("ERROR: PDF image processing tool is disabled in config."), cwd.to_string());
+                return ("ERROR: PDF image processing tool is disabled in config.".to_string(), cwd.to_string());
             }
             let prompt = arguments["prompt"].as_str().unwrap_or("");
             let pdf_path = arguments["pdf_path"].as_str().unwrap_or("");
@@ -363,7 +365,7 @@ pub async fn get_git_info() -> String {
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     if parts.len() > 1 {
                         let codes = parts[1];
-                        let staged_code = codes.chars().nth(0).unwrap_or('.');
+                        let staged_code = codes.chars().next().unwrap_or('.');
                         let unstaged_code = codes.chars().nth(1).unwrap_or('.');
                         
                         if staged_code != '.' { staged += 1; }
@@ -403,10 +405,16 @@ mod tests {
             model: "".to_string(),
             context_size: 0,
             tool_wrapper: None,
+            api_key: None,
+            estimate_cost: None,
+            input_cost_per_1m: None,
+            output_cost_per_1m: None,
             enable_image_processing_tool: false,
             theme: None,
-        
             model_servers: Vec::new(),
+            thinking: None,
+            extra_body: None,
+            context_mode: None,
         };
         let tools = get_all_tools(&config);
         let shell = tools.iter().find(|t| t.function.name == "run_shell_command").unwrap();

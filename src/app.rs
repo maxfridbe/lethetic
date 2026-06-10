@@ -4,7 +4,7 @@ use tokio_util::sync::CancellationToken;
 use crossterm::event::{self, KeyCode, KeyModifiers};
 use std::env;
 use regex::Regex;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use serde::{Deserialize, Serialize};
 
 use crate::context::{ContextManager, ToolCall};
@@ -16,7 +16,7 @@ use crate::parser::StreamParser;
 use crate::loop_detector::{LoopDetector, LoopDetectorConfig};
 use ratatui::text::Line;
 
-static MARKER_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"<\|?/?(?:channel|thought|tool_call|tool_response|turn|bos|eos|think|\||\x22|')[^>]*>?(?:thought|text|model|system)?").unwrap());
+static MARKER_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<\|?/?(?:channel|thought|tool_call|tool_response|turn|bos|eos|think|\||\x22|')[^>]*>?(?:thought|text|model|system)?").unwrap());
 
 // Safety limits to prevent UI freezes
 const MAX_TOTAL_BLOCKS: usize = 200;
@@ -45,6 +45,10 @@ pub struct RenderBlock {
     pub content: String,
     pub title: Option<String>,
     pub success: Option<bool>,
+    #[serde(default)]
+    pub prompt_tokens: Option<u32>,
+    #[serde(default)]
+    pub completion_tokens: Option<u32>,
     #[serde(skip)]
     pub cached_lines: Option<Vec<Line<'static>>>,
 }
@@ -91,6 +95,7 @@ pub struct App {
     pub tokens_per_s: f64,
     pub pp_tokens_per_s: f64,
     pub server_prompt_tokens: Option<u32>,
+    pub server_completion_tokens: Option<u32>,
     pub model_name: String,
     pub server_url: String,
     pub max_tokens: usize,
@@ -105,6 +110,7 @@ pub struct App {
     pub debug_log: Vec<String>,
     pub should_redraw: bool,
     pub tool_calls_processed_this_request: bool,
+    pub tool_call_dispatched: bool,
     pub cwd: String,
     pub git_status: String,
     pub scroll: u16,
@@ -154,13 +160,13 @@ pub struct App {
     pub applied_edits: std::collections::HashSet<String>,
     pub show_model_switcher: bool,
     pub model_switcher_state: ListState,
-    pub available_models: Vec<(String, String, String)>, // (display, url, model_id)
+    pub available_models: Vec<crate::client::ModelChoice>,
     pub show_lsp_manager: bool,
     pub lsp_server_list_state: ListState,
     pub lsp_install_cmd: Option<String>,
-    }
+}
 
-    impl App {
+impl App {
     pub fn new(config: &Config) -> App {
         let mut palette_state = ListState::default();
         palette_state.select(Some(0));
@@ -176,10 +182,13 @@ pub struct App {
         
         let cwd = std::env::current_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| ".".to_string());
         let resolved_prompt = crate::system_prompt::SystemPromptManager::resolve_prompt(&system_prompt, &cwd, config);
-        let context_manager = ContextManager::new(
+        let mut context_manager = ContextManager::new(
             config.context_size, 
             Some(resolved_prompt)
         );
+        if let Some(mode) = config.context_mode {
+            context_manager.mode = mode;
+        }
 
         let mut app = App {
             input: String::new(),
@@ -189,8 +198,9 @@ pub struct App {
                 content: "Type a prompt to test tool calling (e.g. 'Run ls'). F12 for debugger.".to_string(),
                 title: None,
                 success: Some(true),
+                prompt_tokens: None,
+                completion_tokens: None,
                 cached_lines: None,
-
             }],
             output_state: ListState::default(),
             is_output_focused: false,
@@ -235,6 +245,7 @@ pub struct App {
             tokens_per_s: 0.0,
             pp_tokens_per_s: 0.0,
             server_prompt_tokens: None,
+            server_completion_tokens: None,
             model_name: config.model.clone(),
             server_url: config.server_url.clone(),
             max_tokens: config.context_size,
@@ -249,6 +260,7 @@ pub struct App {
             debug_log: Vec::new(),
             should_redraw: true,
             tool_calls_processed_this_request: false,
+            tool_call_dispatched: false,
             cwd: String::from("N/A"),
             git_status: String::from("N/A"),
             scroll: 0,
@@ -284,7 +296,7 @@ pub struct App {
                     .find(|s| s.url == config.server_url)
                     .map(|s| s.parser.as_str())
                     .unwrap_or("gemma4");
-                StreamParser::with_mode(crate::parser::ParserMode::from_str(parser_str))
+                StreamParser::with_mode(crate::parser::ParserMode::from(parser_str))
             },
             loop_detector: LoopDetector::new(LoopDetectorConfig::default()),
             last_block_content: String::new(),
@@ -295,11 +307,11 @@ pub struct App {
             load_status: String::new(),
             stop_reason: "Ready".to_string(),
             history: Vec::new(),
-            history_state: history_state,
+            history_state,
             backbuffer: String::new(),
             show_history: false,
             show_latest_files: false,
-            latest_files_state: latest_files_state,
+            latest_files_state,
             config: config.clone(),
             tool_call_fingerprints: std::collections::HashMap::new(),
             applied_edits: std::collections::HashSet::new(),
@@ -332,6 +344,8 @@ pub struct App {
             content: "New session started. Type a prompt to begin.".to_string(),
             title: None,
             success: Some(true),
+            prompt_tokens: None,
+            completion_tokens: None,
             cached_lines: None,
         });
         self.context_manager.clear();
@@ -379,13 +393,11 @@ pub struct App {
         if let Ok(entries) = std::fs::read_dir(sessions_root) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_dir() {
-                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                        if name.starts_with("session_") {
+                if path.is_dir()
+                    && let Some(name) = path.file_name().and_then(|n| n.to_str())
+                        && name.starts_with("session_") {
                             dirs.push(path.display().to_string());
                         }
-                    }
-                }
             }
         }
         dirs.sort_by(|a, b| b.cmp(a)); // Newest first
@@ -406,8 +418,8 @@ pub struct App {
 
     pub fn load_session(&mut self, session_dir: &str) {
         // Try loading unified session state first
-        if let Ok(content) = std::fs::read_to_string(format!("{}/session_state.json", session_dir)) {
-            if let Ok(state) = serde_json::from_str::<SessionState>(&content) {
+        if let Ok(content) = std::fs::read_to_string(format!("{}/session_state.json", session_dir))
+            && let Ok(state) = serde_json::from_str::<SessionState>(&content) {
                 self.blocks = state.blocks;
                 self.history = state.history;
                 self.context_manager.clear();
@@ -415,8 +427,8 @@ pub struct App {
                     self.context_manager.add_message_raw(msg);
                 }
                 // Restore theme if saved
-                if !state.theme_name.is_empty() {
-                    if let Some(t) = self.themes.iter().find(|t| t.name == state.theme_name) {
+                if !state.theme_name.is_empty()
+                    && let Some(t) = self.themes.iter().find(|t| t.name == state.theme_name) {
                         let t = t.clone();
                         if let Some(idx) = self.themes.iter().position(|th| th.name == t.name) {
                             self.theme_state.select(Some(idx));
@@ -424,31 +436,27 @@ pub struct App {
                         self.theme = t;
                         for block in &mut self.blocks { block.cached_lines = None; }
                     }
-                }
                 self.current_session_dir = Some(session_dir.to_string());
                 self.should_redraw = true;
                 self.needs_save = false;
                 if self.auto_scroll { self.sync_scroll_to_end(); }
                 return;
             }
-        }
 
         // Fallback to legacy individual files
-        if let Ok(content) = std::fs::read_to_string(format!("{}/ui_state.json", session_dir)) {
-            if let Ok(blocks) = serde_json::from_str::<Vec<RenderBlock>>(&content) {
+        if let Ok(content) = std::fs::read_to_string(format!("{}/ui_state.json", session_dir))
+            && let Ok(blocks) = serde_json::from_str::<Vec<RenderBlock>>(&content) {
                 self.blocks = blocks;
             }
-        }
         
         // Load Context
-        if let Ok(content) = std::fs::read_to_string(format!("{}/context.json", session_dir)) {
-            if let Ok(messages) = serde_json::from_str::<Vec<crate::context::Message>>(&content) {
+        if let Ok(content) = std::fs::read_to_string(format!("{}/context.json", session_dir))
+            && let Ok(messages) = serde_json::from_str::<Vec<crate::context::Message>>(&content) {
                 self.context_manager.clear();
                 for msg in messages {
                     self.context_manager.add_message_raw(msg);
                 }
             }
-        }
         
         self.current_session_dir = Some(session_dir.to_string());
         self.should_redraw = true;
@@ -534,22 +542,25 @@ pub struct App {
                 content: String::new(),
                 title: None,
                 success: None,
+                prompt_tokens: None,
+                completion_tokens: None,
                 cached_lines: None,
             });
         }
 
         let mut success = Some(true);
-        if b_type == BlockType::ToolResult && content.contains("EXIT_CODE: ") {
-            if !content.contains("EXIT_CODE: 0") {
+        if b_type == BlockType::ToolResult && content.contains("EXIT_CODE: ")
+            && !content.contains("EXIT_CODE: 0") {
                 success = Some(false);
             }
-        }
 
         self.blocks.push(RenderBlock {
             block_type: b_type.clone(),
             content: content.clone(),
             title: title.clone(),
             success,
+            prompt_tokens: None,
+            completion_tokens: None,
             cached_lines: None,
         });
 
@@ -564,14 +575,13 @@ pub struct App {
                 BlockType::Formulating => "=== FORMULATING ===".to_string(),
                 BlockType::Divider    => String::new(),
             };
-            if !header.is_empty() {
-                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true)
+            if !header.is_empty()
+                && let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true)
                     .open(format!("{}/ui_log.txt", session_dir))
                 {
                     use std::io::Write as _;
                     let _ = writeln!(f, "{}\n{}\n", header, content);
                 }
-            }
         }
 
         if self.blocks.len() > MAX_TOTAL_BLOCKS {
@@ -666,8 +676,8 @@ pub struct App {
         if self.debug_log.len() > 200 { self.debug_log.remove(0); }
         self.should_redraw = true;
 
-        if let Some(session_dir) = &self.current_session_dir {
-            if let Ok(mut file) = std::fs::OpenOptions::new()
+        if let Some(session_dir) = &self.current_session_dir
+            && let Ok(mut file) = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(format!("{}/logs.txt", session_dir))
@@ -675,7 +685,6 @@ pub struct App {
                 use std::io::Write;
                 let _ = writeln!(file, "{}", log_entry);
             }
-        }
     }
 
     pub fn refresh_system_stats(&mut self) {
@@ -919,25 +928,23 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                 if !app.session_files.is_empty() { app.session_list_state.select(Some(i)); }
             }
             KeyCode::Enter => {
-                if let Some(i) = app.session_list_state.selected() {
-                    if i < app.session_files.len() {
+                if let Some(i) = app.session_list_state.selected()
+                    && i < app.session_files.len() {
                         let filename = app.session_files[i].clone();
                         app.show_session_manager = false;
                         return AppEventOutcome::ResumeSession(filename);
                     }
-                }
             }
             KeyCode::Char('n') | KeyCode::Char('N') => {
                 app.show_session_manager = false;
                 return AppEventOutcome::NewSession;
             }
             KeyCode::Char('d') | KeyCode::Char('D') => {
-                if let Some(i) = app.session_list_state.selected() {
-                    if i < app.session_files.len() {
+                if let Some(i) = app.session_list_state.selected()
+                    && i < app.session_files.len() {
                         let filename = app.session_files[i].clone();
                         return AppEventOutcome::DeleteSession(filename);
                     }
-                }
             }
             KeyCode::Char('x') | KeyCode::Char('X') => {
                 for f in &app.session_files {
@@ -1063,8 +1070,8 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
             KeyCode::Char('r') | KeyCode::Char('R') => {
                 let paths: Vec<String> = app.context_manager.all_cached_files()
                     .into_iter().map(|(p, _, _)| p).collect();
-                if let Some(i) = app.latest_files_state.selected() {
-                    if let Some(path) = paths.get(i) {
+                if let Some(i) = app.latest_files_state.selected()
+                    && let Some(path) = paths.get(i) {
                         app.context_manager.remove_latest_file(path);
                         let num_files = app.context_manager.active_files.len() + app.context_manager.latest_files.len();
                         if num_files == 0 {
@@ -1073,7 +1080,6 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                             app.latest_files_state.select(Some(num_files - 1));
                         }
                     }
-                }
             }
             _ => {}
         }
@@ -1098,19 +1104,18 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                 }
             }
             KeyCode::Enter => {
-                if let Some(i) = app.model_switcher_state.selected() {
-                    if let Some((_, url, model_id)) = app.available_models.get(i) {
+                if let Some(i) = app.model_switcher_state.selected()
+                    && let Some(choice) = app.available_models.get(i) {
                         // Find parser setting for this server from config
                         let parser = app.config.model_servers.iter()
-                            .find(|s| &s.url == url)
+                            .find(|s| s.url == choice.url)
                             .map(|s| s.parser.clone())
                             .unwrap_or_else(|| "gemma4".to_string());
-                        let outcome = AppEventOutcome::SwitchModel(url.clone(), model_id.clone(), parser);
+                        let outcome = AppEventOutcome::SwitchModel(choice.url.clone(), choice.model_id.clone(), parser);
                         app.show_model_switcher = false;
                         app.should_redraw = true;
                         return outcome;
                     }
-                }
             }
             _ => {}
         }
@@ -1131,14 +1136,12 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                 app.lsp_server_list_state.select(Some(if i == 0 { num_servers - 1 } else { i - 1 }));
             }
             KeyCode::Enter | KeyCode::Char('i') => {
-                if let Some(i) = app.lsp_server_list_state.selected() {
-                    if let Some(def) = crate::lsp::registry::SERVERS.get(i) {
-                        if !crate::lsp::registry::check_installed(def) {
+                if let Some(i) = app.lsp_server_list_state.selected()
+                    && let Some(def) = crate::lsp::registry::SERVERS.get(i)
+                        && !crate::lsp::registry::check_installed(def) {
                             app.show_lsp_manager = false;
                             app.lsp_install_cmd = Some(def.install_cmd.to_string());
                         }
-                    }
-                }
             }
             _ => {}
         }
@@ -1270,6 +1273,8 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                 content: "UI Cleared. (Context preserved)".to_string(),
                 title: None,
                 success: Some(true),
+                prompt_tokens: None,
+                completion_tokens: None,
                 cached_lines: None,
             });
             app.output_state.select(Some(0));
@@ -1357,8 +1362,8 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                 let target_column = column.min(prev_line_chars.len());
                 
                 let mut new_pos = prev_line_start;
-                for i in 0..target_column {
-                    new_pos += prev_line_chars[i].len_utf8();
+                for c in prev_line_chars.iter().take(target_column) {
+                    new_pos += c.len_utf8();
                 }
                 app.cursor_pos = new_pos;
                 app.should_redraw = true;
@@ -1378,8 +1383,8 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                 let target_column = column.min(next_line_chars.len());
                 
                 let mut new_pos = next_line_start;
-                for i in 0..target_column {
-                    new_pos += next_line_chars[i].len_utf8();
+                for c in next_line_chars.iter().take(target_column) {
+                    new_pos += c.len_utf8();
                 }
                 app.cursor_pos = new_pos;
                 app.should_redraw = true;
@@ -1455,3 +1460,4 @@ pub fn handle_tool_call(app: &mut App, calls: Vec<ToolCall>, pos: usize, _tx: mp
     }
     AppEventOutcome::Continue
 }
+

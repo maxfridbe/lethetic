@@ -1,3 +1,4 @@
+
 use std::env;
 use crossterm::{
     event::{DisableBracketedPaste, EnableBracketedPaste, Event, EventStream, KeyEventKind, KeyCode, KeyModifiers},
@@ -10,40 +11,15 @@ use ratatui::{
     Terminal,
 };
 use reqwest::Client;
-use std::{error::Error, fs, io, time::Duration, path::{Path, PathBuf}};
-use tokio;
+use std::{error::Error, io, time::Duration, path::{Path, PathBuf}};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use sysinfo::System;
 
 use lethetic::config::Config;
-use lethetic::client::{StreamEvent, trigger_llm_request};
+use lethetic::client::{ModelChoice, StreamEvent, trigger_llm_request};
 use lethetic::app::{App, AppEventOutcome, BlockType, handle_key, handle_tool_call, ApprovalMode};
 
-/// Dispatch `pending_tool_call` immediately (used when ApprovalMode::Always auto-approved it).
-macro_rules! dispatch_auto_approved_tool {
-    ($app:expr, $tx:expr, $cancellation_token:expr, $client:expr, $config:expr) => {
-        if let Some(tool_call) = $app.pending_tool_call.as_ref() {
-            let tc_id    = tool_call.id.clone();
-            let func_name = tool_call.function.name.clone();
-            let args      = tool_call.function.arguments.clone();
-            let current_dir = $app.current_dir.clone();
-            let ctx_tx    = $tx.clone();
-            let tool_cancel = $cancellation_token.clone();
-            let client_cl = $client.clone();
-            let config_cl = $config.clone();
-            $app.is_executing_tool = true;
-            tokio::spawn(async move {
-                let (result, new_dir) = lethetic::tools::execute(
-                    func_name.as_str(), &args, &current_dir, tool_cancel, ctx_tx.clone(), &client_cl, &config_cl).await;
-                let (full_result, _) = handle_large_output(&tc_id, result, &client_cl, &config_cl, &args).await;
-                let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, full_result, new_dir.clone()));
-                let _ = ctx_tx.send(StreamEvent::DebugLog(format!("DIR_UPDATE|{}", new_dir)));
-            });
-            $app.is_processing = true;
-        }
-    };
-}
 use lethetic::ui::ui;
 use lethetic::tools::get_git_info;
 use lethetic::icons;
@@ -136,18 +112,117 @@ fn looks_like_intention_without_action(content: &str) -> bool {
     intent_phrases.iter().any(|p| lower.contains(p))
 }
 
-// Delegated to lethetic::tools::handle_large_output; keep thin async wrapper for call-site compat.
-async fn handle_large_output(
-    id: &str,
-    result: String,
-    _client: &reqwest::Client,
-    _config: &Config,
-    _args: &serde_json::Value,
-) -> (String, String) {
-    lethetic::tools::handle_large_output(id, result)
+/// Dispatch `pending_tool_call` immediately (used when ApprovalMode::Always auto-approved it).
+fn dispatch_auto_approved_tool(
+    app: &mut App,
+    tx: &mpsc::UnboundedSender<StreamEvent>,
+    cancellation_token: &CancellationToken,
+    client: &Client,
+    config: &Config,
+) {
+    let Some(tool_call) = app.pending_tool_call.as_ref() else { return };
+    let tc_id = tool_call.id.clone();
+    let func_name = tool_call.function.name.clone();
+    let args = tool_call.function.arguments.clone();
+    let current_dir = app.current_dir.clone();
+    let ctx_tx = tx.clone();
+    let tool_cancel = cancellation_token.clone();
+    let client = client.clone();
+    let config = config.clone();
+    app.is_executing_tool = true;
+    app.tool_call_dispatched = true;
+    tokio::spawn(async move {
+        let (result, new_dir) = lethetic::tools::execute(
+            func_name.as_str(), &args, &current_dir, tool_cancel, ctx_tx.clone(), &client, &config).await;
+        let (full_result, _) = lethetic::tools::handle_large_output(&tc_id, result);
+        let _ = ctx_tx.send(StreamEvent::ToolResult { id: Some(tc_id), func_name, result: full_result, cwd: new_dir.clone() });
+        let _ = ctx_tx.send(StreamEvent::DebugLog(format!("DIR_UPDATE|{}", new_dir)));
+    });
+    app.is_processing = true;
 }
+fn setup_panic_hook() {
+    std::panic::set_hook(Box::new(|panic_info| {
+        // 1. Reset terminal so it's not garbled
+        #[cfg(not(test))]
+        {
+            let mut stdout = std::io::stdout();
+            let _ = crossterm::terminal::disable_raw_mode();
+            let _ = crossterm::execute!(
+                stdout,
+                crossterm::terminal::LeaveAlternateScreen,
+                crossterm::event::DisableBracketedPaste,
+                crossterm::cursor::Show
+            );
+        }
+
+        // 2. Prepare payload
+        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+        let payload = panic_info.payload();
+        let message = if let Some(s) = payload.downcast_ref::<&str>() {
+            *s
+        } else if let Some(s) = payload.downcast_ref::<String>() {
+            s.as_str()
+        } else {
+            "Unknown panic payload"
+        };
+
+        let location = if let Some(loc) = panic_info.location() {
+            format!("{}:{}", loc.file(), loc.line())
+        } else {
+            "unknown location".to_string()
+        };
+
+        let backtrace = std::backtrace::Backtrace::capture();
+        let backtrace_str = format!("{}", backtrace);
+
+        // 3. Log to .lethetic/panic.log
+        let _ = std::fs::create_dir_all(".lethetic");
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(".lethetic/panic.log")
+        {
+            use std::io::Write;
+            let _ = writeln!(
+                file,
+                "========================================\n\
+                 Timestamp: {}\n\
+                 Panic at {}\n\
+                 Message: {}\n\n\
+                 Backtrace:\n{}\n\n",
+                timestamp, location, message, backtrace_str
+            );
+        }
+
+        // 4. Print beautiful crash dialog box to stderr
+        #[cfg(not(test))]
+        {
+            let message_clean = message.replace('\n', " ").replace('\r', "");
+            let msg_trimmed = if message_clean.len() > 43 { format!("{}...", &message_clean[..40]) } else { message_clean };
+            let loc_trimmed = if location.len() > 42 { format!("{}...", &location[..39]) } else { location.clone() };
+
+            eprintln!(
+                "\n\
+                ┌────────────────────────────────────────────────────────┐\n\
+                │                   APPLICATION CRASH                    │\n\
+                ├────────────────────────────────────────────────────────┤\n\
+                │ Lethetic encountered an unrecoverable error (panic).   │\n\
+                │                                                        │\n\
+                │ Message: {:<46} │\n\
+                │ Location: {:<45} │\n\
+                │                                                        │\n\
+                │ A detailed crash log with backtrace has been saved to: │\n\
+                │ .lethetic/panic.log                                    │\n\
+                └────────────────────────────────────────────────────────┘\n",
+                msg_trimmed, loc_trimmed
+            );
+        }
+    }));
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    setup_panic_hook();
     let args: Vec<String> = env::args().collect();
     
     let config_path = if Path::new("config.yml").exists() {
@@ -157,8 +232,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         PathBuf::from(home).join(".config/lethetic/config.yml")
     };
 
-    let config_content = fs::read_to_string(config_path)?;
-    let mut config: Config = serde_yaml::from_str(&config_content)?;
+    let mut config = Config::load(&config_path)?;
+    config.merge_matching_server_settings();
 
     if args.len() > 2 && args[1] == "--command" {
         let prompt = args[2..].join(" ");
@@ -260,7 +335,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                         app.is_processing = false;
                                         app.stop_reason = "Cancelled by user".to_string();
                                         app.add_segment(format!("\n{} [STOPPED]\n", icons::WARNING), BlockType::Text);
-                                        while let Ok(_) = rx.try_recv() {}
+                                        while rx.try_recv().is_ok() {}
                                         app.should_redraw = true;
                                         continue;
                                     } else {
@@ -350,16 +425,35 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                         // Query each server for live model list
                                         let client_clone = client.clone();
                                         let tx_clone = tx.clone();
+                                        let config_clone = config.clone();
                                         tokio::spawn(async move {
-                                            let mut models: Vec<(String, String, String)> = Vec::new();
-                                            for (name, url, _model) in &servers {
-                                                let live = lethetic::client::get_available_models(&client_clone, url).await;
+                                            let mut models: Vec<ModelChoice> = Vec::new();
+                                            for (name, url, default_model) in &servers {
+                                                let api_key = config_clone.model_servers.iter()
+                                                    .find(|s| &s.url == url)
+                                                    .and_then(|s| s.api_key.as_deref())
+                                                    .or_else(|| {
+                                                        if url == &config_clone.server_url {
+                                                            config_clone.api_key.as_deref()
+                                                        } else {
+                                                            None
+                                                        }
+                                                    });
+                                                let live = lethetic::client::get_available_models(&client_clone, url, api_key).await;
                                                 if live.is_empty() {
                                                     // Server not reachable — still show from config
-                                                    models.push((format!("{} (offline)", name), url.clone(), _model.clone()));
+                                                    models.push(ModelChoice {
+                                                        display: format!("{} (offline)", name),
+                                                        url: url.clone(),
+                                                        model_id: default_model.clone(),
+                                                    });
                                                 } else {
                                                     for (id, _) in live {
-                                                        models.push((format!("{} — {}", name, id), url.clone(), id));
+                                                        models.push(ModelChoice {
+                                                            display: format!("{} — {}", name, id),
+                                                            url: url.clone(),
+                                                            model_id: id,
+                                                        });
                                                     }
                                                 }
                                             }
@@ -369,9 +463,32 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                     AppEventOutcome::SwitchModel(new_url, new_model, parser) => {
                                         config.server_url = new_url.clone();
                                         config.model = new_model.clone();
+                                        let matching_server = config.model_servers.iter().find(|s| s.url == new_url);
+                                        config.api_key = matching_server.and_then(|s| s.api_key.clone());
+                                        config.input_cost_per_1m = matching_server.and_then(|s| s.input_cost_per_1m);
+                                        config.output_cost_per_1m = matching_server.and_then(|s| s.output_cost_per_1m);
+                                        config.thinking = matching_server.and_then(|s| s.thinking);
+                                        config.extra_body = matching_server.and_then(|s| s.extra_body.clone());
+                                        config.context_mode = matching_server.and_then(|s| s.context_mode);
+                                        if let Some(matching_server) = matching_server
+                                            && let Some(t) = &matching_server.theme {
+                                                config.theme = Some(t.clone());
+                                            }
+                                        if let Some(Some(sz)) = matching_server.map(|s| s.context_size) {
+                                            config.context_size = sz;
+                                            app.max_tokens = sz;
+                                        }
                                         app.server_url = new_url.clone();
                                         app.model_name = new_model.clone();
-                                        let mode = lethetic::parser::ParserMode::from_str(&parser);
+                                        app.config = config.clone();
+                                        app.context_manager.mode = config.context_mode.unwrap_or(lethetic::context::ContextMode::Lethetic);
+                                        if let Some(name) = &config.theme {
+                                            let all = lethetic::ui::Theme::all();
+                                            if let Some(found) = all.iter().find(|t| t.name.eq_ignore_ascii_case(name)) {
+                                                app.theme = found.clone();
+                                            }
+                                        }
+                                        let mode = lethetic::parser::ParserMode::from(parser.as_str());
                                         app.parser.set_mode(mode);
                                         app.parser.reset();
                                         // Re-resolve system prompt with updated config so the
@@ -397,7 +514,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             if let Some(tool_call) = app.pending_tool_call.take() {
                                                 let tc_id = tool_call.id.clone();
                                                 let func_name = tool_call.function.name.clone();
-                                                let _ = tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, prompt, app.current_dir.clone()));
+                                                let _ = tx.send(StreamEvent::ToolResult { id: Some(tc_id), func_name, result: prompt, cwd: app.current_dir.clone() });
                                             }
                                         } else {
                                             app.add_segment(prompt.clone(), BlockType::User);
@@ -408,7 +525,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             app.applied_edits.clear();
                                             app.is_processing = true;
                                             app.tool_calls_processed_this_request = false;
+                                            app.tool_call_dispatched = false;
                                             app.tool_call_pos = None;
+                                            app.server_prompt_tokens = None;
+                                            app.server_completion_tokens = None;
                                             full_response_content.clear();
                                             cancellation_token = CancellationToken::new();
                                             app.request_start_time = Some(tokio::time::Instant::now());
@@ -417,29 +537,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                         }
                                     }
                                     AppEventOutcome::ToolApproved(approved, always) => {
-                                        if let Some(tool_call) = app.pending_tool_call.as_ref() {
+                                        if app.pending_tool_call.is_some() {
                                             if approved {
                                                 if always { app.shell_approval_mode = ApprovalMode::Always; }
-                                                let tc_id = tool_call.id.clone();
-                                                let func_name = tool_call.function.name.clone();
-                                                let args = tool_call.function.arguments.clone();
-                                                let current_dir = app.current_dir.clone();
-                                                
-                                                let ctx_tx = tx.clone();
-                                                let tool_cancel = cancellation_token.clone();
-                                                let client_clone = client.clone();
-                                                let config_clone = config.clone();
-                                                app.is_executing_tool = true;
-                                                tokio::spawn(async move {
-                                                    let (result, new_dir) = lethetic::tools::execute(
-                                                        func_name.as_str(), &args, &current_dir, tool_cancel, ctx_tx.clone(), &client_clone, &config_clone).await;
-                                                    
-                                                    let (full_result, _) = handle_large_output(&tc_id, result, &client_clone, &config_clone, &args).await;
-                                                    
-                                                    let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, full_result, new_dir.clone()));
-                                                    let _ = ctx_tx.send(StreamEvent::DebugLog(format!("DIR_UPDATE|{}", new_dir)));
-                                                });
-                                                app.is_processing = true;
+                                                dispatch_auto_approved_tool(app, &tx, &cancellation_token, &client, config);
                                             } else {
                                                 app.pending_tool_call.take();
                                                 app.add_segment(format!("\n{} Tool execution denied by user.\n", icons::WARNING), BlockType::Text);
@@ -454,7 +555,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                         app.is_executing_tool = false;
                                         app.tool_output_preview.clear();
                                         app.add_segment(format!("\n{} [STOPPED]\n", icons::WARNING), BlockType::Text);
-                                        while let Ok(_) = rx.try_recv() {}
+                                        while rx.try_recv().is_ok() {}
                                         app.should_redraw = true;
                                     }
                                     AppEventOutcome::Continue => { app.should_redraw = true; }
@@ -474,7 +575,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             &serde_json::json!({"command": cmd, "description": "Install LSP server", "tool_call_id": "lsp_install"}),
                                             &cwd, tool_cancel, ctx_tx.clone(), &reqwest::Client::new(), &lethetic::config::Config::default(),
                                         ).await;
-                                        let _ = ctx_tx.send(StreamEvent::ToolResult(None, "lsp_install".to_string(), result, new_dir));
+                                        let _ = ctx_tx.send(StreamEvent::ToolResult { id: None, func_name: "lsp_install".to_string(), result, cwd: new_dir });
                                     });
                                 }
                             }
@@ -510,8 +611,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                     app.git_status = parts[2].to_string();
                                     app.should_redraw = true;
                                 }
-                            } else if msg.starts_with("DIR_UPDATE|") {
-                                app.current_dir = msg[11..].to_string();
+                            } else if let Some(dir) = msg.strip_prefix("DIR_UPDATE|") {
+                                app.current_dir = dir.to_string();
                                 app.should_redraw = true;
                             } else {
                                 app.log_debug(&msg);
@@ -576,6 +677,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
 
                                             // Correct re-triggering logic:
                                             app.is_processing = true;
+                                            app.server_prompt_tokens = None;
+                                            app.server_completion_tokens = None;
                                             full_response_content.clear();
                                             cancellation_token = CancellationToken::new(); // NEW TOKEN
                                             app.parser.reset();
@@ -590,7 +693,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                     match parser::find_tool_call(&full_response_content, false) {
                                         Some(Ok((tc, pos))) => {
                                             if let AppEventOutcome::ToolApproved(..) = handle_tool_call(app, vec![tc], pos, tx.clone(), &mut cancellation_token, &full_response_content, false) {
-                                                dispatch_auto_approved_tool!(app, tx, cancellation_token, client, config);
+                                                dispatch_auto_approved_tool(app, &tx, &cancellation_token, &client, config);
                                             }
                                         }
                                         Some(Err((err_msg, _pos))) => {
@@ -598,10 +701,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             app.log_debug(&format!("Tool call syntax error: {}", err_msg));
                                             cancellation_token.cancel();
                                             app.is_processing = false;
-                                            app.stop_reason = format!("⚠ Tool call syntax error — re-prompting");
+                                            app.stop_reason = "⚠ Tool call syntax error — re-prompting".to_string();
                                             app.add_segment(format!("\n{} [SYNTAX ERROR] {}\n", icons::WARNING, err_msg), BlockType::Text);
                                             app.context_manager.add_message("assistant", &full_response_content);
-                                            let _ = tx.send(StreamEvent::ToolResult(Some("raw_call".to_string()), "syntax_error".to_string(), format!("Syntax Error in tool call: {}", err_msg), app.current_dir.clone()));
+                                            let _ = tx.send(StreamEvent::ToolResult { id: Some("raw_call".to_string()), func_name: "syntax_error".to_string(), result: format!("Syntax Error in tool call: {}", err_msg), cwd: app.current_dir.clone() });
                                         }
                                         None => {}
                                     }
@@ -609,16 +712,15 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             }
                         }
                         StreamEvent::ToolCalls(calls) => {
-                            if !app.tool_calls_processed_this_request {
-                                if let AppEventOutcome::ToolApproved(..) = handle_tool_call(app, calls, full_response_content.len(), tx.clone(), &mut cancellation_token, &full_response_content, true) {
-                                    dispatch_auto_approved_tool!(app, tx, cancellation_token, client, config);
+                            if !app.tool_calls_processed_this_request
+                                && let AppEventOutcome::ToolApproved(..) = handle_tool_call(app, calls, full_response_content.len(), tx.clone(), &mut cancellation_token, &full_response_content, true) {
+                                    dispatch_auto_approved_tool(app, &tx, &cancellation_token, &client, config);
                                 }
-                            }
                         }
-                        StreamEvent::ToolResult(id, func_name, result, new_dir) => {
+                        StreamEvent::ToolResult { id, func_name, result, cwd } => {
                             app.is_executing_tool = false;
                             app.tool_output_preview.clear();
-                            app.current_dir = new_dir;
+                            app.current_dir = cwd;
                             let success = if result.contains("EXIT_CODE: ") { result.contains("EXIT_CODE: 0") } else { true };
                             
                             let tc_id_str = id.clone().unwrap_or_else(|| "unknown".to_string());
@@ -629,7 +731,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             let (mut full_result, ui_result) = if func_name == "read_file" && result.len() < 500_000 {
                                 (result.clone(), result)
                             } else {
-                                handle_large_output(&tc_id_str, result, &client, &config, &tool_args).await
+                                lethetic::tools::handle_large_output(&tc_id_str, result)
                             };
 
                             let description = app.pending_tool_call.as_ref()
@@ -653,12 +755,11 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                             }
                                         }
                                     } else if func_name == "write_file" {
-                                        if let Some(path) = tool_args["path"].as_str() {
-                                            if let Some(content) = tool_args["content"].as_str() {
+                                        if let Some(path) = tool_args["path"].as_str()
+                                            && let Some(content) = tool_args["content"].as_str() {
                                                 app.context_manager.update_latest_file(path.to_string(), content.to_string());
                                                 app.add_segment(format!("\n{} File `{}` has been placed in context.\n", icons::SUCCESS, path), BlockType::Text);
                                             }
-                                        }
                                     } else if func_name == "apply_patch" && full_result.contains("Successfully patched") {
                                         if let Some(path) = tool_args["file_path"].as_str() {
                                             let full_path = std::path::Path::new(&app.current_dir).join(path);
@@ -667,15 +768,14 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                                 app.add_segment(format!("\n{} File `{}` has been updated in context.\n", icons::SUCCESS, path), BlockType::Text);
                                             }
                                         }
-                                    } else if func_name == "replace_text" && full_result.contains("Successfully replaced") {
-                                        if let Some(path) = tool_args["path"].as_str() {
+                                    } else if func_name == "replace_text" && full_result.contains("Successfully replaced")
+                                        && let Some(path) = tool_args["path"].as_str() {
                                             let full_path = std::path::Path::new(&app.current_dir).join(path);
                                             if let Ok(content) = std::fs::read_to_string(&full_path) {
                                                 app.context_manager.update_latest_file(path.to_string(), content);
                                                 app.add_segment(format!("\n{} File `{}` has been updated in context.\n", icons::SUCCESS, path), BlockType::Text);
                                             }
                                         }
-                                    }
                                 }
 
                                 // Track successfully applied edits for "already applied" detection
@@ -694,13 +794,11 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 {
                                     let old_str = tool_args["old_string"].as_str().unwrap_or("");
                                     if !old_str.is_empty() && app.applied_edits.contains(old_str) {
-                                        let msg = format!(
-                                            "⚠ EDIT ALREADY APPLIED: This exact `old_string` was successfully replaced in a prior call. \
+                                        let msg = "⚠ EDIT ALREADY APPLIED: This exact `old_string` was successfully replaced in a prior call. \
                                              The file already contains your updated version. \
-                                             Do not retry this edit — move on to the next issue."
-                                        );
+                                             Do not retry this edit — move on to the next issue.".to_string();
                                         app.context_manager.add_message("user", &msg);
-                                        app.add_segment(format!("\n⚠ [EDIT ALREADY APPLIED] old_string was replaced earlier this session — move on.\n"), BlockType::Text);
+                                        app.add_segment("\n⚠ [EDIT ALREADY APPLIED] old_string was replaced earlier this session — move on.\n".to_string(), BlockType::Text);
                                         full_result = msg;
                                     }
                                 }
@@ -778,7 +876,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
 
                             app.is_processing = true;
                             app.tool_calls_processed_this_request = false;
+                            app.tool_call_dispatched = false;
                             app.tool_call_pos = None;
+                            app.server_prompt_tokens = None;
+                            app.server_completion_tokens = None;
                             full_response_content.clear();
                             cancellation_token = CancellationToken::new();
                             app.request_start_time = Some(tokio::time::Instant::now());
@@ -796,18 +897,14 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                         }
                         StreamEvent::Done { completion_tokens, prompt_tokens, tg_per_s, pp_per_s } => {
                             app.is_processing = false;
-                            if (app.parser.state == lethetic::parser::ParserState::Text || app.parser.state == lethetic::parser::ParserState::ToolCall) && !app.tool_calls_processed_this_request {
-                                match parser::find_tool_call(&full_response_content, true) {
-                                    Some(Ok((tc, pos))) => {
-                                        handle_tool_call(app, vec![tc], pos, tx.clone(), &mut cancellation_token, &full_response_content, false);
-                                    }
-                                    _ => {}
+                            if (app.parser.state == lethetic::parser::ParserState::Text || app.parser.state == lethetic::parser::ParserState::ToolCall) && !app.tool_calls_processed_this_request
+                                && let Some(Ok((tc, pos))) = parser::find_tool_call(&full_response_content, true) {
+                                    handle_tool_call(app, vec![tc], pos, tx.clone(), &mut cancellation_token, &full_response_content, false);
                                 }
-                            }
 
                             if !app.tool_calls_processed_this_request {
                                 let messages = app.context_manager.get_messages();
-                                if messages.last().map_or(true, |m| m.role != "assistant") {
+                                if messages.last().is_none_or(|m| m.role != "assistant") {
                                     app.context_manager.add_message("assistant", &full_response_content);
                                 }
 
@@ -817,11 +914,14 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                     app.log_debug("INTENT_TEXT_DETECTED: model described action without tool call — re-prompting");
                                     app.stop_reason = "→ Described action without tool call — re-prompting".to_string();
                                     app.context_manager.add_message("user", "You described an action but did not call a tool. Please call the appropriate tool now.");
+                                    app.is_processing = true;
+                                    app.tool_calls_processed_this_request = false;
+                                    app.tool_call_dispatched = false;
+                                    app.server_prompt_tokens = None;
+                                    app.server_completion_tokens = None;
                                     full_response_content.clear();
                                     cancellation_token = CancellationToken::new();
                                     app.parser.reset();
-                                    app.is_processing = true;
-                                    app.tool_calls_processed_this_request = false;
                                     trigger_llm_request(client.clone(), config.clone(), &app.context_manager, tx.clone(), cancellation_token.clone(), app.show_debug, app.current_session_dir.clone());
                                     continue;
                                 }
@@ -868,31 +968,20 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             if let Some(pt) = prompt_tokens {
                                 app.server_prompt_tokens = Some(pt);
                             }
+                            if let Some(ct) = completion_tokens {
+                                app.server_completion_tokens = Some(ct);
+                            }
+                            if let Some(user_block) = app.blocks.iter_mut().rev().find(|b| b.block_type == BlockType::User) {
+                                user_block.prompt_tokens = prompt_tokens;
+                                user_block.completion_tokens = completion_tokens;
+                                user_block.cached_lines = None;
+                            }
                             app.request_start_time = None;
                             app.should_redraw = true;
                             app.save_session(); // Final save on completion
 
-                            if app.tool_calls_processed_this_request && app.shell_approval_mode == ApprovalMode::Always {
-                                if let Some(tool_call) = app.pending_tool_call.as_ref() {
-                                    let tc_id = tool_call.id.clone();
-                                    let func_name = tool_call.function.name.clone();
-                                    let args = tool_call.function.arguments.clone();
-                                    let current_dir = app.current_dir.clone();
-                                    
-                                    let ctx_tx = tx.clone();
-                                    let tool_cancel = cancellation_token.clone();
-                                    let client_clone = client.clone();
-                                    let config_clone = config.clone();
-                                    app.is_executing_tool = true;
-                                    tokio::spawn(async move {
-                                        let (result, new_dir) = lethetic::tools::execute(
-                                            func_name.as_str(), &args, &current_dir, tool_cancel, ctx_tx.clone(), &client_clone, &config_clone).await;
-                                        let (full_result, _) = handle_large_output(&tc_id, result, &client_clone, &config_clone, &args).await;
-                                        let _ = ctx_tx.send(StreamEvent::ToolResult(Some(tc_id), func_name, full_result, new_dir.clone()));
-                                        let _ = ctx_tx.send(StreamEvent::DebugLog(format!("DIR_UPDATE|{}", new_dir)));
-                                    });
-                                    app.is_processing = true;
-                                }
+                            if app.tool_calls_processed_this_request && app.shell_approval_mode == ApprovalMode::Always && !app.tool_call_dispatched {
+                                dispatch_auto_approved_tool(app, &tx, &cancellation_token, &client, config);
                             }
                         }
                         StreamEvent::Error(e) => {
@@ -935,5 +1024,39 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                 }
             }
         }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::Path;
+
+    #[test]
+    #[serial_test::serial]
+    fn test_panic_logging() {
+        setup_panic_hook();
+
+        let log_path = Path::new(".lethetic/panic.log");
+        let initial_len = if log_path.exists() {
+            fs::metadata(log_path).unwrap().len()
+        } else {
+            0
+        };
+
+        let result = std::panic::catch_unwind(|| {
+            panic!("Test panic message for hook validation");
+        });
+        assert!(result.is_err());
+
+        assert!(log_path.exists());
+        let log_content = fs::read_to_string(log_path).expect("Failed to read panic.log");
+        assert!(log_content.len() as u64 > initial_len);
+        assert!(log_content.contains("Test panic message for hook validation"));
+        assert!(log_content.contains("Timestamp:"));
+
+        let _ = std::panic::take_hook();
     }
 }

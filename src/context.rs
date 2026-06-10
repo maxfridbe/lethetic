@@ -9,7 +9,7 @@ fn estimate_tokens(text: &str) -> usize {
     text.len() / CHARS_PER_TOKEN
 }
 
-fn format_gemma4_call(name: &str, args: &serde_json::Value) -> String {
+pub(crate) fn format_gemma4_call(name: &str, args: &serde_json::Value) -> String {
     let args_str = if let Some(obj) = args.as_object() {
         obj.iter()
             .map(|(k, v)| {
@@ -27,6 +27,16 @@ fn format_gemma4_call(name: &str, args: &serde_json::Value) -> String {
         String::new()
     };
     format!("call:{}{{{}}}", name, args_str)
+}
+
+/// Remove every `start`..`end` section from `text`, truncating at an unmatched `start`.
+pub(crate) fn strip_delimited(text: &mut String, start: &str, end: &str) {
+    while let Some(s) = text.find(start) {
+        match text[s..].find(end) {
+            Some(rel) => { text.replace_range(s..s + rel + end.len(), ""); }
+            None => { text.truncate(s); break; }
+        }
+    }
 }
 
 pub fn truncate_to_tokens(text: &str, max_tokens: usize) -> String {
@@ -59,6 +69,16 @@ pub struct FunctionCall {
     pub arguments: serde_json::Value,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+#[derive(Default)]
+pub enum ContextMode {
+    #[default]
+    Lethetic,
+    Vercel,
+}
+
+
 #[derive(Debug, Clone)]
 pub struct CachedFile {
     pub content: String,
@@ -69,15 +89,16 @@ pub struct CachedFile {
 }
 
 pub struct ContextManager {
-    max_tokens: usize,
-    messages: Vec<Message>,
-    system_prompt: Option<String>,
-    cwd: String,
-    turn_count: usize,
+    pub(crate) max_tokens: usize,
+    pub(crate) messages: Vec<Message>,
+    pub(crate) system_prompt: Option<String>,
+    pub(crate) cwd: String,
+    pub(crate) turn_count: usize,
     /// Files accessed within the last ACTIVE_FILE_TURNS turns — injected right before generation
     pub active_files: std::collections::HashMap<String, CachedFile>,
     /// Files accessed more than ACTIVE_FILE_TURNS turns ago — injected before the system prompt
     pub latest_files: std::collections::HashMap<String, CachedFile>,
+    pub mode: ContextMode,
 }
 
 impl ContextManager {
@@ -90,6 +111,7 @@ impl ContextManager {
             turn_count: 0,
             active_files: std::collections::HashMap::new(),
             latest_files: std::collections::HashMap::new(),
+            mode: ContextMode::Lethetic,
         }
     }
 
@@ -237,14 +259,18 @@ impl ContextManager {
     }
 
     pub fn get_raw_prompt(&self) -> String {
+        if self.mode == ContextMode::Vercel {
+            return crate::context_vercel::get_raw_prompt_vercel(self);
+        }
         let mut prompt = String::from("<bos>");
 
         // ── 1. Latest files (background context — older files, before system prompt) ──
         if !self.latest_files.is_empty() {
             prompt.push_str("<|turn>system\n<|think|>\n<latest_files>\n");
             for (path, cached_file) in &self.latest_files {
-                prompt.push_str(&format!("File: `{}`\n```\n{}\n```\n",
-                    path, sanitize_file_content(&cached_file.content)));
+                let lines_count = cached_file.content.lines().count();
+                prompt.push_str(&format!("File: `{}` (complete, {} lines)\n```\n{}\n```\n",
+                    path, lines_count, sanitize_file_content(&cached_file.content)));
             }
             prompt.push_str("</latest_files>\n<turn|>\n");
         }
@@ -294,11 +320,10 @@ impl ContextManager {
                         }
                     }
                     clean_content = clean_content.replace("<|channel>text\n", "").replace("<|channel>text", "");
-                    if msg.tool_calls.is_some() {
-                        if let Some(idx) = clean_content.find("<|tool_call>") {
+                    if msg.tool_calls.is_some()
+                        && let Some(idx) = clean_content.find("<|tool_call>") {
                             clean_content.truncate(idx);
                         }
-                    }
                     prompt.push_str(clean_content.trim());
                     prompt.push('\n');
                     if let Some(calls) = &msg.tool_calls {
@@ -328,8 +353,9 @@ impl ContextManager {
             if current_turn_role == "model" { prompt.push_str("<turn|>\n"); }
             prompt.push_str("<|turn>system\n<|think|>\n<active_file>\n");
             for (path, cached_file) in &self.active_files {
-                prompt.push_str(&format!("File: `{}`\n```\n{}\n```\n",
-                    path, sanitize_file_content(&cached_file.content)));
+                let lines_count = cached_file.content.lines().count();
+                prompt.push_str(&format!("File: `{}` (complete, {} lines)\n```\n{}\n```\n",
+                    path, lines_count, sanitize_file_content(&cached_file.content)));
             }
             prompt.push_str("</active_file>\n<turn|>\n");
             current_turn_role = String::new();
@@ -350,14 +376,13 @@ impl ContextManager {
         while let Some(start) = remaining.find("<|tool>") {
             let after = &remaining[start + 7..];
             if let Some(end) = after.find("<tool|>") {
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(after[..end].trim()) {
-                    if let Some(obj) = v.as_object() {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(after[..end].trim())
+                    && let Some(obj) = v.as_object() {
                         let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         let desc = obj.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         let params = obj.get("parameters").cloned().unwrap_or(json!({}));
                         tools.push(gemma_chat::ToolDefinition::new(name, desc, params));
                     }
-                }
                 remaining = &after[end + 7..];
             } else { break; }
         }
@@ -365,6 +390,9 @@ impl ContextManager {
     }
 
     pub fn get_messages_for_api(&self) -> Vec<gemma_chat::Message> {
+        if self.mode == ContextMode::Vercel {
+            return crate::context_vercel::get_messages_for_api_vercel(self);
+        }
         let mut msgs = Vec::new();
 
         // ── 1. System prompt (stable — must be first for KV cache reuse LCP matching) ──
@@ -372,12 +400,7 @@ impl ContextManager {
         // the full prefix (system + history) on turns where files haven't changed.
         if let Some(sys) = &self.system_prompt {
             let mut clean = sys.clone();
-            loop {
-                if let Some(s) = clean.find("<|tool>") {
-                    if let Some(rel) = clean[s..].find("<tool|>") { clean.drain(s..s + rel + 7); }
-                    else { clean.truncate(s); break; }
-                } else { break; }
-            }
+            strip_delimited(&mut clean, "<|tool>", "<tool|>");
             clean = clean.replace("<|think|>", "").replace("<|turn>", "").replace("<turn|>", "");
             let clean = clean.trim().to_string();
             if !clean.is_empty() {
@@ -388,13 +411,20 @@ impl ContextManager {
         // ── 2. Latest files (after system prompt so stable prefix is maximised) ──
         if !self.latest_files.is_empty() {
             let mut files_content = String::from("<latest_files>\n");
-            for (path, _cached_file) in &self.latest_files {
+            for path in self.latest_files.keys() {
                 let abs = std::path::Path::new(&self.cwd).join(path);
-                let body = match std::fs::read_to_string(&abs) {
-                    Ok(c)  => format!("```\n{}\n```", sanitize_file_content(&c)),
-                    Err(_) => format!("⚠ File `{}` was deleted or no longer exists on disk.", path),
+                let (body, lines_count) = match std::fs::read_to_string(&abs) {
+                    Ok(c)  => {
+                        let lines_count = c.lines().count();
+                        (format!("```\n{}\n```", sanitize_file_content(&c)), Some(lines_count))
+                    }
+                    Err(_) => (format!("⚠ File `{}` was deleted or no longer exists on disk.", path), None),
                 };
-                files_content.push_str(&format!("File: `{}`\n{}\n", path, body));
+                if let Some(count) = lines_count {
+                    files_content.push_str(&format!("File: `{}` (complete, {} lines)\n{}\n", path, body, count));
+                } else {
+                    files_content.push_str(&format!("File: `{}`\n{}\n", path, body));
+                }
             }
             files_content.push_str("</latest_files>");
             msgs.push(gemma_chat::Message::system(files_content));
@@ -438,13 +468,20 @@ impl ContextManager {
         let mut active_sys: Option<gemma_chat::Message> = None;
         if !self.active_files.is_empty() {
             let mut files_content = String::from("<active_file>\n");
-            for (path, _cached_file) in &self.active_files {
+            for path in self.active_files.keys() {
                 let abs = std::path::Path::new(&self.cwd).join(path);
-                let body = match std::fs::read_to_string(&abs) {
-                    Ok(c)  => format!("```\n{}\n```", sanitize_file_content(&c)),
-                    Err(_) => format!("⚠ File `{}` was deleted or no longer exists on disk.", path),
+                let (body, lines_count) = match std::fs::read_to_string(&abs) {
+                    Ok(c)  => {
+                        let lines_count = c.lines().count();
+                        (format!("```\n{}\n```", sanitize_file_content(&c)), Some(lines_count))
+                    }
+                    Err(_) => (format!("⚠ File `{}` was deleted or no longer exists on disk.", path), None),
                 };
-                files_content.push_str(&format!("File: `{}`\n{}\n", path, body));
+                if let Some(count) = lines_count {
+                    files_content.push_str(&format!("File: `{}` (complete, {} lines)\n{}\n", path, body, count));
+                } else {
+                    files_content.push_str(&format!("File: `{}`\n{}\n", path, body));
+                }
             }
             files_content.push_str("</active_file>");
             active_sys = Some(gemma_chat::Message::system(files_content));
@@ -466,11 +503,9 @@ impl ContextManager {
             })
             .collect::<Vec<_>>();
 
-        if let Some(af) = active_sys {
-            if let serde_json::Value::String(s) = af.content {
-                if !s.is_empty() { combined_sys.push(s); }
-            }
-        }
+        if let Some(af) = active_sys
+            && let serde_json::Value::String(s) = af.content
+                && !s.is_empty() { combined_sys.push(s); }
 
         let mut result = Vec::new();
         if !combined_sys.is_empty() {
@@ -480,20 +515,15 @@ impl ContextManager {
         result
     }
 
-    fn strip_thinking(&self, content: &str) -> String {
+    pub(crate) fn strip_thinking(&self, content: &str) -> String {
         let mut c = content.to_string();
         for (start, end) in [("<|channel>thought", "<channel|>"), ("<think>", "</think>"), ("<thought>", "</thought>")] {
-            loop {
-                if let Some(s) = c.find(start) {
-                    if let Some(rel) = c[s..].find(end) { c.replace_range(s..s + rel + end.len(), ""); }
-                    else { c.truncate(s); break; }
-                } else { break; }
-            }
+            strip_delimited(&mut c, start, end);
         }
         c.replace("<|channel>text\n", "").replace("<|channel>text", "").trim().to_string()
     }
 
-    fn extract_delimited(content: &str, prefix: &str, suffix: &str) -> Option<String> {
+    pub(crate) fn extract_delimited(content: &str, prefix: &str, suffix: &str) -> Option<String> {
         let pos = content.find(prefix)?;
         let after = &content[pos + prefix.len()..];
         let end = after.find(suffix)?;
@@ -523,22 +553,15 @@ impl ContextManager {
             if msg.role == "system" { i += 1; continue; }
 
             if msg.role == "assistant" && msg.tool_calls.is_some() {
-                let unit_start = i;
-                let cost = estimate_tokens(&msg.content);
+                // Drop the assistant tool call together with its tool results.
+                let mut unit_cost = estimate_tokens(&msg.content);
                 i += 1;
-                let mut unit_cost = cost;
                 while i < n && self.messages[i].role == "tool" {
                     unit_cost += estimate_tokens(&self.messages[i].content);
                     i += 1;
                 }
                 cut = i;
                 need_to_drop = need_to_drop.saturating_sub(unit_cost);
-                let _ = unit_start;
-            } else if msg.role == "tool" {
-                let cost = estimate_tokens(&msg.content);
-                i += 1;
-                cut = i;
-                need_to_drop = need_to_drop.saturating_sub(cost);
             } else {
                 let cost = estimate_tokens(&msg.content);
                 i += 1;
@@ -553,7 +576,7 @@ impl ContextManager {
     }
 }
 
-fn sanitize_file_content(content: &str) -> String {
+pub(crate) fn sanitize_file_content(content: &str) -> String {
     let mut s = content.to_string();
     for tag in &[
         "<turn|>", "<|turn>", "<|tool_call>", "<tool_call|>",
@@ -565,3 +588,5 @@ fn sanitize_file_content(content: &str) -> String {
     }
     s
 }
+
+

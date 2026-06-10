@@ -8,10 +8,16 @@ pub fn setup_mock_app() -> App {
         model: "Gemma-4-26B-TurboQuant-262k".to_string(),
         context_size: 2048,
         tool_wrapper: None,
+        api_key: None,
+        estimate_cost: None,
+        input_cost_per_1m: None,
+        output_cost_per_1m: None,
         enable_image_processing_tool: false,
         theme: None,
-    
-            model_servers: Vec::new(),
-        };
+        model_servers: Vec::new(),
+        thinking: None,
+        extra_body: None,
+        context_mode: None,
+    };
     App::new(&config)
 }

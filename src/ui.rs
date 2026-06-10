@@ -38,7 +38,7 @@ fn render_json_highlighted(json_val: &serde_json::Value, theme: &Theme) -> Text<
                     spans.push(Span::styled(value_part.to_string(), Style::default().fg(theme.json_val_fg)));
                 } else if value_part == "true" || value_part == "false" || value_part == "null" {
                     spans.push(Span::styled(value_part.to_string(), Style::default().fg(theme.error_fg)));
-                } else if value_part.chars().next().map_or(false, |c| c.is_ascii_digit() || c == '-') {
+                } else if value_part.chars().next().is_some_and(|c| c.is_ascii_digit() || c == '-') {
                     spans.push(Span::styled(value_part.to_string(), Style::default().fg(theme.thought_fg)));
                 } else {
                     spans.push(Span::raw(value_part.to_string()));
@@ -77,8 +77,8 @@ pub struct Theme {
     pub terminal_bg: Color,
 }
 
-impl Theme {
-    pub fn default() -> Self {
+impl Default for Theme {
+    fn default() -> Self {
         Self {
             name: "Default".to_string(),
             output_fg: Color::Green,
@@ -98,7 +98,9 @@ impl Theme {
             terminal_bg: Color::Rgb(15, 15, 20),
         }
     }
+}
 
+impl Theme {
     pub fn all() -> Vec<Self> {
         vec![
             Self::default(),
@@ -683,8 +685,8 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             if is_last && (app.is_executing_tool || app.is_processing) {
                 // Bypass cache for live streaming/preview
                 let rendered = render_block_to_lines(block, terminal_width, &app.theme, if app.is_executing_tool { Some(&app.tool_output_preview) } else { None });
-                let len = rendered.len();
-                len
+                
+                rendered.len()
             } else {
                 cached.len()
             }
@@ -830,29 +832,82 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     };
     f.render_widget(Paragraph::new(processing_text), left_layout[1]);
 
-    let status_text = vec![
-        Line::from(vec![
-            Span::styled(format!("{} tg: ", icons::TOKENS), Style::default().fg(app.theme.system_fg)),
-            Span::styled(format!("{:.1} ", app.tokens_per_s), Style::default().fg(app.theme.thought_fg)),
-            Span::styled("pp: ", Style::default().fg(app.theme.system_fg)),
-            Span::styled(format!("{:.1} ", app.pp_tokens_per_s), Style::default().fg(app.theme.thought_fg)),
-            Span::styled(format!("| {} Model: ", icons::MODEL), Style::default().fg(app.theme.system_fg)),
-            Span::styled(format!("{} ", app.model_name), Style::default().fg(app.theme.success_fg)),
-            Span::styled(format!("| {} Server: ", icons::SERVER), Style::default().fg(app.theme.system_fg)),
-            Span::styled(format!("{} ", app.server_url), Style::default().fg(app.theme.warning_fg)),
-            Span::styled(format!("| {} Context: ", icons::TOKENS), Style::default().fg(app.theme.system_fg)),
-            Span::styled(
+    let mut spans = vec![
+        Span::styled(format!("{} tg: ", icons::TOKENS), Style::default().fg(app.theme.system_fg)),
+        Span::styled(format!("{:.1} ", app.tokens_per_s), Style::default().fg(app.theme.thought_fg)),
+        Span::styled("pp: ", Style::default().fg(app.theme.system_fg)),
+        Span::styled(format!("{:.1} ", app.pp_tokens_per_s), Style::default().fg(app.theme.thought_fg)),
+        Span::styled(format!("| {} Model: ", icons::MODEL), Style::default().fg(app.theme.system_fg)),
+        Span::styled(format!("{} ", app.model_name), Style::default().fg(app.theme.success_fg)),
+        Span::styled(format!("| {} Server: ", icons::SERVER), Style::default().fg(app.theme.system_fg)),
+        Span::styled(format!("{} ", app.server_url), Style::default().fg(app.theme.warning_fg)),
+        Span::styled(format!("| {} Context: ", icons::TOKENS), Style::default().fg(app.theme.system_fg)),
+        Span::styled(
+            {
+                let used = app.server_prompt_tokens.unwrap_or(app.context_manager.get_token_count() as u32);
+                format!("{}/{} ", format_tokens(used), format_tokens(app.max_tokens as u32))
+            },
+            Style::default().fg(app.theme.thought_fg)
+        ),
+        Span::styled("| Tokens Used: ", Style::default().fg(app.theme.system_fg)),
+        Span::styled(
+            {
+                let pt = app.server_prompt_tokens.unwrap_or(0);
+                let ct = app.server_completion_tokens.unwrap_or(0);
+                if pt > 0 || ct > 0 {
+                    format!(
+                        "{} (in: {}, out: {}) ",
+                        format_tokens(pt + ct),
+                        format_tokens(pt),
+                        format_tokens(ct)
+                    )
+                } else {
+                    "- ".to_string()
+                }
+            },
+            Style::default().fg(app.theme.thought_fg)
+        ),
+    ];
+
+    if app.config.estimate_cost.unwrap_or(true)
+        && let (Some(in_rate), Some(out_rate)) = (app.config.input_cost_per_1m, app.config.output_cost_per_1m) {
+            let has_real_tokens = app.server_prompt_tokens.is_some() && app.server_completion_tokens.is_some();
+            let label = if has_real_tokens { "| ESTCost: " } else { "| ESTCost*: " };
+            spans.push(Span::styled(label, Style::default().fg(app.theme.system_fg)));
+            spans.push(Span::styled(
                 {
-                    let used = app.server_prompt_tokens.unwrap_or(app.context_manager.get_token_count() as u32);
-                    format!("{}/{} ", used, app.max_tokens)
+                    let pt = app.server_prompt_tokens.unwrap_or_else(|| app.context_manager.get_token_count() as u32);
+                    let ct = app.server_completion_tokens.unwrap_or_else(|| {
+                        let mut len = 0;
+                        for block in app.blocks.iter().rev() {
+                            if block.block_type == BlockType::User {
+                                break;
+                            }
+                            if block.block_type == BlockType::Thought
+                                || block.block_type == BlockType::Text
+                                || block.block_type == BlockType::Markdown
+                                || block.block_type == BlockType::Formulating
+                                || block.block_type == BlockType::ToolCall
+                            {
+                                len += block.content.len();
+                            }
+                        }
+                        (len / 4) as u32
+                    });
+                    let cost = (pt as f64 * in_rate / 1_000_000.0) + (ct as f64 * out_rate / 1_000_000.0);
+                    format!("${:.6} ", cost)
                 },
                 Style::default().fg(app.theme.thought_fg)
-            ),
-            Span::styled("| Mem: ", Style::default().fg(app.theme.system_fg)),
-            Span::styled(format!("{}MB ", app.memory_usage), Style::default().fg(app.theme.thought_fg)),
-            Span::styled("| Files: ", Style::default().fg(app.theme.system_fg)),
-            Span::styled(format!("{} ", app.context_manager.active_files.len() + app.context_manager.latest_files.len()), Style::default().fg(app.theme.thought_fg)),
-        ]),
+            ));
+        }
+
+    spans.push(Span::styled("| Mem: ", Style::default().fg(app.theme.system_fg)));
+    spans.push(Span::styled(format!("{}MB ", app.memory_usage), Style::default().fg(app.theme.thought_fg)));
+    spans.push(Span::styled("| Files: ", Style::default().fg(app.theme.system_fg)));
+    spans.push(Span::styled(format!("{} ", app.context_manager.active_files.len() + app.context_manager.latest_files.len()), Style::default().fg(app.theme.thought_fg)));
+
+    let status_text = vec![
+        Line::from(spans),
         Line::from(line2_spans),
     ];
     f.render_widget(Paragraph::new(status_text).wrap(Wrap { trim: true }), left_layout[3]);
@@ -876,12 +931,12 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         let items: Vec<ListItem> = if app.available_models.is_empty() {
             vec![ListItem::new("Fetching models…")]
         } else {
-            app.available_models.iter().map(|(display, url, _)| {
-                let active = url == &app.server_url;
+            app.available_models.iter().map(|choice| {
+                let active = choice.url == app.server_url;
                 let label = if active {
-                    format!("▶ {} [active]", display)
+                    format!("▶ {} [active]", choice.display)
                 } else {
-                    format!("  {}", display)
+                    format!("  {}", choice.display)
                 };
                 ListItem::new(label)
             }).collect()
@@ -942,13 +997,12 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         );
 
         // Show install command for selected entry
-        if let Some(i) = app.lsp_server_list_state.selected() {
-            if let Some(def) = SERVERS.get(i) {
+        if let Some(i) = app.lsp_server_list_state.selected()
+            && let Some(def) = SERVERS.get(i) {
                 let cmd_line = Paragraph::new(format!("  install: {}", def.install_cmd))
                     .style(Style::default().fg(app.theme.system_fg));
                 f.render_widget(cmd_line, inner_area[1]);
             }
-        }
     }
 
     if app.show_theme_menu {
@@ -1119,14 +1173,10 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
 
             // Add JSON lines with possible truncation
             let max_lines = 15;
-            let mut lines_added = 0;
-            for line in json_text.lines {
-                if lines_added >= max_lines {
-                    display_text.lines.push(Line::from(Span::styled("... [Truncated for display]", Style::default().fg(app.theme.system_fg))));
-                    break;
-                }
-                display_text.lines.push(line);
-                lines_added += 1;
+            let total_lines = json_text.lines.len();
+            display_text.lines.extend(json_text.lines.into_iter().take(max_lines));
+            if total_lines > max_lines {
+                display_text.lines.push(Line::from(Span::styled("... [Truncated for display]", Style::default().fg(app.theme.system_fg))));
             }
 
             display_text.lines.push(Line::from(""));
@@ -1264,7 +1314,13 @@ pub fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, t
     };
 
     let (bg_color, mut header) = match block.block_type {
-        BlockType::User => (theme.input_bg, Some(format!("{} User Request", icons::INPUT))),
+        BlockType::User => {
+            let mut h = format!("{} User Request", icons::INPUT);
+            if let (Some(pt), Some(ct)) = (block.prompt_tokens, block.completion_tokens) {
+                h = format!("{} (i:{} o:{} tokens)", h, format_tokens(pt), format_tokens(ct));
+            }
+            (theme.input_bg, Some(h))
+        }
         BlockType::Thought => (theme.thought_bg, Some(format!("{} Engine Thinking...", icons::PROCESSING))),
         BlockType::Formulating => (theme.thought_bg, Some(format!("{} Formulating tool request...", icons::SPINNER[0]))),
         BlockType::ToolCall => (theme.tool_bg, Some(format!("{} Engine Tool Request", icons::COMMAND))),
@@ -1277,6 +1333,13 @@ pub fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, t
         header = match block.block_type {
             BlockType::ToolCall => header, // Keep generic "Engine Tool Request"
             BlockType::ToolResult => Some(format!("{} Agent, {}", icons::SUCCESS, t)),
+            BlockType::User => {
+                let mut h = format!("{} {}", icons::INPUT, t);
+                if let (Some(pt), Some(ct)) = (block.prompt_tokens, block.completion_tokens) {
+                    h = format!("{} (i:{} o:{} tokens)", h, format_tokens(pt), format_tokens(ct));
+                }
+                Some(h)
+            }
             _ => Some(t.clone()),
         };
     }
@@ -1427,14 +1490,13 @@ fn wrap_lines(lines: Vec<Line<'static>>, max_width: usize) -> Vec<Line<'static>>
         // Detect line number prefix: 6 chars + tab
         let mut indent_width = 0;
         let mut indent_style = Style::default();
-        if let Some(first_span) = line.spans.first() {
-            if first_span.content.len() >= 7 
+        if let Some(first_span) = line.spans.first()
+            && first_span.content.len() >= 7 
                && first_span.content.chars().take(6).all(|c| c.is_whitespace() || c.is_ascii_digit()) 
                && first_span.content.chars().nth(6) == Some('\t') {
                 indent_width = 7;
                 indent_style = first_span.style;
             }
-        }
 
         let mut current_line_spans = Vec::new();
         let mut current_width = 0;
@@ -1535,3 +1597,32 @@ pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default().direction(Direction::Vertical).constraints([Constraint::Percentage((100 - percent_y) / 2), Constraint::Percentage(percent_y), Constraint::Percentage((100 - percent_y) / 2)].as_ref()).split(r);
     Layout::default().direction(Direction::Horizontal).constraints([Constraint::Percentage((100 - percent_x) / 2), Constraint::Percentage(percent_x), Constraint::Percentage((100 - percent_x) / 2)].as_ref()).split(popup_layout[1])[1]
 }
+
+fn format_tokens(n: u32) -> String {
+    if n < 1000 {
+        format!("{}", n)
+    } else if n >= 1_000_000 {
+        let m = n / 1_000_000;
+        let remainder = n % 1_000_000;
+        let k = remainder / 1000;
+        let k_tenths = (remainder % 1000) / 100;
+        if k > 0 || k_tenths > 0 {
+            if k_tenths > 0 {
+                format!("{}m{}.{}k", m, k, k_tenths)
+            } else {
+                format!("{}m{}k", m, k)
+            }
+        } else {
+            format!("{}m", m)
+        }
+    } else {
+        let k = n / 1000;
+        let tenths = (n % 1000) / 100;
+        if tenths > 0 {
+            format!("{}.{}k", k, tenths)
+        } else {
+            format!("{}k", k)
+        }
+    }
+}
+

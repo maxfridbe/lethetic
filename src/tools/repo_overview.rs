@@ -159,7 +159,7 @@ async fn analyse(root: &Path) -> String {
     // ── Directory tree (2 levels, ignoring build artifacts) ──────────────────
     out.push_str("## Directory Structure\n```\n");
     out.push_str(&format!("{}/\n", root.file_name().unwrap_or_default().to_string_lossy()));
-    dir_tree(root, root, 1, 2, &mut out);
+    dir_tree(root, 1, 2, &mut out);
     out.push_str("```\n");
 
     // ── README snippet ────────────────────────────────────────────────────────
@@ -177,7 +177,7 @@ async fn analyse(root: &Path) -> String {
     out
 }
 
-fn dir_tree(root: &Path, dir: &Path, depth: usize, max_depth: usize, out: &mut String) {
+fn dir_tree(dir: &Path, depth: usize, max_depth: usize, out: &mut String) {
     if depth > max_depth { return; }
     let skip = ["target", ".git", "node_modules", ".lethetic", "dist", "build", "__pycache__", ".idea", ".vscode"];
 
@@ -195,7 +195,7 @@ fn dir_tree(root: &Path, dir: &Path, depth: usize, max_depth: usize, out: &mut S
         let meta = match entry.metadata() { Ok(m) => m, Err(_) => continue };
         if meta.is_dir() {
             out.push_str(&format!("{}{}/\n", indent, name));
-            dir_tree(root, &entry.path(), depth + 1, max_depth, out);
+            dir_tree(&entry.path(), depth + 1, max_depth, out);
         } else {
             out.push_str(&format!("{}{}\n", indent, name));
         }

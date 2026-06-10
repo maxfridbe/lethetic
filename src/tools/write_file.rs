@@ -4,7 +4,16 @@ use super::icons;
 use std::fs;
 use std::path::Path;
 
-pub fn get_definition() -> Tool {
+pub fn get_definition(parser: &str) -> Tool {
+    let content_description = match parser {
+        "qwen3" | "default" | "generic" => {
+            "The complete literal content to write to the file."
+        }
+        _ => {
+            "The complete literal content to write. You MUST wrap this value in asymmetric markers: <|\"|>your content here<|\"|>"
+        }
+    };
+
     Tool {
         tool_type: "function".to_string(),
         function: FunctionDefinition {
@@ -19,7 +28,7 @@ pub fn get_definition() -> Tool {
                     },
                     "content": {
                         "type": "string",
-                        "description": "The complete literal content to write. You MUST wrap this value in asymmetric markers: <|\"|>your content here<|\"|>"
+                        "description": content_description
                     },
                     "description": {
                         "type": "string",

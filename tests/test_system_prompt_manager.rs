@@ -10,11 +10,17 @@ fn test_system_prompt_manager_lifecycle() {
         model: "".to_string(),
         context_size: 0,
         tool_wrapper: None,
+        api_key: None,
+        estimate_cost: None,
+        input_cost_per_1m: None,
+        output_cost_per_1m: None,
         enable_image_processing_tool: false,
         theme: None,
-    
-            model_servers: Vec::new(),
-        };
+        model_servers: Vec::new(),
+        thinking: None,
+        extra_body: None,
+        context_mode: None,
+    };
     let resolved = SystemPromptManager::resolve_prompt(template, "/mock/cwd", &config);
     
     assert!(resolved.contains("Hello"));

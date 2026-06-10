@@ -57,12 +57,20 @@ pub struct Timings {
     pub predicted_per_second: Option<f64>,
 }
 
+/// A model offered by a configured server, as shown in the model switcher.
+#[derive(Clone, Debug)]
+pub struct ModelChoice {
+    pub display: String,
+    pub url: String,
+    pub model_id: String,
+}
+
 #[derive(Clone, Debug)]
 pub enum StreamEvent {
     Chunk(String),
     PreparingToolCall(String), // tool name being streamed — show "preparing" status
     ToolCalls(Vec<ToolCall>),
-    ToolResult(Option<String>, String, String, String), // (id, func_name, result, current_dir)
+    ToolResult { id: Option<String>, func_name: String, result: String, cwd: String },
     ToolProgress(String),
     LoadProgress(f32, String),
     SessionLoaded(String, Vec<crate::app::RenderBlock>, Vec<crate::context::Message>),
@@ -70,8 +78,11 @@ pub enum StreamEvent {
     Error(String),
     DebugLog(String),
     TokenUpdate(u32, f64), // (count, ms)
-    ModelsReady(Vec<(String, String, String)>), // (display, url, model_id)
+    ModelsReady(Vec<ModelChoice>),
 }
+
+/// Maximum tokens the model may generate per completion.
+const MAX_COMPLETION_TOKENS: u32 = 24_576;
 
 fn base_url(server_url: &str) -> String {
     for suffix in &["/v1/responses", "/v1/chat/completions", "/completion"] {
@@ -88,8 +99,9 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
     let base     = base_url(&config.server_url);
     let model    = config.model.clone();
     let ctx_len  = context_manager.get_token_count();
+    let api_key  = config.api_key.clone();
 
-    let req_body = gemma_chat::build_request(&model, &messages, &tools, 24576);
+    let req_body = gemma_chat::build_request(&model, &messages, &tools, MAX_COMPLETION_TOKENS, config.thinking, config.extra_body.as_ref());
 
     let log_tx = tx.clone();
     let server_url = config.server_url.clone();
@@ -125,7 +137,7 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
             }
         };
 
-        let mut event_stream = match gemma_chat::stream_chat(&client, &base, &model, &messages, &tools, 24576).await {
+        let mut event_stream = match gemma_chat::stream_chat(&client, &base, &model, &messages, &tools, MAX_COMPLETION_TOKENS, api_key.as_deref(), config.thinking, config.extra_body.as_ref()).await {
             Ok(s) => s,
             Err(e) => {
                 let _ = log_tx_spawn.send(StreamEvent::Error(e));
@@ -160,9 +172,11 @@ pub fn trigger_llm_request(client: Client, config: Config, context_manager: &Con
                 gemma_chat::StreamEvent::TextDelta(text) => {
                     if in_thought_mode {
                         in_thought_mode = false;
-                        let ms = request_start.elapsed().as_millis();
-                        append_token(&prefix_clone, serde_json::json!({"c": "</think>\n", "t": ms, "kind": "synthetic"}));
-                        let _ = log_tx_spawn.send(StreamEvent::Chunk("</think>\n".to_string()));
+                        if emitted_think_open {
+                            let ms = request_start.elapsed().as_millis();
+                            append_token(&prefix_clone, serde_json::json!({"c": "</think>\n", "t": ms, "kind": "synthetic"}));
+                            let _ = log_tx_spawn.send(StreamEvent::Chunk("</think>\n".to_string()));
+                        }
                     }
                     let ms = request_start.elapsed().as_millis();
                     append_token(&prefix_clone, serde_json::json!({"c": text, "t": ms, "kind": "text"}));
@@ -206,19 +220,34 @@ pub async fn summarize_llm(client: &reqwest::Client, config: &Config, context: &
     let truncated_context = crate::context::truncate_to_tokens(context, 160000);
     let user_text = format!("{}\n\nContext to summarize:\n{}", prompt, truncated_context);
     let messages = vec![gemma_chat::Message::user(user_text)];
-    gemma_chat::complete(client, &base_url(&config.server_url), &config.model, &messages, 4096).await
+    gemma_chat::complete(client, &base_url(&config.server_url), &config.model, &messages, 4096, config.api_key.as_deref(), config.thinking, config.extra_body.as_ref()).await
 }
 
 /// Query a server's /v1/models endpoint and return (display_name, model_id) pairs.
-pub async fn get_available_models(client: &Client, server_url: &str) -> Vec<(String, String)> {
+pub async fn get_available_models(client: &Client, server_url: &str, api_key: Option<&str>) -> Vec<(String, String)> {
     let base = base_url(server_url);
     // strip trailing /v1 to get root, then re-add /v1/models
     let models_url = if base.ends_with("/v1") {
         format!("{}/models", base)
+    } else if base.contains("/chat/completions") {
+        let base_no_query = base.split('?').next().unwrap_or(&base);
+        if let Some(idx) = base_no_query.rfind("/chat/completions") {
+            let mut prefix = base_no_query[..idx].to_string();
+            if !prefix.ends_with("/v1") {
+                prefix.push_str("/v1");
+            }
+            format!("{}/models", prefix)
+        } else {
+            format!("{}/v1/models", base)
+        }
     } else {
         format!("{}/v1/models", base)
     };
-    let resp = match client.get(&models_url).send().await {
+    let mut req = client.get(&models_url);
+    if let Some(key) = api_key {
+        req = req.bearer_auth(key);
+    }
+    let resp = match req.send().await {
         Ok(r) => r,
         Err(_) => return vec![],
     };
@@ -240,5 +269,6 @@ pub async fn get_single_response(client: &Client, config: &Config, prompt: Strin
         let _ = log_tx.send(StreamEvent::DebugLog(format!("SINGLE_CALL_START|{}", base)));
     }
     let messages = vec![gemma_chat::Message::user(prompt)];
-    gemma_chat::complete(client, &base, &config.model, &messages, 4096).await
+    gemma_chat::complete(client, &base, &config.model, &messages, 4096, config.api_key.as_deref(), config.thinking, config.extra_body.as_ref()).await
 }
+

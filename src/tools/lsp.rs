@@ -124,15 +124,12 @@ pub async fn execute(
     let file_uri = abs_path.as_deref().map(|p| format!("file://{}", p));
 
     // Auto-install the language server if needed, before acquiring the manager lock
-    if let Some(lang) = language {
-        if let Some(def) = registry::server_for_language(lang) {
-            if !registry::check_installed(def) {
-                if let Err(e) = auto_install(def, &tx).await {
+    if let Some(lang) = language
+        && let Some(def) = registry::server_for_language(lang)
+            && !registry::check_installed(def)
+                && let Err(e) = auto_install(def, &tx).await {
                     return e;
                 }
-            }
-        }
-    }
 
     let manager = lsp::get_manager();
     let mut mgr = manager.lock().await;
@@ -215,9 +212,7 @@ pub async fn execute(
                     else if mgr.is_running("python") { "python" }
                     else if mgr.is_running("go") { "go" }
                     else {
-                        return format!(
-                            "workspaceSymbol requires a running LSP server. Provide filePath to hint which language to use, or run a file-level operation first to start the server."
-                        );
+                        return "workspaceSymbol requires a running LSP server. Provide filePath to hint which language to use, or run a file-level operation first to start the server.".to_string();
                     }
                 }
             };

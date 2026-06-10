@@ -43,6 +43,9 @@ pub async fn run_agent(
         .replace("[TOOL_CALL_FORMAT]", tool_call_fmt);
 
     let mut context = ContextManager::new(config.context_size, Some(resolved));
+    if let Some(mode) = config.context_mode {
+        context.mode = mode;
+    }
     context.set_cwd(cwd.clone());
     context.add_message("user", &prompt);
 
@@ -75,7 +78,7 @@ pub async fn run_agent(
                             context.add_message("assistant", &full_response);
                             let func_name = tc.function.name.clone();
                             let tc_id = tc.id.clone();
-                            let tool_tx = progress_tx.as_ref().map(|p| p.clone()).unwrap_or_else(|| tx.clone());
+                            let tool_tx = progress_tx.clone().unwrap_or_else(|| tx.clone());
                             let (result, new_dir) = tools::execute(
                                 &func_name, &tc.function.arguments,
                                 &current_dir, CancellationToken::new(),
@@ -124,38 +127,33 @@ pub async fn run_agent(
                     print!("\r{:60}\r", "");
                 }
                 // Check for a tool call that arrived at Done
-                if parser.state == crate::parser::ParserState::Text
-                    || parser.state == crate::parser::ParserState::ToolCall
-                {
-                    match parser::find_tool_call(&full_response, true) {
-                        Some(Ok((tc, _))) => {
-                            cancel.cancel();
-                            cancel = CancellationToken::new();
-                            context.add_message("assistant", &full_response);
-                            let func_name = tc.function.name.clone();
-                            let tc_id = tc.id.clone();
-                            let tool_tx = progress_tx.as_ref().map(|p| p.clone()).unwrap_or_else(|| tx.clone());
-                            let (result, new_dir) = tools::execute(
-                                &func_name, &tc.function.arguments,
-                                &current_dir, cancel.clone(),
-                                tool_tx, client, config,
-                            ).await;
-                            let (result, _) = tools::handle_large_output(&tc_id, result);
-                            current_dir = new_dir;
-                            context.add_tool_message(tc_id, &func_name, &result);
-                            full_response.clear();
-                            cancel = CancellationToken::new();
-                            context.set_cwd(current_dir.clone());
-                            parser.reset();
-                            trigger_llm_request(
-                                client.clone(), config.clone(), &context,
-                                tx.clone(), cancel.clone(), false, None,
-                            );
-                            continue;
-                        }
-                        _ => {}
+                if (parser.state == crate::parser::ParserState::Text
+                    || parser.state == crate::parser::ParserState::ToolCall)
+                    && let Some(Ok((tc, _))) = parser::find_tool_call(&full_response, true) {
+                        cancel.cancel();
+                        cancel = CancellationToken::new();
+                        context.add_message("assistant", &full_response);
+                        let func_name = tc.function.name.clone();
+                        let tc_id = tc.id.clone();
+                        let tool_tx = progress_tx.clone().unwrap_or_else(|| tx.clone());
+                        let (result, new_dir) = tools::execute(
+                            &func_name, &tc.function.arguments,
+                            &current_dir, cancel.clone(),
+                            tool_tx, client, config,
+                        ).await;
+                        let (result, _) = tools::handle_large_output(&tc_id, result);
+                        current_dir = new_dir;
+                        context.add_tool_message(tc_id, &func_name, &result);
+                        full_response.clear();
+                        cancel = CancellationToken::new();
+                        context.set_cwd(current_dir.clone());
+                        parser.reset();
+                        trigger_llm_request(
+                            client.clone(), config.clone(), &context,
+                            tx.clone(), cancel.clone(), false, None,
+                        );
+                        continue;
                     }
-                }
 
                 if !full_response.is_empty() {
                     let last = context.get_messages().last().map(|m| m.role.clone());

@@ -3,7 +3,7 @@ use serde_json::Value;
 
 // ── Request types ────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     System,

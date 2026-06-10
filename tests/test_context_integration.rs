@@ -1,4 +1,4 @@
-use lethetic::app::{App, BlockType};
+use lethetic::app::App;
 use lethetic::config::Config;
 use lethetic::context::{ContextManager, ToolCall, FunctionCall};
 use std::fs;
@@ -19,16 +19,22 @@ fn test_read_file_raw_context_update() {
         model: "Gemma-4-26B-TurboQuant-262k".to_string(),
         context_size: 2048,
         tool_wrapper: None,
+        api_key: None,
+        estimate_cost: None,
+        input_cost_per_1m: None,
+        output_cost_per_1m: None,
         enable_image_processing_tool: false,
-            theme: None,
-    
-            model_servers: Vec::new(),
-        };
+        theme: None,
+        model_servers: Vec::new(),
+        thinking: None,
+        extra_body: None,
+        context_mode: None,
+    };
     let mut app = App::new(&config);
     app.current_dir = cwd.to_string();
 
     // Simulate the logic in main.rs for read_file
-    let tool_args = serde_json::json!({"path": file_path});
+    let _tool_args = serde_json::json!({"path": file_path});
     
     // In main.rs, this happens after successful read_file execution
     let full_path_buf = std::path::Path::new(&app.current_dir).join(file_path);
@@ -51,11 +57,17 @@ fn test_write_file_context_update() {
         model: "Gemma-4-26B-TurboQuant-262k".to_string(),
         context_size: 2048,
         tool_wrapper: None,
+        api_key: None,
+        estimate_cost: None,
+        input_cost_per_1m: None,
+        output_cost_per_1m: None,
         enable_image_processing_tool: false,
-            theme: None,
-    
-            model_servers: Vec::new(),
-        };
+        theme: None,
+        model_servers: Vec::new(),
+        thinking: None,
+        extra_body: None,
+        context_mode: None,
+    };
     let mut app = App::new(&config);
 
     let file_path = "new.rs";
@@ -66,11 +78,10 @@ fn test_write_file_context_update() {
     });
 
     // Simulate the logic in main.rs for write_file
-    if let Some(path) = tool_args["path"].as_str() {
-        if let Some(content) = tool_args["content"].as_str() {
+    if let Some(path) = tool_args["path"].as_str()
+        && let Some(content) = tool_args["content"].as_str() {
             app.context_manager.update_latest_file(path.to_string(), content.to_string());
         }
-    }
 
     let entry = app.context_manager.active_files.get(file_path)
         .or_else(|| app.context_manager.latest_files.get(file_path))
@@ -88,11 +99,17 @@ fn test_tool_call_json_formatting() {
         model: "test-model".to_string(),
         context_size: 32768,
         tool_wrapper: None,
+        api_key: None,
+        estimate_cost: None,
+        input_cost_per_1m: None,
+        output_cost_per_1m: None,
         enable_image_processing_tool: false,
-            theme: None,
-    
-            model_servers: Vec::new(),
-        };
+        theme: None,
+        model_servers: Vec::new(),
+        thinking: None,
+        extra_body: None,
+        context_mode: None,
+    };
     let mut app = App::new(&config);
     
     let tool_call = ToolCall {
@@ -243,7 +260,7 @@ fn test_token_estimate_chars_per_4() {
     // Token count should be in the right ballpark (400/4 = 100 tokens for the message,
     // plus a small overhead for the prompt wrapper)
     let count = ctx.get_token_count();
-    assert!(count >= 90 && count <= 150, "token count {} out of expected range 90–150", count);
+    assert!((90..=150).contains(&count), "token count {} out of expected range 90–150", count);
 
     // truncate_to_tokens at 100 tokens → at most 400 chars
     let long = "x".repeat(800);
@@ -253,4 +270,48 @@ fn test_token_estimate_chars_per_4() {
         "truncated string length {} should be ≤ 400",
         truncated.len()
     );
+}
+
+#[test]
+fn test_vercel_context_mode_formatting() {
+    use lethetic::context::{ContextManager, ContextMode};
+    use tempfile::tempdir;
+    use std::fs;
+
+    let dir = tempdir().unwrap();
+    let cwd = dir.path().to_str().unwrap().to_string();
+    let file_path = "foo.rs";
+    let full_path = dir.path().join(file_path);
+    let file_content = "fn foo() {}";
+    fs::write(&full_path, file_content).unwrap();
+
+    let mut ctx = ContextManager::new(2048, Some("You are a helpful assistant".to_string()));
+    ctx.mode = ContextMode::Vercel;
+    ctx.set_cwd(cwd);
+
+    ctx.update_latest_file(file_path.to_string(), file_content.to_string());
+    ctx.add_message("user", "Hello");
+
+    let raw_prompt = ctx.get_raw_prompt();
+    // Vercel mode should have no <latest_files> or <active_file> tags
+    assert!(!raw_prompt.contains("<latest_files>"));
+    assert!(!raw_prompt.contains("</latest_files>"));
+    // It should have standard markdown style headers
+    assert!(raw_prompt.contains("## File: foo.rs"));
+    assert!(raw_prompt.contains("fn foo() {}"));
+
+    // Check API messages payload
+    let api_msgs = ctx.get_messages_for_api();
+    assert_eq!(api_msgs.len(), 2); // 1 combined system message at 0, 1 user message
+    assert_eq!(api_msgs[0].role, gemma_chat::Role::System);
+    assert_eq!(api_msgs[1].role, gemma_chat::Role::User);
+
+    let system_content = match &api_msgs[0].content {
+        serde_json::Value::String(s) => s,
+        _ => panic!("Expected string content in system message"),
+    };
+    // It should contain both the system prompt instructions and the file content formatted in markdown
+    assert!(system_content.contains("You are a helpful assistant"));
+    assert!(system_content.contains("## File: foo.rs"));
+    assert!(system_content.contains("fn foo() {}"));
 }

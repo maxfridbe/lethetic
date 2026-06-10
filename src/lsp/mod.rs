@@ -27,6 +27,12 @@ pub struct LspManager {
     servers: HashMap<String, LspServerProcess>,
 }
 
+impl Default for LspManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LspManager {
     pub fn new() -> Self {
         Self { servers: HashMap::new() }
@@ -203,7 +209,7 @@ async fn read_msg(reader: &mut BufReader<ChildStdout>) -> Result<Value, String> 
         let mut line = String::new();
         let n = reader.read_line(&mut line).await.map_err(|e| e.to_string())?;
         if n == 0 { return Err("LSP server closed connection".to_string()); }
-        let trimmed = line.trim_end_matches(|c| c == '\r' || c == '\n');
+        let trimmed = line.trim_end_matches(['\r', '\n']);
         if trimmed.is_empty() { break; }
         if let Some(val) = trimmed.strip_prefix("Content-Length: ") {
             content_length = val.trim().parse().map_err(|e: std::num::ParseIntError| e.to_string())?;

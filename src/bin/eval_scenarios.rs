@@ -6,7 +6,6 @@ use lethetic::system_prompt;
 use reqwest::Client;
 use serde_json::json;
 use futures_util::StreamExt;
-use std::fs;
 
 struct Scenario {
     name: &'static str,
@@ -41,8 +40,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Scenario { name: "Finalization", prompt: "all tasks are done, summarize the project", expected_tool: "NONE" },
     ];
 
-    let config_content = fs::read_to_string("config.yml")?;
-    let config: Config = serde_yaml::from_str(&config_content)?;
+    let mut config = Config::load("config.yml")?;
+    config.merge_matching_server_settings();
     let client = Client::new();
 
     println!("--- Gemma 4 Tool-Calling Evaluation ---");
@@ -58,7 +57,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn run_scenario(client: &Client, config: &Config, scenario: &Scenario) -> Result<String, Box<dyn std::error::Error>> {
-    let mut context_manager = ContextManager::new(config.context_size, Some(crate::system_prompt::SystemPromptManager::resolve_prompt(crate::system_prompt::DEFAULT_PROMPT_TEMPLATE, ".", &config)));
+    let mut context_manager = ContextManager::new(config.context_size, Some(crate::system_prompt::SystemPromptManager::resolve_prompt(crate::system_prompt::DEFAULT_PROMPT_TEMPLATE, ".", config)));
+    if let Some(mode) = config.context_mode {
+        context_manager.mode = mode;
+    }
     context_manager.add_message("user", scenario.prompt);
 let req_body = json!({
     "model": config.model.clone(),
@@ -82,23 +84,22 @@ let req_body = json!({
         let mut current_event = String::new();
 
         while let Some(item) = stream.next().await {
-            if let Ok(bytes) = item {
-                if let Ok(chunk_str) = String::from_utf8(bytes.to_vec()) {
+            if let Ok(bytes) = item
+                && let Ok(chunk_str) = String::from_utf8(bytes.to_vec()) {
                     buffer.push_str(&chunk_str);
                     while let Some(pos) = buffer.find('\n') {
                         let line = buffer.drain(..=pos).collect::<String>();
                         let trimmed = line.trim();
                         if trimmed.is_empty() { continue; }
                         
-                        if trimmed.starts_with("event: ") {
-                            current_event = trimmed[7..].to_string();
-                        } else if trimmed.starts_with("data: ") {
-                            let json_str = &trimmed[6..];
+                        if let Some(ev) = trimmed.strip_prefix("event: ") {
+                            current_event = ev.to_string();
+                        } else if let Some(json_str) = trimmed.strip_prefix("data: ") {
                             if json_str == "[DONE]" { break; }
 
-                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
-                                if current_event == "response.output_text.delta" {
-                                    if let Some(delta) = val["delta"].as_str() {
+                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str)
+                                && current_event == "response.output_text.delta"
+                                    && let Some(delta) = val["delta"].as_str() {
                                         full_content.push_str(delta);
                                         
                                         if tool_detected_at.is_none() {
@@ -109,12 +110,9 @@ let req_body = json!({
                                             stopped_after_tool = false;
                                         }
                                     }
-                                }
-                            }
                         }
                     }
                 }
-            }
         }
         Ok::<(), Box<dyn std::error::Error>>(())
     }).await;

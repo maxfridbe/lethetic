@@ -20,11 +20,17 @@ async fn test_process_image_file_not_found() {
         model: "Gemma-4-26B-TurboQuant-262k".to_string(),
         context_size: 2048,
         tool_wrapper: None,
+        api_key: None,
+        estimate_cost: None,
+        input_cost_per_1m: None,
+        output_cost_per_1m: None,
         enable_image_processing_tool: true,
         theme: None,
-    
-            model_servers: Vec::new(),
-        };
+        model_servers: Vec::new(),
+        thinking: None,
+        extra_body: None,
+        context_mode: None,
+    };
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
     let res = process_image::execute("test", "non_existent.png", None, ".", &client, &config, &tx).await;
     assert!(res.contains("ERROR: Image file not found"));
@@ -38,11 +44,17 @@ async fn test_process_pdf_image_invalid_page() {
         model: "Gemma-4-26B-TurboQuant-262k".to_string(),
         context_size: 2048,
         tool_wrapper: None,
+        api_key: None,
+        estimate_cost: None,
+        input_cost_per_1m: None,
+        output_cost_per_1m: None,
         enable_image_processing_tool: true,
         theme: None,
-    
-            model_servers: Vec::new(),
-        };
+        model_servers: Vec::new(),
+        thinking: None,
+        extra_body: None,
+        context_mode: None,
+    };
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
     let res = process_pdf_image::execute("test", "non_existent.pdf", 1, None, ".", &client, &config, &tx).await;
     assert!(res.contains("ERROR: PDF file not found"));
@@ -51,8 +63,7 @@ async fn test_process_pdf_image_invalid_page() {
 #[tokio::test]
 #[ignore]
 async fn test_live_vision_screenshot() {
-    let config_content = fs::read_to_string("config.yml").expect("Could not read config.yml");
-    let config: Config = serde_yaml::from_str(&config_content).expect("Failed to parse config");
+    let config = Config::load("config.yml").expect("Failed to load config");
     let client = Client::new();
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
     
@@ -78,8 +89,7 @@ async fn test_live_vision_screenshot() {
 #[tokio::test]
 #[ignore]
 async fn test_live_pdf_processing() {
-    let config_content = fs::read_to_string("config.yml").expect("Could not read config.yml");
-    let config: Config = serde_yaml::from_str(&config_content).expect("Failed to parse config");
+    let config = Config::load("config.yml").expect("Failed to load config");
     let client = Client::new();
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
 
@@ -119,8 +129,7 @@ async fn test_live_pdf_processing() {
 #[tokio::test]
 #[ignore]
 async fn test_live_vision_bike() {
-    let config_content = fs::read_to_string("config.yml").expect("Could not read config.yml");
-    let config: Config = serde_yaml::from_str(&config_content).expect("Failed to parse config");
+    let config = Config::load("config.yml").expect("Failed to load config");
     let client = Client::new();
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
     
@@ -142,8 +151,7 @@ async fn test_live_vision_bike() {
 #[tokio::test]
 #[ignore]
 async fn test_live_vision_sequential() {
-    let config_content = fs::read_to_string("config.yml").expect("Could not read config.yml");
-    let config: Config = serde_yaml::from_str(&config_content).expect("Failed to parse config");
+    let config = Config::load("config.yml").expect("Failed to load config");
     let client = Client::new();
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
     
@@ -183,11 +191,17 @@ fn test_tool_registration() {
         model: "".to_string(),
         context_size: 0,
         tool_wrapper: None,
+        api_key: None,
+        estimate_cost: None,
+        input_cost_per_1m: None,
+        output_cost_per_1m: None,
         enable_image_processing_tool: true,
         theme: None,
-    
-            model_servers: Vec::new(),
-        };
+        model_servers: Vec::new(),
+        thinking: None,
+        extra_body: None,
+        context_mode: None,
+    };
     let tools = lethetic::tools::get_all_tools(&config);
     assert!(tools.iter().any(|t| t.function.name == "process_image"));
     assert!(tools.iter().any(|t| t.function.name == "process_pdf_image"));

@@ -12,16 +12,33 @@ pub fn build_request(
     messages: &[Message],
     tools: &[ToolDefinition],
     max_tokens: u32,
+    thinking: Option<bool>,
+    extra_body: Option<&serde_json::Value>,
 ) -> Value {
     let mut body = json!({
         "model": model,
         "messages": messages,
         "max_tokens": max_tokens,
         "stream": true,
+        "stream_options": {
+            "include_usage": true
+        }
     });
     if !tools.is_empty() {
         body["tools"] = json!(tools);
     }
+    if let Some(true) = thinking {
+        body["thinking"] = json!({
+            "type": "enabled"
+        });
+    }
+    if let Some(extra) = extra_body
+        && let Some(extra_map) = extra.as_object()
+            && let Some(body_map) = body.as_object_mut() {
+                for (k, v) in extra_map {
+                    body_map.insert(k.clone(), v.clone());
+                }
+            }
     body
 }
 
@@ -33,13 +50,22 @@ pub async fn stream_chat(
     messages: &[Message],
     tools: &[ToolDefinition],
     max_tokens: u32,
+    api_key: Option<&str>,
+    thinking: Option<bool>,
+    extra_body: Option<&serde_json::Value>,
 ) -> Result<UnboundedReceiverStream<StreamEvent>, String> {
-    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
-    let body = build_request(model, messages, tools, max_tokens);
+    let url = if base_url.contains("/chat/completions") {
+        base_url.to_string()
+    } else {
+        format!("{}/chat/completions", base_url.trim_end_matches('/'))
+    };
+    let body = build_request(model, messages, tools, max_tokens, thinking, extra_body);
 
-    let response = client
-        .post(&url)
-        .json(&body)
+    let mut req = client.post(&url).json(&body);
+    if let Some(key) = api_key {
+        req = req.bearer_auth(key);
+    }
+    let response = req
         .send()
         .await
         .map_err(|e| format!("Request failed: {e}"))?;
@@ -100,12 +126,26 @@ pub async fn complete(
     model: &str,
     messages: &[Message],
     max_tokens: u32,
+    api_key: Option<&str>,
+    thinking: Option<bool>,
+    extra_body: Option<&serde_json::Value>,
 ) -> Result<String, String> {
-    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
-    let mut body = build_request(model, messages, &[], max_tokens);
+    let url = if base_url.contains("/chat/completions") {
+        base_url.to_string()
+    } else {
+        format!("{}/chat/completions", base_url.trim_end_matches('/'))
+    };
+    let mut body = build_request(model, messages, &[], max_tokens, thinking, extra_body);
     body["stream"] = serde_json::Value::Bool(false);
+    if let Some(obj) = body.as_object_mut() {
+        obj.remove("stream_options");
+    }
 
-    let res = client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
+    let mut req = client.post(&url).json(&body);
+    if let Some(key) = api_key {
+        req = req.bearer_auth(key);
+    }
+    let res = req.send().await.map_err(|e| e.to_string())?;
     if !res.status().is_success() {
         let status = res.status();
         let text = res.text().await.unwrap_or_default();
@@ -123,9 +163,10 @@ mod tests {
     #[test]
     fn build_request_no_tools() {
         let msgs = vec![Message::user("hello")];
-        let body = build_request("model-x", &msgs, &[], 100);
+        let body = build_request("model-x", &msgs, &[], 100, None, None);
         assert_eq!(body["model"], "model-x");
         assert_eq!(body["stream"], true);
+        assert_eq!(body["stream_options"]["include_usage"], true);
         assert!(body.get("tools").is_none());
     }
 
@@ -137,7 +178,7 @@ mod tests {
             "Run a bash command",
             json!({"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}),
         )];
-        let body = build_request("gemma", &msgs, &tools, 512);
+        let body = build_request("gemma", &msgs, &tools, 512, None, None);
         let t = &body["tools"][0];
         assert_eq!(t["type"], "function");
         assert_eq!(t["function"]["name"], "run_shell_command");
@@ -158,8 +199,28 @@ mod tests {
             Message::system("You are helpful"),
             Message::user("hi"),
         ];
-        let body = build_request("m", &msgs, &[], 50);
+        let body = build_request("m", &msgs, &[], 50, None, None);
         assert_eq!(body["messages"][0]["role"], "system");
         assert_eq!(body["messages"][1]["role"], "user");
     }
+
+    #[test]
+    fn build_request_with_thinking() {
+        let msgs = vec![Message::user("hello")];
+        let body = build_request("model-x", &msgs, &[], 100, Some(true), None);
+        assert_eq!(body["thinking"]["type"], "enabled");
+    }
+
+    #[test]
+    fn build_request_with_extra_body() {
+        let msgs = vec![Message::user("hello")];
+        let extra = json!({
+            "reasoning_effort": "high",
+            "temperature": 0.5
+        });
+        let body = build_request("model-x", &msgs, &[], 100, None, Some(&extra));
+        assert_eq!(body["reasoning_effort"], "high");
+        assert_eq!(body["temperature"], 0.5);
+    }
 }
+

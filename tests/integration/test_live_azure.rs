@@ -8,34 +8,35 @@ use lethetic::system_prompt;
 use lethetic::client::trigger_llm_request;
 use lethetic::client::StreamEvent;
 
-fn qwen3_config() -> Result<Config, String> {
+fn azure_config() -> Result<Config, String> {
     let cfg = Config::load("config.yml")?;
-    // Resolve the Qwen3 server from model_servers
-    let qwen = cfg.model_servers.iter()
-        .find(|s| s.parser == "qwen3")
-        .ok_or_else(|| "No qwen3 server defined in config.yml model_servers".to_string())?;
+    
+    // Resolve the Azure server from model_servers
+    let azure = cfg.model_servers.iter()
+        .find(|s| s.name.contains("Azure") || s.model.contains("DeepSeek-V4"))
+        .ok_or_else(|| "No Azure server defined in config.yml model_servers".to_string())?;
+
     Ok(Config {
-        server_url: qwen.url.clone(),
-        model: qwen.model.clone(),
-        context_size: 262144,
+        server_url: azure.url.clone(),
+        model: azure.model.clone(),
+        context_size: azure.context_size.unwrap_or(262144),
         tool_wrapper: None,
-        api_key: None,
+        api_key: azure.api_key.clone(),
         estimate_cost: None,
-        input_cost_per_1m: None,
-        output_cost_per_1m: None,
+        input_cost_per_1m: azure.input_cost_per_1m,
+        output_cost_per_1m: azure.output_cost_per_1m,
         enable_image_processing_tool: false,
         theme: None,
         model_servers: cfg.model_servers.clone(),
-        thinking: None,
-        extra_body: None,
-        context_mode: qwen.context_mode,
+        thinking: azure.thinking,
+        extra_body: azure.extra_body.clone(),
+        context_mode: azure.context_mode,
     })
 }
 
-/// Run a prompt through the Qwen3 server and return the final text response.
-/// Returns Err if the server is unavailable or times out.
-async fn run_qwen3(prompt: &str) -> Result<String, String> {
-    let config = qwen3_config()?;
+/// Run a prompt through the Azure server and return the final text response.
+async fn run_azure(prompt: &str) -> Result<String, String> {
+    let config = azure_config()?;
     let client = reqwest::Client::new();
 
     let sys = system_prompt::SystemPromptManager::resolve_prompt(
@@ -69,12 +70,9 @@ async fn run_qwen3(prompt: &str) -> Result<String, String> {
     result.map_err(|_| "Timeout after 180s".to_string())?
 }
 
-/// Run a prompt that must produce a tool call; return the tool name.
-/// Handles both:
-///   - Structured tool_calls (Qwen3+Jinja path): arrives as StreamEvent::ToolCalls
-///   - Raw JSON in content (fallback): parsed by find_tool_call
-async fn run_qwen3_tool(prompt: &str) -> Result<String, String> {
-    let config = qwen3_config()?;
+/// Run a prompt that must produce a tool call; return the tool name and argument value.
+async fn run_azure_tool(prompt: &str) -> Result<(String, serde_json::Value), String> {
+    let config = azure_config()?;
     let client = reqwest::Client::new();
 
     let sys = system_prompt::SystemPromptManager::resolve_prompt(
@@ -90,6 +88,7 @@ async fn run_qwen3_tool(prompt: &str) -> Result<String, String> {
 
     let mut text = String::new();
     let mut tool_name: Option<String> = None;
+    let mut tool_args: Option<serde_json::Value> = None;
 
     let result = tokio::time::timeout(Duration::from_secs(180), async {
         loop {
@@ -98,6 +97,7 @@ async fn run_qwen3_tool(prompt: &str) -> Result<String, String> {
                 Some(StreamEvent::ToolCalls(calls)) => {
                     if let Some(tc) = calls.first() {
                         tool_name = Some(tc.function.name.clone());
+                        tool_args = Some(tc.function.arguments.clone());
                     }
                 }
                 Some(StreamEvent::Done { .. }) => break,
@@ -111,69 +111,57 @@ async fn run_qwen3_tool(prompt: &str) -> Result<String, String> {
 
     result.map_err(|_| "Timeout after 180s".to_string())??;
 
-    println!("RAW_OUTPUT_START\n{}\nRAW_OUTPUT_END", text);
-
-    // Structured tool_calls path (Qwen3+Jinja)
-    if let Some(name) = tool_name {
-        return Ok(name);
+    if let (Some(name), Some(args)) = (tool_name, tool_args) {
+        return Ok((name, args));
     }
 
-    // Raw JSON path (fallback)
+    // Fallback parser check
     match lethetic::parser::find_tool_call(&text, true) {
-        Some(Ok((tc, _))) => Ok(tc.function.name),
+        Some(Ok((tc, _))) => Ok((tc.function.name, tc.function.arguments)),
         Some(Err((e, _))) => Err(format!("Syntax error: {}\nContent:\n{}", e, text)),
         None => Err(format!("No tool call detected.\nContent:\n{}", text)),
     }
 }
 
-// ── Connectivity ──────────────────────────────────────────────────────────────
-
 #[tokio::test]
 #[serial(llm)]
-async fn test_qwen3_hello() {
-    match run_qwen3("Reply with exactly: Hello from Qwen3").await {
+async fn test_azure_hello() {
+    match run_azure("Reply with exactly: Hello from Azure").await {
         Ok(resp) => {
             println!("Response: {}", resp);
-            assert!(!resp.trim().is_empty(), "Empty response");
+            assert!(resp.to_lowercase().contains("hello"), "Unexpected response: {}", resp);
         }
         Err(e) => panic!("{}", e),
     }
 }
 
-// ── Tool calls ────────────────────────────────────────────────────────────────
-
 #[tokio::test]
 #[serial(llm)]
-async fn test_qwen3_calculate() {
-    let tool = run_qwen3_tool(
-        "Use the 'calculate' tool to evaluate: 7 * 8. Output ONLY the tool call."
-    ).await.expect("calculate tool call");
-    assert_eq!(tool, "calculate");
+async fn test_azure_write_file_no_markers() {
+    let (tool, args) = run_azure_tool(
+        "Use the 'write_file' tool to write 'fn main() {}' to 'src/main.rs'. Output ONLY the tool call."
+    ).await.expect("write_file tool call failed");
+    
+    assert_eq!(tool, "write_file");
+    let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("");
+    assert!(!content.contains("<|\"|>"), "Content should NOT contain asymmetric markers: {}", content);
+    assert!(content.contains("fn main"), "Content should contain the code block: {}", content);
 }
 
 #[tokio::test]
 #[serial(llm)]
-async fn test_qwen3_run_shell_command() {
-    let tool = run_qwen3_tool(
-        "Use 'run_shell_command' to run: echo hello. Output ONLY the tool call."
-    ).await.expect("run_shell_command tool call");
-    assert_eq!(tool, "run_shell_command");
-}
+async fn test_azure_write_csharp_helloworld() {
+    let (tool, args) = run_azure_tool(
+        "Use the 'write_file' tool to write a simple C# Hello World console application to Program.cs. Output ONLY the tool call."
+    ).await.expect("write_file C# tool call failed");
 
-#[tokio::test]
-#[serial(llm)]
-async fn test_qwen3_read_file() {
-    let tool = run_qwen3_tool(
-        "Use 'read_file' to read the file at path 'config.yml'. Output ONLY the tool call."
-    ).await.expect("read_file tool call");
-    assert_eq!(tool, "read_file");
-}
-
-#[tokio::test]
-#[serial(llm)]
-async fn test_qwen3_search_text() {
-    let tool = run_qwen3_tool(
-        "Use 'search_text' to search for the pattern 'fn main' in the current directory. Output ONLY the tool call."
-    ).await.expect("search_text tool call");
-    assert_eq!(tool, "search_text");
+    assert_eq!(tool, "write_file");
+    
+    let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
+    assert!(path.contains("Program.cs"), "Path should contain Program.cs: {}", path);
+    
+    let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("");
+    assert!(!content.contains("<|\"|>"), "Content should NOT contain asymmetric markers: {}", content);
+    assert!(content.contains("Console.WriteLine"), "Content should contain Console.WriteLine: {}", content);
+    assert!(content.contains("Hello World") || content.contains("Hello, World"), "Content should contain hello world string: {}", content);
 }
