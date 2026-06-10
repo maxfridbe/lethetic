@@ -56,9 +56,12 @@ impl SystemPromptManager {
             let _ = fs::create_dir_all(&prompts_dir);
         }
 
-        // Always ensure the latest default template is available
+        // Ensure the latest default template is available (write only when it differs
+        // to avoid disk IO on every startup)
         let default_path = prompts_dir.join("software_engineer.md");
-        let _ = fs::write(default_path, DEFAULT_PROMPT_TEMPLATE);
+        if fs::read_to_string(&default_path).ok().as_deref() != Some(DEFAULT_PROMPT_TEMPLATE) {
+            let _ = fs::write(default_path, DEFAULT_PROMPT_TEMPLATE);
+        }
         
         Self { prompts_dir }
     }

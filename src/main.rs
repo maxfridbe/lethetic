@@ -14,7 +14,6 @@ use reqwest::Client;
 use std::{error::Error, io, time::Duration, path::{Path, PathBuf}};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use sysinfo::System;
 
 use lethetic::config::Config;
 use lethetic::client::{ModelChoice, StreamEvent, trigger_llm_request};
@@ -279,27 +278,36 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
     Ok(())
 }
 
+/// Current process resident set size in MB, read from /proc/self/status (VmRSS is in kB).
+fn process_rss_mb() -> u64 {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| {
+            let line = s.lines().find(|l| l.starts_with("VmRSS:"))?;
+            line.split_whitespace().nth(1)?.parse::<u64>().ok()
+        })
+        .map(|kb| kb / 1024)
+        .unwrap_or(0)
+}
+
 async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App, config: &mut Config) -> Result<(), Box<dyn Error>> {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let client = Client::new();
     let mut cancellation_token = CancellationToken::new();
     let mut reader = EventStream::new();
-    
+
     let mut last_tick = std::time::Instant::now();
     let mut last_save = std::time::Instant::now();
     let mut full_response_content = String::new();
 
+    // Load syntect syntax/theme dumps off the render thread so the first
+    // code-fence render doesn't hitch for 100-300ms.
+    std::thread::spawn(lethetic::markdown::warm_highlighter);
+
     let stats_tx = tx.clone();
     tokio::spawn(async move {
-        let mut sys = System::new_all();
-        let pid = sysinfo::get_current_pid().ok();
         loop {
-            sys.refresh_all();
-            let proc_mem = if let Some(p) = pid {
-                if let Some(process) = sys.process(p) {
-                    process.memory() / 1024 / 1024
-                } else { 0 }
-            } else { 0 };
+            let proc_mem = process_rss_mb();
             let git = get_git_info().await;
             let _ = stats_tx.send(StreamEvent::DebugLog(format!("STATS|{}|{}", proc_mem, git)));
             tokio::time::sleep(Duration::from_secs(2)).await;
@@ -469,12 +477,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                         app.model_name = new_model.clone();
                                         app.config = config.clone();
                                         app.context_manager.mode = config.context_mode.unwrap_or(lethetic::context::ContextMode::Lethetic);
-                                        if let Some(name) = &config.theme {
-                                            let all = lethetic::ui::Theme::all();
-                                            if let Some(found) = all.iter().find(|t| t.name.eq_ignore_ascii_case(name)) {
+                                        if let Some(name) = &config.theme
+                                            && let Some(found) = app.themes.iter().find(|t| t.name.eq_ignore_ascii_case(name)) {
                                                 app.theme = found.clone();
                                             }
-                                        }
                                         let mode = lethetic::parser::ParserMode::from(parser.as_str());
                                         app.parser.set_mode(mode);
                                         app.parser.reset();
@@ -890,8 +896,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 }
 
                             if !app.tool_calls_processed_this_request {
-                                let messages = app.context_manager.get_messages();
-                                if messages.last().is_none_or(|m| m.role != "assistant") {
+                                let last_is_assistant = app.context_manager.get_messages().last().is_some_and(|m| m.role == "assistant");
+                                if !last_is_assistant {
                                     app.context_manager.add_message("assistant", &full_response_content);
                                 }
 

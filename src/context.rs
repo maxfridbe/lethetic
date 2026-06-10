@@ -254,8 +254,8 @@ impl ContextManager {
         self.latest_files.clear();
     }
 
-    pub fn get_messages(&self) -> Vec<Message> {
-        self.messages.clone()
+    pub fn get_messages(&self) -> &[Message] {
+        &self.messages
     }
 
     pub fn get_raw_prompt(&self) -> String {

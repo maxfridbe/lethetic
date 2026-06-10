@@ -11,6 +11,13 @@ use std::sync::LazyLock;
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
 static THEME_SET: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
 
+/// Force the syntect lazy statics to load. Called from a background thread at
+/// startup so the first code-fence render doesn't pay the dump-load cost.
+pub fn warm_highlighter() {
+    LazyLock::force(&SYNTAX_SET);
+    LazyLock::force(&THEME_SET);
+}
+
 /// Render buffered table rows as box-drawn lines with columns padded to equal width.
 fn render_table(rows: &[Vec<Line<'static>>], has_header: bool, theme: &crate::ui::Theme) -> Vec<Line<'static>> {
     let border = Style::default().fg(theme.system_fg);

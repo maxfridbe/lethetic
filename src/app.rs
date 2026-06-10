@@ -213,6 +213,11 @@ impl App {
             context_manager.mode = mode;
         }
 
+        let themes = Theme::all();
+        let theme_idx = config.theme.as_ref()
+            .and_then(|n| themes.iter().position(|t| t.name.eq_ignore_ascii_case(n)))
+            .unwrap_or(0);
+
         let mut app = App {
             input: String::new(),
             cursor_pos: 0,
@@ -245,22 +250,15 @@ impl App {
                 format!("{} Quit", icons::QUIT),
             ],
             theme: {
-                let all = Theme::all();
-                if let Some(name) = &config.theme {
-                    all.iter().find(|t| t.name.eq_ignore_ascii_case(name)).cloned().unwrap_or_else(Theme::default)
-                } else {
-                    Theme::default()
-                }
+                config.theme.as_ref()
+                    .and_then(|name| themes.iter().find(|t| t.name.eq_ignore_ascii_case(name)).cloned())
+                    .unwrap_or_default()
             },
-            themes: Theme::all(),
+            themes,
             show_theme_menu: false,
             theme_state: {
-                let all = Theme::all();
-                let idx = config.theme.as_ref()
-                    .and_then(|n| all.iter().position(|t| t.name.eq_ignore_ascii_case(n)))
-                    .unwrap_or(0);
                 let mut s = ListState::default();
-                s.select(Some(idx));
+                s.select(Some(theme_idx));
                 s
             },
             is_processing: false,
@@ -402,7 +400,9 @@ impl App {
                 history: self.history.clone(),
                 theme_name: self.theme.name.clone(),
             };
-            if let Ok(json) = serde_json::to_string_pretty(&state) {
+            // Compact JSON: this runs every 2s while streaming, and pretty-printing
+            // doubles the temp string and file size.
+            if let Ok(json) = serde_json::to_string(&state) {
                 let _ = std::fs::write(format!("{}/session_state.json", dir), json);
             }
         }

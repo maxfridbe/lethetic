@@ -679,17 +679,19 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     let num_blocks = app.blocks.len();
     let mut block_line_counts = Vec::with_capacity(num_blocks);
 
+    // The live (streaming/tool-preview) block bypasses the cache; render it once
+    // here and reuse the result in the display pass below.
+    let mut live_lines: Option<Vec<Line>> = None;
+
     for (i, block) in app.blocks.iter_mut().enumerate() {
         let is_last = i == num_blocks - 1;
-        let count = if let Some(ref cached) = block.cached_lines {
-            if is_last && (app.is_executing_tool || app.is_processing) {
-                // Bypass cache for live streaming/preview
-                let rendered = render_block_to_lines(block, terminal_width, &app.theme, if app.is_executing_tool { Some(&app.tool_output_preview) } else { None });
-                
-                rendered.len()
-            } else {
-                cached.len()
-            }
+        let count = if is_last && (app.is_executing_tool || app.is_processing) {
+            let rendered = render_block_to_lines(block, terminal_width, &app.theme, if app.is_executing_tool { Some(&app.tool_output_preview) } else { None });
+            let len = rendered.len();
+            live_lines = Some(rendered);
+            len
+        } else if let Some(ref cached) = block.cached_lines {
+            cached.len()
         } else {
             let rendered = render_block_to_lines(block, terminal_width, &app.theme, None);
             let len = rendered.len();
@@ -723,23 +725,22 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
 
     for (block_idx, count) in block_line_counts.iter().enumerate() {
         let block_end = current_line_idx + count;
-        let is_last = block_idx == app.blocks.len() - 1;
+        let is_last = block_idx == num_blocks - 1;
 
         // If this block is within or partially within our visible window
         if block_end > start_line && current_line_idx < end_line {
-            // Re-render if it's the live block, otherwise use cache
-            let lines_to_render = if is_last && (app.is_executing_tool || app.is_processing) {
-                render_block_to_lines(&app.blocks[block_idx], terminal_width, &app.theme, if app.is_executing_tool { Some(&app.tool_output_preview) } else { None })
-            } else {
-                app.blocks[block_idx].cached_lines.as_ref().cloned().unwrap_or_default()
+            // The live block was already rendered in the counting pass; others
+            // borrow their cache. Only the lines inside the window are cloned.
+            let live = if is_last { live_lines.take() } else { None };
+            let lines: &[Line] = match (&live, app.blocks[block_idx].cached_lines.as_ref()) {
+                (Some(l), _) => l,
+                (None, Some(c)) => c,
+                (None, None) => &[],
             };
-
-            for (i, line) in lines_to_render.iter().enumerate() {
-                let absolute_idx = current_line_idx + i;
-                if absolute_idx >= start_line && absolute_idx < end_line {
-                    let rendered_line = line.clone();
-                    list_items.push(ListItem::new(rendered_line));
-                }
+            let from = start_line.saturating_sub(current_line_idx).min(lines.len());
+            let to = (end_line - current_line_idx).min(lines.len());
+            for line in &lines[from..to] {
+                list_items.push(ListItem::new(line.clone()));
             }
         }
         current_line_idx += count;
