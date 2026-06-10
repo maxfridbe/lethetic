@@ -73,7 +73,7 @@ pub enum StreamEvent {
     ToolResult { id: Option<String>, func_name: String, result: String, cwd: String },
     ToolProgress(String),
     LoadProgress(f32, String),
-    SessionLoaded(String, Vec<crate::app::RenderBlock>, Vec<crate::context::Message>),
+    SessionLoaded { dir: String, state: crate::app::SessionState },
     Done { completion_tokens: Option<u32>, prompt_tokens: Option<u32>, tg_per_s: Option<f64>, pp_per_s: Option<f64> },
     Error(String),
     DebugLog(String),

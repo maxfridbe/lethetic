@@ -68,13 +68,36 @@ pub enum AppEventOutcome {
     SwitchModel(String, String, String), // (server_url, model_id, parser)
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct SessionState {
+    #[serde(default)]
     pub messages: Vec<crate::context::Message>,
+    #[serde(default)]
     pub blocks: Vec<RenderBlock>,
+    #[serde(default)]
     pub history: Vec<String>,
     #[serde(default)]
     pub theme_name: String,
+}
+
+impl SessionState {
+    /// Load a session from disk: the unified `session_state.json` written by
+    /// `App::save_session`, falling back to the legacy `ui_state.json` +
+    /// `context.json` pair for sessions saved by older builds.
+    pub fn load(session_dir: &str) -> SessionState {
+        if let Ok(content) = std::fs::read_to_string(format!("{}/session_state.json", session_dir))
+            && let Ok(state) = serde_json::from_str::<SessionState>(&content) {
+                return state;
+            }
+
+        let blocks = std::fs::read_to_string(format!("{}/ui_state.json", session_dir)).ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        let messages = std::fs::read_to_string(format!("{}/context.json", session_dir)).ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        SessionState { blocks, messages, ..Default::default() }
+    }
 }
 
 pub struct App {
@@ -414,54 +437,6 @@ impl App {
         if self.prompt_list_state.selected().is_none() && !self.prompt_files.is_empty() {
             self.prompt_list_state.select(Some(0));
         }
-    }
-
-    pub fn load_session(&mut self, session_dir: &str) {
-        // Try loading unified session state first
-        if let Ok(content) = std::fs::read_to_string(format!("{}/session_state.json", session_dir))
-            && let Ok(state) = serde_json::from_str::<SessionState>(&content) {
-                self.blocks = state.blocks;
-                self.history = state.history;
-                self.context_manager.clear();
-                for msg in state.messages {
-                    self.context_manager.add_message_raw(msg);
-                }
-                // Restore theme if saved
-                if !state.theme_name.is_empty()
-                    && let Some(t) = self.themes.iter().find(|t| t.name == state.theme_name) {
-                        let t = t.clone();
-                        if let Some(idx) = self.themes.iter().position(|th| th.name == t.name) {
-                            self.theme_state.select(Some(idx));
-                        }
-                        self.theme = t;
-                        for block in &mut self.blocks { block.cached_lines = None; }
-                    }
-                self.current_session_dir = Some(session_dir.to_string());
-                self.should_redraw = true;
-                self.needs_save = false;
-                if self.auto_scroll { self.sync_scroll_to_end(); }
-                return;
-            }
-
-        // Fallback to legacy individual files
-        if let Ok(content) = std::fs::read_to_string(format!("{}/ui_state.json", session_dir))
-            && let Ok(blocks) = serde_json::from_str::<Vec<RenderBlock>>(&content) {
-                self.blocks = blocks;
-            }
-        
-        // Load Context
-        if let Ok(content) = std::fs::read_to_string(format!("{}/context.json", session_dir))
-            && let Ok(messages) = serde_json::from_str::<Vec<crate::context::Message>>(&content) {
-                self.context_manager.clear();
-                for msg in messages {
-                    self.context_manager.add_message_raw(msg);
-                }
-            }
-        
-        self.current_session_dir = Some(session_dir.to_string());
-        self.should_redraw = true;
-        self.needs_save = false;
-        if self.auto_scroll { self.sync_scroll_to_end(); }
     }
 
     pub fn add_segment(&mut self, content: String, b_type: BlockType) {

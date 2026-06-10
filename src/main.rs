@@ -362,38 +362,25 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                         let terminal_width = app.last_rendered_width;
 
                                         tokio::spawn(async move {
-                                            let _ = tx_clone.send(StreamEvent::LoadProgress(10.0, "Reading UI state...".to_string()));
-                                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                                            
-                                            let ui_content = tokio::fs::read_to_string(format!("{}/ui_state.json", filename_clone)).await.unwrap_or_default();
-                                            let _ = tx_clone.send(StreamEvent::LoadProgress(40.0, "Parsing & rendering UI state...".to_string()));
-                                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                                            
-                                            let blocks: Vec<lethetic::app::RenderBlock> = tokio::task::spawn_blocking(move || {
-                                                let mut parsed_blocks = serde_json::from_str::<Vec<lethetic::app::RenderBlock>>(&ui_content).unwrap_or_default();
+                                            let _ = tx_clone.send(StreamEvent::LoadProgress(10.0, "Reading session state...".to_string()));
+
+                                            let load_dir = filename_clone.clone();
+                                            let state = tokio::task::spawn_blocking(move || {
+                                                let mut state = lethetic::app::SessionState::load(&load_dir);
                                                 if terminal_width > 0 {
-                                                    for block in &mut parsed_blocks {
-                                                        let rendered = lethetic::ui::render_block_to_lines(block, terminal_width, &theme_clone, None);
-                                                        block.cached_lines = Some(rendered);
+                                                    for block in &mut state.blocks {
+                                                        block.cached_lines = Some(lethetic::ui::render_block_to_lines(block, terminal_width, &theme_clone, None));
                                                     }
                                                 }
-                                                parsed_blocks
+                                                state
                                             }).await.unwrap_or_default();
 
-                                            let _ = tx_clone.send(StreamEvent::LoadProgress(60.0, "Reading context...".to_string()));
-                                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                                            
-                                            let ctx_content = tokio::fs::read_to_string(format!("{}/context.json", filename_clone)).await.unwrap_or_default();
-                                            let _ = tx_clone.send(StreamEvent::LoadProgress(80.0, "Parsing context...".to_string()));
-                                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                                            
-                                            let messages: Vec<lethetic::context::Message> = tokio::task::spawn_blocking(move || {
-                                                serde_json::from_str::<Vec<lethetic::context::Message>>(&ctx_content).unwrap_or_default()
-                                            }).await.unwrap_or_default();
+                                            if state.blocks.is_empty() && state.messages.is_empty() {
+                                                let _ = tx_clone.send(StreamEvent::Error(format!("Session {} is empty or unreadable", filename_clone)));
+                                            }
 
                                             let _ = tx_clone.send(StreamEvent::LoadProgress(100.0, "Finishing...".to_string()));
-                                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                                            let _ = tx_clone.send(StreamEvent::SessionLoaded(filename_clone, blocks, messages));
+                                            let _ = tx_clone.send(StreamEvent::SessionLoaded { dir: filename_clone, state });
                                         });
                                     }
                                     AppEventOutcome::ToggleHistory => {
@@ -996,14 +983,24 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             app.load_status = status;
                             app.should_redraw = true;
                         }
-                        StreamEvent::SessionLoaded(dir, blocks, messages) => {
+                        StreamEvent::SessionLoaded { dir, state } => {
                             app.current_session_dir = Some(dir);
-                            app.blocks = blocks;
+                            app.blocks = state.blocks;
+                            app.history = state.history;
+                            // Restore the session's theme; cached_lines were pre-rendered
+                            // with the current theme, so invalidate them on a theme change.
+                            if !state.theme_name.is_empty() && state.theme_name != app.theme.name
+                                && let Some(idx) = app.themes.iter().position(|t| t.name == state.theme_name) {
+                                    app.theme = app.themes[idx].clone();
+                                    app.theme_state.select(Some(idx));
+                                    for block in &mut app.blocks { block.cached_lines = None; }
+                                }
                             app.context_manager.clear();
-                            app.context_manager.set_messages(messages);
+                            app.context_manager.set_messages(state.messages);
                             app.scroll = 0;
                             app.output_state.select(Some(app.blocks.len().saturating_sub(1)));
                             app.is_loading_session = false;
+                            app.needs_save = false;
                             app.should_redraw = true;
                         }
                     }
