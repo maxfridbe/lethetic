@@ -426,24 +426,38 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                         if servers.is_empty() {
                                             servers.push((config.model.clone(), config.server_url.clone(), config.model.clone()));
                                         }
-                                        // Query each server for live model list
+                                        // Query all servers concurrently with a short timeout:
+                                        // reqwest has no default timeout, so a powered-off host
+                                        // would otherwise block for the OS TCP timeout (60s+),
+                                        // and doing that serially multiplied the wait.
                                         let client_clone = client.clone();
                                         let tx_clone = tx.clone();
                                         let config_clone = config.clone();
                                         tokio::spawn(async move {
+                                            const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+                                            let probes = servers.iter().map(|(name, url, default_model)| {
+                                                let client = client_clone.clone();
+                                                let config = &config_clone;
+                                                async move {
+                                                    let api_key = config.model_servers.iter()
+                                                        .find(|s| &s.url == url)
+                                                        .and_then(|s| s.api_key.as_deref())
+                                                        .or_else(|| {
+                                                            if url == &config.server_url {
+                                                                config.api_key.as_deref()
+                                                            } else {
+                                                                None
+                                                            }
+                                                        });
+                                                    let live = tokio::time::timeout(
+                                                        PROBE_TIMEOUT,
+                                                        lethetic::client::get_available_models(&client, url, api_key),
+                                                    ).await.unwrap_or_default();
+                                                    (name, url, default_model, live)
+                                                }
+                                            });
                                             let mut models: Vec<ModelChoice> = Vec::new();
-                                            for (name, url, default_model) in &servers {
-                                                let api_key = config_clone.model_servers.iter()
-                                                    .find(|s| &s.url == url)
-                                                    .and_then(|s| s.api_key.as_deref())
-                                                    .or_else(|| {
-                                                        if url == &config_clone.server_url {
-                                                            config_clone.api_key.as_deref()
-                                                        } else {
-                                                            None
-                                                        }
-                                                    });
-                                                let live = lethetic::client::get_available_models(&client_clone, url, api_key).await;
+                                            for (name, url, default_model, live) in futures_util::future::join_all(probes).await {
                                                 if live.is_empty() {
                                                     // Server not reachable — still show from config
                                                     models.push(ModelChoice {
