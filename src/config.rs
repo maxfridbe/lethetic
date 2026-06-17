@@ -86,6 +86,27 @@ impl Config {
         serde_yaml::from_value(value).map_err(|e| format!("Invalid config: {}", e))
     }
 
+    /// Return a clone of this config fully reconfigured for a given server URL + model.
+    /// Always overrides api_key, thinking, extra_body, context_mode, and cost rates
+    /// from the matching ModelServer entry — identical logic to what the model switcher
+    /// does so that compaction, summarisation, etc. all use correct auth headers.
+    pub fn for_server(&self, url: &str, model_id: &str) -> Self {
+        let mut c = self.clone();
+        c.server_url = url.to_string();
+        c.model = model_id.to_string();
+        let srv = c.model_servers.iter().find(|s| s.url == url).cloned();
+        c.api_key = srv.as_ref().and_then(|s| s.api_key.clone());
+        c.input_cost_per_1m = srv.as_ref().and_then(|s| s.input_cost_per_1m);
+        c.output_cost_per_1m = srv.as_ref().and_then(|s| s.output_cost_per_1m);
+        c.thinking = srv.as_ref().and_then(|s| s.thinking);
+        c.extra_body = srv.as_ref().and_then(|s| s.extra_body.clone());
+        c.context_mode = srv.as_ref().and_then(|s| s.context_mode);
+        if let Some(sz) = srv.as_ref().and_then(|s| s.context_size) {
+            c.context_size = sz;
+        }
+        c
+    }
+
     /// Merges server-specific settings from the matching server in `model_servers` if they are not already set.
     pub fn merge_matching_server_settings(&mut self) {
         if let Some(matching_server) = self.model_servers.iter().find(|s| s.url == self.server_url) {

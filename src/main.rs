@@ -1,7 +1,7 @@
 
 use std::env;
 use crossterm::{
-    event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, Event, EventStream, KeyEventKind, KeyCode, KeyModifiers, MouseEventKind},
+    event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, Event, EventStream, KeyEventKind, KeyCode, KeyModifiers, MouseButton, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -279,6 +279,178 @@ async fn run_headless(config: &Config, prompt: String) -> Result<(), Box<dyn Err
     Ok(())
 }
 
+/// Check whether a left-click hit the ⎘ badge on a block header and, if so,
+/// pipe that block's content to `wl-copy`.
+fn try_copy_block_at_click(app: &App, col: u16, row: u16) {
+    let rect = app.last_output_rect;
+    // Must be inside the inner content area (inside the 1-cell border).
+    if row < rect.top() + 1 || row >= rect.bottom().saturating_sub(1)
+        || col < rect.left() + 1 || col >= rect.right().saturating_sub(1) {
+        return;
+    }
+    // The badge occupies the rightmost 3 columns of the inner area.
+    let inner_right = rect.right().saturating_sub(1);
+    if col < inner_right.saturating_sub(3) {
+        return;
+    }
+    // Map screen row → absolute line index.
+    let inner_top = rect.top() + 1;
+    let abs_line = app.last_start_line + (row - inner_top) as usize;
+
+    // Find which block that line belongs to and whether it's the header row.
+    let mut cumulative = 0usize;
+    for (i, &count) in app.last_block_line_counts.iter().enumerate() {
+        if count == 0 { continue; } // hidden (e.g. thinking block)
+        if abs_line >= cumulative && abs_line < cumulative + count {
+            if abs_line == cumulative {
+                // Header row — copy content
+                if let Some(block) = app.blocks.get(i) {
+                    let content = block.content.clone();
+                    tokio::spawn(async move {
+                        let _ = tokio::process::Command::new("wl-copy")
+                            .arg(content)
+                            .status()
+                            .await;
+                    });
+                }
+            }
+            break;
+        }
+        cumulative += count;
+    }
+}
+
+/// Compact a session by feeding its `ui_log.txt` to the model and writing a new
+/// condensed session alongside the original. The new session dir is created under
+/// the same `.lethetic/sessions/` root and contains a `session_state.json` whose
+/// messages are just the compacted summary (ready to resume).
+async fn compact_session(client: &reqwest::Client, config: &Config, src_dir: &str, tx: tokio::sync::mpsc::UnboundedSender<StreamEvent>, cancel: tokio_util::sync::CancellationToken) {
+    let ui_log_path = format!("{}/ui_log.txt", src_dir);
+    let log_text = match std::fs::read_to_string(&ui_log_path) {
+        Ok(t) => t,
+        Err(e) => {
+            let _ = tx.send(StreamEvent::Error(format!("Compaction: cannot read {}: {}", ui_log_path, e)));
+            return;
+        }
+    };
+
+    // Load the compaction prompt; fall back to embedded constant if missing.
+    let spm = lethetic::system_prompt::SystemPromptManager::new();
+    let compact_prompt = spm.load_prompt("compaction")
+        .unwrap_or_else(|| lethetic::system_prompt::DEFAULT_COMPACTION_PROMPT.to_string());
+
+    let summary = match lethetic::client::compact_llm_streaming(client, config, &log_text, &compact_prompt, &tx, &cancel).await {
+        Ok(s) => s,
+        Err(e) if e == "Cancelled" => return, // user cancelled — popup already closed
+        Err(e) => {
+            let _ = tx.send(StreamEvent::Error(format!("Compaction failed: {}", e)));
+            return;
+        }
+    };
+
+    if cancel.is_cancelled() { return; }
+
+    // Derive name: parent sessions root + "session_<ts>_compacted"
+    let sessions_root = std::path::Path::new(src_dir).parent().unwrap_or(std::path::Path::new(".lethetic/sessions"));
+    let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    let src_name = std::path::Path::new(src_dir).file_name().unwrap_or_default().to_string_lossy();
+    let new_dir = sessions_root.join(format!("session_{}_compacted_{}", ts, src_name));
+    if let Err(e) = std::fs::create_dir_all(&new_dir) {
+        let _ = tx.send(StreamEvent::Error(format!("Compaction: cannot create dir: {}", e)));
+        return;
+    }
+
+    // Guard: if cancelled between model completion and file writes, remove the empty dir.
+    if cancel.is_cancelled() {
+        let _ = std::fs::remove_dir_all(&new_dir);
+        return;
+    }
+
+    // Load original session metadata to carry over model, cost, theme, etc.
+    let orig_state = lethetic::app::SessionState::load(src_dir);
+    let orig_meta = lethetic::app::SessionMeta::load(src_dir);
+
+    // Build a minimal SessionState with the summary, preserving original metadata.
+    let context_user_content = format!("Context from compacted session ({}):\n\n{}", src_name, summary);
+    let new_state = lethetic::app::SessionState {
+        messages: vec![
+            lethetic::context::Message { role: "user".to_string(), content: context_user_content.clone(), tool_calls: None },
+            lethetic::context::Message { role: "assistant".to_string(), content: "Understood. I have the context from the previous session and am ready to continue.".to_string(), tool_calls: None },
+        ],
+        blocks: vec![lethetic::app::RenderBlock {
+            block_type: lethetic::app::BlockType::Text,
+            content: format!("**Compacted from `{}`**\n\n{}", src_name, summary),
+            title: None,
+            success: Some(true),
+            prompt_tokens: None,
+            completion_tokens: None,
+            cached_lines: None,
+            cached_line_count: None,
+        }],
+        history: orig_state.history,
+        // Carry over all session identity / stats from the original.
+        server_url: orig_state.server_url,
+        model_name: orig_state.model_name,
+        parser_mode: orig_state.parser_mode,
+        theme_name: orig_state.theme_name,
+        system_prompt: orig_state.system_prompt,
+        hide_thinking: orig_state.hide_thinking,
+        total_cost: orig_state.total_cost,
+        total_prompt_tokens: orig_state.total_prompt_tokens,
+        total_completion_tokens: orig_state.total_completion_tokens,
+    };
+    if let Ok(json) = serde_json::to_string(&new_state) {
+        let _ = std::fs::write(new_dir.join("session_state.json"), json);
+    }
+    // Write session_meta.json so the session list shows the inherited stats.
+    let new_meta = lethetic::app::SessionMeta {
+        total_prompt_tokens: orig_meta.total_prompt_tokens,
+        total_completion_tokens: orig_meta.total_completion_tokens,
+        total_cost: orig_meta.total_cost,
+        message_count: 2,
+        context_tokens: context_user_content.len() / 4,
+    };
+    if let Ok(json) = serde_json::to_string(&new_meta) {
+        let _ = std::fs::write(new_dir.join("session_meta.json"), json);
+    }
+    // Copy ui_log.txt of the original alongside so the compacted session has provenance.
+    let _ = std::fs::copy(&ui_log_path, new_dir.join("ui_log_original.txt"));
+
+    let new_dir_str = new_dir.to_string_lossy().to_string();
+    let _ = tx.send(StreamEvent::LoadProgress(100.0, "Done".to_string()));
+    let _ = tx.send(StreamEvent::CompactionDone { new_session_dir: new_dir_str });
+}
+
+/// Point `config`/`app` at a different server/model/parser dialect, pulling in that
+/// server's API key, cost rates, theme, context size, etc. Shared by the interactive
+/// model switcher and by session resume (which restores the model last used).
+fn apply_model_switch(config: &mut Config, app: &mut App, new_url: &str, new_model: &str, parser: &str) {
+    *config = config.for_server(new_url, new_model);
+    // for_server doesn't know about theme (it's app-level display, not connection config).
+    let matching_server = config.model_servers.iter().find(|s| s.url == new_url);
+    if let Some(srv) = matching_server {
+        if let Some(t) = &srv.theme { config.theme = Some(t.clone()); }
+        if let Some(sz) = srv.context_size { app.max_tokens = sz; }
+    }
+    app.server_url = new_url.to_string();
+    app.model_name = new_model.to_string();
+    app.config = config.clone();
+    app.context_manager.mode = config.context_mode.unwrap_or(lethetic::context::ContextMode::Lethetic);
+    if let Some(name) = &config.theme
+        && let Some(found) = app.themes.iter().find(|t| t.name.eq_ignore_ascii_case(name)) {
+            app.theme = found.clone();
+        }
+    let mode = lethetic::parser::ParserMode::from(parser);
+    app.parser.set_mode(mode);
+    app.parser.reset();
+    // Re-resolve system prompt with updated config so the
+    // correct tool call format (gemma4 <|"|> vs qwen3 JSON)
+    // is injected for the new model.
+    let refreshed = lethetic::system_prompt::SystemPromptManager::resolve_prompt(
+        &app.system_prompt, &app.current_dir, config);
+    app.context_manager.update_system_prompt(refreshed);
+}
+
 async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App, config: &mut Config) -> Result<(), Box<dyn Error>> {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let client = Client::new();
@@ -326,6 +498,65 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                     match event {
                         Event::Key(key) => {
                             if key.kind == KeyEventKind::Press {
+                                // Compaction popup — Esc/Enter closes when done, arrow keys scroll
+                                if app.compaction_popup.is_some() {
+                                    match key.code {
+                                        KeyCode::Esc | KeyCode::Enter => {
+                                            if app.compaction_popup.as_ref().map_or(false, |p| p.done) {
+                                                app.compaction_popup = None;
+                                                app.should_redraw = true;
+                                            }
+                                        }
+                                        KeyCode::Up => {
+                                            if let Some(p) = app.compaction_popup.as_mut() {
+                                                // If currently auto-scrolling (usize::MAX), anchor at raw line count first
+                                                if p.scroll == usize::MAX {
+                                                    p.scroll = p.content.lines().count().saturating_sub(1);
+                                                }
+                                                p.scroll = p.scroll.saturating_sub(1);
+                                                app.should_redraw = true;
+                                            }
+                                        }
+                                        KeyCode::Down => {
+                                            if let Some(p) = app.compaction_popup.as_mut() {
+                                                if p.scroll != usize::MAX {
+                                                    let max = p.content.lines().count().saturating_sub(1);
+                                                    p.scroll = (p.scroll + 1).min(max);
+                                                }
+                                                app.should_redraw = true;
+                                            }
+                                        }
+                                        KeyCode::PageUp => {
+                                            if let Some(p) = app.compaction_popup.as_mut() {
+                                                if p.scroll == usize::MAX {
+                                                    p.scroll = p.content.lines().count().saturating_sub(1);
+                                                }
+                                                p.scroll = p.scroll.saturating_sub(20);
+                                                app.should_redraw = true;
+                                            }
+                                        }
+                                        KeyCode::PageDown => {
+                                            if let Some(p) = app.compaction_popup.as_mut() {
+                                                if p.scroll != usize::MAX {
+                                                    let max = p.content.lines().count().saturating_sub(1);
+                                                    p.scroll = (p.scroll + 20).min(max);
+                                                }
+                                                app.should_redraw = true;
+                                            }
+                                        }
+                                        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                            // Cancel any in-flight compaction and close the popup.
+                                            cancellation_token.cancel();
+                                            cancellation_token = CancellationToken::new();
+                                            app.compaction_popup = None;
+                                            while rx.try_recv().is_ok() {}
+                                            app.should_redraw = true;
+                                        }
+                                        _ => {}
+                                    }
+                                    continue;
+                                }
+
                                 // Global Ctrl+C handler
                                 if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                                     if app.is_processing {
@@ -412,6 +643,23 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                         app.refresh_session_list();
                                         app.should_redraw = true;
                                     }
+                                    AppEventOutcome::CompactSession { src_dir, url, model_id } => {
+                                        app.compaction_popup = Some(lethetic::app::CompactionPopupState {
+                                            content: format!("Model: {}\n", model_id),
+                                            scroll: usize::MAX,
+                                            done: false,
+                                            new_session_dir: None,
+                                        });
+                                        app.show_session_manager = false;
+                                        app.should_redraw = true;
+                                        let tx_clone = tx.clone();
+                                        let compact_config = config.for_server(&url, &model_id);
+                                        let client_clone = client.clone();
+                                        let cancel_clone = cancellation_token.clone();
+                                        tokio::spawn(async move {
+                                            compact_session(&client_clone, &compact_config, &src_dir, tx_clone, cancel_clone).await;
+                                        });
+                                    }
                                     AppEventOutcome::FetchModels => {
                                         app.show_palette = false;
                                         app.show_model_switcher = true;
@@ -479,40 +727,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                         });
                                     }
                                     AppEventOutcome::SwitchModel(new_url, new_model, parser) => {
-                                        config.server_url = new_url.clone();
-                                        config.model = new_model.clone();
-                                        let matching_server = config.model_servers.iter().find(|s| s.url == new_url);
-                                        config.api_key = matching_server.and_then(|s| s.api_key.clone());
-                                        config.input_cost_per_1m = matching_server.and_then(|s| s.input_cost_per_1m);
-                                        config.output_cost_per_1m = matching_server.and_then(|s| s.output_cost_per_1m);
-                                        config.thinking = matching_server.and_then(|s| s.thinking);
-                                        config.extra_body = matching_server.and_then(|s| s.extra_body.clone());
-                                        config.context_mode = matching_server.and_then(|s| s.context_mode);
-                                        if let Some(matching_server) = matching_server
-                                            && let Some(t) = &matching_server.theme {
-                                                config.theme = Some(t.clone());
-                                            }
-                                        if let Some(Some(sz)) = matching_server.map(|s| s.context_size) {
-                                            config.context_size = sz;
-                                            app.max_tokens = sz;
-                                        }
-                                        app.server_url = new_url.clone();
-                                        app.model_name = new_model.clone();
-                                        app.config = config.clone();
-                                        app.context_manager.mode = config.context_mode.unwrap_or(lethetic::context::ContextMode::Lethetic);
-                                        if let Some(name) = &config.theme
-                                            && let Some(found) = app.themes.iter().find(|t| t.name.eq_ignore_ascii_case(name)) {
-                                                app.theme = found.clone();
-                                            }
-                                        let mode = lethetic::parser::ParserMode::from(parser.as_str());
-                                        app.parser.set_mode(mode);
-                                        app.parser.reset();
-                                        // Re-resolve system prompt with updated config so the
-                                        // correct tool call format (gemma4 <|"|> vs qwen3 JSON)
-                                        // is injected for the new model.
-                                        let refreshed = lethetic::system_prompt::SystemPromptManager::resolve_prompt(
-                                            &app.system_prompt, &app.current_dir, config);
-                                        app.context_manager.update_system_prompt(refreshed);
+                                        apply_model_switch(config, app, &new_url, &new_model, &parser);
                                         app.add_segment(
                                             format!("\n{} Switched to model: {} ({}) — parser: {}\n", icons::SUCCESS, new_model, new_url, parser),
                                             BlockType::Text,
@@ -612,6 +827,9 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 MouseEventKind::ScrollDown => {
                                     app.scroll_output_down(1);
                                     app.should_redraw = true;
+                                }
+                                MouseEventKind::Down(MouseButton::Left) => {
+                                    try_copy_block_at_click(app, mouse.column, mouse.row);
                                 }
                                 _ => {}
                             }
@@ -996,9 +1214,17 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             }
                             if let Some(pt) = prompt_tokens {
                                 app.server_prompt_tokens = Some(pt);
+                                app.total_prompt_tokens += pt as u64;
                             }
                             if let Some(ct) = completion_tokens {
                                 app.server_completion_tokens = Some(ct);
+                                app.total_completion_tokens += ct as u64;
+                            }
+                            if let (Some(pt), Some(ct), Some(in_rate), Some(out_rate)) = (
+                                prompt_tokens, completion_tokens,
+                                app.config.input_cost_per_1m, app.config.output_cost_per_1m,
+                            ) {
+                                app.total_cost += (pt as f64 * in_rate / 1_000_000.0) + (ct as f64 * out_rate / 1_000_000.0);
                             }
                             if let Some(user_block) = app.blocks.iter_mut().rev().find(|b| b.block_type == BlockType::User) {
                                 user_block.prompt_tokens = prompt_tokens;
@@ -1028,7 +1254,28 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                         StreamEvent::SessionLoaded { dir, state } => {
                             app.current_session_dir = Some(dir);
                             app.blocks = state.blocks;
-                            app.history = state.history;
+                            app.history = lethetic::app::App::load_global_history();
+                            app.total_cost = state.total_cost;
+                            app.total_prompt_tokens = state.total_prompt_tokens;
+                            app.total_completion_tokens = state.total_completion_tokens;
+                            // Restore the system prompt template this session was using, if
+                            // saved, before resolving prompts for any model switch below.
+                            let system_prompt_changed = !state.system_prompt.is_empty() && state.system_prompt != app.system_prompt;
+                            if system_prompt_changed {
+                                app.system_prompt = state.system_prompt.clone();
+                                app.prompt_cursor_pos = app.system_prompt.len();
+                            }
+                            // Restore the model/server last used by this session, if different
+                            // from the one we started with.
+                            let model_switched = !state.server_url.is_empty()
+                                && (state.server_url != app.server_url || state.model_name != app.model_name);
+                            if model_switched {
+                                apply_model_switch(config, app, &state.server_url, &state.model_name, &state.parser_mode);
+                            } else if system_prompt_changed {
+                                let refreshed = lethetic::system_prompt::SystemPromptManager::resolve_prompt(
+                                    &app.system_prompt, &app.current_dir, config);
+                                app.context_manager.update_system_prompt(refreshed);
+                            }
                             // Restore the session's theme; cached_lines were pre-rendered
                             // with the current theme, so invalidate them on a theme change.
                             if !state.theme_name.is_empty() && state.theme_name != app.theme.name
@@ -1037,12 +1284,33 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                     app.theme_state.select(Some(idx));
                                     for block in &mut app.blocks { block.invalidate(); }
                                 }
+                            if state.hide_thinking != app.hide_thinking {
+                                app.hide_thinking = state.hide_thinking;
+                                let label = if app.hide_thinking { "Show Thinking" } else { "Hide Thinking" };
+                                app.palette_items[8] = format!("{} {}", lethetic::icons::PROCESSING, label);
+                            }
                             app.context_manager.clear();
                             app.context_manager.set_messages(state.messages);
                             app.scroll = 0;
                             app.output_state.select(Some(app.blocks.len().saturating_sub(1)));
                             app.is_loading_session = false;
                             app.needs_save = false;
+                            app.should_redraw = true;
+                        }
+                        StreamEvent::CompactionChunk(text) => {
+                            if let Some(popup) = app.compaction_popup.as_mut() {
+                                popup.content.push_str(&text);
+                                // usize::MAX = "follow bottom"; render clamps to max_scroll
+                                popup.scroll = usize::MAX;
+                            }
+                            app.should_redraw = true;
+                        }
+                        StreamEvent::CompactionDone { new_session_dir } => {
+                            if let Some(popup) = app.compaction_popup.as_mut() {
+                                popup.done = true;
+                                popup.new_session_dir = Some(new_session_dir.clone());
+                            }
+                            app.refresh_session_list();
                             app.should_redraw = true;
                         }
                     }

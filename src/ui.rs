@@ -683,7 +683,12 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     // here and reuse the result in the display pass below.
     let mut live_lines: Option<Vec<Line>> = None;
 
+    let hide_thinking = app.hide_thinking;
     for (i, block) in app.blocks.iter_mut().enumerate() {
+        if hide_thinking && (block.block_type == BlockType::Thought || block.block_type == BlockType::Formulating) {
+            block_line_counts.push(0);
+            continue;
+        }
         let is_last = i == num_blocks - 1;
         let count = if is_last && (app.is_executing_tool || app.is_processing) {
             let rendered = render_block_to_lines(block, terminal_width, &app.theme, if app.is_executing_tool { Some(&app.tool_output_preview) } else { None });
@@ -707,6 +712,8 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         total_lines += count;
     }
     app.total_line_count = total_lines;
+    app.last_output_rect = left_layout[0];
+    app.last_block_line_counts = block_line_counts.clone();
 
     let mut selected_line = app.output_state.selected().unwrap_or(0);
     if app.auto_scroll && total_lines > 0 {
@@ -781,6 +788,8 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
 
 
     // Adjust the list state to point to the correct relative item in our virtualized list
+    app.last_start_line = start_line;
+
     let mut virtual_state = ListState::default();
     let relative_selected = selected_line.saturating_sub(start_line);
     virtual_state.select(Some(relative_selected));
@@ -933,6 +942,11 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
                 },
                 Style::default().fg(app.theme.thought_fg)
             ));
+            spans.push(Span::styled("| Session Cost: ", Style::default().fg(app.theme.system_fg)));
+            spans.push(Span::styled(
+                format!("${:.6} ", app.total_cost),
+                Style::default().fg(app.theme.thought_fg)
+            ));
         }
 
     spans.push(Span::styled("| Mem: ", Style::default().fg(app.theme.system_fg)));
@@ -976,10 +990,16 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             }).collect()
         };
 
+        let title = if app.compact_model_picker_src.is_some() {
+            format!("{} Pick compaction model  (↑↓ · Enter: select · q: cancel)", icons::MODEL)
+        } else {
+            format!("{} Models  (↑↓ navigate · Enter: switch · q: close)", icons::MODEL)
+        };
+
         f.render_stateful_widget(
             List::new(items)
                 .block(UIBlock::default()
-                    .title(format!("{} Models  (↑↓ navigate · Enter: switch · q: close)", icons::MODEL))
+                    .title(title)
                     .borders(Borders::ALL)
                     .style(Style::default().bg(app.theme.terminal_bg)))
                 .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(app.theme.highlight_fg))
@@ -1081,7 +1101,14 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         f.render_widget(Clear, area);
         
         let mut items: Vec<ListItem> = vec![ListItem::new("  + Create New Prompt")];
-        items.extend(app.prompt_files.iter().map(|f| ListItem::new(f.clone())));
+        items.extend(app.prompt_files.iter().map(|name| {
+            let label = if name == "compaction" {
+                format!("{} [compaction]", name)
+            } else {
+                name.clone()
+            };
+            ListItem::new(label)
+        }));
 
         let block = UIBlock::default()
             .title(format!("{} Prompt Manager", icons::MODEL))
@@ -1110,17 +1137,33 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     if app.show_session_manager {
         let area = centered_rect(80, 80, f.area());
         f.render_widget(Clear, area);
-        let items: Vec<ListItem> = app.session_files.iter().map(|f| {
-            let name = std::path::Path::new(f).file_name().unwrap_or_default().to_string_lossy();
-            ListItem::new(name.to_string())
+        let items: Vec<ListItem> = app.session_files.iter().enumerate().map(|(i, path)| {
+            let name = std::path::Path::new(path).file_name().unwrap_or_default().to_string_lossy();
+            let meta = app.session_meta.get(i);
+            let token_str = match meta {
+                Some(m) => {
+                    let ctx_str = if m.context_tokens > 0 {
+                        format!("  ctx:{}", format_tokens(m.context_tokens as u32))
+                    } else {
+                        String::new()
+                    };
+                    let cost_str = if m.total_cost > 0.0 { format!("  ${:.4}", m.total_cost) } else { String::new() };
+                    let spend_str = if m.total_prompt_tokens > 0 || m.total_completion_tokens > 0 {
+                        format!("  [in:{} out:{}{}]", format_tokens(m.total_prompt_tokens as u32), format_tokens(m.total_completion_tokens as u32), cost_str)
+                    } else { String::new() };
+                    format!("{}{}", ctx_str, spend_str)
+                }
+                None => String::new(),
+            };
+            ListItem::new(format!("{}{}", name, token_str))
         }).collect();
-        
+
         let block = UIBlock::default()
             .title(format!("{} Session Manager", icons::COMMAND))
             .borders(Borders::ALL)
             .style(Style::default().bg(app.theme.terminal_bg))
             .border_style(Style::default().fg(app.theme.thought_fg));
-        
+
         let inner_layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(0), Constraint::Length(3)])
@@ -1134,10 +1177,12 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             inner_layout[0],
             &mut app.session_list_state
         );
-        
-        let help_text = "(Enter) Resume | (N) New | (D) Delete | (X) Wipe All | (Esc) Close";
+
+        let help_text = "(Enter) Resume | (C) Compact | (N) New | (D) Delete | (X) Wipe All | (Esc) Close";
         f.render_widget(Paragraph::new(help_text).block(UIBlock::default().borders(Borders::TOP).style(Style::default().bg(app.theme.terminal_bg))).style(Style::default().fg(app.theme.system_fg)), inner_layout[1]);
     }
+
+    crate::compact::render_compaction_popup(f, app);
 
     if app.show_latest_files {
         let area = centered_rect(80, 80, f.area());
@@ -1319,6 +1364,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
             Line::from(vec![Span::raw("  F10       : Toggle Mouse (for terminal selection)")]),
             Line::from(vec![Span::raw("  Wheel     : Scroll output one line up/down")]),
             Line::from(vec![Span::raw("  CTRL + P  : Command Palette")]),
+            Line::from(vec![Span::raw("  CTRL + O  : Toggle Hide/Show Thinking")]),
             Line::from(vec![Span::raw("  CTRL + L  : Clear UI (Keep Context)")]),
             Line::from(vec![]),
             Line::from(vec![Span::styled("General", Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan))]),
@@ -1329,6 +1375,27 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         ];
         f.render_widget(Paragraph::new(hotkeys_text).block(UIBlock::default().title(format!("{} Hotkeys Reference", icons::COMMAND)).borders(Borders::ALL).style(Style::default().bg(app.theme.terminal_bg))).wrap(Wrap { trim: false }), area);
     }
+}
+
+/// Maximum lines of a tool result shown inline before collapsing the middle.
+/// The full output is still kept in `block.content` (and on disk in
+/// `ui_log.txt`/the session state) — this only trims what's rendered, so a
+/// huge `cat`/build-log dump doesn't overwhelm the scrollback.
+const MAX_TOOL_RESULT_LINES: usize = 60;
+const TOOL_RESULT_HEAD_LINES: usize = 40;
+const TOOL_RESULT_TAIL_LINES: usize = 15;
+
+fn truncate_tool_result(content: &str) -> std::borrow::Cow<'_, str> {
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.len() <= MAX_TOOL_RESULT_LINES {
+        return std::borrow::Cow::Borrowed(content);
+    }
+    let hidden = lines.len() - TOOL_RESULT_HEAD_LINES - TOOL_RESULT_TAIL_LINES;
+    let mut out = String::with_capacity(content.len());
+    out.push_str(&lines[..TOOL_RESULT_HEAD_LINES].join("\n"));
+    out.push_str(&format!("\n\n… {} lines hidden ({} total) …\n\n", hidden, lines.len()));
+    out.push_str(&lines[lines.len() - TOOL_RESULT_TAIL_LINES..].join("\n"));
+    std::borrow::Cow::Owned(out)
 }
 
 pub fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, tool_preview: Option<&str>) -> Vec<Line<'static>> {
@@ -1390,15 +1457,21 @@ pub fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, t
         return lines_output;
     }
 
+    // NF content_copy glyph is 2 display cells; pad 1 space each side → 4 cols total.
+    let badge_str = format!(" {} ", icons::COPY);
+    const BADGE_WIDTH: usize = 4;
+
     if let Some(h) = header {
         let mut header_spans = vec![
             status_block.clone(),
             Span::styled(format!(" {} ", h), base_style.add_modifier(Modifier::BOLD).fg(Color::White)),
         ];
         let current_len = 2 + h.len() + 2;
-        if width > current_len {
-            header_spans.push(Span::styled(" ".repeat(width - current_len), base_style));
+        if width > current_len + BADGE_WIDTH {
+            header_spans.push(Span::styled(" ".repeat(width - current_len - BADGE_WIDTH), base_style));
         }
+        // Inverted colours: highlight_fg as bg, terminal_bg as fg — looks like a button.
+        header_spans.push(Span::styled(badge_str, Style::default().bg(theme.highlight_fg).fg(theme.terminal_bg).add_modifier(Modifier::BOLD)));
         lines_output.push(Line::from(header_spans));
     }
 
@@ -1477,7 +1550,9 @@ pub fn render_block_to_lines(block: &RenderBlock, width: usize, theme: &Theme, t
         } else {
             block.content.lines().map(|l| Line::from(Span::styled(l.to_string(), base_style))).collect()
         }
-    } else if block.block_type == BlockType::Text || block.block_type == BlockType::ToolResult || block.block_type == BlockType::Markdown || block.block_type == BlockType::Thought || block.content.contains("```") {
+    } else if block.block_type == BlockType::ToolResult {
+        markdown::render_markdown(&truncate_tool_result(&block.content), theme).lines
+    } else if block.block_type == BlockType::Text || block.block_type == BlockType::Markdown || block.block_type == BlockType::Thought || block.content.contains("```") {
         markdown::render_markdown(&block.content, theme).lines
     } else {
         block.content.lines().map(|l| Line::from(Span::styled(l.to_string(), base_style))).collect()

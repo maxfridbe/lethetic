@@ -66,6 +66,9 @@ pub async fn execute(
     tokio::select! {
         _ = cancellation_token.cancelled() => "[Operation Cancelled by User]".to_string(),
         res = async {
+            if old_string.is_empty() {
+                return "ERROR: old_string cannot be empty".to_string();
+            }
             match fs::read_to_string(&full_path) {
                 Ok(content) => {
                     let count = content.matches(old_string).count();
@@ -109,7 +112,11 @@ fn find_match_lines(content: &str, needle: &str) -> Vec<usize> {
         let abs_pos = search_from + pos;
         let line_no = content[..abs_pos].lines().count() + 1;
         results.push(line_no);
-        search_from = abs_pos + needle.len().max(1);
+        search_from = if needle.is_empty() {
+            abs_pos + content[abs_pos..].chars().next().map_or(1, |c| c.len_utf8())
+        } else {
+            abs_pos + needle.len()
+        };
     }
     results
 }
@@ -137,6 +144,15 @@ mod tests {
         let token = tokio_util::sync::CancellationToken::new();
         let r = execute("f.txt", "foo", "bar", false, dir.path().to_str().unwrap(), token).await;
         assert!(r.contains("ERROR") && r.contains("3"), "{}", r);
+    }
+
+    #[tokio::test]
+    async fn test_empty_old_string_errors() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("f.txt"), "hello ─ world").unwrap();
+        let token = tokio_util::sync::CancellationToken::new();
+        let r = execute("f.txt", "", "x", false, dir.path().to_str().unwrap(), token).await;
+        assert!(r.contains("ERROR"), "{}", r);
     }
 
     #[tokio::test]

@@ -35,6 +35,24 @@ Strings inside those markers do not need escaping. Do NOT use <|'|> markers."#;
 pub const TOOL_CALL_FORMAT_QWEN3: &str = r#"# Tool call format
 Use standard JSON format for all tool call arguments. Do NOT wrap strings in any special markers."#;
 
+pub const DEFAULT_COMPACTION_PROMPT: &str = r#"You are a session compactor. You receive a conversation log between a user and an AI coding agent.
+
+Produce a concise but complete summary capturing:
+- The user's original goal
+- All files created or modified (exact paths)
+- Key decisions and the reasoning behind them
+- Current project state: what is done, what is pending or blocked
+- Any important errors encountered and how they were resolved
+- Context a developer would need to continue the work immediately
+
+Rules:
+- Begin writing the summary immediately. Do not plan, reason out loud, or explain your approach.
+- Output ONLY the summary text. No preamble ("Here is...", "Summary:", "I will..."), no postamble.
+- Be terse. Omit repetition and tool-call noise.
+- Preserve exact file paths, function names, library names, and command lines.
+- The summary must be significantly shorter than the original conversation.
+"#;
+
 pub struct SystemPromptManager {
     prompts_dir: PathBuf,
 }
@@ -58,6 +76,12 @@ impl SystemPromptManager {
         let default_path = prompts_dir.join("software_engineer.md");
         if fs::read_to_string(&default_path).ok().as_deref() != Some(DEFAULT_PROMPT_TEMPLATE) {
             let _ = fs::write(default_path, DEFAULT_PROMPT_TEMPLATE);
+        }
+
+        // Seed the compaction prompt if it doesn't exist yet.
+        let compact_path = prompts_dir.join("compaction.md");
+        if !compact_path.exists() {
+            let _ = fs::write(compact_path, DEFAULT_COMPACTION_PROMPT);
         }
         
         Self { prompts_dir }

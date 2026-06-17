@@ -22,7 +22,10 @@ pub fn build_request(
         "stream": true,
         "stream_options": {
             "include_usage": true
-        }
+        },
+        // llama.cpp-compatible servers only emit per-chunk `timings`
+        // (prompt/predicted tokens-per-second) when this is set.
+        "timings_per_token": true
     });
     if !tools.is_empty() {
         body["tools"] = json!(tools);
@@ -168,6 +171,21 @@ mod tests {
         assert_eq!(body["stream"], true);
         assert_eq!(body["stream_options"]["include_usage"], true);
         assert!(body.get("tools").is_none());
+    }
+
+    #[test]
+    fn build_request_requests_timings_per_token() {
+        let msgs = vec![Message::user("hello")];
+        let body = build_request("model-x", &msgs, &[], 100, None, None);
+        assert_eq!(body["timings_per_token"], true);
+    }
+
+    #[test]
+    fn build_request_extra_body_can_override_timings_per_token() {
+        let msgs = vec![Message::user("hello")];
+        let extra = json!({ "timings_per_token": false });
+        let body = build_request("model-x", &msgs, &[], 100, None, Some(&extra));
+        assert_eq!(body["timings_per_token"], false);
     }
 
     #[test]

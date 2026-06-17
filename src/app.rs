@@ -1,4 +1,5 @@
 use ratatui::widgets::ListState;
+use ratatui::layout::Rect;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use crossterm::event::{self, KeyCode, KeyModifiers};
@@ -77,9 +78,55 @@ pub enum AppEventOutcome {
     NewSession,
     ResumeSession(String),
     DeleteSession(String),
+    CompactSession { src_dir: String, url: String, model_id: String },
     ToggleHistory,
     FetchModels,
     SwitchModel(String, String, String), // (server_url, model_id, parser)
+}
+
+/// Lightweight summary written alongside every session — read during
+/// `refresh_session_list` without loading the full session_state.json.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct SessionMeta {
+    #[serde(default)]
+    pub total_prompt_tokens: u64,
+    #[serde(default)]
+    pub total_completion_tokens: u64,
+    #[serde(default)]
+    pub total_cost: f64,
+    #[serde(default)]
+    pub message_count: usize,
+    /// Estimated tokens currently in the context window at last save.
+    #[serde(default)]
+    pub context_tokens: usize,
+}
+
+impl SessionMeta {
+    pub fn load(session_dir: &str) -> Self {
+        let mut meta: Self = std::fs::read_to_string(format!("{}/session_meta.json", session_dir))
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+
+        // Older sessions lack context_tokens — estimate from message content lengths.
+        if meta.context_tokens == 0 {
+            meta.context_tokens = Self::estimate_context_tokens(session_dir);
+        }
+        meta
+    }
+
+    fn estimate_context_tokens(session_dir: &str) -> usize {
+        #[derive(serde::Deserialize, Default)]
+        struct Slim { #[serde(default)] messages: Vec<SlimMsg> }
+        #[derive(serde::Deserialize)]
+        struct SlimMsg { #[serde(default)] content: String }
+
+        std::fs::read_to_string(format!("{}/session_state.json", session_dir))
+            .ok()
+            .and_then(|s| serde_json::from_str::<Slim>(&s).ok())
+            .map(|slim| slim.messages.iter().map(|m| m.content.len() / 4).sum())
+            .unwrap_or(0)
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -92,6 +139,28 @@ pub struct SessionState {
     pub history: Vec<String>,
     #[serde(default)]
     pub theme_name: String,
+    /// Cumulative estimated spend across this session, in USD.
+    #[serde(default)]
+    pub total_cost: f64,
+    /// Cumulative prompt tokens reported by the server across requests in this session.
+    #[serde(default)]
+    pub total_prompt_tokens: u64,
+    /// Cumulative completion tokens reported by the server across requests in this session.
+    #[serde(default)]
+    pub total_completion_tokens: u64,
+    /// Server URL and model id last in use, so resuming reconnects to the same model.
+    #[serde(default)]
+    pub server_url: String,
+    #[serde(default)]
+    pub model_name: String,
+    /// Tool-call parser dialect ("gemma4" | "qwen3" | ...) for the model above.
+    #[serde(default)]
+    pub parser_mode: String,
+    /// Raw (unresolved) system prompt template in use for this session.
+    #[serde(default)]
+    pub system_prompt: String,
+    #[serde(default)]
+    pub hide_thinking: bool,
 }
 
 impl SessionState {
@@ -112,6 +181,13 @@ impl SessionState {
             .unwrap_or_default();
         SessionState { blocks, messages, ..Default::default() }
     }
+}
+
+pub struct CompactionPopupState {
+    pub content: String,
+    pub scroll: usize,
+    pub done: bool,
+    pub new_session_dir: Option<String>,
 }
 
 pub struct App {
@@ -170,6 +246,7 @@ pub struct App {
     pub current_dir: String,
     pub current_session_dir: Option<String>,
     pub session_files: Vec<String>,
+    pub session_meta: Vec<SessionMeta>,
     pub session_list_state: ListState,
     pub show_session_manager: bool,
     pub needs_save: bool,
@@ -198,9 +275,25 @@ pub struct App {
     pub show_model_switcher: bool,
     pub model_switcher_state: ListState,
     pub available_models: Vec<crate::client::ModelChoice>,
+    /// When Some, the model-picker popup is being shown to choose a compaction model.
+    pub compact_model_picker_src: Option<String>,
     pub show_lsp_manager: bool,
     pub lsp_server_list_state: ListState,
     pub lsp_install_cmd: Option<String>,
+    pub hide_thinking: bool,
+    /// Layout of the output panel from the last draw — used for mouse hit-testing.
+    pub last_output_rect: Rect,
+    /// Per-block line counts from the last draw (indices match app.blocks).
+    pub last_block_line_counts: Vec<usize>,
+    /// First visible absolute line index from the last draw.
+    pub last_start_line: usize,
+    /// Cumulative estimated spend across this session, in USD.
+    pub total_cost: f64,
+    /// Cumulative prompt tokens reported by the server across requests in this session.
+    pub total_prompt_tokens: u64,
+    /// Cumulative completion tokens reported by the server across requests in this session.
+    pub total_completion_tokens: u64,
+    pub compaction_popup: Option<CompactionPopupState>,
 }
 
 impl App {
@@ -258,6 +351,7 @@ impl App {
                 format!("{} Clear UI (Keep Context)", icons::TRASH),
                 format!("{} Clear All Context", icons::TRASH),
                 format!("{} Toggle Debugger", icons::DEBUG),
+                format!("{} Hide Thinking", icons::PROCESSING),
                 format!("{} Sessions", icons::COMMAND),
                 format!("{} Latest Files", icons::COMMAND),
                 format!("{} Models", icons::MODEL),
@@ -319,6 +413,7 @@ impl App {
             current_dir: env::current_dir().map(|p| p.display().to_string()).unwrap_or_else(|_| String::from(".")),
             current_session_dir: None,
             session_files: Vec::new(),
+            session_meta: Vec::new(),
             session_list_state: ListState::default(),
             show_session_manager: false,
             needs_save: false,
@@ -342,7 +437,7 @@ impl App {
             load_progress: 0.0,
             load_status: String::new(),
             stop_reason: "Ready".to_string(),
-            history: Vec::new(),
+            history: Self::load_global_history(),
             history_state,
             backbuffer: String::new(),
             show_history: false,
@@ -354,9 +449,18 @@ impl App {
             show_model_switcher: false,
             model_switcher_state: ListState::default(),
             available_models: Vec::new(),
+            compact_model_picker_src: None,
             show_lsp_manager: false,
             lsp_server_list_state: ListState::default(),
             lsp_install_cmd: None,
+            hide_thinking: false,
+            last_output_rect: Rect::default(),
+            last_block_line_counts: Vec::new(),
+            last_start_line: 0,
+            total_cost: 0.0,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            compaction_popup: None,
             };
         app.refresh_session_list();
         if !app.session_files.is_empty() {
@@ -389,20 +493,37 @@ impl App {
         self.save_session();
     }
 
+    const GLOBAL_HISTORY_PATH: &'static str = ".lethetic/history.json";
+
+    pub fn load_global_history() -> Vec<String> {
+        std::fs::read_to_string(Self::GLOBAL_HISTORY_PATH)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    fn persist_global_history(history: &[String]) {
+        if let Ok(json) = serde_json::to_string(history) {
+            let _ = std::fs::write(Self::GLOBAL_HISTORY_PATH, json);
+        }
+    }
+
     pub fn add_to_history(&mut self, text: String) {
         let trimmed = text.trim();
         if trimmed.is_empty() { return; }
 
-        // Remove if already exists to move it to the end (most recent)
+        // Remove duplicate, push to end (most-recent last).
         if let Some(pos) = self.history.iter().position(|x| x == trimmed) {
             self.history.remove(pos);
         }
         self.history.push(trimmed.to_string());
 
-        // Limit history size to 100
-        if self.history.len() > 100 {
+        // Cap at 500 entries across all sessions.
+        if self.history.len() > 500 {
             self.history.remove(0);
         }
+
+        Self::persist_global_history(&self.history);
     }
 
     pub fn save_session(&mut self) {
@@ -415,11 +536,32 @@ impl App {
                 blocks: self.blocks.clone(),
                 history: self.history.clone(),
                 theme_name: self.theme.name.clone(),
+                total_cost: self.total_cost,
+                total_prompt_tokens: self.total_prompt_tokens,
+                total_completion_tokens: self.total_completion_tokens,
+                server_url: self.server_url.clone(),
+                model_name: self.model_name.clone(),
+                parser_mode: self.config.model_servers.iter()
+                    .find(|s| s.url == self.server_url)
+                    .map(|s| s.parser.clone())
+                    .unwrap_or_default(),
+                system_prompt: self.system_prompt.clone(),
+                hide_thinking: self.hide_thinking,
             };
             // Compact JSON: this runs every 2s while streaming, and pretty-printing
             // doubles the temp string and file size.
             if let Ok(json) = serde_json::to_string(&state) {
                 let _ = std::fs::write(format!("{}/session_state.json", dir), json);
+            }
+            let meta = SessionMeta {
+                total_prompt_tokens: self.total_prompt_tokens,
+                total_completion_tokens: self.total_completion_tokens,
+                total_cost: self.total_cost,
+                message_count: self.context_manager.get_messages().len(),
+                context_tokens: self.context_manager.get_token_count(),
+            };
+            if let Ok(json) = serde_json::to_string(&meta) {
+                let _ = std::fs::write(format!("{}/session_meta.json", dir), json);
             }
         }
         self.needs_save = false;
@@ -440,12 +582,26 @@ impl App {
             }
         }
         dirs.sort_by(|a, b| b.cmp(a)); // Newest first
+        self.session_meta = dirs.iter().map(|d| SessionMeta::load(d)).collect();
         self.session_files = dirs;
         if self.session_files.is_empty() {
             self.session_list_state.select(None);
         } else if self.session_list_state.selected().is_none() {
             self.session_list_state.select(Some(0));
         }
+    }
+
+    pub fn toggle_hide_thinking(&mut self) {
+        self.hide_thinking = !self.hide_thinking;
+        // Invalidate Thought/Formulating blocks so the counting pass reacts.
+        for block in &mut self.blocks {
+            if block.block_type == BlockType::Thought || block.block_type == BlockType::Formulating {
+                block.invalidate();
+            }
+        }
+        let label = if self.hide_thinking { "Show Thinking" } else { "Hide Thinking" };
+        self.palette_items[8] = format!("{} {}", icons::PROCESSING, label);
+        self.should_redraw = true;
     }
 
     pub fn refresh_prompt_list(&mut self) {
@@ -939,6 +1095,18 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                         return AppEventOutcome::DeleteSession(filename);
                     }
             }
+            KeyCode::Char('c') | KeyCode::Char('C') => {
+                if let Some(i) = app.session_list_state.selected()
+                    && i < app.session_files.len() {
+                        let filename = app.session_files[i].clone();
+                        app.compact_model_picker_src = Some(filename);
+                        app.show_session_manager = false;
+                        app.show_model_switcher = true;
+                        app.available_models.clear();
+                        app.model_switcher_state.select(Some(0));
+                        return AppEventOutcome::FetchModels;
+                    }
+            }
             KeyCode::Char('x') | KeyCode::Char('X') => {
                 for f in &app.session_files {
                     let _ = std::fs::remove_dir_all(f);
@@ -1020,15 +1188,19 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                     5 => { app.show_palette = false; app.blocks.clear(); app.should_redraw = true; app.needs_save = true; }
                     6 => { app.show_palette = false; app.context_manager.clear(); app.start_new_session(); }
                     7 => { app.show_palette = false; app.show_debug = !app.show_debug; }
-                    8 => { app.show_palette = false; app.refresh_session_list(); app.show_session_manager = true; }
-                    9 => { app.show_palette = false; app.show_latest_files = true; app.latest_files_state.select(Some(0)); }
-                    10 => return AppEventOutcome::FetchModels,
-                    11 => {
+                    8 => {
+                        app.show_palette = false;
+                        app.toggle_hide_thinking();
+                    }
+                    9 => { app.show_palette = false; app.refresh_session_list(); app.show_session_manager = true; }
+                    10 => { app.show_palette = false; app.show_latest_files = true; app.latest_files_state.select(Some(0)); }
+                    11 => return AppEventOutcome::FetchModels,
+                    12 => {
                         app.show_palette = false;
                         app.show_lsp_manager = true;
                         app.lsp_server_list_state.select(Some(0));
                     }
-                    12 => return AppEventOutcome::Exit,
+                    13 => return AppEventOutcome::Exit,
                     _ => app.show_palette = false,
                 }
             }
@@ -1083,7 +1255,10 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
     if app.show_model_switcher {
         let num_models = app.available_models.len();
         match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => { app.show_model_switcher = false; }
+            KeyCode::Esc | KeyCode::Char('q') => {
+                app.show_model_switcher = false;
+                app.compact_model_picker_src = None;
+            }
             KeyCode::Down | KeyCode::Char('j') => {
                 if num_models > 0 {
                     let i = app.model_switcher_state.selected().unwrap_or(0);
@@ -1099,15 +1274,18 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
             KeyCode::Enter => {
                 if let Some(i) = app.model_switcher_state.selected()
                     && let Some(choice) = app.available_models.get(i) {
-                        // Find parser setting for this server from config
-                        let parser = app.config.model_servers.iter()
-                            .find(|s| s.url == choice.url)
-                            .map(|s| s.parser.clone())
-                            .unwrap_or_else(|| "gemma4".to_string());
-                        let outcome = AppEventOutcome::SwitchModel(choice.url.clone(), choice.model_id.clone(), parser);
+                        let url = choice.url.clone();
+                        let model_id = choice.model_id.clone();
                         app.show_model_switcher = false;
                         app.should_redraw = true;
-                        return outcome;
+                        if let Some(src_dir) = app.compact_model_picker_src.take() {
+                            return AppEventOutcome::CompactSession { src_dir, url, model_id };
+                        }
+                        let parser = app.config.model_servers.iter()
+                            .find(|s| s.url == url)
+                            .map(|s| s.parser.clone())
+                            .unwrap_or_else(|| "gemma4".to_string());
+                        return AppEventOutcome::SwitchModel(url, model_id, parser);
                     }
             }
             _ => {}
@@ -1258,6 +1436,10 @@ pub fn handle_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
                 app.should_redraw = true;
                 return AppEventOutcome::SendPrompt(p);
             }
+        }
+        KeyCode::Char('o') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.toggle_hide_thinking();
+            return AppEventOutcome::Continue;
         }
         KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.blocks.clear();

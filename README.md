@@ -107,6 +107,49 @@ The system prompt's **Tool call format** section is automatically tailored to th
 - Resets the stream parser to the new dialect
 - Updates the status bar with the active model name
 
+All server switches go through `Config::for_server` which always applies the correct `api_key`, `thinking`, `extra_body`, and `context_mode` from the matching `model_servers` entry — ensuring auth headers are correct regardless of which path triggers the switch (interactive switcher, session resume, or compaction).
+
+---
+
+## Sessions
+
+**Ctrl+P → Sessions** — browse, resume, compact, or delete sessions.
+
+Each session entry in the list shows:
+- Session directory name
+- `ctx:Xk` — estimated tokens currently in the context window at last save
+- `[in:X out:Y $Z]` — cumulative token spend and cost for the session
+
+### Session Manager keys
+
+| Key | Action |
+|---|---|
+| Enter | Resume selected session |
+| C | Compact selected session (opens model picker first) |
+| N | New session |
+| D | Delete selected session |
+| X | Wipe all sessions |
+| Esc | Close |
+
+### Session Compaction
+
+Compaction summarises a session's `ui_log.txt` into a condensed context that can be resumed immediately.
+
+**Flow:**
+1. Press **C** on a session → model picker popup opens (same as the model switcher, re-titled). Pick any configured model to do the summarisation — it doesn't have to be the session's own model.
+2. A streaming progress popup shows live output:
+   - Parallel sliding-window passes (each ~80k chars, 8k overlap) run concurrently
+   - A final streaming merge pass combines the partial summaries
+3. The compacted session is written alongside the original under `.lethetic/sessions/` with all original metadata (model, server URL, parser, theme, cost totals, history) preserved.
+
+**Press Ctrl+C at any point** to cancel — the in-flight requests are aborted and any partially-created session directory is removed.
+
+The popup is scrollable (↑↓ / PgUp / PgDn) with a `[current/total]` line indicator in the title bar.
+
+### Global Input History
+
+Input history is stored globally in `.lethetic/history.json` and persists across all sessions. Every prompt submitted is appended immediately; the history is loaded at startup and restored on every session rehydrate. Up to 500 entries are retained (most-recent last).
+
 ---
 
 ## Architecture
@@ -278,7 +321,7 @@ The status bar shows why the engine stopped:
 | 5 | Clear UI | Clear display, keep context |
 | 6 | Clear All | Clear display and context, start fresh |
 | 7 | Toggle Debugger | Show/hide debug log pane |
-| 8 | Sessions | Load, resume, or delete sessions |
+| 8 | Sessions | Load, resume, compact, or delete sessions |
 | 9 | Latest Files | View and manage file context cache |
 | 10 | Models | Switch between configured model servers |
 | 11 | LSP Servers | View install status; Enter to auto-install |

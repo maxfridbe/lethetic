@@ -18,5 +18,6 @@ pub const DEBUG: &str = "󰃤";       // nf-md-bug
 pub const PATH: &str = "󰝰";        // nf-md-folder
 pub const GIT: &str = "󰊢";         // nf-md-git
 pub const IMAGE: &str = "󰋩";       // nf-md-image
+pub const COPY: &str = "󰇻";        // nf-md-content_copy
 pub const SPINNER: &[&str] = &["◰", "◳", "◲", "◱"];
 pub const TOOL_SPINNER: &[&str] = &["⢎ ", "⠎⠁", "⠊⠑", "⠈⠱", " ⠱", "⠠⠰", "⠄⠄", "⠆⠄"];
