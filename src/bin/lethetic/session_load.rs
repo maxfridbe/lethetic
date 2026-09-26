@@ -252,6 +252,8 @@ pub(crate) async fn apply_loaded(
         model_name,
         system_prompt,
         hide_thinking,
+        python_policy,
+        loop_mode,
         ..
     } = state;
     app.current_session_dir = Some(dir);
@@ -272,38 +274,17 @@ pub(crate) async fn apply_loaded(
     app.adopt_global_history(history);
     app.hide_thinking = hide_thinking;
 
-    // Restore the system prompt template this session was using, if saved,
-    // before resolving prompts for any model switch below.
-    let system_prompt_changed = !system_prompt.is_empty() && system_prompt != app.system_prompt;
-    if system_prompt_changed {
-        app.system_prompt = system_prompt;
-        app.prompt_cursor_pos = app.system_prompt.len();
-    }
-    // Restore the connection/model last used by this session, if different
-    // from the one currently active.
-    let model_switched = match connection_id.as_deref() {
-        Some(connection_id) if !model_name.is_empty() => {
-            config.active_connection_id() != Some(connection_id) || model_name != app.model_name
-        }
-        _ => false,
-    };
-    if model_switched {
-        let connection_id = connection_id.expect("checked above");
-        match crate::app_events::apply_model_switch(app, config, &connection_id, &model_name) {
-            Ok(_) => app.stop_reason = format!("Restored model {model_name}"),
-            Err(error) => {
-                app.stop_reason =
-                    format!("⚠ Could not restore session model {model_name}: {error}");
-            }
-        }
-    } else if system_prompt_changed {
-        let refreshed = lethetic::system_prompt::SystemPromptManager::resolve_prompt(
-            &app.system_prompt,
-            &app.current_dir,
-            config,
-        );
-        app.context_manager.update_system_prompt(refreshed);
-    }
+    apply_session_settings(
+        app,
+        config,
+        lethetic::app::SessionSettings {
+            system_prompt,
+            connection_id,
+            model_name,
+            python_policy,
+            loop_mode,
+        },
+    );
 
     if !theme_name.is_empty()
         && theme_name != app.theme.name
@@ -357,6 +338,83 @@ pub(crate) async fn apply_loaded(
         app.needs_save = true;
     }
     app.should_redraw = true;
+}
+
+/// Re-apply a resumed session's prompt, model, Agent Mode and loop mode.
+/// Launch flags that lock a setting (`--python-only`) win over the session.
+pub(crate) fn apply_session_settings(
+    app: &mut App,
+    config: &mut Config,
+    settings: lethetic::app::SessionSettings,
+) {
+    let lethetic::app::SessionSettings {
+        system_prompt,
+        connection_id,
+        model_name,
+        python_policy,
+        loop_mode,
+    } = settings;
+    let mut restored = Vec::new();
+    let system_prompt_changed = !system_prompt.is_empty() && system_prompt != app.system_prompt;
+    if system_prompt_changed {
+        app.system_prompt = system_prompt;
+        app.prompt_cursor_pos = app.system_prompt.len();
+    }
+    if let Some(mode) = loop_mode {
+        app.loop_detector.config.mode = mode;
+    }
+    let mut prompt_refreshed = false;
+    if let Some(snapshot) = python_policy
+        && !app.python_policy.is_cli_locked()
+        && snapshot != lethetic::python_policy::PythonPolicySnapshot::from_config(config)
+    {
+        match snapshot.validate().and_then(|()| {
+            crate::app_events::install_python_policy(
+                app,
+                config,
+                snapshot.clone(),
+                lethetic::python_policy::PythonPolicySource::OneTime,
+                false,
+            )
+        }) {
+            Ok(()) => {
+                prompt_refreshed = true;
+                restored.push(lethetic::app::describe_python_policy(&snapshot));
+            }
+            Err(error) => app.log_debug(&format!("Session Agent Mode not restored: {error}")),
+        }
+    }
+    let model_switch = match connection_id.as_deref() {
+        Some(connection_id) if !model_name.is_empty() => {
+            (config.active_connection_id() != Some(connection_id) || model_name != app.model_name)
+                .then(|| connection_id.to_string())
+        }
+        _ => None,
+    };
+    if let Some(connection_id) = model_switch {
+        match crate::app_events::apply_model_switch(app, config, &connection_id, &model_name) {
+            Ok(_) => {
+                prompt_refreshed = true;
+                restored.push(format!("model {model_name}"));
+            }
+            Err(error) => {
+                app.stop_reason =
+                    format!("⚠ Could not restore session model {model_name}: {error}");
+                return;
+            }
+        }
+    }
+    if system_prompt_changed && !prompt_refreshed {
+        let refreshed = lethetic::system_prompt::SystemPromptManager::resolve_prompt(
+            &app.system_prompt,
+            &app.current_dir,
+            config,
+        );
+        app.context_manager.update_system_prompt(refreshed);
+    }
+    if !restored.is_empty() {
+        app.stop_reason = format!("Restored {}", restored.join(", "));
+    }
 }
 
 #[cfg(test)]

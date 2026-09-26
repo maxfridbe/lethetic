@@ -15,6 +15,8 @@ pub struct SessionSummary {
     pub output_tokens: u64,
     /// Cumulative API-equivalent estimate in nano-units of currency, when priced.
     pub estimated_cost_nanos: Option<u64>,
+    /// Model, Agent Mode and remote control recorded with the session.
+    pub details: String,
 }
 
 impl SessionSummary {
@@ -31,6 +33,20 @@ impl SessionSummary {
             totals.usage.output_tokens,
             totals.estimated_cost.as_ref().map(|cost| cost.nanos),
         )
+    }
+
+    pub(super) fn details_from_state(state: &SessionState) -> String {
+        let mut parts = Vec::new();
+        if !state.model_name.is_empty() {
+            parts.push(format!("model {}", state.model_name));
+        }
+        if let Some(policy) = &state.python_policy {
+            parts.push(describe_python_policy(policy));
+        }
+        if let Some(target) = &state.remote_control {
+            parts.push(format!("rc {target}"));
+        }
+        parts.join(" · ")
     }
 
     fn stats_suffix(&self) -> String {
@@ -348,8 +364,20 @@ impl App {
             accounting,
             needs_migration_save,
             hide_thinking,
+            connection_id,
+            model_name,
+            python_policy,
+            loop_mode,
+            system_prompt,
             ..
         } = state;
+        self.pending_session_settings = Some(SessionSettings {
+            system_prompt,
+            connection_id,
+            model_name,
+            python_policy,
+            loop_mode,
+        });
         self.display_name = display_name;
         self.python_runtime_id = python_runtime_id;
         self.managed_python_workspace = managed_python_workspace;
@@ -864,6 +892,7 @@ impl App {
     ) -> Option<SessionListCandidate> {
         let (context_tokens, input_tokens, output_tokens, estimated_cost_nanos) =
             SessionSummary::stats_from_state(&state);
+        let details = SessionSummary::details_from_state(&state);
         let session_id = state.session_id?;
         let registration = classification.registration.as_ref();
         if validate_session_uuid(&session_id, "session ID").is_err()
@@ -889,6 +918,7 @@ impl App {
             input_tokens,
             output_tokens,
             estimated_cost_nanos,
+            details,
         }))
     }
 
@@ -931,6 +961,7 @@ impl App {
                     .estimated_cost
                     .as_ref()
                     .map(|cost| cost.nanos),
+                details: String::new(),
             }));
         }
         let registration = registration

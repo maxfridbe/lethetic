@@ -19,7 +19,8 @@ pub use lifecycle::SessionSummary;
 pub use model_catalog::ModelCatalogState;
 pub use remote_control::{RcInfoState, RcSetupStage, RcSetupState};
 pub use session_state::{
-    SessionDirectoryBinding, SessionState, SessionWorkspaceBinding, normalize_session_display_name,
+    SessionDirectoryBinding, SessionSettings, SessionState, SessionWorkspaceBinding,
+    describe_python_policy, normalize_session_display_name,
 };
 pub use tool_calls::{ApprovalMode, handle_tool_call, handle_tool_call_with_provider};
 pub use transcript::{BlockType, RenderBlock};
@@ -188,6 +189,9 @@ pub struct App {
     pub remote_control_last_peer: Option<String>,
     /// Right-hand todo pane (F9) and its cached contents.
     pub show_todos: bool,
+    /// Settings of a session resumed by the library path (`--session-id`),
+    /// waiting for the run loop to apply them.
+    pub pending_session_settings: Option<SessionSettings>,
     pub todos: crate::todo_store::TodoSnapshot,
     pub hide_thinking: bool,
     /// Layout of the output panel from the last draw — used for mouse hit-testing.
@@ -415,6 +419,7 @@ impl App {
             remote_control_clients: 0,
             remote_control_last_peer: None,
             show_todos: false,
+            pending_session_settings: None,
             todos: Default::default(),
             hide_thinking: false,
             last_output_rect: Rect::default(),

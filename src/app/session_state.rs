@@ -236,8 +236,53 @@ pub struct SessionState {
     pub system_prompt: String,
     #[serde(default)]
     pub hide_thinking: bool,
+    /// Agent Mode (tool profile and Python isolation) in use for this session.
+    #[serde(default)]
+    pub python_policy: Option<crate::python_policy::PythonPolicySnapshot>,
+    #[serde(default)]
+    pub loop_mode: Option<crate::loop_detector::LoopDetectionMode>,
+    /// Remote-control target last active in this session (informational;
+    /// resuming never starts a listener on its own).
+    #[serde(default)]
+    pub remote_control: Option<String>,
     #[serde(skip)]
     pub needs_migration_save: bool,
+}
+
+/// Settings restored when a session is resumed. The run loop applies them
+/// because model switching and policy installation live in the binary.
+#[derive(Debug, Clone, Default)]
+pub struct SessionSettings {
+    pub system_prompt: String,
+    pub connection_id: Option<String>,
+    pub model_name: String,
+    pub python_policy: Option<crate::python_policy::PythonPolicySnapshot>,
+    pub loop_mode: Option<crate::loop_detector::LoopDetectionMode>,
+}
+
+/// One-line description of an Agent Mode snapshot for session lists.
+pub fn describe_python_policy(snapshot: &crate::python_policy::PythonPolicySnapshot) -> String {
+    use crate::config::{NetworkAccess, PythonExecutionTarget, SandboxBackend, ToolProfile};
+    if snapshot.tool_profile == ToolProfile::General {
+        return "general tools".to_string();
+    }
+    let runtime = &snapshot.python_runtime;
+    match runtime.target {
+        Some(PythonExecutionTarget::Host) => "python-only (host)".to_string(),
+        _ => {
+            let backend = match runtime.sandbox.backend {
+                Some(SandboxBackend::Podman) => "podman",
+                Some(SandboxBackend::Bubblewrap) => "bubblewrap",
+                None => "sandbox",
+            };
+            let network = match runtime.sandbox.network {
+                Some(NetworkAccess::None) | None => "isolated",
+                Some(NetworkAccess::Nonlocal) => "nonlocal",
+                Some(NetworkAccess::Full) => "full network",
+            };
+            format!("python-only ({backend}, {network})")
+        }
+    }
 }
 
 impl Default for SessionState {
@@ -259,6 +304,9 @@ impl Default for SessionState {
             model_name: String::new(),
             system_prompt: String::new(),
             hide_thinking: false,
+            python_policy: None,
+            loop_mode: None,
+            remote_control: None,
             needs_migration_save: false,
         }
     }
@@ -656,6 +704,11 @@ impl App {
             model_name: self.model_name.clone(),
             system_prompt: self.system_prompt.clone(),
             hide_thinking: self.hide_thinking,
+            python_policy: Some(crate::python_policy::PythonPolicySnapshot::from_config(
+                &self.config,
+            )),
+            loop_mode: Some(self.loop_detector.config.mode),
+            remote_control: self.remote_control_target.clone(),
             needs_migration_save: false,
         };
         let needs_creation_commit = !self.session_creation_committed;
@@ -673,5 +726,37 @@ impl App {
         }
         self.needs_save = false;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod settings_tests {
+    use super::*;
+
+    #[test]
+    fn agent_mode_descriptions_are_short_and_specific() {
+        let mut config = crate::config::Config::default();
+        let general = crate::python_policy::PythonPolicySnapshot::from_config(&config);
+        assert_eq!(describe_python_policy(&general), "general tools");
+        config.apply_python_preset(crate::config::PythonPreset::Nonlocal);
+        let nonlocal = crate::python_policy::PythonPolicySnapshot::from_config(&config);
+        assert_eq!(
+            describe_python_policy(&nonlocal),
+            "python-only (podman, nonlocal)"
+        );
+
+        let state = SessionState {
+            model_name: "gpt-5.6-sol".into(),
+            python_policy: Some(nonlocal),
+            remote_control: Some("https://brainiac:11223".into()),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&state).unwrap();
+        let back: SessionState = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            back.remote_control.as_deref(),
+            Some("https://brainiac:11223")
+        );
+        assert_eq!(back.python_policy, state.python_policy);
     }
 }

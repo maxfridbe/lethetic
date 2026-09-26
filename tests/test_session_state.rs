@@ -41,6 +41,9 @@ fn sample_state() -> SessionState {
         model_name: String::new(),
         system_prompt: String::new(),
         hide_thinking: false,
+        python_policy: None,
+        loop_mode: None,
+        remote_control: None,
         needs_migration_save: false,
     }
 }

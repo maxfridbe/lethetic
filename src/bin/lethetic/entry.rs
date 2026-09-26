@@ -210,6 +210,9 @@ async fn run_cli(
         }
     }
 
+    if let Some(settings) = app.pending_session_settings.take() {
+        crate::session_load::apply_session_settings(&mut app, &mut config, settings);
+    }
     if let Some(reason) = drain_startup_signals(signals, mode, startup_console.as_mut()) {
         announce_startup_shutdown(startup_console.as_mut(), reason);
         return finalize(

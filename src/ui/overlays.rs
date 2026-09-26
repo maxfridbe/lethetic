@@ -478,7 +478,18 @@ fn render_session_manager(f: &mut ratatui::Frame, app: &mut App) {
     let items: Vec<ListItem> = app
         .session_summaries
         .iter()
-        .map(|summary| ListItem::new(summary.label(&app.session_id)))
+        .map(|summary| {
+            let mut lines = vec![Line::from(summary.label(&app.session_id))];
+            if !summary.details.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    format!("    {}", summary.details),
+                    Style::default()
+                        .fg(app.theme.system_fg)
+                        .add_modifier(Modifier::DIM),
+                )));
+            }
+            ListItem::new(lines)
+        })
         .collect();
 
     let block = UIBlock::default()
