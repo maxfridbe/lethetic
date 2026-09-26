@@ -381,6 +381,7 @@ pub(crate) async fn handle_app_event_outcome(
                         server.model.clone(),
                         server.api_key.clone(),
                         server.discover_models,
+                        server.models.clone(),
                     )
                 })
                 .collect::<Vec<_>>();
@@ -393,6 +394,7 @@ pub(crate) async fn handle_app_event_outcome(
                     config.model.clone(),
                     config.api_key.clone(),
                     true,
+                    Vec::new(),
                 ));
             }
             let client_clone = (*client).clone();
@@ -401,7 +403,7 @@ pub(crate) async fn handle_app_event_outcome(
             let model_task = tokio::spawn(async move {
                 const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
                 let probes = servers.iter().map(
-                    |(id, name, kind, url, default_model, api_key, discover)| {
+                    |(id, name, kind, url, default_model, api_key, discover, allowlist)| {
                         let client = client_clone.clone();
                         let cancellation = model_cancellation.child_token();
                         async move {
@@ -413,6 +415,7 @@ pub(crate) async fn handle_app_event_outcome(
                                     *kind,
                                     url.clone(),
                                     default_model.clone(),
+                                    allowlist.clone(),
                                     Ok(Vec::new()),
                                 );
                             }
@@ -444,15 +447,26 @@ pub(crate) async fn handle_app_event_outcome(
                                 *kind,
                                 url.clone(),
                                 default_model.clone(),
+                                allowlist.clone(),
                                 live,
                             )
                         }
                     },
                 );
                 let mut models = Vec::new();
-                for (id, name, kind, url, default_model, live) in
+                for (id, name, kind, url, default_model, allowlist, live) in
                     futures_util::future::join_all(probes).await
                 {
+                    let live = live.map(|discovered| {
+                        if allowlist.is_empty() {
+                            discovered
+                        } else {
+                            discovered
+                                .into_iter()
+                                .filter(|model| allowlist.contains(&model.id))
+                                .collect()
+                        }
+                    });
                     match live {
                         Ok(discovered) if !discovered.is_empty() => {
                             for model in discovered {
@@ -466,14 +480,23 @@ pub(crate) async fn handle_app_event_outcome(
                                 });
                             }
                         }
-                        Ok(_) => models.push(ModelChoice {
-                            display: format!("{} (configured)", name),
-                            connection_id: id,
-                            kind,
-                            url,
-                            model_id: default_model,
-                            available: true,
-                        }),
+                        Ok(_) => {
+                            let configured = if allowlist.is_empty() {
+                                vec![default_model]
+                            } else {
+                                allowlist
+                            };
+                            for model_id in configured {
+                                models.push(ModelChoice {
+                                    display: format!("{} — {} (configured)", name, model_id),
+                                    connection_id: id.clone(),
+                                    kind,
+                                    url: url.clone(),
+                                    model_id,
+                                    available: true,
+                                });
+                            }
+                        }
                         Err(error) => models.push(ModelChoice {
                             display: format!("{} (offline: {})", name, error),
                             connection_id: id,

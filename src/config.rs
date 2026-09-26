@@ -392,6 +392,12 @@ pub struct ModelServer {
     /// `model` instead of probing `/v1/models` (OpenRouter returns hundreds).
     #[serde(default = "default_discover_models")]
     pub discover_models: bool,
+    /// Optional allowlist of model IDs to show for this connection in the
+    /// model switcher. Discovery results outside the list are dropped; when
+    /// discovery is off or returns nothing, the listed IDs are shown as
+    /// configured.
+    #[serde(default)]
+    pub models: Vec<String>,
 }
 
 fn default_discover_models() -> bool {
@@ -967,6 +973,7 @@ mod tests {
             context_mode: None,
             theme: None,
             discover_models: true,
+            models: Vec::new(),
         }
     }
 
