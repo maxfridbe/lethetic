@@ -1,7 +1,7 @@
-use serde_json::json;
-use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
-use std::fs;
+use crate::todo_store::{TodoPriority, TodoStatus, TodoStore};
+use crate::tools::{FunctionDefinition, Tool, ToolExecution};
+use serde_json::json;
 use std::path::Path;
 
 pub fn get_definition() -> Tool {
@@ -65,51 +65,69 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
 }
 
 pub async fn execute(todos: &serde_json::Value, cwd: &str) -> String {
-    let todo_dir = Path::new(cwd).join(".lethetic");
-    let todo_path = todo_dir.join("todos.json");
+    execute_classified(todos, cwd, tokio_util::sync::CancellationToken::new())
+        .await
+        .output
+}
 
-    if let Err(e) = fs::create_dir_all(&todo_dir) {
-        return format!("ERROR: Could not create .lethetic dir: {}", e);
+pub(super) async fn execute_classified(
+    todos: &serde_json::Value,
+    cwd: &str,
+    cancellation_token: tokio_util::sync::CancellationToken,
+) -> ToolExecution {
+    if cancellation_token.is_cancelled() {
+        return ToolExecution::error("[Operation Cancelled by User]", cwd);
     }
-
-    if let Err(e) = fs::write(&todo_path, serde_json::to_string_pretty(todos).unwrap_or_default()) {
-        return format!("ERROR: Could not write todos: {}", e);
+    let todos = match TodoStore::parse_todos(todos) {
+        Ok(todos) => todos,
+        Err(error) => return ToolExecution::error(format!("ERROR: {error}"), cwd),
+    };
+    let store = match TodoStore::open(Path::new(cwd)) {
+        Ok(store) => store,
+        Err(error) => {
+            return ToolExecution::error(format!("ERROR: Could not open todo store: {error}"), cwd);
+        }
+    };
+    if cancellation_token.is_cancelled() {
+        return ToolExecution::error("[Operation Cancelled by User]", cwd);
     }
-
-    // Build human-readable summary
-    let items = match todos.as_array() {
-        Some(a) => a,
-        None => return "ERROR: todos must be an array".to_string(),
+    let snapshot = match store.replace_current(todos) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            return ToolExecution::error(
+                format!("ERROR: Could not safely write todos: {error}"),
+                cwd,
+            );
+        }
     };
 
-    let mut output = format!("Todo list updated ({} tasks):\n\n", items.len());
-    for item in items {
-        let status = item["status"].as_str().unwrap_or("pending");
-        let priority = item["priority"].as_str().unwrap_or("medium");
-        let content = item["content"].as_str().unwrap_or("(no content)");
-        let id = item["id"].as_str().unwrap_or("");
-
-        let status_icon = match status {
-            "completed"  => "✓",
-            "in_progress"=> "→",
-            "cancelled"  => "✗",
-            _            => "○",
+    let mut output = format!(
+        "Todo list updated ({} tasks, revision {}):\n\n",
+        snapshot.todos.len(),
+        snapshot.revision
+    );
+    for item in snapshot.todos {
+        let status_icon = match item.status {
+            TodoStatus::Completed => "✓",
+            TodoStatus::InProgress => "→",
+            TodoStatus::Cancelled => "✗",
+            TodoStatus::Pending => "○",
         };
-        let pri_label = match priority {
-            "high"   => "[H]",
-            "low"    => "[L]",
-            _        => "[M]",
+        let priority = match item.priority {
+            TodoPriority::High => "[H]",
+            TodoPriority::Medium => "[M]",
+            TodoPriority::Low => "[L]",
         };
-        let id_part = if id.is_empty() { String::new() } else { format!(" ({})", id) };
-        output.push_str(&format!("{} {} {}{}\n", status_icon, pri_label, content, id_part));
+        let id = item.id.map(|id| format!(" ({id})")).unwrap_or_default();
+        output.push_str(&format!("{status_icon} {priority} {}{id}\n", item.content));
     }
-
-    output
+    ToolExecution::success(output, cwd)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use tempfile::tempdir;
 
     #[tokio::test]
@@ -126,6 +144,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_todowrite_rejects_non_array_without_writing() {
+        let dir = tempdir().unwrap();
+        let todo_dir = dir.path().join(".lethetic");
+        fs::create_dir(&todo_dir).unwrap();
+        let todo_path = todo_dir.join("todos.json");
+        fs::write(&todo_path, "existing-safe").unwrap();
+
+        let result = execute(&json!({"not": "an array"}), dir.path().to_str().unwrap()).await;
+
+        assert!(result.contains("Invalid todo list"), "{result}");
+        assert_eq!(fs::read_to_string(todo_path).unwrap(), "existing-safe");
+    }
+
+    #[tokio::test]
     async fn test_todowrite_status_icons() {
         let dir = tempdir().unwrap();
         let todos = json!([
@@ -135,5 +167,23 @@ mod tests {
         let result = execute(&todos, dir.path().to_str().unwrap()).await;
         assert!(result.contains('✓'), "{}", result);
         assert!(result.contains('→'), "{}", result);
+    }
+
+    #[tokio::test]
+    async fn pre_cancelled_todowrite_does_not_create_a_store() {
+        let dir = tempdir().unwrap();
+        let token = tokio_util::sync::CancellationToken::new();
+        token.cancel();
+
+        let result = execute_classified(
+            &json!([{"content": "never written", "status": "pending", "priority": "low"}]),
+            dir.path().to_str().unwrap(),
+            token,
+        )
+        .await;
+
+        assert!(result.is_error);
+        assert_eq!(result.output, "[Operation Cancelled by User]");
+        assert!(!dir.path().join(".lethetic").exists());
     }
 }

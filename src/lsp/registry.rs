@@ -5,7 +5,7 @@ pub struct LspServerDef {
     pub extensions: &'static [&'static str],
     pub binary: &'static str,
     pub start_args: &'static [&'static str],
-    pub install_cmd: &'static str,
+    pub install_cmd: Option<&'static str>,
     pub install_note: &'static str,
 }
 
@@ -16,7 +16,7 @@ pub const SERVERS: &[LspServerDef] = &[
         extensions: &["rs"],
         binary: "rust-analyzer",
         start_args: &[],
-        install_cmd: "rustup component add rust-analyzer",
+        install_cmd: Some("rustup component add rust-analyzer"),
         install_note: "Requires Rust / rustup",
     },
     LspServerDef {
@@ -25,7 +25,7 @@ pub const SERVERS: &[LspServerDef] = &[
         extensions: &["ts", "tsx", "js", "jsx", "mjs"],
         binary: "typescript-language-server",
         start_args: &["--stdio"],
-        install_cmd: "npm install -g typescript-language-server typescript",
+        install_cmd: Some("npm install -g typescript-language-server typescript"),
         install_note: "Requires Node.js / npm",
     },
     LspServerDef {
@@ -34,7 +34,7 @@ pub const SERVERS: &[LspServerDef] = &[
         extensions: &["py", "pyi"],
         binary: "pyright-langserver",
         start_args: &["--stdio"],
-        install_cmd: "pip install pyright",
+        install_cmd: Some("pip install pyright"),
         install_note: "Requires Python / pip",
     },
     LspServerDef {
@@ -43,7 +43,7 @@ pub const SERVERS: &[LspServerDef] = &[
         extensions: &["go"],
         binary: "gopls",
         start_args: &[],
-        install_cmd: "go install golang.org/x/tools/gopls@latest",
+        install_cmd: Some("go install golang.org/x/tools/gopls@latest"),
         install_note: "Requires Go",
     },
     LspServerDef {
@@ -52,7 +52,7 @@ pub const SERVERS: &[LspServerDef] = &[
         extensions: &["c", "h", "cpp", "cc", "cxx", "hpp"],
         binary: "clangd",
         start_args: &[],
-        install_cmd: "# Linux: sudo apt install clangd  |  macOS: brew install llvm",
+        install_cmd: None,
         install_note: "Requires clang toolchain",
     },
     LspServerDef {
@@ -61,7 +61,7 @@ pub const SERVERS: &[LspServerDef] = &[
         extensions: &["cs"],
         binary: "csharp-ls",
         start_args: &[],
-        install_cmd: "dotnet tool install -g csharp-ls",
+        install_cmd: Some("dotnet tool install -g csharp-ls"),
         install_note: "Requires .NET SDK",
     },
     LspServerDef {
@@ -70,7 +70,7 @@ pub const SERVERS: &[LspServerDef] = &[
         extensions: &["lua"],
         binary: "lua-language-server",
         start_args: &[],
-        install_cmd: "# macOS: brew install lua-language-server  |  see luals.github.io",
+        install_cmd: None,
         install_note: "See luals.github.io",
     },
 ];

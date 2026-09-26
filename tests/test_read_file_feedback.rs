@@ -9,8 +9,14 @@ fn test_read_file_feedback_logic() {
         model: "Gemma-4-26B-TurboQuant-262k".to_string(),
         context_size: 2048,
         tool_wrapper: None,
+        tool_profile: Default::default(),
+        python_runtime: Default::default(),
+        python_invocation: Default::default(),
+        active_server: None,
+        connection_kind: Default::default(),
         api_key: None,
         estimate_cost: None,
+        pricing: None,
         input_cost_per_1m: None,
         output_cost_per_1m: None,
         enable_image_processing_tool: false,
@@ -21,26 +27,43 @@ fn test_read_file_feedback_logic() {
         context_mode: None,
     };
     let mut app = App::new(&config);
-    
+
     let path = "test_file.rs";
     let content = "fn main() { println!(\"hello\"); }";
-    
+
     // Simulate what happens in main.rs when read_file succeeds:
     // 1. Update latest file in context
-    app.context_manager.update_latest_file(path.to_string(), content.to_string());
-    
+    app.context_manager
+        .update_latest_file(path.to_string(), content.to_string());
+
     // 2. Add the feedback segment (the part I added to main.rs)
-    app.add_segment(format!("\n{} File `{}` has been placed in context.\n", icons::SUCCESS, path), BlockType::Text);
-    
+    app.add_segment(
+        format!(
+            "\n{} File `{}` has been placed in context.\n",
+            icons::SUCCESS,
+            path
+        ),
+        BlockType::Text,
+    );
+
     // VERIFY
-    
+
     // New files go into active_files first; promoted to latest_files after >3 turns
     assert!(app.context_manager.active_files.contains_key(path));
-    assert_eq!(app.context_manager.active_files.get(path).unwrap().content, content);
-    
+    assert_eq!(
+        app.context_manager.active_files.get(path).unwrap().content,
+        content
+    );
+
     // Check if UI feedback block was added
-    let feedback_block = app.blocks.iter().find(|b| b.content.contains("has been placed in context"));
-    assert!(feedback_block.is_some(), "Feedback block should be present in app.blocks");
+    let feedback_block = app
+        .blocks
+        .iter()
+        .find(|b| b.content.contains("has been placed in context"));
+    assert!(
+        feedback_block.is_some(),
+        "Feedback block should be present in app.blocks"
+    );
     assert!(feedback_block.unwrap().content.contains(path));
     assert_eq!(feedback_block.unwrap().block_type, BlockType::Text);
 }

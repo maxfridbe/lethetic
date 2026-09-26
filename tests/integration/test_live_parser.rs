@@ -1,40 +1,52 @@
+use futures_util::StreamExt;
 use reqwest::Client;
 use serde_json::json;
-use futures_util::StreamExt;
 use std::time::Duration;
 
 use lethetic::config::Config;
 use lethetic::context::ContextManager;
-use lethetic::system_prompt;
 use lethetic::parser::find_tool_call;
+use lethetic::system_prompt;
 
 async fn test_language_generation(language: &str, file_ext: &str) -> Result<(), String> {
     let config = Config::load("config.yml")?;
-    
+
     let client = Client::new();
-    let sys_prompt = system_prompt::SystemPromptManager::resolve_prompt(system_prompt::DEFAULT_PROMPT_TEMPLATE, ".", &config);
+    let sys_prompt = system_prompt::SystemPromptManager::resolve_prompt(
+        system_prompt::DEFAULT_PROMPT_TEMPLATE,
+        ".",
+        &config,
+    );
     let mut context_manager = ContextManager::new(config.context_size, Some(sys_prompt));
-    
-    let user_prompt = format!("Write a reference implementation of a game of ASCII pong in {}. You must use the write_file tool to save it as 'pong.{}'.", language, file_ext);
+
+    let user_prompt = format!(
+        "Write a reference implementation of a game of ASCII pong in {}. You must use the write_file tool to save it as 'pong.{}'.",
+        language, file_ext
+    );
     context_manager.add_message("user", &user_prompt);
-let req_body = json!({
-    "model": config.model.clone(),
-    "input": context_manager.get_raw_prompt(),
-    "stream": true,
-    "max_tokens": 4096,
-});
+    let req_body = json!({
+        "model": config.model.clone(),
+        "input": context_manager.get_raw_prompt(),
+        "stream": true,
+        "max_tokens": 4096,
+    });
 
     let b_url = config.server_url.clone();
-    let res = client.post(&b_url).json(&req_body).send().await.map_err(|e| e.to_string())?;
+    let res = client
+        .post(&b_url)
+        .json(&req_body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
     if !res.status().is_success() {
         let status = res.status();
         let body = res.text().await.unwrap_or_default();
         return Err(format!("Server error: {} - {}", status, body));
     }
-    
+
     let mut stream = res.bytes_stream();
     let mut full_content = String::new();
-    
+
     let timeout_duration = Duration::from_secs(300);
 
     let result = tokio::time::timeout(timeout_duration, async {
@@ -43,28 +55,35 @@ let req_body = json!({
 
         while let Some(item) = stream.next().await {
             if let Ok(bytes) = item
-                && let Ok(chunk_str) = String::from_utf8(bytes.to_vec()) {
-                    buffer.push_str(&chunk_str);
-                    while let Some(pos) = buffer.find('\n') {
-                        let line = buffer.drain(..=pos).collect::<String>();
-                        let trimmed = line.trim();
-                        if trimmed.is_empty() { continue; }
-                        
-                        if let Some(ev) = trimmed.strip_prefix("event: ") {
-                            current_event = ev.to_string();
-                        } else if let Some(json_str) = trimmed.strip_prefix("data: ") {
-                            if json_str == "[DONE]" { break; }
+                && let Ok(chunk_str) = String::from_utf8(bytes.to_vec())
+            {
+                buffer.push_str(&chunk_str);
+                while let Some(pos) = buffer.find('\n') {
+                    let line = buffer.drain(..=pos).collect::<String>();
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
 
-                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str)
-                                && current_event.ends_with(".delta")
-                                    && let Some(delta) = val["delta"].as_str() {
-                                        full_content.push_str(delta);
-                                    }
+                    if let Some(ev) = trimmed.strip_prefix("event: ") {
+                        current_event = ev.to_string();
+                    } else if let Some(json_str) = trimmed.strip_prefix("data: ") {
+                        if json_str == "[DONE]" {
+                            break;
+                        }
+
+                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str)
+                            && current_event.ends_with(".delta")
+                            && let Some(delta) = val["delta"].as_str()
+                        {
+                            full_content.push_str(delta);
                         }
                     }
                 }
+            }
         }
-    }).await;
+    })
+    .await;
 
     if result.is_err() {
         return Err(format!("Timeout waiting for {} response", language));
@@ -74,17 +93,21 @@ let req_body = json!({
 
     // Now try to parse the tool call
     let parse_result = find_tool_call(&full_content, true);
-    
+
     match parse_result {
         Some(Ok((tc, _))) => {
             println!("Parsed tool call: {}", tc.function.name);
             Ok(())
-        },
-        Some(Err((err_msg, _))) => {
-            Err(format!("Syntax Error parsing tool call: {}\nFull Content:\n{}", err_msg, full_content))
-        },
+        }
+        Some(Err((err_msg, _))) => Err(format!(
+            "Syntax Error parsing tool call: {}\nFull Content:\n{}",
+            err_msg, full_content
+        )),
         None => {
-            println!("Warning: No tool call detected in response for {}. This is often due to model flakiness.", language);
+            println!(
+                "Warning: No tool call detected in response for {}. This is often due to model flakiness.",
+                language
+            );
             Ok(())
         }
     }
@@ -94,66 +117,85 @@ let req_body = json!({
 #[ignore] // Run manually with: cargo test --test test_live_parser_integration -- --ignored --nocapture
 async fn test_live_xml_parsing() {
     let res = test_language_generation("XML", "xml").await;
-    if let Err(e) = res { panic!("{}", e); }
+    if let Err(e) = res {
+        panic!("{}", e);
+    }
 }
 
 #[tokio::test]
 #[ignore]
 async fn test_live_csproj_parsing() {
     let res = test_language_generation("csproj (XML format)", "csproj").await;
-    if let Err(e) = res { panic!("{}", e); }
+    if let Err(e) = res {
+        panic!("{}", e);
+    }
 }
 
 #[tokio::test]
 #[ignore]
 async fn test_live_rust_parsing() {
     let res = test_language_generation("Rust", "rs").await;
-    if let Err(e) = res { panic!("{}", e); }
+    if let Err(e) = res {
+        panic!("{}", e);
+    }
 }
 
 #[tokio::test]
 #[ignore]
 async fn test_live_csharp_parsing() {
     let res = test_language_generation("C#", "cs").await;
-    if let Err(e) = res { panic!("{}", e); }
+    if let Err(e) = res {
+        panic!("{}", e);
+    }
 }
 
 #[tokio::test]
 #[ignore]
 async fn test_live_json_parsing() {
     let res = test_language_generation("JSON", "json").await;
-    if let Err(e) = res { panic!("{}", e); }
+    if let Err(e) = res {
+        panic!("{}", e);
+    }
 }
 
 #[tokio::test]
 #[ignore]
 async fn test_live_multi_file_json_yaml_parsing() {
     let config = Config::load("config.yml").expect("Failed to load config");
-    
+
     let client = Client::new();
-    let sys_prompt = lethetic::system_prompt::SystemPromptManager::resolve_prompt(lethetic::system_prompt::DEFAULT_PROMPT_TEMPLATE, ".", &config);
+    let sys_prompt = lethetic::system_prompt::SystemPromptManager::resolve_prompt(
+        lethetic::system_prompt::DEFAULT_PROMPT_TEMPLATE,
+        ".",
+        &config,
+    );
     let mut context_manager = ContextManager::new(config.context_size, Some(sys_prompt));
-    
+
     let user_prompt = "Provide a reference implementation of an ASCII Pong game state in BOTH JSON and YAML formats. Save them as 'pong.json' and 'pong.yaml' using the write_file tool for each.";
     context_manager.add_message("user", user_prompt);
-let req_body = json!({
-    "model": config.model.clone(),
-    "input": context_manager.get_raw_prompt(),
-    "stream": true,
-    "max_tokens": 4096,
-});
+    let req_body = json!({
+        "model": config.model.clone(),
+        "input": context_manager.get_raw_prompt(),
+        "stream": true,
+        "max_tokens": 4096,
+    });
 
     let b_url = config.server_url.clone();
-    let res = client.post(&b_url).json(&req_body).send().await.expect("Request failed");
+    let res = client
+        .post(&b_url)
+        .json(&req_body)
+        .send()
+        .await
+        .expect("Request failed");
     if !res.status().is_success() {
         let status = res.status();
         let body = res.text().await.unwrap_or_default();
         panic!("Server error: {} - {}", status, body);
     }
-    
+
     let mut stream = res.bytes_stream();
     let mut full_content = String::new();
-    
+
     let timeout_duration = Duration::from_secs(300);
 
     let _ = tokio::time::timeout(timeout_duration, async {
@@ -162,34 +204,43 @@ let req_body = json!({
 
         while let Some(item) = stream.next().await {
             if let Ok(bytes) = item
-                && let Ok(chunk_str) = String::from_utf8(bytes.to_vec()) {
-                    buffer.push_str(&chunk_str);
-                    while let Some(pos) = buffer.find('\n') {
-                        let line = buffer.drain(..=pos).collect::<String>();
-                        let trimmed = line.trim();
-                        if trimmed.is_empty() { continue; }
-                        
-                        if let Some(ev) = trimmed.strip_prefix("event: ") {
-                            current_event = ev.to_string();
-                        } else if let Some(json_str) = trimmed.strip_prefix("data: ") {
-                            if json_str == "[DONE]" { break; }
+                && let Ok(chunk_str) = String::from_utf8(bytes.to_vec())
+            {
+                buffer.push_str(&chunk_str);
+                while let Some(pos) = buffer.find('\n') {
+                    let line = buffer.drain(..=pos).collect::<String>();
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
 
-                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str)
-                                && current_event.ends_with(".delta")
-                                    && let Some(delta) = val["delta"].as_str() {
-                                        full_content.push_str(delta);
-                                    }
+                    if let Some(ev) = trimmed.strip_prefix("event: ") {
+                        current_event = ev.to_string();
+                    } else if let Some(json_str) = trimmed.strip_prefix("data: ") {
+                        if json_str == "[DONE]" {
+                            break;
+                        }
+
+                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str)
+                            && current_event.ends_with(".delta")
+                            && let Some(delta) = val["delta"].as_str()
+                        {
+                            full_content.push_str(delta);
                         }
                     }
                 }
+            }
         }
-    }).await;
+    })
+    .await;
 
     println!("RAW_MULTI_OUTPUT:\n{}", full_content);
 
     // Test if we can find at least one tool call
     let parse_result = find_tool_call(&full_content, true);
     if parse_result.is_none() {
-        println!("Warning: No tool call detected in multi-file response. This is often due to model flakiness.");
+        println!(
+            "Warning: No tool call detected in multi-file response. This is often due to model flakiness."
+        );
     }
 }

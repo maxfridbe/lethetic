@@ -1,8 +1,8 @@
-use serde_json::json;
-use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
-use reqwest::Client;
+use crate::tools::{FunctionDefinition, Tool};
 use h2m::convert;
+use reqwest::Client;
+use serde_json::json;
 
 pub fn get_definition() -> Tool {
     Tool {
@@ -63,9 +63,11 @@ pub async fn execute(
 }
 
 async fn fetch(url: &str, format: &str, client: &Client) -> String {
-    let response = match client.get(url)
+    let response = match client
+        .get(url)
         .header("User-Agent", "Mozilla/5.0 (compatible; lethetic/1.0)")
-        .send().await
+        .send()
+        .await
     {
         Ok(r) => r,
         Err(e) => return format!("ERROR: Failed to fetch {}: {}", url, e),

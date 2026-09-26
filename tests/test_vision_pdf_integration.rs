@@ -1,9 +1,10 @@
+use lethetic::config::Config;
 use lethetic::tools::get_pdf_text;
 use lethetic::tools::process_image;
 use lethetic::tools::process_pdf_image;
-use lethetic::config::Config;
 use reqwest::Client;
 use std::fs;
+use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
 async fn test_get_pdf_text_file_not_found() {
@@ -20,8 +21,14 @@ async fn test_process_image_file_not_found() {
         model: "Gemma-4-26B-TurboQuant-262k".to_string(),
         context_size: 2048,
         tool_wrapper: None,
+        tool_profile: Default::default(),
+        python_runtime: Default::default(),
+        python_invocation: Default::default(),
+        active_server: None,
+        connection_kind: Default::default(),
         api_key: None,
         estimate_cost: None,
+        pricing: None,
         input_cost_per_1m: None,
         output_cost_per_1m: None,
         enable_image_processing_tool: true,
@@ -32,7 +39,17 @@ async fn test_process_image_file_not_found() {
         context_mode: None,
     };
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
-    let res = process_image::execute("test", "non_existent.png", None, ".", &client, &config, &tx).await;
+    let res = process_image::execute(
+        "test",
+        "non_existent.png",
+        None,
+        ".",
+        &client,
+        &config,
+        &tx,
+        CancellationToken::new(),
+    )
+    .await;
     assert!(res.contains("ERROR: Image file not found"));
 }
 
@@ -44,8 +61,14 @@ async fn test_process_pdf_image_invalid_page() {
         model: "Gemma-4-26B-TurboQuant-262k".to_string(),
         context_size: 2048,
         tool_wrapper: None,
+        tool_profile: Default::default(),
+        python_runtime: Default::default(),
+        python_invocation: Default::default(),
+        active_server: None,
+        connection_kind: Default::default(),
         api_key: None,
         estimate_cost: None,
+        pricing: None,
         input_cost_per_1m: None,
         output_cost_per_1m: None,
         enable_image_processing_tool: true,
@@ -56,7 +79,18 @@ async fn test_process_pdf_image_invalid_page() {
         context_mode: None,
     };
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
-    let res = process_pdf_image::execute("test", "non_existent.pdf", 1, None, ".", &client, &config, &tx).await;
+    let res = process_pdf_image::execute(
+        "test",
+        "non_existent.pdf",
+        1,
+        None,
+        ".",
+        &client,
+        &config,
+        &tx,
+        CancellationToken::new(),
+    )
+    .await;
     assert!(res.contains("ERROR: PDF file not found"));
 }
 
@@ -66,23 +100,34 @@ async fn test_live_vision_screenshot() {
     let config = Config::load("config.yml").expect("Failed to load config");
     let client = Client::new();
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
-    
+
     // Using the existing screenshot in res/
     let timeout = std::time::Duration::from_secs(600);
-    let res = tokio::time::timeout(timeout, process_image::execute(
-        "What is the contents of this image?", 
-        "res/Screenshot.webp", 
-        Some(1024), 
-        ".", 
-        &client, 
-        &config,
-        &tx
-    )).await.expect("Test timed out after 600s");
-    
+    let res = tokio::time::timeout(
+        timeout,
+        process_image::execute(
+            "What is the contents of this image?",
+            "res/Screenshot.webp",
+            Some(1024),
+            ".",
+            &client,
+            &config,
+            &tx,
+            CancellationToken::new(),
+        ),
+    )
+    .await
+    .expect("Test timed out after 600s");
+
     println!("Vision Response: '{}'", res);
-    assert!(!res.contains("ERROR"), "Vision processing should not return an error");
+    assert!(
+        !res.contains("ERROR"),
+        "Vision processing should not return an error"
+    );
     if res.trim().is_empty() {
-        println!("WARNING: Vision response was empty. This might indicate the model couldn't 'see' the image tokens or is under-reacting.");
+        println!(
+            "WARNING: Vision response was empty. This might indicate the model couldn't 'see' the image tokens or is under-reacting."
+        );
     }
 }
 
@@ -96,33 +141,49 @@ async fn test_live_pdf_processing() {
     // 1. Create a dummy PDF with text
     let pdf_path = "test_sample.pdf";
     let mut builder = pdf_oxide::writer::DocumentBuilder::new();
-    builder.page(pdf_oxide::writer::PageSize::Letter)
+    builder
+        .page(pdf_oxide::writer::PageSize::Letter)
         .text("Gemma 4 Vision Test")
         .text("This is a sample PDF generated for integration testing lethetic vision tools.");
     builder.save(pdf_path).expect("Failed to save test PDF");
 
     // 2. Test text extraction
     let extracted = get_pdf_text::execute(pdf_path, ".", &tx).await;
-    println!("Extracted PDF Text:
-{}", extracted);
-    assert!(extracted.contains("Gemma 4 Vision Test"), "Text extraction should find the title");
+    println!(
+        "Extracted PDF Text:
+{}",
+        extracted
+    );
+    assert!(
+        extracted.contains("Gemma 4 Vision Test"),
+        "Text extraction should find the title"
+    );
 
     // 3. Test vision rendering and analysis
     let timeout = std::time::Duration::from_secs(600);
-    let vision_res = tokio::time::timeout(timeout, process_pdf_image::execute(
-        "What is the title of this PDF page?", 
-        pdf_path, 
-        1, 
-        Some(512), 
-        ".", 
-        &client, 
-        &config,
-        &tx
-    )).await.expect("Test timed out after 600s");
-    
+    let vision_res = tokio::time::timeout(
+        timeout,
+        process_pdf_image::execute(
+            "What is the title of this PDF page?",
+            pdf_path,
+            1,
+            Some(512),
+            ".",
+            &client,
+            &config,
+            &tx,
+            CancellationToken::new(),
+        ),
+    )
+    .await
+    .expect("Test timed out after 600s");
+
     println!("PDF Vision Response: {}", vision_res);
-    assert!(!vision_res.contains("ERROR"), "PDF Vision processing failed");
-    
+    assert!(
+        !vision_res.contains("ERROR"),
+        "PDF Vision processing failed"
+    );
+
     let _ = fs::remove_file(pdf_path);
 }
 
@@ -132,20 +193,29 @@ async fn test_live_vision_bike() {
     let config = Config::load("config.yml").expect("Failed to load config");
     let client = Client::new();
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
-    
+
     let timeout = std::time::Duration::from_secs(600);
-    let res = tokio::time::timeout(timeout, process_image::execute(
-        "what kind of image this is", 
-        "/var/home/maxfridbe/Downloads/bike.jpg", 
-        Some(1024), 
-        ".", 
-        &client, 
-        &config,
-        &tx
-    )).await.expect("Test timed out after 600s");
-    
+    let res = tokio::time::timeout(
+        timeout,
+        process_image::execute(
+            "what kind of image this is",
+            "/var/home/maxfridbe/Downloads/bike.jpg",
+            Some(1024),
+            ".",
+            &client,
+            &config,
+            &tx,
+            CancellationToken::new(),
+        ),
+    )
+    .await
+    .expect("Test timed out after 600s");
+
     println!("Bike Image Response: {}", res);
-    assert!(!res.contains("ERROR"), "Vision processing failed for bike image");
+    assert!(
+        !res.contains("ERROR"),
+        "Vision processing failed for bike image"
+    );
 }
 
 #[tokio::test]
@@ -154,32 +224,44 @@ async fn test_live_vision_sequential() {
     let config = Config::load("config.yml").expect("Failed to load config");
     let client = Client::new();
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
-    
+
     let timeout = std::time::Duration::from_secs(600);
-    
+
     println!("--- Starting Sequential Vision Test (Query 1) ---");
-    let res1 = tokio::time::timeout(timeout, process_image::execute(
-        "what kind of image this is", 
-        "/var/home/maxfridbe/Downloads/bike.jpg", 
-        Some(1024), 
-        ".", 
-        &client, 
-        &config,
-        &tx
-    )).await.expect("Test 1 timed out");
+    let res1 = tokio::time::timeout(
+        timeout,
+        process_image::execute(
+            "what kind of image this is",
+            "/var/home/maxfridbe/Downloads/bike.jpg",
+            Some(1024),
+            ".",
+            &client,
+            &config,
+            &tx,
+            CancellationToken::new(),
+        ),
+    )
+    .await
+    .expect("Test 1 timed out");
     println!("Query 1 Response: {}", res1);
     assert!(!res1.contains("ERROR"), "Sequential query 1 failed");
 
     println!("--- Starting Sequential Vision Test (Query 2) ---");
-    let res2 = tokio::time::timeout(timeout, process_image::execute(
-        "What is the contents of this image?", 
-        "res/Screenshot.webp", 
-        Some(1024), 
-        ".", 
-        &client, 
-        &config,
-        &tx
-    )).await.expect("Test 2 timed out");
+    let res2 = tokio::time::timeout(
+        timeout,
+        process_image::execute(
+            "What is the contents of this image?",
+            "res/Screenshot.webp",
+            Some(1024),
+            ".",
+            &client,
+            &config,
+            &tx,
+            CancellationToken::new(),
+        ),
+    )
+    .await
+    .expect("Test 2 timed out");
     println!("Query 2 Response: {}", res2);
     assert!(!res2.contains("ERROR"), "Sequential query 2 failed");
 }
@@ -191,8 +273,14 @@ fn test_tool_registration() {
         model: "".to_string(),
         context_size: 0,
         tool_wrapper: None,
+        tool_profile: Default::default(),
+        python_runtime: Default::default(),
+        python_invocation: Default::default(),
+        active_server: None,
+        connection_kind: Default::default(),
         api_key: None,
         estimate_cost: None,
+        pricing: None,
         input_cost_per_1m: None,
         output_cost_per_1m: None,
         enable_image_processing_tool: true,

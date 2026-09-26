@@ -1,6 +1,6 @@
-use serde_json::json;
-use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
+use crate::tools::{FunctionDefinition, Tool, ToolExecution};
+use serde_json::json;
 
 pub fn get_definition() -> Tool {
     Tool {
@@ -39,16 +39,34 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
 }
 
 pub async fn execute(expression: &str) -> String {
+    evaluate(expression).unwrap_or_else(|error| error)
+}
+
+pub(super) async fn execute_classified(
+    expression: &str,
+    cwd: &str,
+    cancellation_token: tokio_util::sync::CancellationToken,
+) -> ToolExecution {
+    if cancellation_token.is_cancelled() {
+        return ToolExecution::error("[Operation Cancelled by User]", cwd);
+    }
+    match evaluate(expression) {
+        Ok(output) => ToolExecution::success(output, cwd),
+        Err(error) => ToolExecution::error(error, cwd),
+    }
+}
+
+fn evaluate(expression: &str) -> Result<String, String> {
     match meval::eval_str(expression) {
         Ok(result) => {
             // Show integer form when the result is a whole number
             if result.fract() == 0.0 && result.abs() < 1e15 {
-                format!("{}", result as i64)
+                Ok(format!("{}", result as i64))
             } else {
-                format!("{}", result)
+                Ok(format!("{}", result))
             }
         }
-        Err(e) => format!("ERROR: {}", e),
+        Err(error) => Err(format!("ERROR: {error}")),
     }
 }
 
@@ -83,5 +101,16 @@ mod tests {
         // e ≈ 2.718...
         let v: f64 = r.parse().unwrap();
         assert!((v - std::f64::consts::E).abs() < 1e-10);
+    }
+
+    #[tokio::test]
+    async fn pre_cancelled_calculation_is_a_typed_error() {
+        let token = tokio_util::sync::CancellationToken::new();
+        token.cancel();
+
+        let result = execute_classified("2 + 2", ".", token).await;
+
+        assert!(result.is_error);
+        assert_eq!(result.output, "[Operation Cancelled by User]");
     }
 }

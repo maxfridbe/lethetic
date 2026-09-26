@@ -1,6 +1,6 @@
-use serde_json::json;
-use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
+use crate::tools::{FunctionDefinition, Tool};
+use serde_json::json;
 use std::fs;
 use std::path::Path;
 
@@ -32,7 +32,6 @@ pub fn get_definition() -> Tool {
     }
 }
 
-
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     if let Some(desc) = arguments["description"].as_str() {
         return format!("{} {}", icons::PATH, desc);
@@ -41,11 +40,16 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     format!("{} Reading folder: `{}`", icons::PATH, path)
 }
 
-pub async fn execute(path: &str, cwd: &str, cancellation_token: tokio_util::sync::CancellationToken) -> String {
+pub async fn execute(
+    path: &str,
+    cwd: &str,
+    cancellation_token: tokio_util::sync::CancellationToken,
+) -> String {
     let path = path.trim_matches(|c| c == '\'' || c == '\"');
     let full_path = Path::new(cwd).join(if path.is_empty() { "." } else { path });
-    
+
     tokio::select! {
+        biased;
         _ = cancellation_token.cancelled() => {
             "[Operation Cancelled by User]".to_string()
         }

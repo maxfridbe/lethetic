@@ -23,8 +23,8 @@ impl Default for LoopDetectorConfig {
         Self {
             mode: LoopDetectionMode::Combined,
             block_limit: 10000,
-            ngram_window: 128,   // 64 caused false positives on ~60-char error strings
-            ngram_threshold: 4,  // 3 was too sensitive for legitimate multi-error analysis
+            ngram_window: 128, // 64 caused false positives on ~60-char error strings
+            ngram_threshold: 4, // 3 was too sensitive for legitimate multi-error analysis
             phrase_threshold: 10,
         }
     }
@@ -53,8 +53,10 @@ impl LoopDetector {
         }
 
         // 1. Block Limit Check
-        if (self.config.mode == LoopDetectionMode::BlockLimit || self.config.mode == LoopDetectionMode::Combined) 
-            && content.len() > self.config.block_limit {
+        if (self.config.mode == LoopDetectionMode::BlockLimit
+            || self.config.mode == LoopDetectionMode::Combined)
+            && content.len() > self.config.block_limit
+        {
             return Some(Detection {
                 reason: format!("Block length ({} chars) exceeded limit", content.len()),
                 sample: None,
@@ -62,38 +64,61 @@ impl LoopDetector {
         }
 
         // 2. Phrase Frequency Check
-        if self.config.mode == LoopDetectionMode::PhraseFrequency || self.config.mode == LoopDetectionMode::Combined {
-            let phrases = ["Actually,", "Wait,", "I'll just", "I will just", "Instead, I'll", "Trying again", "Wait I'll try"];
+        if self.config.mode == LoopDetectionMode::PhraseFrequency
+            || self.config.mode == LoopDetectionMode::Combined
+        {
+            let phrases = [
+                "Actually,",
+                "Wait,",
+                "I'll just",
+                "I will just",
+                "Instead, I'll",
+                "Trying again",
+                "Wait I'll try",
+            ];
             let mut total_phrases = 0;
             for p in phrases {
                 total_phrases += content.matches(p).count();
             }
             if total_phrases >= self.config.phrase_threshold {
                 return Some(Detection {
-                    reason: format!("Excessive self-correction detected ({} phrases)", total_phrases),
+                    reason: format!(
+                        "Excessive self-correction detected ({} phrases)",
+                        total_phrases
+                    ),
                     sample: None,
                 });
             }
         }
 
         // 3. N-Gram Repetition Check
-        if self.config.mode == LoopDetectionMode::NGram || self.config.mode == LoopDetectionMode::Combined {
+        if self.config.mode == LoopDetectionMode::NGram
+            || self.config.mode == LoopDetectionMode::Combined
+        {
             let chars: Vec<char> = content.chars().collect();
             if chars.len() >= self.config.ngram_window * 2 {
                 let window_size = self.config.ngram_window;
                 let last_window_chars = &chars[chars.len() - window_size..];
                 let last_window: String = last_window_chars.iter().collect();
-                
+
                 // Count how many times this specific window appears in the whole block
                 let occurrences = content.matches(&last_window).count();
                 if occurrences >= self.config.ngram_threshold {
                     let mut sample = last_window;
                     let sample_chars: Vec<char> = sample.chars().collect();
                     if sample_chars.len() > 80 {
-                        sample = format!("...{}", sample_chars[sample_chars.len() - 77..].iter().collect::<String>());
+                        sample = format!(
+                            "...{}",
+                            sample_chars[sample_chars.len() - 77..]
+                                .iter()
+                                .collect::<String>()
+                        );
                     }
                     return Some(Detection {
-                        reason: format!("Repeating pattern detected (sequence seen {} times)", occurrences),
+                        reason: format!(
+                            "Repeating pattern detected (sequence seen {} times)",
+                            occurrences
+                        ),
                         sample: Some(sample),
                     });
                 }
@@ -144,7 +169,11 @@ mod tests {
             ..Default::default()
         };
         let detector = LoopDetector::new(config);
-        assert!(detector.check("Actually, I'll do this. Wait, Actually, no. Actually, yes.").is_some());
+        assert!(
+            detector
+                .check("Actually, I'll do this. Wait, Actually, no. Actually, yes.")
+                .is_some()
+        );
         assert!(detector.check("I will do this normally.").is_none());
     }
 
@@ -157,7 +186,7 @@ mod tests {
             ..Default::default()
         };
         let detector = LoopDetector::new(config);
-        
+
         // This string contains multi-byte characters (─ is 3 bytes)
         // We repeat " ───" which is 4 characters.
         let content = "The directory structure is a mess. ─── ───";

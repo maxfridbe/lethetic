@@ -1,17 +1,17 @@
+use reqwest::Client;
 /// Full integration test: send a real prompt asking the model to write a Hello World C# file.
 /// Verifies the entire pipeline: prompt → model → tool call parse → write_file execution.
 /// Run with: cargo test --test test_live_prompt_write_cs -- --ignored --nocapture
 use std::fs;
-use reqwest::Client;
+use tempfile::TempDir;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tempfile::TempDir;
 
+use lethetic::client::{StreamEvent, trigger_llm_request};
 use lethetic::config::Config;
 use lethetic::context::ContextManager;
-use lethetic::system_prompt;
-use lethetic::client::{trigger_llm_request, StreamEvent};
 use lethetic::parser;
+use lethetic::system_prompt;
 
 #[tokio::test]
 #[ignore]
@@ -23,16 +23,28 @@ async fn test_live_prompt_write_cs_helloworld() -> Result<(), String> {
 
     let client = Client::new();
     let sys = system_prompt::SystemPromptManager::resolve_prompt(
-        system_prompt::DEFAULT_PROMPT_TEMPLATE, &cwd, &config,
+        system_prompt::DEFAULT_PROMPT_TEMPLATE,
+        &cwd,
+        &config,
     );
     let mut ctx = ContextManager::new(config.context_size, Some(sys));
     ctx.set_cwd(cwd.clone());
-    ctx.add_message("user", "Write a Hello World C# console app to helloworld.cs using write_file.");
+    ctx.add_message(
+        "user",
+        "Write a Hello World C# console app to helloworld.cs using write_file.",
+    );
 
     let (tx, mut rx) = mpsc::unbounded_channel();
     let cancel = CancellationToken::new();
-    trigger_llm_request(client.clone(), config.clone(), &ctx, tx, cancel, false,
-        Some("ignore/.lethetic/sessions/test_live_write_cs".to_string()));
+    trigger_llm_request(
+        client.clone(),
+        config.clone(),
+        &ctx,
+        tx,
+        cancel,
+        false,
+        Some("ignore/.lethetic/sessions/test_live_write_cs".to_string()),
+    )?;
 
     let mut full = String::new();
     let mut error: Option<String> = None;
@@ -40,7 +52,10 @@ async fn test_live_prompt_write_cs_helloworld() -> Result<(), String> {
     while let Some(ev) = rx.recv().await {
         match ev {
             StreamEvent::Chunk(c) => full.push_str(&c),
-            StreamEvent::Error(e) => { error = Some(e); break; }
+            StreamEvent::Error(e) => {
+                error = Some(e);
+                break;
+            }
             StreamEvent::Done { .. } => break,
             _ => {}
         }
@@ -58,7 +73,10 @@ async fn test_live_prompt_write_cs_helloworld() -> Result<(), String> {
         .map_err(|(e, _)| format!("Tool call parse error: {}", e))?
         .0;
 
-    println!("Tool call: {} args={}", tc.function.name, tc.function.arguments);
+    println!(
+        "Tool call: {} args={}",
+        tc.function.name, tc.function.arguments
+    );
 
     if tc.function.name != "write_file" {
         return Err(format!("Expected write_file, got {}", tc.function.name));
@@ -71,19 +89,28 @@ async fn test_live_prompt_write_cs_helloworld() -> Result<(), String> {
         return Err("write_file path is empty".to_string());
     }
     if !content.contains("Hello") {
-        return Err(format!("Content doesn't look like Hello World: {:?}", &content[..content.len().min(200)]));
+        return Err(format!(
+            "Content doesn't look like Hello World: {:?}",
+            &content[..content.len().min(200)]
+        ));
     }
 
     // Actually execute the write
-    let (result, _) = lethetic::tools::execute(
-        "write_file", &tc.function.arguments, &cwd,
-        CancellationToken::new(), mpsc::unbounded_channel().0, &client, &config,
-    ).await;
+    let execution = lethetic::tools::execute(
+        "write_file",
+        &tc.function.arguments,
+        &cwd,
+        CancellationToken::new(),
+        mpsc::unbounded_channel().0,
+        &client,
+        &config,
+    )
+    .await;
 
-    println!("write_file result: {}", result);
+    println!("write_file result: {}", execution.output);
 
-    if result.contains("Error") || result.contains("error") {
-        return Err(format!("write_file failed: {}", result));
+    if execution.is_error {
+        return Err(format!("write_file failed: {}", execution.output));
     }
 
     // Verify file was written

@@ -1,6 +1,16 @@
 #!/bin/bash
 set -e
 
+ROOT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+cd -- "$ROOT"
+
+echo "Enforcing source line ceiling..."
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_check_source_lines.py 2>&1
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_source_lines.py 2>&1
+
+echo "Checking generated web contracts and distribution..."
+./build-web.sh --check 2>&1
+
 echo "Building release..."
 cargo build --release 2>&1
 

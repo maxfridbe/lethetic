@@ -40,6 +40,7 @@ pub const TURN_SYSTEM_OPEN_NL: &str = concat!("<|turn>", "system", "\n");
 pub const TURN_CLOSE_NL: &str = concat!("<turn|>", "\n");
 pub const THINK_OPEN_NL: &str = concat!("<think>", "\n");
 pub const THINK_CLOSE_NL: &str = concat!("</think>", "\n");
-pub const TURN_MODEL_OPEN_THOUGHT_NL: &str = concat!("<|turn>", "model", "\n", "<|channel>", "thought", "\n");
+pub const TURN_MODEL_OPEN_THOUGHT_NL: &str =
+    concat!("<|turn>", "model", "\n", "<|channel>", "thought", "\n");
 pub const THOUGHT_NL: &str = concat!("thought", "\n");
 pub const THOUGHT_SP: &str = concat!("thought", " ");

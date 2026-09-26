@@ -1,6 +1,6 @@
-use serde_json::json;
-use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
+use crate::tools::{FunctionDefinition, Tool};
+use serde_json::json;
 use std::fs;
 use std::path::Path;
 
@@ -59,12 +59,22 @@ pub async fn execute(
     let full_path = Path::new(cwd).join(path);
 
     tokio::select! {
+        biased;
         _ = cancellation_token.cancelled() => "[Operation Cancelled by User]".to_string(),
         result = apply_edit(&full_path, old_string, new_string, path) => result,
     }
 }
 
-async fn apply_edit(full_path: &Path, old_string: &str, new_string: &str, display_path: &str) -> String {
+async fn apply_edit(
+    full_path: &Path,
+    old_string: &str,
+    new_string: &str,
+    display_path: &str,
+) -> String {
+    if old_string.is_empty() {
+        return "ERROR: old_string must not be empty.".to_string();
+    }
+
     let content = match fs::read_to_string(full_path) {
         Ok(c) => c,
         Err(e) => return format!("ERROR: Cannot read {}: {}", display_path, e),
@@ -80,8 +90,13 @@ async fn apply_edit(full_path: &Path, old_string: &str, new_string: &str, displa
         let lines = match_line_numbers(&content, old_string);
         return format!(
             "ERROR: old_string matches {} times in {} (lines {}).\nAdd more surrounding context to make it unique.",
-            exact_count, display_path,
-            lines.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ")
+            exact_count,
+            display_path,
+            lines
+                .iter()
+                .map(|n| n.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
         );
     }
 
@@ -90,29 +105,56 @@ async fn apply_edit(full_path: &Path, old_string: &str, new_string: &str, displa
     let (matched, start_byte, end_byte) = find_normalized_match(&content, &normalized_old);
 
     if matched {
-        let new_content = format!("{}{}{}", &content[..start_byte], new_string, &content[end_byte..]);
-        return write_result(full_path, &new_content, display_path, "whitespace-normalized match");
+        let new_content = format!(
+            "{}{}{}",
+            &content[..start_byte],
+            new_string,
+            &content[end_byte..]
+        );
+        return write_result(
+            full_path,
+            &new_content,
+            display_path,
+            "whitespace-normalized match",
+        );
     }
 
     // Strategy 3: line-by-line similarity
     if let Some((start_byte, end_byte, score)) = find_fuzzy_match(&content, old_string) {
         if score >= 0.60 {
-            let new_content = format!("{}{}{}", &content[..start_byte], new_string, &content[end_byte..]);
-            return write_result(full_path, &new_content, display_path,
-                &format!("fuzzy match ({:.0}% similarity)", score * 100.0));
+            let new_content = format!(
+                "{}{}{}",
+                &content[..start_byte],
+                new_string,
+                &content[end_byte..]
+            );
+            return write_result(
+                full_path,
+                &new_content,
+                display_path,
+                &format!("fuzzy match ({:.0}% similarity)", score * 100.0),
+            );
         }
         // Below threshold: show closest match to help the model correct old_string
         let closest = &content[start_byte..end_byte];
-        let preview: String = closest.lines().take(5)
+        let preview: String = closest
+            .lines()
+            .take(5)
             .map(|l| format!("  {}", l))
-            .collect::<Vec<_>>().join("\n");
+            .collect::<Vec<_>>()
+            .join("\n");
         return format!(
             "ERROR: old_string not found in {}.\nClosest match ({:.0}% similarity):\n{}\n\nAdjust old_string to match exactly.",
-            display_path, score * 100.0, preview
+            display_path,
+            score * 100.0,
+            preview
         );
     }
 
-    format!("ERROR: old_string not found in {}. Check the text and file path.", display_path)
+    format!(
+        "ERROR: old_string not found in {}. Check the text and file path.",
+        display_path
+    )
 }
 
 fn write_result(full_path: &Path, content: &str, display_path: &str, strategy: &str) -> String {
@@ -145,7 +187,9 @@ fn normalize_whitespace(s: &str) -> String {
 fn find_normalized_match(content: &str, normalized_old: &str) -> (bool, usize, usize) {
     let old_lines: Vec<&str> = normalized_old.lines().collect();
     let n = old_lines.len();
-    if n == 0 { return (false, 0, 0); }
+    if n == 0 {
+        return (false, 0, 0);
+    }
 
     let content_lines: Vec<&str> = content.lines().collect();
     let total = content_lines.len();
@@ -176,11 +220,15 @@ fn find_normalized_match(content: &str, normalized_old: &str) -> (bool, usize, u
 fn find_fuzzy_match(content: &str, old_string: &str) -> Option<(usize, usize, f64)> {
     let old_lines: Vec<&str> = old_string.lines().collect();
     let n = old_lines.len();
-    if n == 0 { return None; }
+    if n == 0 {
+        return None;
+    }
 
     let content_lines: Vec<&str> = content.lines().collect();
     let total = content_lines.len();
-    if total < n { return None; }
+    if total < n {
+        return None;
+    }
 
     let mut best_score = 0.0f64;
     let mut best_start = 0usize;
@@ -208,14 +256,21 @@ fn find_fuzzy_match(content: &str, old_string: &str) -> Option<(usize, usize, f6
 }
 
 fn line_similarity(a: &[&str], b: &[&str]) -> f64 {
-    if a.len() != b.len() { return 0.0; }
+    if a.len() != b.len() {
+        return 0.0;
+    }
     let total: usize = a.iter().map(|l| l.len().max(1)).sum();
-    let matching: usize = a.iter().zip(b.iter())
+    let matching: usize = a
+        .iter()
+        .zip(b.iter())
         .map(|(la, lb)| {
             let la = la.trim();
             let lb = lb.trim();
-            if la == lb { la.len().max(1) }
-            else { char_overlap(la, lb) }
+            if la == lb {
+                la.len().max(1)
+            } else {
+                char_overlap(la, lb)
+            }
         })
         .sum();
     matching as f64 / total as f64
@@ -227,7 +282,8 @@ fn char_overlap(a: &str, b: &str) -> usize {
 }
 
 fn byte_offset_of_line(content: &str, line_idx: usize) -> usize {
-    content.char_indices()
+    content
+        .char_indices()
         .filter(|(_, c)| *c == '\n')
         .nth(line_idx.saturating_sub(1))
         .map(|(i, _)| i + 1)
@@ -237,8 +293,8 @@ fn byte_offset_of_line(content: &str, line_idx: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use std::fs;
+    use tempfile::tempdir;
 
     #[tokio::test]
     async fn test_edit_exact_match() {
@@ -247,10 +303,20 @@ mod tests {
         fs::write(&path, "fn hello() {\n    println!(\"hi\");\n}\n").unwrap();
 
         let token = tokio_util::sync::CancellationToken::new();
-        let result = execute("test.rs", "println!(\"hi\");", "println!(\"hello world\");",
-            dir.path().to_str().unwrap(), token).await;
+        let result = execute(
+            "test.rs",
+            "println!(\"hi\");",
+            "println!(\"hello world\");",
+            dir.path().to_str().unwrap(),
+            token,
+        )
+        .await;
 
-        assert!(result.contains("Successfully"), "Expected success, got: {}", result);
+        assert!(
+            result.contains("Successfully"),
+            "Expected success, got: {}",
+            result
+        );
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("hello world"));
     }
@@ -264,12 +330,20 @@ mod tests {
 
         let token = tokio_util::sync::CancellationToken::new();
         // old_string uses different indentation (tabs) — should still match via normalization
-        let result = execute("test.rs",
+        let result = execute(
+            "test.rs",
             "let x = 1;\n\tlet y = 2;",
             "let x = 10;\n    let y = 20;",
-            dir.path().to_str().unwrap(), token).await;
+            dir.path().to_str().unwrap(),
+            token,
+        )
+        .await;
 
-        assert!(result.contains("Successfully"), "Expected normalized match, got: {}", result);
+        assert!(
+            result.contains("Successfully"),
+            "Expected normalized match, got: {}",
+            result
+        );
     }
 
     #[tokio::test]
@@ -279,11 +353,20 @@ mod tests {
         fs::write(&path, "let x = 1;\nlet x = 1;\n").unwrap();
 
         let token = tokio_util::sync::CancellationToken::new();
-        let result = execute("test.rs", "let x = 1;", "let x = 99;",
-            dir.path().to_str().unwrap(), token).await;
+        let result = execute(
+            "test.rs",
+            "let x = 1;",
+            "let x = 99;",
+            dir.path().to_str().unwrap(),
+            token,
+        )
+        .await;
 
-        assert!(result.contains("ERROR") && result.contains("2"),
-            "Expected multi-match error, got: {}", result);
+        assert!(
+            result.contains("ERROR") && result.contains("2"),
+            "Expected multi-match error, got: {}",
+            result
+        );
     }
 
     #[tokio::test]
@@ -293,9 +376,52 @@ mod tests {
         fs::write(&path, "fn main() {}\n").unwrap();
 
         let token = tokio_util::sync::CancellationToken::new();
-        let result = execute("test.rs", "fn completely_different_name() {}",
-            "fn replacement() {}", dir.path().to_str().unwrap(), token).await;
+        let result = execute(
+            "test.rs",
+            "fn completely_different_name() {}",
+            "fn replacement() {}",
+            dir.path().to_str().unwrap(),
+            token,
+        )
+        .await;
 
-        assert!(result.contains("ERROR"), "Expected not-found error, got: {}", result);
+        assert!(
+            result.contains("ERROR"),
+            "Expected not-found error, got: {}",
+            result
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_old_string_is_rejected_without_looping_or_writing() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("test.rs");
+        fs::write(&path, "unchanged\n").unwrap();
+
+        let result = execute(
+            "test.rs",
+            "",
+            "replacement",
+            dir.path().to_str().unwrap(),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await;
+
+        assert_eq!(result, "ERROR: old_string must not be empty.");
+        assert_eq!(fs::read_to_string(path).unwrap(), "unchanged\n");
+    }
+
+    #[tokio::test]
+    async fn pre_cancelled_edit_does_not_modify_the_file() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("test.rs");
+        fs::write(&path, "old\n").unwrap();
+        let token = tokio_util::sync::CancellationToken::new();
+        token.cancel();
+
+        let result = execute("test.rs", "old", "new", dir.path().to_str().unwrap(), token).await;
+
+        assert_eq!(result, "[Operation Cancelled by User]");
+        assert_eq!(fs::read_to_string(path).unwrap(), "old\n");
     }
 }

@@ -1,6 +1,6 @@
-use serde_json::json;
-use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
+use crate::tools::{FunctionDefinition, Tool};
+use serde_json::json;
 use std::fs;
 use std::path::Path;
 
@@ -40,7 +40,6 @@ pub fn get_definition() -> Tool {
     }
 }
 
-
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     if let Some(desc) = arguments["description"].as_str() {
         return format!("{} {}", icons::PATH, desc);
@@ -48,27 +47,46 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     let path = arguments["path"].as_str().unwrap_or("");
     let start = arguments["start_line"].as_u64().unwrap_or(1);
     let end = arguments["end_line"].as_u64().unwrap_or(1);
-    format!("{} Reading lines {}-{} of: `{}`", icons::PATH, start, end, path)
+    format!(
+        "{} Reading lines {}-{} of: `{}`",
+        icons::PATH,
+        start,
+        end,
+        path
+    )
 }
 
-pub async fn execute(path: &str, start_line: usize, end_line: usize, cwd: &str, cancellation_token: tokio_util::sync::CancellationToken) -> String {
+pub async fn execute(
+    path: &str,
+    start_line: usize,
+    end_line: usize,
+    cwd: &str,
+    cancellation_token: tokio_util::sync::CancellationToken,
+) -> String {
     let path = path.trim_matches(|c| c == '\'' || c == '\"');
     let full_path = Path::new(cwd).join(path);
-    
+
     tokio::select! {
+        biased;
         _ = cancellation_token.cancelled() => {
             "[Operation Cancelled by User]".to_string()
         }
         res = async {
+            if start_line == 0 || end_line == 0 || start_line > end_line {
+                return format!(
+                    "ERROR: Invalid line range {}-{}; line numbers are 1-indexed and the start must not exceed the end",
+                    start_line, end_line
+                );
+            }
             match fs::read_to_string(&full_path) {
                 Ok(content) => {
                     let lines: Vec<&str> = content.lines().collect();
-                    let start = start_line.saturating_sub(1);
+                    let start = start_line - 1;
                     let end = end_line.min(lines.len());
-                    if start >= lines.len() || start > end {
-                        return format!("ERROR: Invalid line range {}-{} for file with {} lines", start + 1, end, lines.len());
+                    if start >= lines.len() {
+                        return format!("ERROR: Invalid line range {}-{} for file with {} lines", start_line, end_line, lines.len());
                     }
-                    
+
                     let mut result = String::new();
                     for (i, line) in lines[start..end].iter().enumerate() {
                         result.push_str(&format!("{:6}\t{}\n", start + i + 1, line));
@@ -78,5 +96,41 @@ pub async fn execute(path: &str, start_line: usize, end_line: usize, cwd: &str, 
                 Err(e) => format!("ERROR: Failed to read file {}: {}", full_path.display(), e),
             }
         } => res
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn reversed_or_zero_ranges_are_errors() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("lines.txt"), "one\ntwo\n").unwrap();
+
+        for (start, end) in [(1, 0), (2, 1), (0, 1)] {
+            let result = execute(
+                "lines.txt",
+                start,
+                end,
+                dir.path().to_str().unwrap(),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await;
+            assert!(result.starts_with("ERROR:"), "{start}-{end}: {result}");
+        }
+    }
+
+    #[tokio::test]
+    async fn pre_cancelled_read_does_not_win_the_ready_branch() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("lines.txt"), "one\n").unwrap();
+        let token = tokio_util::sync::CancellationToken::new();
+        token.cancel();
+
+        let result = execute("lines.txt", 1, 1, dir.path().to_str().unwrap(), token).await;
+
+        assert_eq!(result, "[Operation Cancelled by User]");
     }
 }

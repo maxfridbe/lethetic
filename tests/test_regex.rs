@@ -12,7 +12,7 @@ fn main() {
         "<think>",
         "<|tool_call>",
     ];
-    
+
     for t in texts {
         println!("Text: {}, Match: {:?}", t, re.find(t).map(|m| m.as_str()));
     }

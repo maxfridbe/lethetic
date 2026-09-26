@@ -1,11 +1,12 @@
-use serde_json::json;
-use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
+use crate::client::{RequestStartedHook, StreamEvent, summarize_llm_accounted_with_hook};
+use crate::config::Config;
+use crate::tools::{FunctionDefinition, Tool};
+use reqwest::Client;
+use serde_json::json;
 use std::fs;
 use std::path::Path;
-use crate::client::summarize_llm;
-use crate::config::Config;
-use reqwest::Client;
+use tokio_util::sync::CancellationToken;
 
 pub fn get_definition() -> Tool {
     Tool {
@@ -51,9 +52,37 @@ pub async fn execute(
     cwd: &str,
     client: &Client,
     config: &Config,
+    tx: &tokio::sync::mpsc::UnboundedSender<StreamEvent>,
+    cancellation: CancellationToken,
+) -> String {
+    execute_with_hook(
+        path,
+        content,
+        prompt,
+        cwd,
+        client,
+        config,
+        tx,
+        cancellation,
+        None,
+    )
+    .await
+}
+
+pub async fn execute_with_hook(
+    path: Option<&str>,
+    content: Option<&str>,
+    prompt: Option<&str>,
+    cwd: &str,
+    client: &Client,
+    config: &Config,
+    tx: &tokio::sync::mpsc::UnboundedSender<StreamEvent>,
+    cancellation: CancellationToken,
+    request_hook: Option<RequestStartedHook>,
 ) -> String {
     if path.is_none() && content.is_none() {
-        return "ERROR: Provide either 'path' (file to read) or 'content' (inline text).".to_string();
+        return "ERROR: Provide either 'path' (file to read) or 'content' (inline text)."
+            .to_string();
     }
 
     let raw_content = if let Some(p) = path {
@@ -71,7 +100,17 @@ pub async fn execute(
         "Summarize the following content, highlighting the most important information, results, or errors.",
     );
 
-    match summarize_llm(client, config, &raw_content, summary_prompt).await {
+    match summarize_llm_accounted_with_hook(
+        client,
+        config,
+        &raw_content,
+        summary_prompt,
+        tx,
+        cancellation,
+        request_hook,
+    )
+    .await
+    {
         Ok(summary) => format!("SUMMARY:\n{}", summary),
         Err(e) => format!("ERROR: Summarization failed: {}", e),
     }

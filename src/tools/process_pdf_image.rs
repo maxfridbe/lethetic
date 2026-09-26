@@ -1,11 +1,11 @@
-use serde_json::json;
-use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
-use std::path::Path;
-use pdf_oxide::PdfDocument;
-use pdf_oxide::rendering::{render_page, RenderOptions};
+use crate::tools::{FunctionDefinition, Tool};
 use base64::{Engine as _, engine::general_purpose};
+use pdf_oxide::PdfDocument;
+use pdf_oxide::rendering::{RenderOptions, render_page};
+use serde_json::json;
 use std::io::Cursor;
+use std::path::Path;
 
 pub fn get_definition() -> Tool {
     Tool {
@@ -48,18 +48,52 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     let prompt = arguments["prompt"].as_str().unwrap_or("");
     let path = arguments["pdf_path"].as_str().unwrap_or("");
     let page = arguments["page_num"].as_u64().unwrap_or(1);
-    format!("{} Analyzing PDF (Native) `{}` page {}: {}", icons::IMAGE, path, page, prompt)
+    format!(
+        "{} Analyzing PDF (Native) `{}` page {}: {}",
+        icons::IMAGE,
+        path,
+        page,
+        prompt
+    )
 }
 
 pub async fn execute(
-    prompt: &str, 
-    pdf_path: &str, 
-    page_num: usize, 
-    max_size: Option<u32>, 
-    cwd: &str, 
-    client: &reqwest::Client, 
+    prompt: &str,
+    pdf_path: &str,
+    page_num: usize,
+    max_size: Option<u32>,
+    cwd: &str,
+    client: &reqwest::Client,
     config: &crate::config::Config,
-    tx: &tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>
+    tx: &tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>,
+    cancellation: tokio_util::sync::CancellationToken,
+) -> String {
+    execute_with_hook(
+        prompt,
+        pdf_path,
+        page_num,
+        max_size,
+        cwd,
+        client,
+        config,
+        tx,
+        cancellation,
+        None,
+    )
+    .await
+}
+
+pub async fn execute_with_hook(
+    prompt: &str,
+    pdf_path: &str,
+    page_num: usize,
+    max_size: Option<u32>,
+    cwd: &str,
+    client: &reqwest::Client,
+    config: &crate::config::Config,
+    tx: &tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>,
+    cancellation: tokio_util::sync::CancellationToken,
+    request_hook: Option<crate::client::RequestStartedHook>,
 ) -> String {
     let pdf_path = pdf_path.trim_matches(|c| c == '\'' || c == '\"');
     let full_path = Path::new(cwd).join(pdf_path);
@@ -78,7 +112,10 @@ pub async fn execute(
     };
 
     if page_num == 0 || page_num > total_pages {
-        return format!("ERROR: Page {} does not exist. PDF has {} pages.", page_num, total_pages);
+        return format!(
+            "ERROR: Page {} does not exist. PDF has {} pages.",
+            page_num, total_pages
+        );
     }
 
     // Render at a decent DPI
@@ -102,8 +139,16 @@ pub async fn execute(
         img
     };
 
-    let _ = tx.send(crate::client::StreamEvent::DebugLog(format!("[VISION] Resized PDF page from {}x{} to {}x{}", orig_w, orig_h, resized_img.width(), resized_img.height())));
-    let _ = tx.send(crate::client::StreamEvent::ToolProgress("Processing PDF vision request...".to_string()));
+    let _ = tx.send(crate::client::StreamEvent::DebugLog(format!(
+        "[VISION] Resized PDF page from {}x{} to {}x{}",
+        orig_w,
+        orig_h,
+        resized_img.width(),
+        resized_img.height()
+    )));
+    let _ = tx.send(crate::client::StreamEvent::ToolProgress(
+        "Processing PDF vision request...".to_string(),
+    ));
 
     let mut buf = Vec::new();
     if let Err(e) = resized_img.write_to(&mut Cursor::new(&mut buf), image::ImageFormat::Png) {
@@ -112,9 +157,18 @@ pub async fn execute(
 
     let b64 = general_purpose::STANDARD.encode(buf);
 
-    match crate::client::get_single_response(client, config, prompt.to_string(), Some(vec![b64]), Some(tx)).await {
+    match crate::client::get_single_response_with_hook(
+        client,
+        config,
+        prompt.to_string(),
+        Some(vec![b64]),
+        Some(tx),
+        cancellation,
+        request_hook,
+    )
+    .await
+    {
         Ok(res) => res,
         Err(e) => format!("ERROR: Vision request failed: {}", e),
     }
 }
-

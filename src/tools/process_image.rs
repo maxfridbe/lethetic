@@ -1,10 +1,10 @@
-use serde_json::json;
-use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
-use std::path::Path;
-use image::GenericImageView;
+use crate::tools::{FunctionDefinition, Tool};
 use base64::{Engine as _, engine::general_purpose};
+use image::GenericImageView;
+use serde_json::json;
 use std::io::Cursor;
+use std::path::Path;
 
 pub fn get_definition() -> Tool {
     Tool {
@@ -46,13 +46,39 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
 }
 
 pub async fn execute(
-    prompt: &str, 
-    image_path: &str, 
-    max_size: Option<u32>, 
-    cwd: &str, 
-    client: &reqwest::Client, 
+    prompt: &str,
+    image_path: &str,
+    max_size: Option<u32>,
+    cwd: &str,
+    client: &reqwest::Client,
     config: &crate::config::Config,
-    tx: &tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>
+    tx: &tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>,
+    cancellation: tokio_util::sync::CancellationToken,
+) -> String {
+    execute_with_hook(
+        prompt,
+        image_path,
+        max_size,
+        cwd,
+        client,
+        config,
+        tx,
+        cancellation,
+        None,
+    )
+    .await
+}
+
+pub async fn execute_with_hook(
+    prompt: &str,
+    image_path: &str,
+    max_size: Option<u32>,
+    cwd: &str,
+    client: &reqwest::Client,
+    config: &crate::config::Config,
+    tx: &tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>,
+    cancellation: tokio_util::sync::CancellationToken,
+    request_hook: Option<crate::client::RequestStartedHook>,
 ) -> String {
     let image_path = image_path.trim_matches(|c| c == '\'' || c == '\"');
     let full_path = Path::new(cwd).join(image_path);
@@ -67,15 +93,23 @@ pub async fn execute(
 
     let (width, height) = img.dimensions();
     let limit = max_size.unwrap_or(1024);
-    
+
     let resized_img = if width > limit || height > limit {
         img.resize(limit, limit, image::imageops::FilterType::CatmullRom)
     } else {
         img
     };
 
-    let _ = tx.send(crate::client::StreamEvent::DebugLog(format!("[VISION] Resized image from {}x{} to {}x{}", width, height, resized_img.width(), resized_img.height())));
-    let _ = tx.send(crate::client::StreamEvent::ToolProgress("Processing vision request...".to_string()));
+    let _ = tx.send(crate::client::StreamEvent::DebugLog(format!(
+        "[VISION] Resized image from {}x{} to {}x{}",
+        width,
+        height,
+        resized_img.width(),
+        resized_img.height()
+    )));
+    let _ = tx.send(crate::client::StreamEvent::ToolProgress(
+        "Processing vision request...".to_string(),
+    ));
 
     let mut buf = Vec::new();
     if let Err(e) = resized_img.write_to(&mut Cursor::new(&mut buf), image::ImageFormat::Png) {
@@ -83,8 +117,18 @@ pub async fn execute(
     }
 
     let b64 = general_purpose::STANDARD.encode(buf);
-    
-    match crate::client::get_single_response(client, config, prompt.to_string(), Some(vec![b64]), Some(tx)).await {
+
+    match crate::client::get_single_response_with_hook(
+        client,
+        config,
+        prompt.to_string(),
+        Some(vec![b64]),
+        Some(tx),
+        cancellation,
+        request_hook,
+    )
+    .await
+    {
         Ok(res) => res,
         Err(e) => format!("ERROR: Vision request failed: {}", e),
     }

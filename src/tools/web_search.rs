@@ -1,14 +1,15 @@
-use serde_json::json;
-use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
+use crate::tools::{FunctionDefinition, Tool};
 use h2m_search::{SearchClient, SearchQuery};
+use serde_json::json;
 
 pub fn get_definition() -> Tool {
     Tool {
         tool_type: "function".to_string(),
         function: FunctionDefinition {
             name: "web_search".to_string(),
-            description: "Search the web using DuckDuckGo and return titles, URLs, and snippets.".to_string(),
+            description: "Search the web using DuckDuckGo and return titles, URLs, and snippets."
+                .to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
