@@ -1011,13 +1011,13 @@ progress {
 .status-level,
 .footer-level {
   display: flex;
+  flex-wrap: wrap;
   min-width: 0;
   align-items: stretch;
   gap: 0;
   padding-inline: max(0.75rem, env(safe-area-inset-left)) max(0.75rem, env(safe-area-inset-right));
-  overflow-x: auto;
-  white-space: nowrap;
-  scrollbar-width: thin;
+  overflow-x: hidden;
+  white-space: normal;
 }
 
 .status-level {
@@ -1039,7 +1039,9 @@ progress {
 
 .status-field {
   display: inline-flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
   align-items: center;
   gap: 0.35rem;
   padding: 0.25rem 0.75rem;
@@ -1602,4 +1604,34 @@ progress {
   .connection-dot {
     forced-color-adjust: none;
   }
+}
+
+/* Fenced code highlighting (web/src/highlight.tsx), coloured by the theme. */
+.code-highlight .code-comment {
+  color: var(--theme-system-fg);
+  font-style: italic;
+}
+
+.code-highlight .code-keyword {
+  color: var(--theme-tool-fg);
+}
+
+.code-highlight .code-string {
+  color: var(--theme-json-val-fg);
+}
+
+.code-highlight .code-number {
+  color: var(--theme-thought-fg);
+}
+
+.code-highlight .code-function {
+  color: var(--theme-highlight-fg);
+}
+
+.code-highlight .code-type {
+  color: var(--theme-warning-fg);
+}
+
+.code-highlight .code-key {
+  color: var(--theme-json-key-fg);
 }

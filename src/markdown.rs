@@ -5,17 +5,129 @@ use ratatui::{
 };
 use std::sync::LazyLock;
 use syntect::easy::HighlightLines;
-use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
-static THEME_SET: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
+
+/// Code token categories, each drawn with a colour from the app theme so
+/// highlighting follows the selected theme (named or RGB colours alike).
+#[derive(Clone, Copy)]
+enum CodeCategory {
+    Plain,
+    Comment,
+    Keyword,
+    StringLiteral,
+    Number,
+    Function,
+    Type,
+    Key,
+}
+
+const CODE_CATEGORIES: [CodeCategory; 8] = [
+    CodeCategory::Plain,
+    CodeCategory::Comment,
+    CodeCategory::Keyword,
+    CodeCategory::StringLiteral,
+    CodeCategory::Number,
+    CodeCategory::Function,
+    CodeCategory::Type,
+    CodeCategory::Key,
+];
+
+/// Marker bytes: a syntect colour `(index, MARK_G, MARK_B)` stands for
+/// `CODE_CATEGORIES[index]` and is replaced by the theme colour when drawn.
+const MARK_G: u8 = 0x5a;
+const MARK_B: u8 = 0xa5;
+
+impl CodeCategory {
+    fn color(self, theme: &crate::ui::Theme) -> Color {
+        match self {
+            Self::Plain => theme.output_fg,
+            Self::Comment => theme.system_fg,
+            Self::Keyword => theme.tool_fg,
+            Self::StringLiteral => theme.json_val_fg,
+            Self::Number => theme.thought_fg,
+            Self::Function => theme.highlight_fg,
+            Self::Type => theme.warning_fg,
+            Self::Key => theme.json_key_fg,
+        }
+    }
+
+    fn scopes(self) -> &'static str {
+        match self {
+            Self::Plain => "",
+            Self::Comment => "comment, punctuation.definition.comment",
+            Self::Keyword => {
+                "keyword, storage.modifier, storage.type.function, keyword.operator.word, variable.language"
+            }
+            Self::StringLiteral => "string, constant.character, punctuation.definition.string",
+            Self::Number => "constant.numeric, constant.language, constant.other",
+            Self::Function => {
+                "entity.name.function, support.function, meta.function-call variable.function, variable.function"
+            }
+            Self::Type => {
+                "entity.name.type, entity.name.class, entity.name.struct, entity.name.enum, support.type, support.class, storage.type"
+            }
+            Self::Key => {
+                "entity.name.tag, entity.other.attribute-name, meta.object-literal.key, support.type.property-name, meta.mapping.key string, variable.other.member"
+            }
+        }
+    }
+}
+
+/// A syntect theme whose colours are category markers, built once.
+static CATEGORY_THEME: LazyLock<syntect::highlighting::Theme> = LazyLock::new(|| {
+    use std::str::FromStr;
+    use syntect::highlighting::{
+        Color as SyntectColor, ScopeSelectors, StyleModifier, Theme as SyntectTheme, ThemeItem,
+        ThemeSettings,
+    };
+    let marker = |index: usize| SyntectColor {
+        r: index as u8,
+        g: MARK_G,
+        b: MARK_B,
+        a: 0xff,
+    };
+    let scopes = CODE_CATEGORIES
+        .iter()
+        .enumerate()
+        .filter(|(_, category)| !category.scopes().is_empty())
+        .filter_map(|(index, category)| {
+            Some(ThemeItem {
+                scope: ScopeSelectors::from_str(category.scopes()).ok()?,
+                style: StyleModifier {
+                    foreground: Some(marker(index)),
+                    background: None,
+                    font_style: None,
+                },
+            })
+        })
+        .collect();
+    SyntectTheme {
+        name: Some("lethetic-app-theme".to_string()),
+        author: None,
+        settings: ThemeSettings {
+            foreground: Some(marker(0)),
+            ..ThemeSettings::default()
+        },
+        scopes,
+    }
+});
+
+fn themed_color(color: syntect::highlighting::Color, theme: &crate::ui::Theme) -> Color {
+    if color.g == MARK_G && color.b == MARK_B {
+        if let Some(category) = CODE_CATEGORIES.get(color.r as usize) {
+            return category.color(theme);
+        }
+    }
+    Color::Rgb(color.r, color.g, color.b)
+}
 
 /// Force the syntect lazy statics to load. Called from a background thread at
 /// startup so the first code-fence render doesn't pay the dump-load cost.
 pub fn warm_highlighter() {
     LazyLock::force(&SYNTAX_SET);
-    LazyLock::force(&THEME_SET);
+    LazyLock::force(&CATEGORY_THEME);
 }
 
 pub fn highlight_source(source: &str, language: &str, theme: &crate::ui::Theme) -> Text<'static> {
@@ -39,7 +151,7 @@ pub fn highlight_source(source: &str, language: &str, theme: &crate::ui::Theme) 
         .or_else(|| SYNTAX_SET.find_syntax_by_name(language))
         .or_else(|| SYNTAX_SET.find_syntax_by_token(language))
         .unwrap_or_else(|| SYNTAX_SET.find_syntax_plain_text());
-    let mut highlighter = HighlightLines::new(syntax, &THEME_SET.themes["base16-ocean.dark"]);
+    let mut highlighter = HighlightLines::new(syntax, &CATEGORY_THEME);
     let mut highlighted = Text::default();
 
     let source = source.strip_suffix('\n').unwrap_or(source);
@@ -68,12 +180,16 @@ pub fn highlight_source(source: &str, language: &str, theme: &crate::ui::Theme) 
         match highlighter.highlight_line(code, &SYNTAX_SET) {
             Ok(ranges) => {
                 for (style, text) in ranges {
-                    let foreground =
-                        Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
-                    spans.push(Span::styled(
-                        text.to_string(),
-                        Style::default().fg(foreground).bg(theme.terminal_bg),
-                    ));
+                    let mut span_style = Style::default()
+                        .fg(themed_color(style.foreground, theme))
+                        .bg(theme.terminal_bg);
+                    if style.foreground.r == 1
+                        && style.foreground.g == MARK_G
+                        && style.foreground.b == MARK_B
+                    {
+                        span_style = span_style.add_modifier(Modifier::ITALIC);
+                    }
+                    spans.push(Span::styled(text.to_string(), span_style));
                 }
             }
             Err(_) => spans.push(Span::styled(
@@ -298,4 +414,31 @@ pub fn render_markdown(content: &str, theme: &crate::ui::Theme) -> Text<'static>
     }
 
     text
+}
+
+#[cfg(test)]
+mod theme_highlight_tests {
+    use super::*;
+
+    #[test]
+    fn rust_code_uses_the_app_theme_colours() {
+        let theme = crate::ui::Theme::default();
+        let text = highlight_source(
+            "fn main() {\n    // hi\n    let x: u32 = 42;\n    println!(\"hello\");\n}\n",
+            "rust",
+            &theme,
+        );
+        let color_of = |needle: &str| {
+            text.lines
+                .iter()
+                .flat_map(|line| line.spans.iter())
+                .find(|span| span.content.contains(needle))
+                .and_then(|span| span.style.fg)
+        };
+        assert_eq!(color_of("fn"), Some(theme.tool_fg));
+        assert_eq!(color_of("hi"), Some(theme.system_fg));
+        assert_eq!(color_of("42"), Some(theme.thought_fg));
+        assert_eq!(color_of("hello"), Some(theme.json_val_fg));
+        assert_eq!(color_of("main"), Some(theme.highlight_fg));
+    }
 }

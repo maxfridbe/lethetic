@@ -929,6 +929,7 @@ tracked_assets!(
     "src/files/state.js",
     "src/files/view.js",
     "src/generated/contracts.js",
+    "src/highlight.js",
     "src/icons.js",
     "src/json.js",
     "src/main.js",

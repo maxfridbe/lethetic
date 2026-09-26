@@ -1,6 +1,7 @@
 import { jsx as h } from "../lib/snabbdom/build/jsx.js";
 import { thunk } from "../lib/snabbdom/build/thunk.js";
 import { Lexer, } from "../lib/marked/marked.esm.js";
+import { highlightCode } from "./highlight.js";
 import { MAX_JSON_SEGMENTS, inspectJson, jsonTokenChildren, } from "./json.js";
 const MAX_MARKDOWN_SOURCE_BYTES = 64 * 1024;
 const MAX_MARKDOWN_NODES = 4_096;
@@ -65,8 +66,10 @@ const NAMED_CHARACTER_REFERENCES = Object.freeze({
     zwnj: "‌",
 });
 const CHARACTER_REFERENCE = /&(?:#([0-9]{1,7})|#[xX]([0-9A-Fa-f]{1,6})|([A-Za-z][A-Za-z0-9]{1,31}));/gu;
+/** Assistant text, explicit markdown, and thinking (where reasoning models put
+ * most formatted output) render as markdown. */
 export function isMarkdownBlockKind(value) {
-    return value === "markdown" || value === "text";
+    return value === "markdown" || value === "text" || value === "thought";
 }
 class MarkdownComplexityError extends Error {
 }
@@ -631,10 +634,15 @@ function renderBlocks(nodes, budget) {
                 if (jsonChildren !== null) {
                     budget.jsonSegmentsRemaining -= jsonChildren.length;
                 }
+                const codeChildren = jsonChildren === null ? highlightCode(node.text, node.language) : null;
                 return (h("div", { attrs: { class: "markdown-code-block" } },
                     node.language === null ? null : (h("div", { attrs: { class: "markdown-code-language" } }, node.language)),
                     h("pre", null,
-                        h("code", { attrs: jsonChildren === null ? {} : { class: "json-highlight" } }, jsonChildren ?? node.text))));
+                        h("code", { attrs: jsonChildren !== null
+                                ? { class: "json-highlight" }
+                                : codeChildren !== null
+                                    ? { class: "code-highlight" }
+                                    : {} }, jsonChildren ?? codeChildren ?? node.text))));
             }
             case "table":
                 return (h("div", { attrs: { class: "markdown-table-scroll" } },

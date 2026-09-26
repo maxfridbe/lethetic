@@ -9,6 +9,7 @@ import type {
   Token,
   Tokens,
 } from "../lib/marked/marked.esm.js";
+import { highlightCode } from "./highlight.js";
 import {
   MAX_JSON_SEGMENTS,
   inspectJson,
@@ -83,10 +84,12 @@ const NAMED_CHARACTER_REFERENCES: Readonly<Record<string, string>> = Object.free
 const CHARACTER_REFERENCE =
   /&(?:#([0-9]{1,7})|#[xX]([0-9A-Fa-f]{1,6})|([A-Za-z][A-Za-z0-9]{1,31}));/gu;
 
-export type MarkdownBlockKind = "markdown" | "text";
+export type MarkdownBlockKind = "markdown" | "text" | "thought";
 
+/** Assistant text, explicit markdown, and thinking (where reasoning models put
+ * most formatted output) render as markdown. */
 export function isMarkdownBlockKind(value: string): value is MarkdownBlockKind {
-  return value === "markdown" || value === "text";
+  return value === "markdown" || value === "text" || value === "thought";
 }
 
 type TableAlignment = "center" | "left" | "right" | "unset";
@@ -833,6 +836,8 @@ function renderBlocks(
         if (jsonChildren !== null) {
           budget.jsonSegmentsRemaining -= jsonChildren.length;
         }
+        const codeChildren =
+          jsonChildren === null ? highlightCode(node.text, node.language) : null;
         return (
           <div attrs={{ class: "markdown-code-block" }}>
             {node.language === null ? null : (
@@ -843,10 +848,14 @@ function renderBlocks(
             <pre>
               <code
                 attrs={
-                  jsonChildren === null ? {} : { class: "json-highlight" }
+                  jsonChildren !== null
+                    ? { class: "json-highlight" }
+                    : codeChildren !== null
+                      ? { class: "code-highlight" }
+                      : {}
                 }
               >
-                {jsonChildren ?? node.text}
+                {jsonChildren ?? codeChildren ?? node.text}
               </code>
             </pre>
           </div>

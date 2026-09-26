@@ -20,6 +20,7 @@ import {
   visit,
   type VNode,
 } from "./support/vnode.js";
+import { highlightCode } from "../src/highlight.js";
 
 function jsonTokenCount(vnode: VNode): number {
   return [
@@ -88,13 +89,12 @@ function assertSafeTree(vnode: VNode): void {
   });
 }
 
-test("only assistant text and explicit markdown are renderer candidates", () => {
-  for (const kind of ["text", "markdown"]) {
+test("assistant text, thinking and explicit markdown are renderer candidates", () => {
+  for (const kind of ["text", "markdown", "thought"]) {
     assert.equal(isMarkdownBlockKind(kind), true, kind);
   }
   for (const kind of [
     "user",
-    "thought",
     "tool_call",
     "tool_result",
     "divider",
@@ -463,4 +463,32 @@ test("Snabbdom thunk reuses unchanged content and replaces a streamed tail", () 
   runPrepatchHook(same, changed);
   assert.notEqual(changed.children, same.children);
   assert.match(textContent(changed), /new tail/u);
+});
+
+test("fenced rust code is tokenized into theme-coloured classes", () => {
+  const children = highlightCode(
+    'fn main() {\n    // hi\n    let x: u32 = 42;\n    println!("hello");\n}\n',
+    "rust",
+  );
+  assert.ok(children !== null);
+  const classOf = (needle: string): string | undefined => {
+    for (const child of children) {
+      if (typeof child === "string") {
+        continue;
+      }
+      const first = child.children?.[0];
+      const content = child.text ?? (typeof first === "string" ? first : first?.text);
+      if (content === needle) {
+        const value = child.data?.attrs?.["class"];
+        return typeof value === "string" ? value : undefined;
+      }
+    }
+    return undefined;
+  };
+  assert.equal(classOf("fn"), "code-keyword");
+  assert.equal(classOf("main"), "code-function");
+  assert.equal(classOf("// hi"), "code-comment");
+  assert.equal(classOf("42"), "code-number");
+  assert.equal(classOf('"hello"'), "code-string");
+  assert.equal(highlightCode("plain", "unknown-lang"), null);
 });
