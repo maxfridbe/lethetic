@@ -388,6 +388,14 @@ pub struct ModelServer {
     pub context_mode: Option<crate::context::ContextMode>,
     #[serde(default)]
     pub theme: Option<String>,
+    /// When false, the model switcher lists only this entry's configured
+    /// `model` instead of probing `/v1/models` (OpenRouter returns hundreds).
+    #[serde(default = "default_discover_models")]
+    pub discover_models: bool,
+}
+
+fn default_discover_models() -> bool {
+    true
 }
 
 impl ModelServer {
@@ -958,6 +966,7 @@ mod tests {
             extra_body: None,
             context_mode: None,
             theme: None,
+            discover_models: true,
         }
     }
 

@@ -294,7 +294,7 @@ Headless output prints the session, managed workspace, runtime, exact container,
 
 ## Model Switcher
 
-**Ctrl+P → Models** opens a panel that queries `/v1/models` through each configured connection kind and shows a combined list. The active entry is matched by stable connection ID plus model ID and marked `▶`. Selecting a new entry:
+**Ctrl+P → Models** opens a panel that queries `/v1/models` through each configured connection kind and shows a combined list. Set `discover_models: false` on a `model_servers` entry to skip that probe and list only its configured `model`; use this for catalog endpoints such as OpenRouter that would otherwise flood the list. The active entry is matched by stable connection ID plus model ID and marked `▶`. Selecting a new entry:
 - Switches the complete connection/model settings atomically
 - Resets the stream parser to the new dialect
 - Preserves the active Python runspace because the chat session did not change

@@ -380,6 +380,7 @@ pub(crate) async fn handle_app_event_outcome(
                         server.url.clone(),
                         server.model.clone(),
                         server.api_key.clone(),
+                        server.discover_models,
                     )
                 })
                 .collect::<Vec<_>>();
@@ -391,6 +392,7 @@ pub(crate) async fn handle_app_event_outcome(
                     config.server_url.clone(),
                     config.model.clone(),
                     config.api_key.clone(),
+                    true,
                 ));
             }
             let client_clone = (*client).clone();
@@ -398,12 +400,22 @@ pub(crate) async fn handle_app_event_outcome(
             let model_cancellation = background_cancellation.child_token();
             let model_task = tokio::spawn(async move {
                 const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
-                let probes = servers
-                    .iter()
-                    .map(|(id, name, kind, url, default_model, api_key)| {
+                let probes = servers.iter().map(
+                    |(id, name, kind, url, default_model, api_key, discover)| {
                         let client = client_clone.clone();
                         let cancellation = model_cancellation.child_token();
                         async move {
+                            if !*discover {
+                                // Configured-only entry: no probe, no discovery.
+                                return (
+                                    id.clone(),
+                                    name.clone(),
+                                    *kind,
+                                    url.clone(),
+                                    default_model.clone(),
+                                    Ok(Vec::new()),
+                                );
+                            }
                             let probe = tokio::time::timeout(
                                 PROBE_TIMEOUT,
                                 lethetic::client::get_available_models(
@@ -435,7 +447,8 @@ pub(crate) async fn handle_app_event_outcome(
                                 live,
                             )
                         }
-                    });
+                    },
+                );
                 let mut models = Vec::new();
                 for (id, name, kind, url, default_model, live) in
                     futures_util::future::join_all(probes).await
