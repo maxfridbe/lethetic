@@ -22,6 +22,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     chat::render_output(f, app, areas.output);
     chat::render_input(f, app, areas.input, areas.inner_width);
     status::render_processing(f, app, areas.processing);
+    status::render_remote_control(f, app, areas.remote_control);
     status::render_status(f, app, areas.status);
     status::render_debug(f, app, areas.debug);
     todos::render(f, app, areas.todos);

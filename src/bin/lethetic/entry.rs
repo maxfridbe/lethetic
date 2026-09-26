@@ -388,6 +388,8 @@ fn build_app(
     // Launch flags force remote control; the palette cannot change it.
     app.remote_control_target = cli.wfe_remote_control.clone();
     app.remote_control_locked = cli.wfe_remote_control.is_some();
+    app.remote_control_open = cli.wfe_disable_authtoken;
+    app.remote_control_files = cli.wfe_files.is_some();
     if (cli.new_session || cli.python_mode == Some(LiteralPythonMode::Nonlocal))
         && cli.session_id.is_none()
         && app.current_session_dir.is_none()

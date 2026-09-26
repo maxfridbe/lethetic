@@ -253,3 +253,102 @@ pub(super) fn render_debug(f: &mut ratatui::Frame, app: &App, area: Rect) {
         );
     }
 }
+
+/// One line under the input while remote control is running.
+pub(super) fn render_remote_control(f: &mut ratatui::Frame, app: &App, area: Rect) {
+    let Some(target) = app.remote_control_target.as_deref() else {
+        return;
+    };
+    if area.height == 0 {
+        return;
+    }
+    let label = Style::default().fg(app.theme.system_fg);
+    let value = Style::default().fg(app.theme.output_fg);
+    let auth = if app.remote_control_open {
+        Span::styled(
+            "OPEN (no token)",
+            Style::default()
+                .fg(app.theme.error_fg)
+                .add_modifier(ratatui::style::Modifier::BOLD),
+        )
+    } else {
+        Span::styled("token", Style::default().fg(app.theme.success_fg))
+    };
+    let clients = match (app.remote_control_clients, &app.remote_control_last_peer) {
+        (0, _) => "no browsers".to_string(),
+        (1, Some(peer)) => format!("1 browser ({peer})"),
+        (count, Some(peer)) => format!("{count} browsers (latest {peer})"),
+        (count, None) => format!("{count} browsers"),
+    };
+    let mut spans = vec![
+        Span::styled(format!("{} Remote control: ", icons::SERVER), label),
+        Span::styled(
+            target.to_string(),
+            Style::default().fg(app.theme.highlight_fg),
+        ),
+        Span::styled(" | auth: ", label),
+        auth,
+        Span::styled(" | files: ", label),
+        Span::styled(
+            if app.remote_control_files {
+                "shared"
+            } else {
+                "off"
+            },
+            value,
+        ),
+        Span::styled(" | ", label),
+        Span::styled(clients, value),
+    ];
+    spans.push(Span::styled(
+        if app.remote_control_locked {
+            " | set by --rc"
+        } else {
+            " | Ctrl+P → Remote Control: stop"
+        },
+        label,
+    ));
+    f.render_widget(
+        ratatui::widgets::Paragraph::new(ratatui::text::Line::from(spans))
+            .style(Style::default().bg(app.theme.terminal_bg)),
+        area,
+    );
+}
+
+#[cfg(test)]
+mod remote_control_line_tests {
+    use crate::app::App;
+    use crate::config::Config;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    fn screen(app: &mut App) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(160, 30)).unwrap();
+        terminal.draw(|frame| crate::ui::ui(frame, app)).unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect()
+    }
+
+    #[test]
+    fn status_line_appears_only_while_remote_control_runs() {
+        let mut app = App::new(&Config::default());
+        app.show_session_manager = false;
+        assert!(!screen(&mut app).contains("Remote control:"));
+        app.remote_control_target = Some("https://brainiac:11223".into());
+        app.remote_control_open = true;
+        app.remote_control_clients = 2;
+        app.remote_control_last_peer = Some("100.64.0.7".into());
+        let text = screen(&mut app);
+        assert!(
+            text.contains("Remote control: https://brainiac:11223"),
+            "{text}"
+        );
+        assert!(text.contains("auth: OPEN (no token)"));
+        assert!(text.contains("files: off"));
+        assert!(text.contains("2 browsers (latest 100.64.0.7)"));
+    }
+}

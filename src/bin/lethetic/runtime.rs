@@ -320,6 +320,7 @@ pub(crate) async fn run_actor(
                         wfe_runtime = None;
                         in_session_server = None;
                         context.app.remote_control_target = None;
+                        context.app.remote_control_clients = 0;
                         context.app.stop_reason = format!(
                             "⚠ Remote control stopped: {}",
                             error.unwrap_or_else(|| "listener closed".to_string())
@@ -685,6 +686,17 @@ fn record_wfe_connection(
 ) {
     // Connection loss is telemetry only. It never controls the actor,
     // listener, authentication, in-flight work, or browser lifecycle.
+    use lethetic::wfe::runtime::WfeConnectionEvent;
+    match event {
+        WfeConnectionEvent::Connected(connected) => {
+            context.app.remote_control_clients = connected.active_clients;
+            context.app.remote_control_last_peer = Some(connected.peer_ip.to_string());
+        }
+        WfeConnectionEvent::Disconnected(disconnected) => {
+            context.app.remote_control_clients = disconnected.active_clients;
+        }
+    }
+    context.app.should_redraw = true;
     context
         .app
         .log_runtime_debug(&format_wfe_connection_event(event));
@@ -1148,6 +1160,10 @@ async fn handle_remote_control_request(
                     *wfe_status = Some(started.status);
                     *in_session_server = Some(started.server);
                     context.app.remote_control_target = Some(target.clone());
+                    context.app.remote_control_open = open;
+                    context.app.remote_control_files = files;
+                    context.app.remote_control_clients = 0;
+                    context.app.remote_control_last_peer = None;
                     context.app.rc_info = Some(lethetic::app::RcInfoState {
                         lines: started.lines,
                         url: started.url,
@@ -1168,6 +1184,7 @@ async fn handle_remote_control_request(
             *wfe_runtime = None;
             *wfe_status = None;
             context.app.remote_control_target = None;
+            context.app.remote_control_clients = 0;
             context.app.stop_reason = match server.shutdown().await {
                 Ok(()) => "Remote control stopped".to_string(),
                 Err(error) => format!("⚠ Remote control stopped with an error: {error}"),

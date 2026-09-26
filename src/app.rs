@@ -180,6 +180,12 @@ pub struct App {
     pub remote_control_target: Option<String>,
     /// Remote control was forced by a launch flag and cannot be changed here.
     pub remote_control_locked: bool,
+    /// Remote-control details for the status line under the input.
+    pub remote_control_open: bool,
+    pub remote_control_files: bool,
+    pub remote_control_clients: usize,
+    /// Most recent browser peer, if any.
+    pub remote_control_last_peer: Option<String>,
     /// Right-hand todo pane (F9) and its cached contents.
     pub show_todos: bool,
     pub todos: crate::todo_store::TodoSnapshot,
@@ -404,6 +410,10 @@ impl App {
             rc_info: None,
             remote_control_target: None,
             remote_control_locked: false,
+            remote_control_open: false,
+            remote_control_files: false,
+            remote_control_clients: 0,
+            remote_control_last_peer: None,
             show_todos: false,
             todos: Default::default(),
             hide_thinking: false,
