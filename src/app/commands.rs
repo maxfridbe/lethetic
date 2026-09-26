@@ -22,6 +22,13 @@ pub enum AppEventOutcome {
     ToggleHistory,
     FetchModels,
     SwitchModel(String, String), // (connection_id, model_id)
+    /// Start the HTTPS remote-control listener inside this session.
+    StartRemoteControl {
+        target: String,
+        open: bool,
+        files: bool,
+    },
+    StopRemoteControl,
     /// Fetch a connection's full catalog for the "scan for more" picker.
     ScanModels {
         connection_id: String,
@@ -62,6 +69,8 @@ impl App {
             agent_mode: format!("{:?}", self.config.tool_profile),
             agent_mode_locked: self.python_policy.is_cli_locked(),
             session_name: self.display_name.clone(),
+            remote_control_target: self.remote_control_target.clone(),
+            remote_control_locked: self.remote_control_locked,
             has_history: !self.history.is_empty(),
             fully_idle: self.is_fully_idle(),
         }
@@ -170,6 +179,13 @@ pub fn dispatch_command(app: &mut App, command: CommandId) -> AppEventOutcome {
             return AppEventOutcome::OpenPythonSetup {
                 preset: Some(preset),
             };
+        }
+        CommandId::RemoteControl => {
+            app.show_palette = false;
+            if app.remote_control_target.is_some() {
+                return AppEventOutcome::StopRemoteControl;
+            }
+            app.rc_setup = Some(RcSetupState::new());
         }
         CommandId::DeletePythonRuntime => {
             app.show_palette = false;

@@ -385,6 +385,9 @@ fn build_app(
     cli: &Cli,
 ) -> Result<App, Box<dyn Error>> {
     let mut app = App::new_with_python_policy_state(config, python_policy);
+    // Launch flags force remote control; the palette cannot change it.
+    app.remote_control_target = cli.wfe_remote_control.clone();
+    app.remote_control_locked = cli.wfe_remote_control.is_some();
     if (cli.new_session || cli.python_mode == Some(LiteralPythonMode::Nonlocal))
         && cli.session_id.is_none()
         && app.current_session_dir.is_none()

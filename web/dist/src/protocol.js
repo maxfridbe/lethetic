@@ -1111,6 +1111,7 @@ export function commandResponseMatchesRequest(response, request) {
                         return "agent_mode";
                     case "clear-ui":
                     case "toggle-debugger":
+                    case "remote-control":
                         return null;
                     case "clear-context":
                     case "delete-python-runtime":

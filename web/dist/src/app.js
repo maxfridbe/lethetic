@@ -555,6 +555,7 @@ export class SpaApplication {
             case "python-isolated":
             case "python-nonlocal":
             case "python-permissive":
+            case "remote-control":
                 this.#send({ type: "invoke_command", command_id: command.id });
                 return;
             default:

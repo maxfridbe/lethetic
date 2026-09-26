@@ -66,6 +66,7 @@ fn wfe_panel_for_command(command: lethetic::commands::CommandId) -> Option<Panel
         | CommandId::PythonNonlocal
         | CommandId::PythonPermissive => Some(PanelId::AgentMode),
         CommandId::LoopDetection
+        | CommandId::RemoteControl
         | CommandId::ClearUi
         | CommandId::ClearContext
         | CommandId::ToggleDebugger
@@ -95,6 +96,12 @@ pub(crate) fn execute_wfe_command<'a>(
                         CommandErrorCode::Busy,
                         "Command is not available in the current state",
                         true,
+                    ))
+                } else if command_id == lethetic::commands::CommandId::RemoteControl {
+                    Err(wfe_failure(
+                        CommandErrorCode::Busy,
+                        "Start or stop remote control from the terminal",
+                        false,
                     ))
                 } else if command_id == lethetic::commands::CommandId::LoopDetection {
                     wfe.open_loop_modes(context.app);

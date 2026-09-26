@@ -4,6 +4,7 @@ mod layout;
 mod model_catalog;
 mod overlays;
 mod python_setup;
+mod remote_control;
 mod status;
 
 pub use crate::theme::Theme;
@@ -24,6 +25,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     status::render_debug(f, app, areas.debug);
     if overlays::render_primary(f, app) {
         model_catalog::render(f, app);
+        remote_control::render(f, app);
         crate::compact::render_compaction_popup(f, app);
         return;
     }
@@ -32,5 +34,6 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     }
     overlays::render_secondary(f, app);
     model_catalog::render(f, app);
+    remote_control::render(f, app);
     crate::compact::render_compaction_popup(f, app);
 }

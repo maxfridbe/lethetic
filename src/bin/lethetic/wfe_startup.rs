@@ -265,6 +265,106 @@ pub(crate) async fn start(
     })))
 }
 
+/// A listener started from the command palette inside a running session.
+pub(crate) struct InSessionWfe {
+    pub(crate) runtime: WfeRuntime,
+    pub(crate) server: lethetic::wfe::server::WfeServerHandle,
+    pub(crate) status: tokio::sync::watch::Receiver<lethetic::wfe::server::WfeServerStatus>,
+    pub(crate) url: String,
+    pub(crate) lines: Vec<String>,
+}
+
+/// Start the HTTPS listener for the running session. The TUI confirmation
+/// dialog stands in for the startup Enter gate, so nothing is printed to the
+/// terminal; the URL and fingerprint go back to the caller for a popup.
+pub(crate) async fn start_in_session(
+    app: &App,
+    config: &Config,
+    target: &str,
+    open: bool,
+    share_files: bool,
+) -> Result<InSessionWfe, String> {
+    let target = WfeTarget::parse(target)?;
+    let bind_plan = lethetic::wfe::server::resolve_target(&target).await?;
+    let authentication = if open {
+        ControllerAuthenticationMode::Disabled
+    } else {
+        ControllerAuthenticationMode::TokenRequired
+    };
+    let security = prepare_security_with_authentication(
+        &target,
+        SecurityFileOptions::new(None, None, None),
+        authentication,
+        None,
+    )?;
+    let files = if share_files {
+        let launch_root = std::env::current_dir().map_err(|error| error.to_string())?;
+        let mut cli = Cli::parse(&[]).map_err(|error| error.to_string())?;
+        cli.wfe_files = Some(crate::cli::WfeFilesMode::LocalOnly);
+        let mut files = pin_files(&cli, &launch_root).map_err(|error| error.to_string())?;
+        let config_path = if Path::new("config.yml").exists() {
+            std::path::PathBuf::from("config.yml")
+        } else {
+            lethetic::platform::lethetic_config_dir().join("config.yml")
+        };
+        protect_files(&mut files, &cli, &launch_root, &config_path, config)
+            .map_err(|error| error.to_string())?;
+        files
+    } else {
+        None
+    };
+    let sensitive_values = security
+        .bootstrap_token_for_host()
+        .map(|token| vec![token.to_string()])
+        .unwrap_or_default();
+    let (frontend, mut runtime) = WfeRuntime::new(app, sensitive_values)?;
+    let (server, mut host_info) = lethetic::wfe::server::start_with_options(
+        security,
+        bind_plan,
+        frontend,
+        lethetic::wfe::server::WfeServerOptions { files },
+    )
+    .await?;
+    runtime.record_operational(OperationalEvent::ActorReady);
+    let url = match host_info.profile() {
+        SecurityProfile::AutomaticGenerated => host_info
+            .take_bootstrap_url()
+            .map(|url| url.as_str().to_string())
+            .unwrap_or_else(|| host_info.target().to_string()),
+        SecurityProfile::ExplicitFiles => host_info.target().to_string(),
+    };
+    let mut lines = vec![
+        format!("Controller URL: {url}"),
+        format!(
+            "Listening on: {}",
+            format_wfe_listener_addresses(host_info.listener_addresses())
+        ),
+        format!(
+            "TLS certificate SHA-256: {}",
+            host_info.fingerprint_sha256()
+        ),
+    ];
+    if open {
+        lines.push(
+            "WARNING: no controller token. Anyone who can reach this address has full control."
+                .to_string(),
+        );
+    } else {
+        lines.push("Keep this URL private: it contains the controller token.".to_string());
+    }
+    if share_files {
+        lines.push("The launch directory is shared read-only in the browser.".to_string());
+    }
+    let status = server.status_receiver();
+    Ok(InSessionWfe {
+        runtime,
+        server,
+        status,
+        url,
+        lines,
+    })
+}
+
 pub(crate) fn print_browser_control_active() -> io::Result<()> {
     let mut output = io::stdout().lock();
     writeln!(
@@ -520,6 +620,38 @@ mod tests {
                 .await
                 .is_ok()
         );
+    }
+
+    /// Binds a real loopback listener and writes a generated certificate to
+    /// the per-user state directory, so it only runs on request.
+    #[tokio::test]
+    #[ignore = "binds 127.0.0.1 and generates a TLS identity; run with --ignored"]
+    async fn palette_listener_serves_and_stops() {
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let config = Config::default();
+        let app = App::new(&config);
+        let target = format!("https://127.0.0.1:{port}");
+        let started = start_in_session(&app, &config, &target, false, false)
+            .await
+            .unwrap();
+        assert!(started.url.starts_with(&target), "{}", started.url);
+        assert!(
+            started.url.contains('#'),
+            "token URL expected: {}",
+            started.url
+        );
+        let client = reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .build()
+            .unwrap();
+        let response = client.get(&target).send().await.unwrap();
+        assert!(response.status().is_success(), "{}", response.status());
+        started.server.shutdown().await.unwrap();
+        assert!(client.get(&target).send().await.is_err());
     }
 
     #[test]

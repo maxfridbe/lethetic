@@ -3,7 +3,7 @@
 export const WFE_MAX_COMMAND_MESSAGE_BYTES = 262144;
 export const WFE_MAX_SERVER_MESSAGE_BYTES = 4194304;
 export const WFE_PROTOCOL_VERSION = 6;
-export const WFE_PROTOCOL_SCHEMA_SHA256 = "689e091f04ddcfd0213211ed755f0580ebd657ae95432353101cac375513b136";
+export const WFE_PROTOCOL_SCHEMA_SHA256 = "c31238fd135c6d63bf6990a17df3e97a0139fdb91fd78fa5a9ae289cff84a584";
 export const COMMAND_ORDER = [
     "hotkeys",
     "themes",
@@ -23,6 +23,7 @@ export const COMMAND_ORDER = [
     "python-isolated",
     "python-nonlocal",
     "python-permissive",
+    "remote-control",
     "delete-python-runtime",
     "quit"
 ];

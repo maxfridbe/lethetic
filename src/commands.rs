@@ -22,6 +22,7 @@ pub enum CommandId {
     PythonIsolated,
     PythonNonlocal,
     PythonPermissive,
+    RemoteControl,
     DeletePythonRuntime,
     Quit,
 }
@@ -106,10 +107,12 @@ pub struct CommandContext {
     pub session_name: Option<String>,
     pub has_history: bool,
     pub fully_idle: bool,
+    pub remote_control_target: Option<String>,
+    pub remote_control_locked: bool,
 }
 
 impl CommandId {
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 21] = [
         Self::Hotkeys,
         Self::Themes,
         Self::InputHistory,
@@ -128,6 +131,7 @@ impl CommandId {
         Self::PythonIsolated,
         Self::PythonNonlocal,
         Self::PythonPermissive,
+        Self::RemoteControl,
         Self::DeletePythonRuntime,
         Self::Quit,
     ];
@@ -163,6 +167,10 @@ impl CommandId {
         let label = match self {
             Self::LoopDetection => format!("Loop Detection: {}", context.loop_mode),
             Self::AgentMode => format!("Agent Mode: {}", context.agent_mode),
+            Self::RemoteControl => match &context.remote_control_target {
+                Some(target) => format!("Remote Control: stop ({target})"),
+                None => "Remote Control: start".to_string(),
+            },
             Self::NameSession => context
                 .session_name
                 .as_deref()
@@ -173,6 +181,7 @@ impl CommandId {
         let enabled = match self {
             Self::InputHistory => context.has_history,
             command if command.opens_agent_mode() && context.agent_mode_locked => false,
+            Self::RemoteControl if context.remote_control_locked => false,
             command if command.spec().requires_idle => context.fully_idle,
             _ => true,
         };
@@ -185,6 +194,9 @@ impl CommandId {
             Self::LspServers => "Wait for the active turn before managing LSP servers".to_string(),
             command if command.opens_agent_mode() && context.agent_mode_locked => {
                 crate::python_policy::CLI_PYTHON_POLICY_LOCKED_ERROR.to_string()
+            }
+            Self::RemoteControl if context.remote_control_locked => {
+                "Remote control was set by --rc for this process".to_string()
             }
             command if command.opens_agent_mode() => {
                 "Wait for the active turn before configuring Agent Mode".to_string()
@@ -206,13 +218,19 @@ impl CommandId {
                 command if command.opens_agent_mode() && context.agent_mode_locked => {
                     "Locked by a --python-only flag for this process.".to_string()
                 }
+                Self::RemoteControl if context.remote_control_locked => {
+                    "Started by --rc; restart without it to control it here.".to_string()
+                }
+                Self::RemoteControl if context.remote_control_target.is_some() => {
+                    "Close the HTTPS listener and disconnect every browser.".to_string()
+                }
                 _ => spec.description.to_string(),
             },
         }
     }
 }
 
-pub const COMMAND_SPECS: [CommandSpec; 20] = [
+pub const COMMAND_SPECS: [CommandSpec; 21] = [
     CommandSpec {
         id: CommandId::Hotkeys,
         base_label: "Hotkeys",
@@ -374,6 +392,15 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         accelerator: None,
         requires_idle: true,
         description: "Python in rootless Podman with full host, LAN and Internet access.",
+    },
+    CommandSpec {
+        id: CommandId::RemoteControl,
+        base_label: "Remote Control",
+        icon: IconId::Command,
+        behavior: CommandBehavior::Execute,
+        accelerator: None,
+        requires_idle: false,
+        description: "Serve this session to a browser over HTTPS; pick address, port and auth.",
     },
     CommandSpec {
         id: CommandId::DeletePythonRuntime,

@@ -19,13 +19,17 @@ enum InputLayer {
     LatestFiles,
     ModelSwitcher,
     ModelCatalog,
+    RcSetup,
+    RcInfo,
     LspManager,
     ThemeMenu,
     Approval,
 }
 
 // Later-rendered overlays receive input first so visual and keyboard z-order agree.
-const INPUT_LAYER_PRECEDENCE: [InputLayer; 15] = [
+const INPUT_LAYER_PRECEDENCE: [InputLayer; 17] = [
+    InputLayer::RcInfo,
+    InputLayer::RcSetup,
     InputLayer::ModelCatalog,
     InputLayer::SessionName,
     InputLayer::Hotkeys,
@@ -58,6 +62,8 @@ impl InputLayer {
             Self::LatestFiles => app.show_latest_files,
             Self::ModelSwitcher => app.show_model_switcher,
             Self::ModelCatalog => app.model_catalog.is_some(),
+            Self::RcSetup => app.rc_setup.is_some(),
+            Self::RcInfo => app.rc_info.is_some(),
             Self::LspManager => app.show_lsp_manager,
             Self::ThemeMenu => app.show_theme_menu,
             Self::Approval => app.show_approval_prompt,
@@ -89,6 +95,8 @@ fn dispatch_input_layer(app: &mut App, key: event::KeyEvent, layer: InputLayer) 
         InputLayer::LatestFiles => handle_latest_files_key(app, key),
         InputLayer::ModelSwitcher => handle_model_switcher_key(app, key),
         InputLayer::ModelCatalog => super::model_catalog::handle_model_catalog_key(app, key),
+        InputLayer::RcSetup => super::remote_control::handle_rc_setup_key(app, key),
+        InputLayer::RcInfo => super::remote_control::handle_rc_info_key(app, key),
         InputLayer::LspManager => handle_lsp_manager_key(app, key),
         InputLayer::ThemeMenu => handle_theme_menu_key(app, key),
         InputLayer::Approval => handle_approval_key(app, key),

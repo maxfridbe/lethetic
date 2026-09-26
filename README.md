@@ -34,7 +34,7 @@ lethetic --rc brainiac --rc-files # also share the launch directory read-only (L
 lethetic --rc brainiac --rc-only  # browser only, never enters the terminal UI
 ```
 
-Bare `--rc` lists this machine's loopback, interface, and host-name identities and asks how to bind; it prints the equivalent flags before starting. Every form uses exact-identity HTTPS with a generated certificate whose sole SAN is the chosen IP or DNS name, and by default a fresh process token protects the browser controller. Verify the printed fingerprint and keep the capability URL private. The first Enter acknowledges the displayed controller information and activates the browser-side actor while the terminal remains ordinary; press Enter later to enter the TUI of the same running actor.
+You can also start it later from **Ctrl+P → Remote Control: start**, which asks the same questions in a dialog and keeps the running session. Bare `--rc` lists this machine's loopback, interface, and host-name identities and asks how to bind; it prints the equivalent flags before starting. Every form uses exact-identity HTTPS with a generated certificate whose sole SAN is the chosen IP or DNS name, and by default a fresh process token protects the browser controller. Verify the printed fingerprint and keep the capability URL private. The first Enter acknowledges the displayed controller information and activates the browser-side actor while the terminal remains ordinary; press Enter later to enter the TUI of the same running actor.
 
 `--rc-only` requires `--rc`, conflicts with `--command`, and runs as a browser-only foreground process rather than daemonizing. Once started it ignores Unix SIGHUP and keeps running with zero browser clients. `--rc-open` keeps HTTPS but **does not authenticate the controller**: Lethetic prints a pre-bind warning and requires an Enter acknowledgement; restrict every printed address with host firewall and VPN ACLs. `--rc-files` shares only the fixed launch directory and its descendants read-only; protected control/credential files, links, mounts and special files are excluded, and in `--rc-open` mode every reachable peer can view them. Bring your own TLS with `--rc-tls-cert`/`--rc-tls-key` plus `--rc-token-file` or `--rc-open`.
 
@@ -502,6 +502,7 @@ These keys describe the terminal UI. Browser palette accelerators, editable-targ
 | Python-only: isolated | Preset: rootless Podman, launch cwd read/write, no network, no package installs |
 | Python-only: nonlocal packages | Preset: retained Podman with the public HTTP(S) broker and `lethetic-pkg` |
 | Python-only: permissive network | Preset: rootless Podman with full host/LAN/VPN/Internet reachability |
+| Remote Control: start / stop | Serve this session to a browser without restarting: choose address, port, token or open access, and file sharing; the private URL appears in a popup (`c` copies it). Disabled when `--rc` set it at launch |
 | Delete Python runtime/packages | Remove this chat’s retained package layer; keep source/session |
 | Quit | Exit after confirmation |
 

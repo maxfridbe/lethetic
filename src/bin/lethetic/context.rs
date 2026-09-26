@@ -103,6 +103,19 @@ pub(crate) struct RuntimeContext<'a> {
     pub(crate) python_setup_operation: Option<PythonSetupOperation>,
     pub(crate) auxiliary_tasks: Vec<JoinHandle<()>>,
     pub(crate) lifecycle: ShutdownCoordinator,
+    /// Palette start/stop of remote control, performed by the run loop,
+    /// which owns the web runtime and listener.
+    pub(crate) remote_control_request: Option<RemoteControlRequest>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum RemoteControlRequest {
+    Start {
+        target: String,
+        open: bool,
+        files: bool,
+    },
+    Stop,
 }
 
 impl<'a> RuntimeContext<'a> {
@@ -126,6 +139,7 @@ impl<'a> RuntimeContext<'a> {
             python_setup_operation: None,
             auxiliary_tasks: Vec::new(),
             lifecycle: ShutdownCoordinator::default(),
+            remote_control_request: None,
         }
     }
 

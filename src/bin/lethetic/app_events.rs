@@ -193,6 +193,7 @@ pub(crate) async fn handle_app_event_outcome(
         auxiliary_tasks,
         full_response_content,
         cancellation_pending,
+        remote_control_request,
         ..
     } = runtime;
     let app = &mut **app;
@@ -544,6 +545,20 @@ pub(crate) async fn handle_app_event_outcome(
                 }
             }
             app.should_redraw = true;
+        }
+        AppEventOutcome::StartRemoteControl {
+            target,
+            open,
+            files,
+        } => {
+            *remote_control_request = Some(crate::context::RemoteControlRequest::Start {
+                target,
+                open,
+                files,
+            });
+        }
+        AppEventOutcome::StopRemoteControl => {
+            *remote_control_request = Some(crate::context::RemoteControlRequest::Stop);
         }
         AppEventOutcome::ScanModels { connection_id } => {
             match crate::model_catalog::scan(

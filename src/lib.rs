@@ -19,6 +19,7 @@ pub mod platform;
 pub mod python;
 pub mod python_policy;
 pub mod python_setup;
+pub mod remote_control;
 pub mod saved_models;
 #[cfg(target_os = "linux")]
 pub mod session_store;

@@ -6,6 +6,7 @@ mod lifecycle;
 mod model_catalog;
 mod navigation;
 mod python_session;
+mod remote_control;
 mod session_state;
 mod setup_input;
 mod tool_calls;
@@ -16,6 +17,7 @@ pub use compaction::CompactionPopupState;
 pub use input::handle_key;
 pub use lifecycle::SessionSummary;
 pub use model_catalog::ModelCatalogState;
+pub use remote_control::{RcInfoState, RcSetupStage, RcSetupState};
 pub use session_state::{
     SessionDirectoryBinding, SessionState, SessionWorkspaceBinding, normalize_session_display_name,
 };
@@ -167,6 +169,13 @@ pub struct App {
     pub compaction_popup: Option<CompactionPopupState>,
     /// "Scan for more" catalog opened from the model picker.
     pub model_catalog: Option<ModelCatalogState>,
+    /// Palette remote-control setup dialog and the post-start URL popup.
+    pub rc_setup: Option<RcSetupState>,
+    pub rc_info: Option<RcInfoState>,
+    /// Controller target while a listener runs (either origin).
+    pub remote_control_target: Option<String>,
+    /// Remote control was forced by a launch flag and cannot be changed here.
+    pub remote_control_locked: bool,
     pub hide_thinking: bool,
     /// Layout of the output panel from the last draw — used for mouse hit-testing.
     pub last_output_rect: Rect,
@@ -382,6 +391,10 @@ impl App {
             compact_model_picker_src: None,
             compaction_popup: None,
             model_catalog: None,
+            rc_setup: None,
+            rc_info: None,
+            remote_control_target: None,
+            remote_control_locked: false,
             hide_thinking: false,
             last_output_rect: Rect::default(),
             last_block_line_counts: Vec::new(),
