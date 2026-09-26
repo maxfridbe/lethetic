@@ -282,7 +282,12 @@ impl App {
         true
     }
 
+    /// Record the streamed-so-far reply. The checkpoint is updated on every
+    /// chunk, but written to disk at most every `PARTIAL_CHECKPOINT_INTERVAL`:
+    /// a full session save per chunk stalled the UI during long replies. The
+    /// periodic save and the end-of-reply commit persist the rest.
     pub fn persist_partial_assistant_checkpoint(&mut self, content: String) -> Result<(), String> {
+        const PARTIAL_CHECKPOINT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
         self.partial_assistant_checkpoint = Some(crate::context::Message {
             role: "assistant".to_string(),
             content,
@@ -291,6 +296,13 @@ impl App {
             tool_result_is_error: false,
         });
         self.needs_save = true;
+        let due = self
+            .last_partial_checkpoint_save
+            .is_none_or(|last| last.elapsed() >= PARTIAL_CHECKPOINT_INTERVAL);
+        if !due {
+            return Ok(());
+        }
+        self.last_partial_checkpoint_save = Some(std::time::Instant::now());
         self.save_session_checked()
     }
 

@@ -192,6 +192,8 @@ pub struct App {
     /// Settings of a session resumed by the library path (`--session-id`),
     /// waiting for the run loop to apply them.
     pub pending_session_settings: Option<SessionSettings>,
+    /// When the streamed reply checkpoint was last written to disk.
+    last_partial_checkpoint_save: Option<std::time::Instant>,
     pub todos: crate::todo_store::TodoSnapshot,
     pub hide_thinking: bool,
     /// Layout of the output panel from the last draw — used for mouse hit-testing.
@@ -420,6 +422,7 @@ impl App {
             remote_control_last_peer: None,
             show_todos: false,
             pending_session_settings: None,
+            last_partial_checkpoint_save: None,
             todos: Default::default(),
             hide_thinking: false,
             last_output_rect: Rect::default(),
