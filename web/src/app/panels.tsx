@@ -113,7 +113,7 @@ function commandPalette(
               </span>
               <span attrs={{ class: "choice-main" }}>
                 <strong>{command.label}</strong>
-                <small>{command.id}</small>
+                <small>{command.description}</small>
               </span>
               {command.accelerator === null ? null : (
                 <kbd>{command.accelerator.toUpperCase()}</kbd>

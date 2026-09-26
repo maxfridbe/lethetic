@@ -125,14 +125,26 @@ fn render_palette(f: &mut ratatui::Frame, app: &mut App) {
     if !app.show_palette {
         return;
     }
-    let area = centered_rect(60, 25, f.area());
+    let area = centered_rect(70, 70, f.area());
     f.render_widget(Clear, area);
     let items: Vec<ListItem> = app
         .palette_items
         .iter()
         .map(|command| {
             let view = app.command_view(*command);
-            let item = ListItem::new(format!("{} {}", view.icon.glyph(), view.label));
+            let title = Line::from(format!("{} {}", view.icon.glyph(), view.label));
+            let detail = view
+                .disabled_reason
+                .clone()
+                .filter(|_| !view.enabled)
+                .unwrap_or_else(|| view.description.clone());
+            let description = Line::from(Span::styled(
+                format!("    {detail}"),
+                Style::default()
+                    .fg(app.theme.system_fg)
+                    .add_modifier(Modifier::DIM),
+            ));
+            let item = ListItem::new(vec![title, description]);
             if view.enabled {
                 item
             } else {

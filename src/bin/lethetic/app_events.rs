@@ -151,6 +151,15 @@ pub(crate) fn apply_model_switch(
     app.parser.reset();
     app.config = candidate.clone();
     *config = candidate;
+    if let Some(connection_id) = config.active_connection_id() {
+        let last = lethetic::config::LastModel {
+            connection_id: connection_id.to_string(),
+            model: new_model.to_string(),
+        };
+        if let Err(error) = last.save(std::path::Path::new(&app.current_dir)) {
+            app.log_debug(&format!("Could not remember the selected model: {error}"));
+        }
+    }
     Ok(parser)
 }
 

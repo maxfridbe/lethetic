@@ -1,6 +1,12 @@
-//! Live integration tests — they require the model servers from config.yml to be running.
-//! Run all: `cargo test --test live`
-//! Run one module: `cargo test --test live test_live_qwen3`
+//! Live integration tests.
+//!
+//! The non-ignored tests use a hosted connection (OpenRouter by default, see
+//! `live_config.rs`) and never touch the local GPU servers. Tests that need a
+//! local llama.cpp, Azure, or the Codex proxy are `#[ignore]`d; run those
+//! explicitly with `cargo test --test live -- --ignored <name>`.
+//! Run all hosted tests: `cargo test --test live`
+
+mod live_config;
 
 mod test_live_auto_summarize;
 mod test_live_azure;

@@ -350,6 +350,13 @@ pub(super) fn render_input(f: &mut ratatui::Frame, app: &App, area: Rect, inner_
     };
     let input_block = UIBlock::default()
         .title(input_title)
+        .title_top(
+            Line::from(Span::styled(
+                " Ctrl+P / Esc: commands · F12: debug ",
+                Style::default().fg(app.theme.system_fg),
+            ))
+            .right_aligned(),
+        )
         .borders(Borders::ALL)
         .style(if !app.is_output_focused {
             input_style.fg(app.theme.highlight_fg)

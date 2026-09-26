@@ -1138,6 +1138,11 @@ fn loop_modes_panel(app: &App) -> PanelDataView {
                 LoopDetectionMode::PhraseFrequency,
             ),
             ("combined", "Combined", LoopDetectionMode::Combined),
+            (
+                "combined-block-limit",
+                "Combined + block limit",
+                LoopDetectionMode::CombinedWithBlockLimit,
+            ),
         ]
         .into_iter()
         .map(|(key, label, mode)| ModeChoiceView {
@@ -1180,6 +1185,10 @@ pub fn loop_mode_map() -> HashMap<String, crate::loop_detector::LoopDetectionMod
         ("n-gram", LoopDetectionMode::NGram),
         ("phrase-frequency", LoopDetectionMode::PhraseFrequency),
         ("combined", LoopDetectionMode::Combined),
+        (
+            "combined-block-limit",
+            LoopDetectionMode::CombinedWithBlockLimit,
+        ),
     ]
     .into_iter()
     .map(|(key, mode)| (opaque_choice_id("loop-mode", &[key]), mode))

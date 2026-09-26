@@ -8,6 +8,7 @@ use lethetic::context::ContextManager;
 use lethetic::system_prompt;
 
 #[tokio::test]
+#[ignore = "requires the local llama.cpp raw-prompt server; run with --ignored"]
 async fn test_live_hello() -> Result<(), String> {
     let config = Config::load("config.yml")?;
 

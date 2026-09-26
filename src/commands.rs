@@ -81,6 +81,8 @@ pub struct CommandSpec {
     pub behavior: CommandBehavior,
     pub accelerator: Option<char>,
     pub requires_idle: bool,
+    /// One-line explanation shown under the label in both palettes.
+    pub description: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -93,6 +95,7 @@ pub struct CommandView {
     pub disabled_reason: Option<String>,
     pub behavior: CommandBehavior,
     pub accelerator: Option<char>,
+    pub description: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -199,6 +202,12 @@ impl CommandId {
             disabled_reason,
             behavior: spec.behavior,
             accelerator: spec.accelerator,
+            description: match self {
+                command if command.opens_agent_mode() && context.agent_mode_locked => {
+                    "Locked by a --python-only flag for this process.".to_string()
+                }
+                _ => spec.description.to_string(),
+            },
         }
     }
 }
@@ -211,6 +220,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::OpenPanel,
         accelerator: Some('h'),
         requires_idle: false,
+        description: "Keyboard shortcuts for the terminal UI.",
     },
     CommandSpec {
         id: CommandId::Themes,
@@ -219,6 +229,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::OpenPanel,
         accelerator: Some('t'),
         requires_idle: false,
+        description: "Pick one of the built-in colour themes.",
     },
     CommandSpec {
         id: CommandId::InputHistory,
@@ -227,6 +238,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::OpenPanel,
         accelerator: None,
         requires_idle: false,
+        description: "Recall a previous prompt, shared across this project's sessions.",
     },
     CommandSpec {
         id: CommandId::LoopDetection,
@@ -235,6 +247,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::Execute,
         accelerator: None,
         requires_idle: false,
+        description: "Cycle checks that stop runaway output. Block length limit is opt-in.",
     },
     CommandSpec {
         id: CommandId::SystemPrompt,
@@ -243,6 +256,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::OpenPanel,
         accelerator: None,
         requires_idle: false,
+        description: "Edit, switch, or save the system prompt template.",
     },
     CommandSpec {
         id: CommandId::ClearUi,
@@ -251,6 +265,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::Execute,
         accelerator: Some('c'),
         requires_idle: false,
+        description: "Clear the transcript on screen; the model keeps its context.",
     },
     CommandSpec {
         id: CommandId::ClearContext,
@@ -259,6 +274,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::Confirm,
         accelerator: None,
         requires_idle: true,
+        description: "Start a fresh session with an empty context.",
     },
     CommandSpec {
         id: CommandId::ToggleDebugger,
@@ -267,6 +283,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::Execute,
         accelerator: Some('d'),
         requires_idle: false,
+        description: "Show or hide the debug log pane (F12).",
     },
     CommandSpec {
         id: CommandId::Sessions,
@@ -275,6 +292,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::OpenPanel,
         accelerator: None,
         requires_idle: false,
+        description: "Resume, compact (C), rename, or delete saved sessions.",
     },
     CommandSpec {
         id: CommandId::NameSession,
@@ -283,6 +301,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::OpenPanel,
         accelerator: None,
         requires_idle: true,
+        description: "Give this session a display name; its ID and folder stay the same.",
     },
     CommandSpec {
         id: CommandId::LatestFiles,
@@ -291,6 +310,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::OpenPanel,
         accelerator: None,
         requires_idle: false,
+        description: "Files cached in context; remove ones you no longer need.",
     },
     CommandSpec {
         id: CommandId::Models,
@@ -299,6 +319,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::OpenPanel,
         accelerator: None,
         requires_idle: false,
+        description: "Switch connection and model; remembered for this directory.",
     },
     CommandSpec {
         id: CommandId::LspServers,
@@ -307,6 +328,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::OpenPanel,
         accelerator: None,
         requires_idle: true,
+        description: "Language servers used for code intelligence tools.",
     },
     CommandSpec {
         id: CommandId::AgentMode,
@@ -315,6 +337,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::OpenPanel,
         accelerator: None,
         requires_idle: true,
+        description: "Configure General or Python-only tools step by step.",
     },
     CommandSpec {
         id: CommandId::AgentGeneral,
@@ -323,6 +346,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::OpenPanel,
         accelerator: None,
         requires_idle: true,
+        description: "Back to the normal tool set; Python is not exposed.",
     },
     CommandSpec {
         id: CommandId::PythonIsolated,
@@ -331,6 +355,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::OpenPanel,
         accelerator: None,
         requires_idle: true,
+        description: "Only a python tool, in rootless Podman: no network, no installs.",
     },
     CommandSpec {
         id: CommandId::PythonNonlocal,
@@ -339,6 +364,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::OpenPanel,
         accelerator: None,
         requires_idle: true,
+        description: "Python in retained Podman: public HTTP(S) only, lethetic-pkg installs.",
     },
     CommandSpec {
         id: CommandId::PythonPermissive,
@@ -347,6 +373,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::OpenPanel,
         accelerator: None,
         requires_idle: true,
+        description: "Python in rootless Podman with full host, LAN and Internet access.",
     },
     CommandSpec {
         id: CommandId::DeletePythonRuntime,
@@ -355,6 +382,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::Confirm,
         accelerator: None,
         requires_idle: true,
+        description: "Delete this chat's retained package layer; source is kept.",
     },
     CommandSpec {
         id: CommandId::Quit,
@@ -363,6 +391,7 @@ pub const COMMAND_SPECS: [CommandSpec; 20] = [
         behavior: CommandBehavior::Confirm,
         accelerator: None,
         requires_idle: false,
+        description: "Exit Lethetic after confirmation.",
     },
 ];
 

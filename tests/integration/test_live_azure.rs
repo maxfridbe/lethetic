@@ -139,6 +139,7 @@ async fn run_azure_tool(prompt: &str) -> Result<(String, serde_json::Value), Str
 
 #[tokio::test]
 #[serial(llm)]
+#[ignore = "requires the Azure DeepSeek endpoint; run with --ignored"]
 async fn test_azure_hello() {
     match run_azure("Reply with exactly: Hello from Azure").await {
         Ok(resp) => {
@@ -155,6 +156,7 @@ async fn test_azure_hello() {
 
 #[tokio::test]
 #[serial(llm)]
+#[ignore = "requires the Azure DeepSeek endpoint; run with --ignored"]
 async fn test_azure_write_file_no_markers() {
     let (tool, args) = run_azure_tool(
         "Use the 'write_file' tool to write 'fn main() {}' to 'src/main.rs'. Output ONLY the tool call."
@@ -176,6 +178,7 @@ async fn test_azure_write_file_no_markers() {
 
 #[tokio::test]
 #[serial(llm)]
+#[ignore = "requires the Azure DeepSeek endpoint; run with --ignored"]
 async fn test_azure_write_csharp_helloworld() {
     let (tool, args) = run_azure_tool(
         "Use the 'write_file' tool to write a simple C# Hello World console application to Program.cs. Output ONLY the tool call."

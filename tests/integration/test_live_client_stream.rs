@@ -3,13 +3,12 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use lethetic::client::{StreamEvent, trigger_llm_request};
-use lethetic::config::Config;
 use lethetic::context::ContextManager;
 use lethetic::system_prompt;
 
 #[tokio::test]
 async fn test_live_client_stream() -> Result<(), String> {
-    let config = Config::load("config.yml")?;
+    let config = crate::live_config::live_config()?;
 
     let client = Client::new();
     let sys_prompt = system_prompt::SystemPromptManager::resolve_prompt(

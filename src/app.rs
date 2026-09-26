@@ -228,7 +228,7 @@ impl App {
             cursor_pos: 0,
             blocks: vec![RenderBlock {
                 block_type: BlockType::Text,
-                content: "Type a prompt to test tool calling (e.g. 'Run ls'). F12 for debugger."
+                content: "Type a prompt to begin. Ctrl+P (or Esc) opens the command palette; F12 shows the debugger."
                     .to_string(),
                 title: None,
                 success: Some(true),

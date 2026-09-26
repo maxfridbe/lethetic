@@ -460,6 +460,50 @@ impl Config {
     }
 }
 
+/// The model last selected in a directory, stored in `.lethetic/last_model.json`.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct LastModel {
+    pub connection_id: String,
+    pub model: String,
+}
+
+impl LastModel {
+    fn path(workspace: &Path) -> PathBuf {
+        workspace.join(".lethetic").join("last_model.json")
+    }
+
+    pub fn load(workspace: &Path) -> Option<Self> {
+        let text = std::fs::read_to_string(Self::path(workspace)).ok()?;
+        serde_json::from_str(&text).ok()
+    }
+
+    pub fn save(&self, workspace: &Path) -> Result<(), String> {
+        let path = Self::path(workspace);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("could not create {}: {error}", parent.display()))?;
+        }
+        let json = serde_json::to_string(self).map_err(|error| error.to_string())?;
+        std::fs::write(&path, json)
+            .map_err(|error| format!("could not write {}: {error}", path.display()))
+    }
+}
+
+impl Config {
+    /// Re-activate the model last selected in `workspace`, if its connection
+    /// still exists and the result validates. Returns the restored selection.
+    pub fn restore_last_model(&mut self, workspace: &Path) -> Option<LastModel> {
+        let last = LastModel::load(workspace)?;
+        let mut candidate = self.clone();
+        candidate
+            .activate_model(&last.connection_id, &last.model)
+            .ok()?;
+        candidate.validate().ok()?;
+        *self = candidate;
+        Some(last)
+    }
+}
+
 impl ModelServer {
     pub fn connection_id(&self) -> &str {
         self.id.as_deref().unwrap_or(&self.name)

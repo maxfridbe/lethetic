@@ -7,7 +7,7 @@ export type IconId = "command" | "theme" | "processing" | "model" | "trash" | "d
 
 export type CommandBehavior = "execute" | "open_panel" | "confirm";
 
-export type CommandView = { id: CommandId, label: string, icon: IconId, enabled: boolean, disabled_reason: string | null, behavior: CommandBehavior, accelerator: string | null, };
+export type CommandView = { id: CommandId, label: string, icon: IconId, enabled: boolean, disabled_reason: string | null, behavior: CommandBehavior, accelerator: string | null, description: string, };
 
 export type UserAnswer = { question_id: string, selected_option_ids: Array<string>, other_text: string | null, };
 
@@ -143,7 +143,12 @@ export type IStatePatch = { sequence: number, base_revision: number, revision: n
 
 export type ProtocolCapabilities = { state_patches: boolean, request_replay: boolean, session_names: boolean, exact_tool_approval: boolean, read_only_files: boolean, };
 
-export type IProtocolHello = { protocol_version: number, minimum_protocol_version: number, server_name: string, sequence: number, revision: number, capabilities: ProtocolCapabilities, };
+export type IProtocolHello = { protocol_version: number, minimum_protocol_version: number, server_name: string, sequence: number, revision: number, capabilities: ProtocolCapabilities, 
+/**
+ * SHA-256 of the contract declarations, computed by the running server.
+ * The browser compares it with the digest generated into its bundle.
+ */
+schema_sha256: string, };
 
 export type IServerMessage = { "type": "hello", hello: IProtocolHello, } | { "type": "command_response", response: ICommandResponse, } | { "type": "state_snapshot", snapshot: IStateSnapshot, } | { "type": "state_patch", patch: IStatePatch, };
 
@@ -193,7 +198,7 @@ export const WFE_MAX_SERVER_MESSAGE_BYTES = 4194304 as const;
 
 export const WFE_PROTOCOL_VERSION = 6 as const;
 
-export const WFE_PROTOCOL_SCHEMA_SHA256 = "586d00c9f1755b30a99b89cf16592d3265f49e7a4497658a78c369543487d287" as const;
+export const WFE_PROTOCOL_SCHEMA_SHA256 = "689e091f04ddcfd0213211ed755f0580ebd657ae95432353101cac375513b136" as const;
 
 export const COMMAND_ORDER = [
   "hotkeys",

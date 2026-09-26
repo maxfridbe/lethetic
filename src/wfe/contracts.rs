@@ -1525,6 +1525,9 @@ pub struct IProtocolHello {
     pub sequence: u64,
     pub revision: u64,
     pub capabilities: ProtocolCapabilities,
+    /// SHA-256 of the contract declarations, computed by the running server.
+    /// The browser compares it with the digest generated into its bundle.
+    pub schema_sha256: String,
 }
 
 #[derive(Deserialize)]
@@ -1536,6 +1539,7 @@ struct UncheckedProtocolHello {
     sequence: u64,
     revision: u64,
     capabilities: ProtocolCapabilities,
+    schema_sha256: String,
 }
 
 impl<'de> Deserialize<'de> for IProtocolHello {
@@ -1547,6 +1551,7 @@ impl<'de> Deserialize<'de> for IProtocolHello {
         if unchecked.protocol_version != WFE_PROTOCOL_VERSION
             || unchecked.minimum_protocol_version != WFE_MINIMUM_PROTOCOL_VERSION
             || unchecked.server_name != "lethetic"
+            || unchecked.schema_sha256 != *crate::wfe::runtime_schema_sha256()
         {
             return Err(D::Error::custom("incompatible WFE protocol hello"));
         }
@@ -1574,6 +1579,7 @@ impl IProtocolHello {
             sequence,
             revision,
             capabilities,
+            schema_sha256: crate::wfe::runtime_schema_sha256().clone(),
         })
     }
 }

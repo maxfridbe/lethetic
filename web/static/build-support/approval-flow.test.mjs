@@ -37,6 +37,7 @@ const {
   SPINNER_FRAMES,
   TOOL_SPINNER_FRAMES,
   WFE_PROTOCOL_VERSION,
+  WFE_PROTOCOL_SCHEMA_SHA256,
 } = await import(contractsUrl.href);
 const { activitySpinner } = await import(iconsUrl.href);
 const { inspectJson } = await import(jsonUrl.href);
@@ -179,6 +180,7 @@ function completeSnapshot() {
       disabled_reason: null,
       behavior: "execute",
       accelerator: null,
+      description: id,
     })),
     sessions: {
       sessions: [
@@ -645,6 +647,7 @@ test("protocol v6 binds cancellation targets and optional file capability exactl
       sequence: 0,
       revision: 0,
       capabilities,
+      schema_sha256: WFE_PROTOCOL_SCHEMA_SHA256,
     },
   };
   assert.equal(parseServerMessage(JSON.stringify(hello)).ok, true);
@@ -730,6 +733,7 @@ test("protocol v6 reducer fails closed on v5 hello and snapshot", () => {
         sequence: 0,
         revision: 0,
         capabilities,
+        schema_sha256: WFE_PROTOCOL_SCHEMA_SHA256,
       },
     });
 

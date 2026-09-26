@@ -54,7 +54,7 @@ function commandPalette(context, snapshot) {
                 h("span", { attrs: { class: "choice-icon", "aria-hidden": "true" } }, ICON_GLYPHS[command.icon]),
                 h("span", { attrs: { class: "choice-main" } },
                     h("strong", null, command.label),
-                    h("small", null, command.id)),
+                    h("small", null, command.description)),
                 command.accelerator === null ? null : (h("kbd", null, command.accelerator.toUpperCase()))));
         })),
         commands.length === 0 ? emptyPanel("No commands match.") : null));

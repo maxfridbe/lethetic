@@ -8,39 +8,10 @@ use lethetic::config::Config;
 use lethetic::context::ContextManager;
 use lethetic::system_prompt;
 
+/// Tool-calling checks run on the hosted live connection (OpenRouter by
+/// default). The file keeps its historical name; nothing here needs Qwen.
 fn qwen3_config() -> Result<Config, String> {
-    let cfg = Config::load("config.yml")?;
-    // Resolve the Qwen3 server from model_servers
-    let qwen = cfg
-        .model_servers
-        .iter()
-        .find(|s| s.parser == "qwen3")
-        .ok_or_else(|| "No qwen3 server defined in config.yml model_servers".to_string())?;
-    Ok(Config {
-        server_url: qwen.url.clone(),
-        model: qwen.model.clone(),
-        context_size: 262144,
-        tool_wrapper: None,
-        tool_profile: Default::default(),
-        python_runtime: Default::default(),
-        python_invocation: Default::default(),
-        active_server: Some(qwen.connection_id().to_string()),
-        connection_kind: qwen.kind,
-        api_key: None,
-        estimate_cost: None,
-        pricing: qwen
-            .pricing
-            .clone()
-            .filter(|pricing| pricing.applies_to(&qwen.model)),
-        input_cost_per_1m: None,
-        output_cost_per_1m: None,
-        enable_image_processing_tool: false,
-        theme: None,
-        model_servers: cfg.model_servers.clone(),
-        thinking: None,
-        extra_body: None,
-        context_mode: qwen.context_mode,
-    })
+    crate::live_config::live_config()
 }
 
 /// Run a prompt through the Qwen3 server and return the final text response.

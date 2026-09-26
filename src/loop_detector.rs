@@ -6,7 +6,32 @@ pub enum LoopDetectionMode {
     BlockLimit,
     NGram,
     PhraseFrequency,
+    /// N-gram and phrase checks. Block length is not limited.
     Combined,
+    /// Combined plus the block length limit. Opt-in: long legitimate
+    /// reasoning trips a pure length cap.
+    CombinedWithBlockLimit,
+}
+
+impl LoopDetectionMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => "Off",
+            Self::BlockLimit => "Block limit only",
+            Self::NGram => "N-gram",
+            Self::PhraseFrequency => "Phrase frequency",
+            Self::Combined => "Combined",
+            Self::CombinedWithBlockLimit => "Combined + block limit",
+        }
+    }
+
+    fn uses_block_limit(self) -> bool {
+        matches!(self, Self::BlockLimit | Self::CombinedWithBlockLimit)
+    }
+
+    fn uses_patterns(self) -> bool {
+        matches!(self, Self::Combined | Self::CombinedWithBlockLimit)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,10 +78,7 @@ impl LoopDetector {
         }
 
         // 1. Block Limit Check
-        if (self.config.mode == LoopDetectionMode::BlockLimit
-            || self.config.mode == LoopDetectionMode::Combined)
-            && content.len() > self.config.block_limit
-        {
+        if self.config.mode.uses_block_limit() && content.len() > self.config.block_limit {
             return Some(Detection {
                 reason: format!("Block length ({} chars) exceeded limit", content.len()),
                 sample: None,
@@ -65,7 +87,7 @@ impl LoopDetector {
 
         // 2. Phrase Frequency Check
         if self.config.mode == LoopDetectionMode::PhraseFrequency
-            || self.config.mode == LoopDetectionMode::Combined
+            || self.config.mode.uses_patterns()
         {
             let phrases = [
                 "Actually,",
@@ -92,9 +114,7 @@ impl LoopDetector {
         }
 
         // 3. N-Gram Repetition Check
-        if self.config.mode == LoopDetectionMode::NGram
-            || self.config.mode == LoopDetectionMode::Combined
-        {
+        if self.config.mode == LoopDetectionMode::NGram || self.config.mode.uses_patterns() {
             let chars: Vec<char> = content.chars().collect();
             if chars.len() >= self.config.ngram_window * 2 {
                 let window_size = self.config.ngram_window;
@@ -143,6 +163,21 @@ mod tests {
         let detector = LoopDetector::new(config);
         assert!(detector.check("short").is_none());
         assert!(detector.check("this is a very long block").is_some());
+    }
+
+    #[test]
+    fn default_combined_mode_does_not_cap_block_length() {
+        let detector = LoopDetector::new(LoopDetectorConfig::default());
+        assert_eq!(detector.config.mode, LoopDetectionMode::Combined);
+        let long_unique: String = (0..3000).map(|i| format!("step {i}; ")).collect();
+        assert!(long_unique.len() > detector.config.block_limit);
+        assert!(detector.check(&long_unique).is_none());
+
+        let capped = LoopDetector::new(LoopDetectorConfig {
+            mode: LoopDetectionMode::CombinedWithBlockLimit,
+            ..Default::default()
+        });
+        assert!(capped.check(&long_unique).is_some());
     }
 
     #[test]

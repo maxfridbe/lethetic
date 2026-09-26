@@ -134,6 +134,7 @@ async fn run_tool_prompt(prompt: &str, expected_tool: &str) -> Result<(), String
 }
 
 #[tokio::test]
+#[ignore = "requires the local llama.cpp raw-prompt server; run with --ignored"]
 #[serial(llm)]
 async fn test_live_calculate() {
     let res = run_tool_prompt("You MUST use the 'calculate' tool right now to evaluate the math expression '15 * 45'. Output ONLY the tool call.", "calculate").await;
@@ -143,6 +144,7 @@ async fn test_live_calculate() {
 }
 
 #[tokio::test]
+#[ignore = "requires the local llama.cpp raw-prompt server; run with --ignored"]
 #[serial(llm)]
 async fn test_live_read_folder() {
     let res = run_tool_prompt("You MUST use the 'read_folder' tool right now to list the files in the 'src' directory. Output ONLY the tool call.", "read_folder").await;
@@ -152,6 +154,7 @@ async fn test_live_read_folder() {
 }
 
 #[tokio::test]
+#[ignore = "requires the local llama.cpp raw-prompt server; run with --ignored"]
 #[serial(llm)]
 async fn test_live_search_text() {
     let res = run_tool_prompt("You MUST use the 'search_text' tool right now to search for the regular expression 'struct' inside the file 'src/main.rs'. Output ONLY the tool call.", "search_text").await;
@@ -161,6 +164,7 @@ async fn test_live_search_text() {
 }
 
 #[tokio::test]
+#[ignore = "requires the local llama.cpp raw-prompt server; run with --ignored"]
 #[serial(llm)]
 async fn test_live_read_file_lines() {
     let res = run_tool_prompt("You MUST use the 'read_file_lines' tool right now to read lines 10 to 20 of 'Cargo.toml'. Output ONLY the tool call.", "read_file_lines").await;
@@ -170,6 +174,7 @@ async fn test_live_read_file_lines() {
 }
 
 #[tokio::test]
+#[ignore = "requires the local llama.cpp raw-prompt server; run with --ignored"]
 #[serial(llm)]
 async fn test_live_replace_text() {
     let res = run_tool_prompt("You MUST use the 'replace_text' tool right now to replace the exact string 'foo' with 'bar' in 'test.txt'. Output ONLY the tool call.", "replace_text").await;
@@ -179,6 +184,7 @@ async fn test_live_replace_text() {
 }
 
 #[tokio::test]
+#[ignore = "requires the local llama.cpp raw-prompt server; run with --ignored"]
 #[serial(llm)]
 async fn test_live_read_file() {
     let res = run_tool_prompt("You MUST use the 'read_file' tool right now to read 'README.md'. Output ONLY the tool call.", "read_file").await;
@@ -188,6 +194,7 @@ async fn test_live_read_file() {
 }
 
 #[tokio::test]
+#[ignore = "requires the local llama.cpp raw-prompt server; run with --ignored"]
 #[serial(llm)]
 async fn test_live_ask_the_user() {
     let res = run_tool_prompt("You MUST use the 'ask_the_user' tool right now to ask 'What is your favorite color?'. Output ONLY the tool call.", "ask_the_user").await;
@@ -197,6 +204,7 @@ async fn test_live_ask_the_user() {
 }
 
 #[tokio::test]
+#[ignore = "requires the local llama.cpp raw-prompt server; run with --ignored"]
 #[serial(llm)]
 async fn test_live_summarize_content() {
     let res = run_tool_prompt("You MUST use the 'summarize_content' tool right now to summarize 'large_output.txt'. Output ONLY the tool call.", "summarize_content").await;
@@ -206,6 +214,7 @@ async fn test_live_summarize_content() {
 }
 
 #[tokio::test]
+#[ignore = "requires the local llama.cpp raw-prompt server; run with --ignored"]
 #[serial(llm)]
 async fn test_live_run_shell_command() {
     let res = run_tool_prompt("You MUST use the 'run_shell_command' tool right now to run 'ls -la'. Output ONLY the tool call.", "run_shell_command").await;
@@ -215,6 +224,7 @@ async fn test_live_run_shell_command() {
 }
 
 #[tokio::test]
+#[ignore = "requires the local llama.cpp raw-prompt server; run with --ignored"]
 #[serial(llm)]
 async fn test_live_glob() {
     let res = run_tool_prompt(
@@ -227,6 +237,7 @@ async fn test_live_glob() {
 }
 
 #[tokio::test]
+#[ignore = "requires the local llama.cpp raw-prompt server; run with --ignored"]
 #[serial(llm)]
 async fn test_live_find_symbol() {
     let res = run_tool_prompt(
@@ -239,6 +250,7 @@ async fn test_live_find_symbol() {
 }
 
 #[tokio::test]
+#[ignore = "requires the local llama.cpp raw-prompt server; run with --ignored"]
 #[serial(llm)]
 async fn test_live_edit() {
     let res = run_tool_prompt(

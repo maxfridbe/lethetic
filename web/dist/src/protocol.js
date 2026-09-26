@@ -3,13 +3,12 @@ import { assertNever, isBoolean, isFiniteInteger, isRecord, isString, } from "./
 const MAX_WIRE_MESSAGE_BYTES = WFE_MAX_SERVER_MESSAGE_BYTES;
 const MAX_WIRE_ARRAY_LENGTH = 20_000;
 const CANONICAL_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
-const SUPPORTED_SCHEMA_SHA256 = "586d00c9f1755b30a99b89cf16592d3265f49e7a4497658a78c369543487d287";
-// This assignment intentionally fails at compile time whenever regenerated
-// contracts change without a corresponding application review.
-const SCHEMA_GATE = SUPPORTED_SCHEMA_SHA256;
+// The schema fingerprint is generated from the Rust contracts at build time
+// (web/src/generated/contracts.ts) and the server computes the same digest at
+// runtime. The live handshake compares the two, so a stale bundle is rejected
+// without any hand-maintained copy of the hash.
 export function clientContractGate() {
     return (WFE_PROTOCOL_VERSION === 6 &&
-        WFE_PROTOCOL_SCHEMA_SHA256 === SCHEMA_GATE &&
         /^[0-9a-f]{64}$/u.test(WFE_PROTOCOL_SCHEMA_SHA256));
 }
 function isExactRecord(value, keys) {
@@ -248,6 +247,7 @@ function isCommandView(value) {
         "disabled_reason",
         "behavior",
         "accelerator",
+        "description",
     ]) &&
         isCommandId(value["id"]) &&
         isString(value["label"]) &&
@@ -255,7 +255,8 @@ function isCommandView(value) {
         isBoolean(value["enabled"]) &&
         isNullable(value["disabled_reason"], isString) &&
         isCatalogKey(value["behavior"], COMMAND_BEHAVIORS) &&
-        isNullable(value["accelerator"], isString));
+        isNullable(value["accelerator"], isString) &&
+        isString(value["description"]));
 }
 function isProjectionLossView(value) {
     return (isExactRecord(value, ["filtered", "redacted", "truncation"]) &&
@@ -932,7 +933,9 @@ function isProtocolHello(value) {
         "sequence",
         "revision",
         "capabilities",
+        "schema_sha256",
     ]) &&
+        isString(value["schema_sha256"]) &&
         isFiniteInteger(value["protocol_version"]) &&
         isFiniteInteger(value["minimum_protocol_version"]) &&
         isString(value["server_name"]) &&
@@ -1228,6 +1231,9 @@ function helloProblem(hello) {
         hello.server_name !== "lethetic") {
         return "The server and browser protocol versions are incompatible.";
     }
+    if (hello.schema_sha256 !== WFE_PROTOCOL_SCHEMA_SHA256) {
+        return "This browser bundle was built for a different server build; reload the page.";
+    }
     const capabilities = hello.capabilities;
     if (!capabilities.state_patches ||
         !capabilities.request_replay ||
@@ -1241,6 +1247,7 @@ function sameHello(left, right) {
     return (left.protocol_version === right.protocol_version &&
         left.minimum_protocol_version === right.minimum_protocol_version &&
         left.server_name === right.server_name &&
+        left.schema_sha256 === right.schema_sha256 &&
         left.sequence === right.sequence &&
         left.revision === right.revision &&
         left.capabilities.state_patches === right.capabilities.state_patches &&

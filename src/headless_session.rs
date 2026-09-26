@@ -120,6 +120,8 @@ impl DurableHeadlessSession {
             }
             (path, lease, state)
         };
+        state.connection_id = config.active_connection_id().map(str::to_string);
+        state.model_name = config.model.clone();
         let session_id = state
             .session_id
             .as_deref()

@@ -370,7 +370,7 @@ function renderComposer(context: ChatViewContext): VNode {
           maxlength: String(MAX_DRAFT_LENGTH),
           rows: String(rows),
           placeholder: live
-            ? "Type a prompt. Enter submits; Shift+Enter adds a line."
+            ? "Type a prompt. Enter submits; Shift+Enter adds a line. Ctrl+P opens commands."
             : "Waiting for a synchronized connection…",
           "aria-describedby": "composer-help",
         }}

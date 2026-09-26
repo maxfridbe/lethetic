@@ -104,6 +104,7 @@ function snapshotFixture() {
         disabled_reason: null,
         behavior: "open_panel",
         accelerator: "h",
+        description: "test command",
       },
       {
         id: "themes",
@@ -113,6 +114,7 @@ function snapshotFixture() {
         disabled_reason: null,
         behavior: "open_panel",
         accelerator: "t",
+        description: "test command",
       },
       {
         id: "clear-ui",
@@ -122,6 +124,7 @@ function snapshotFixture() {
         disabled_reason: null,
         behavior: "execute",
         accelerator: "c",
+        description: "test command",
       },
       {
         id: "toggle-debugger",
@@ -131,6 +134,7 @@ function snapshotFixture() {
         disabled_reason: null,
         behavior: "execute",
         accelerator: "d",
+        description: "test command",
       },
     ],
     sessions: { sessions: [], has_more: false },

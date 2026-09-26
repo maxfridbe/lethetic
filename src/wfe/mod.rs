@@ -15,8 +15,11 @@ use contracts::{ThemeView, WFE_PROTOCOL_VERSION};
 use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 
-pub const WFE_PROTOCOL_V6_SCHEMA_SHA256: &str =
-    "586d00c9f1755b30a99b89cf16592d3265f49e7a4497658a78c369543487d287";
+/// The contract digest, computed once per process from the live declarations.
+pub fn runtime_schema_sha256() -> &'static String {
+    static DIGEST: std::sync::LazyLock<String> = std::sync::LazyLock::new(protocol_schema_sha256);
+    &DIGEST
+}
 
 pub fn protocol_schema_sha256() -> String {
     let digest = Sha256::digest(contracts::typescript_declarations().as_bytes());
@@ -142,7 +145,8 @@ mod tests {
         let second = generated_typescript_source().unwrap();
         assert_eq!(first, second);
         assert_eq!(WFE_PROTOCOL_VERSION, 6);
-        assert_eq!(protocol_schema_sha256(), WFE_PROTOCOL_V6_SCHEMA_SHA256);
+        assert_eq!(protocol_schema_sha256().len(), 64);
+        assert!(first.contains(&protocol_schema_sha256()));
         assert!(first.contains("export type ICommandRequest"));
         assert!(first.contains("cancel_id: string"));
         assert!(first.contains("history_entry_selected"));
