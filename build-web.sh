@@ -11,13 +11,17 @@ readonly WEB="$ROOT/web"
 readonly DIST="$WEB/dist"
 readonly TSCONFIG="$WEB/tsconfig.json"
 readonly VERIFY="$WEB/static/build-support/verify-web-assets.py"
-readonly APPROVAL_FLOW_TEST="$WEB/static/build-support/approval-flow.test.mjs"
-readonly APP_LAYOUT_STATUS_TEST="$WEB/static/build-support/app-layout-status.test.mjs"
-readonly CHAT_FOLLOW_TEST="$WEB/static/build-support/chat-follow.test.mjs"
-readonly JSON_RENDERING_TEST="$WEB/static/build-support/json-rendering.test.mjs"
-readonly MARKDOWN_RENDERING_TEST="$WEB/static/build-support/markdown-rendering.test.mjs"
-readonly TRANSPORT_AUTH_TEST="$WEB/static/build-support/transport-auth.test.mjs"
-readonly FILES_PANE_TEST="$WEB/static/build-support/files-pane.test.mjs"
+readonly TEST_TSCONFIG="$WEB/tests/tsconfig.json"
+# TypeScript tests in web/tests, run in this order after compilation.
+readonly BROWSER_TESTS=(
+    transport-auth
+    approval-flow
+    app-layout-status
+    chat-follow
+    json-rendering
+    markdown-rendering
+    files-pane
+)
 
 usage() {
     cat <<'USAGE'
@@ -56,15 +60,20 @@ tsc_version="$($tsc_bin --version 2>&1)" || die "could not run global tsc"
     die "global tsc $REQUIRED_TSC_VERSION is required (found: $tsc_version)"
 [[ ! -L "$DIST" ]] || die "refusing symlink web/dist"
 
-run_browser_tests() {
-    node --experimental-default-type=module "$TRANSPORT_AUTH_TEST" "$1"
-    node --experimental-default-type=module "$APPROVAL_FLOW_TEST" "$1"
-    node --experimental-default-type=module "$APP_LAYOUT_STATUS_TEST" "$1"
-    node --experimental-default-type=module "$CHAT_FOLLOW_TEST" "$1"
-    node --experimental-default-type=module "$JSON_RENDERING_TEST" "$1"
-    node --experimental-default-type=module "$MARKDOWN_RENDERING_TEST" "$1"
-    node --experimental-default-type=module "$FILES_PANE_TEST" "$1"
-}
+# Compile web/tests (with the sources they import) into a disposable directory
+# seeded with the staged distribution, so tests can load vendored libraries and
+# styles by relative path. The staged distribution itself is never modified.
+# Runs in a subshell so its EXIT trap always removes the directory.
+run_browser_tests() (
+    local stage="$1" test_root name
+    test_root="$(mktemp -d "${TMPDIR:-/tmp}/lethetic-web-tests.XXXXXX")"
+    trap 'rm -rf -- "$test_root"' EXIT
+    cp -R -- "$stage/." "$test_root/"
+    "$tsc_bin" --project "$TEST_TSCONFIG" --outDir "$test_root" --pretty false
+    for name in "${BROWSER_TESTS[@]}"; do
+        node --experimental-default-type=module "$test_root/tests/$name.test.js"
+    done
+)
 
 python3 "$VERIFY" self-check
 

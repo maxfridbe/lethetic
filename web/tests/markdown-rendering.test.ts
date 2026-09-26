@@ -1,65 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-
-const stage = process.argv[2];
-if (stage === undefined) {
-  throw new Error("usage: markdown-rendering.test.mjs <compiled-web-root>");
-}
-
-const markdownUrl = pathToFileURL(resolve(stage, "src/markdown.js"));
-const {
+import {
   isMarkdownBlockKind,
   markdownContentThunk,
   renderMarkdownContent,
   renderToolResultContent,
   toolResultContentThunk,
-} = await import(markdownUrl.href);
+} from "../src/markdown.js";
+import {
+  attr,
+  attrs,
+  byClass,
+  bySelector,
+  domPropValue,
+  propValue,
+  runInitHook,
+  runPrepatchHook,
+  textContent,
+  visit,
+  type VNode,
+} from "./support/vnode.js";
 
-function childVNodes(vnode) {
-  return Array.isArray(vnode?.children)
-    ? vnode.children.filter((child) => typeof child === "object" && child !== null)
-    : [];
-}
-
-function visit(vnode, callback) {
-  if (typeof vnode !== "object" || vnode === null) {
-    return;
-  }
-  callback(vnode);
-  for (const child of childVNodes(vnode)) {
-    visit(child, callback);
-  }
-}
-
-function all(vnode, predicate) {
-  const matches = [];
-  visit(vnode, (candidate) => {
-    if (predicate(candidate)) {
-      matches.push(candidate);
-    }
-  });
-  return matches;
-}
-
-function bySelector(vnode, selector) {
-  return all(vnode, (candidate) => candidate.sel === selector);
-}
-
-function hasClass(vnode, className) {
-  const value = vnode?.data?.attrs?.class;
-  return (
-    typeof value === "string" &&
-    value.split(/\s+/u).includes(className)
-  );
-}
-
-function byClass(vnode, className) {
-  return all(vnode, (candidate) => hasClass(candidate, className));
-}
-
-function jsonTokenCount(vnode) {
+function jsonTokenCount(vnode: VNode): number {
   return [
     "json-key",
     "json-string",
@@ -69,28 +31,20 @@ function jsonTokenCount(vnode) {
   ].reduce((total, className) => total + byClass(vnode, className).length, 0);
 }
 
-function textContent(vnode) {
-  if (typeof vnode !== "object" || vnode === null) {
-    return "";
-  }
-  if (typeof vnode.text === "string") {
-    return vnode.text;
-  }
-  return childVNodes(vnode).map(textContent).join("");
-}
-
-function assertLiteral(vnode, source) {
+function assertLiteral(vnode: VNode, source: string): void {
   assert.equal(byClass(vnode, "markdown-content").length, 0);
   const pre = bySelector(vnode, "pre");
   assert.equal(pre.length, 1);
-  assert.equal(textContent(pre[0]), source);
+  const [only] = pre;
+  assert.ok(only);
+  assert.equal(textContent(only), source);
 }
 
-function assertRich(vnode) {
+function assertRich(vnode: VNode): void {
   assert.equal(byClass(vnode, "markdown-content").length, 1);
 }
 
-function assertSafeTree(vnode) {
+function assertSafeTree(vnode: VNode): void {
   const forbiddenSelectors = new Set([
     "audio",
     "embed",
@@ -115,11 +69,10 @@ function assertSafeTree(vnode) {
         `unsafe selector ${candidate.sel}`,
       );
     }
-    assert.equal(candidate.data?.props?.innerHTML, undefined);
-    assert.equal(candidate.data?.domProps?.innerHTML, undefined);
+    assert.equal(propValue(candidate, "innerHTML"), undefined);
+    assert.equal(domPropValue(candidate, "innerHTML"), undefined);
     assert.equal(candidate.data?.on, undefined);
-    const attrs = candidate.data?.attrs ?? {};
-    for (const [name, value] of Object.entries(attrs)) {
+    for (const [name, value] of Object.entries(attrs(candidate))) {
       assert.equal(/^on/iu.test(name), false, `event attribute ${name}`);
       assert.equal(
         ["formaction", "src", "srcdoc", "srcset", "style"].includes(name),
@@ -128,7 +81,7 @@ function assertSafeTree(vnode) {
       );
       if (name === "href") {
         assert.equal(candidate.sel, "a");
-        assert.equal(typeof value, "string");
+        assert.ok(typeof value === "string");
         assert.match(value, /^https:\/\//u);
       }
     }
@@ -340,11 +293,11 @@ test("bounded valid JSON never falls through into Markdown detection", () => {
 test("tool-result thunk keeps a stable root across JSON and Markdown", () => {
   const json = toolResultContentThunk('{"key": true}', false);
   assert.equal(json.sel, "div");
-  json.data.hook.init(json);
+  runInitHook(json);
   assert.equal(byClass(json, "json-highlight").length, 1);
 
   const markdown = toolResultContentThunk("# Heading", false);
-  markdown.data.hook.prepatch(json, markdown);
+  runPrepatchHook(json, markdown);
   assert.equal(markdown.sel, "div");
   assert.equal(bySelector(markdown, "h1").length, 1);
   assert.equal(byClass(markdown, "json-highlight").length, 0);
@@ -384,12 +337,12 @@ test("character references decode in prose and links but not code or escapes", (
   const anchors = bySelector(vnode, "a");
   assert.equal(anchors.length, 1);
   assert.equal(
-    anchors[0].data.attrs.href,
+    attr(anchors[0], "href"),
     "https://example.com/search?a=1&b=2",
   );
   const ordered = bySelector(vnode, "ol");
   assert.equal(ordered.length, 1);
-  assert.equal(ordered[0].data.attrs.start, 0);
+  assert.equal(attr(ordered[0], "start"), 0);
   assertSafeTree(vnode);
 });
 
@@ -430,7 +383,9 @@ test("only canonical credential-free HTTPS links become anchors", () => {
   const vnode = renderMarkdownContent("markdown", source);
   const anchors = bySelector(vnode, "a");
   assert.equal(anchors.length, 1);
-  assert.deepEqual(anchors[0].data.attrs, {
+  const [anchor] = anchors;
+  assert.ok(anchor);
+  assert.deepEqual(attrs(anchor), {
     class: "markdown-link",
     href: "https://example.com/docs?q=one#part",
     referrerpolicy: "no-referrer",
@@ -489,23 +444,23 @@ test("source, node, and nesting budgets fail closed to complete literal text", (
 test("Snabbdom thunk reuses unchanged content and replaces a streamed tail", () => {
   const first = markdownContentThunk("text", "# first");
   assert.equal(first.sel, "div");
-  first.data.hook.init(first);
+  runInitHook(first);
 
   const same = markdownContentThunk("text", "# first");
-  same.data.hook.prepatch(first, same);
+  runPrepatchHook(first, same);
   assert.equal(same.children, first.children);
 
   const jsonSource = ["```json", '{"key": true}', "```"].join("\n");
   const completeJson = markdownContentThunk("markdown", jsonSource, true);
-  completeJson.data.hook.init(completeJson);
+  runInitHook(completeJson);
   assert.equal(byClass(completeJson, "json-highlight").length, 1);
   const lossyJson = markdownContentThunk("markdown", jsonSource, false);
-  lossyJson.data.hook.prepatch(completeJson, lossyJson);
+  runPrepatchHook(completeJson, lossyJson);
   assert.notEqual(lossyJson.children, completeJson.children);
   assert.equal(byClass(lossyJson, "json-highlight").length, 0);
 
   const changed = markdownContentThunk("text", "# first\n\nnew tail");
-  changed.data.hook.prepatch(same, changed);
+  runPrepatchHook(same, changed);
   assert.notEqual(changed.children, same.children);
   assert.match(textContent(changed), /new tail/u);
 });

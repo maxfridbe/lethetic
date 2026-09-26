@@ -9,12 +9,7 @@ readonly BUILD="$ROOT/build-web.sh"
 readonly VERIFY="$ROOT/web/static/build-support/verify-web-assets.py"
 readonly SOURCE_LINE_CHECK="$ROOT/scripts/check_source_lines.py"
 readonly SOURCE_LINE_TEST="$ROOT/scripts/test_check_source_lines.py"
-readonly APPROVAL_FLOW_TEST="$ROOT/web/static/build-support/approval-flow.test.mjs"
-readonly APP_LAYOUT_STATUS_TEST="$ROOT/web/static/build-support/app-layout-status.test.mjs"
-readonly CHAT_FOLLOW_TEST="$ROOT/web/static/build-support/chat-follow.test.mjs"
-readonly JSON_RENDERING_TEST="$ROOT/web/static/build-support/json-rendering.test.mjs"
-readonly MARKDOWN_RENDERING_TEST="$ROOT/web/static/build-support/markdown-rendering.test.mjs"
-readonly TRANSPORT_AUTH_TEST="$ROOT/web/static/build-support/transport-auth.test.mjs"
+readonly TEST_TSCONFIG="$ROOT/web/tests/tsconfig.json"
 
 temporary="$(mktemp -d)"
 trap 'rm -rf -- "$temporary"' EXIT
@@ -23,12 +18,8 @@ bash -n "$BUILD"
 bash -n "$ROOT/web/static/build-support/check-pipeline.sh"
 python3 "$SOURCE_LINE_TEST"
 python3 "$SOURCE_LINE_CHECK"
-node --check "$APPROVAL_FLOW_TEST"
-node --check "$APP_LAYOUT_STATUS_TEST"
-node --check "$CHAT_FOLLOW_TEST"
-node --check "$JSON_RENDERING_TEST"
-node --check "$MARKDOWN_RENDERING_TEST"
-node --check "$TRANSPORT_AUTH_TEST"
+# Type-check the TypeScript tests and browser driver (build-web.sh --check runs them).
+tsc --project "$TEST_TSCONFIG" --noEmit --pretty false
 python3 - "$VERIFY" <<'PY'
 import ast
 from pathlib import Path

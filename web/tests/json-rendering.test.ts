@@ -1,79 +1,36 @@
+import "./support/window-global.js";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-
-globalThis.window = globalThis;
-
-const stage = process.argv[2];
-if (stage === undefined) {
-  throw new Error("usage: json-rendering.test.mjs <compiled-web-root>");
-}
-
-const jsonUrl = pathToFileURL(resolve(stage, "src/json.js"));
-const {
+import {
   inspectJson,
   jsonPreformattedThunk,
   jsonTokenChildren,
   renderJsonPreformatted,
   tokenizeJson,
-} = await import(jsonUrl.href);
+} from "../src/json.js";
+import {
+  all,
+  attr,
+  attrs,
+  byClass,
+  domPropValue,
+  propValue,
+  runInitHook,
+  runPrepatchHook,
+  textContent,
+  visit,
+  type VNode,
+} from "./support/vnode.js";
 
-function childVNodes(vnode) {
-  return Array.isArray(vnode?.children)
-    ? vnode.children.filter((child) => typeof child === "object" && child !== null)
-    : [];
-}
-
-function visit(vnode, callback) {
-  if (typeof vnode !== "object" || vnode === null) {
-    return;
-  }
-  callback(vnode);
-  for (const child of childVNodes(vnode)) {
-    visit(child, callback);
-  }
-}
-
-function all(vnode, predicate) {
-  const matches = [];
-  visit(vnode, (candidate) => {
-    if (predicate(candidate)) {
-      matches.push(candidate);
-    }
-  });
-  return matches;
-}
-
-function byClass(vnode, className) {
-  return all(vnode, (candidate) => {
-    const value = candidate?.data?.attrs?.class;
-    return (
-      typeof value === "string" &&
-      value.split(/\s+/u).includes(className)
-    );
-  });
-}
-
-function textContent(vnode) {
-  if (typeof vnode !== "object" || vnode === null) {
-    return "";
-  }
-  if (typeof vnode.text === "string") {
-    return vnode.text;
-  }
-  return childVNodes(vnode).map(textContent).join("");
-}
-
-function assertSafeTree(vnode) {
+function assertSafeTree(vnode: VNode): void {
   visit(vnode, (candidate) => {
     if (candidate.sel !== undefined) {
       assert.equal(["pre", "span"].includes(candidate.sel), true, candidate.sel);
     }
-    assert.equal(candidate.data?.props?.innerHTML, undefined);
-    assert.equal(candidate.data?.domProps?.innerHTML, undefined);
+    assert.equal(propValue(candidate, "innerHTML"), undefined);
+    assert.equal(domPropValue(candidate, "innerHTML"), undefined);
     assert.equal(candidate.data?.on, undefined);
-    for (const name of Object.keys(candidate.data?.attrs ?? {})) {
+    for (const name of Object.keys(attrs(candidate))) {
       assert.equal(/^on/iu.test(name), false, `event attribute ${name}`);
       assert.equal(
         ["formaction", "href", "src", "srcdoc", "srcset", "style"].includes(name),
@@ -84,7 +41,7 @@ function assertSafeTree(vnode) {
   });
 }
 
-function assertLiteral(source) {
+function assertLiteral(source: string): void {
   const rendered = renderJsonPreformatted("block", source, true);
   assert.equal(textContent(rendered), source);
   assert.equal(byClass(rendered, "json-highlight").length, 0);
@@ -115,7 +72,7 @@ test("hostile JSON strings stay inert text nodes", () => {
 
   assert.equal(textContent(rendered), source);
   assert.equal(rendered.sel, "pre");
-  assert.equal(rendered.data.attrs.tabindex, "0");
+  assert.equal(attr(rendered, "tabindex"), "0");
   assert.equal(all(rendered, (node) => node.sel === "img").length, 0);
   assert.equal(all(rendered, (node) => node.sel === "script").length, 0);
   assertSafeTree(rendered);
@@ -142,9 +99,9 @@ test("strict malformed JSON falls back to complete literal source", () => {
 test("inspection distinguishes syntax failure from bounded valid JSON", () => {
   const source = ' {"markdown": "# heading", "value": [1, true]} ';
   const inspection = inspectJson(source);
-  assert.equal(inspection.status, "valid");
+  assert.ok(inspection.status === "valid");
   const tokenization = tokenizeJson(source);
-  assert.equal(tokenization.status, "valid");
+  assert.ok(tokenization.status === "valid");
   assert.equal(tokenization.segments, inspection.segments);
   assert.equal(tokenization.children.length, inspection.segments);
   assert.equal(
@@ -187,14 +144,14 @@ test("highlight selection can be disabled without changing source", () => {
 test("JSON thunk reuses unchanged content and replaces changed source", () => {
   const first = jsonPreformattedThunk("block", '{"first": 1}', true);
   assert.equal(first.sel, "pre");
-  first.data.hook.init(first);
+  runInitHook(first);
 
   const same = jsonPreformattedThunk("block", '{"first": 1}', true);
-  same.data.hook.prepatch(first, same);
+  runPrepatchHook(first, same);
   assert.equal(same.children, first.children);
 
   const changed = jsonPreformattedThunk("block", '{"second": 2}', true);
-  changed.data.hook.prepatch(same, changed);
+  runPrepatchHook(same, changed);
   assert.notEqual(changed.children, same.children);
   assert.equal(textContent(changed), '{"second": 2}');
 });

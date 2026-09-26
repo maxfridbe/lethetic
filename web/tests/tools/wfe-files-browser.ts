@@ -1,43 +1,115 @@
 // Native CDP-pipe driver. No npm packages, browser libraries, or existing profile.
-import { spawn } from "node:child_process";
-import { writeFile, stat } from "node:fs/promises";
+// Compiled with web/tests/tsconfig.json and run by scripts/test_wfe_files_browser.py.
+import { spawn, type ChildProcess } from "node:child_process";
+import { stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+interface DriverConfig {
+  readonly browser: string;
+  readonly profile: string;
+  readonly browserHome: string;
+  readonly downloads: string;
+  readonly origin: string;
+  url: string;
+  readonly enabled: boolean;
+  readonly screenshot: string;
+  readonly source: string;
+  readonly hostile: string;
+}
+
+interface PendingCommand {
+  readonly resolve: (result: unknown) => void;
+  readonly reject: (error: Error) => void;
+  readonly deadline: number;
+}
+
+interface RequestRecord {
+  readonly origin: string;
+  readonly path: string;
+  readonly method: string;
+}
+
+interface SentFrame {
+  readonly prompt: boolean;
+  readonly fileContent: boolean;
+}
+
+type CdpListener = (message: Record<string, unknown>) => void;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Read a nested field of an untyped CDP payload; absent paths yield undefined. */
+function field(value: unknown, ...path: readonly string[]): unknown {
+  let current = value;
+  for (const key of path) {
+    current = isRecord(current) ? current[key] : undefined;
+  }
+  return current;
+}
+
+function stringField(value: unknown, ...path: readonly string[]): string {
+  const result = field(value, ...path);
+  if (typeof result !== "string") throw new Error("unexpected CDP payload");
+  return result;
+}
+
+function optionalString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function parseConfig(value: unknown): DriverConfig {
+  const text = (key: string): string => {
+    const result = field(value, key);
+    if (typeof result !== "string") throw new Error("invalid driver configuration");
+    return result;
+  };
+  const enabled = field(value, "enabled");
+  if (typeof enabled !== "boolean") throw new Error("invalid driver configuration");
+  return { browser: text("browser"), profile: text("profile"), browserHome: text("browserHome"),
+    downloads: text("downloads"), origin: text("origin"), url: text("url"), enabled,
+    screenshot: text("screenshot"), source: text("source"), hostile: text("hostile") };
+}
+
+process.stdin.setEncoding("utf8");
 let input = "";
 for await (const chunk of process.stdin) input += chunk;
-const config = JSON.parse(input);
+const config = parseConfig(JSON.parse(input));
 input = "";
 let stage = "browser launch";
-let browser;
+let browser: ChildProcess | null = null;
 let closed = false;
-let session;
+let session: string | null = null;
 let counter = 0;
-const pending = new Map();
-const listeners = [];
-const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
-const requests = [];
-const sentFrames = [];
-const violations = [];
-const pageErrors = [];
-let csp = null;
-let permissions = null;
-let workerError = false;
+const pending = new Map<number, PendingCommand>();
+const listeners: CdpListener[] = [];
+const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
+const requests: RequestRecord[] = [];
+const sentFrames: SentFrame[] = [];
+const violations: unknown[] = [];
+const pageErrors: string[] = [];
+// Written by the CDP listener when the application document arrives.
+const documentHeaders: { csp: string | null; permissions: string | null } = { csp: null, permissions: null };
+let workerError: unknown = false;
 
-function check(value, label) { if (!value) throw new Error(label); }
-function rpc(method, params = {}, target = session) {
+function check(value: unknown, label: string): void { if (!value) throw new Error(label); }
+function rpc(method: string, params: Record<string, unknown> = {}, target: string | null = session): Promise<unknown> {
   const id = ++counter;
   return new Promise((resolve, reject) => {
     const deadline = setTimeout(() => { pending.delete(id); reject(new Error("CDP deadline")); }, 15_000);
     pending.set(id, { resolve, reject, deadline });
-    browser.stdio[3].write(JSON.stringify({ id, method, params, ...(target ? { sessionId: target } : {}) }) + "\0");
+    const commands = browser?.stdio[3];
+    if (!commands) { clearTimeout(deadline); pending.delete(id); reject(new Error("browser pipe unavailable")); return; }
+    commands.write(JSON.stringify({ id, method, params, ...(target ? { sessionId: target } : {}) }) + "\0");
   });
 }
-async function evaluate(expression) {
+async function evaluate(expression: string): Promise<unknown> {
   const result = await rpc("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true, userGesture: true });
-  check(!result.exceptionDetails, "page evaluation failed");
-  return result.result.value;
+  check(!field(result, "exceptionDetails"), "page evaluation failed");
+  return field(result, "result", "value");
 }
-async function until(expression, label, timeout = 30_000) {
+async function until(expression: string, label: string, timeout = 30_000): Promise<void> {
   stage = label;
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
@@ -46,13 +118,13 @@ async function until(expression, label, timeout = 30_000) {
   }
   throw new Error("browser condition deadline");
 }
-async function click(selector) {
+async function click(selector: string): Promise<void> {
   check(await evaluate(`(() => { const item = document.querySelector(${JSON.stringify(selector)}); if (!item || item.disabled) return false; item.click(); return true; })()`), "button unavailable");
 }
-async function clickText(text, selector = "button") {
+async function clickText(text: string, selector = "button"): Promise<void> {
   check(await evaluate(`(() => { const item = [...document.querySelectorAll(${JSON.stringify(selector)})].find(item => item.textContent.trim() === ${JSON.stringify(text)}); if (!item || item.disabled) return false; item.click(); return true; })()`), "button unavailable");
 }
-async function downloaded(filename) {
+async function downloaded(filename: string): Promise<void> {
   stage = "download completion";
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
@@ -61,7 +133,7 @@ async function downloaded(filename) {
   }
   throw new Error("download unavailable");
 }
-async function layout() {
+async function layout(): Promise<unknown> {
   return evaluate(`(() => {
     const pane = document.querySelector('.files-pane').getBoundingClientRect();
     const chat = document.querySelector('#chat-scroll').getBoundingClientRect();
@@ -71,11 +143,11 @@ async function layout() {
       editor.height >= 50 && chat.height > 10 && chat.bottom <= composer.top + 1 && composer.bottom <= innerHeight;
   })()`);
 }
-async function screenshot() {
+async function screenshot(): Promise<void> {
   const result = await rpc("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
-  await writeFile(config.screenshot, Buffer.from(result.data, "base64"));
+  await writeFile(config.screenshot, Buffer.from(stringField(result, "data"), "base64"));
 }
-async function cleanup() {
+async function cleanup(): Promise<void> {
   if (!browser || closed) return;
   try { await rpc("Browser.close", {}, null); } catch {}
   for (let i = 0; i < 60 && !closed; i++) await sleep(50);
@@ -85,39 +157,46 @@ async function cleanup() {
   for (const record of pending.values()) { clearTimeout(record.deadline); record.reject(new Error("browser closed")); }
   pending.clear();
 }
+function dispatch(message: Record<string, unknown>): void {
+  const id = message["id"];
+  if (typeof id === "number" && id !== 0) {
+    const entry = pending.get(id);
+    if (!entry) return;
+    clearTimeout(entry.deadline);
+    pending.delete(id);
+    if (message["error"]) entry.reject(new Error("CDP command rejected")); else entry.resolve(message["result"]);
+  } else {
+    for (const listener of listeners) listener(message);
+  }
+}
 
 try {
   const environment = { ...process.env, HOME: config.browserHome,
     XDG_CONFIG_HOME: resolve(config.browserHome, "config"), XDG_CACHE_HOME: resolve(config.browserHome, "cache") };
-  browser = spawn(config.browser, ["--headless=new", `--user-data-dir=${config.profile}`,
+  const child = spawn(config.browser, ["--headless=new", `--user-data-dir=${config.profile}`,
     "--remote-debugging-pipe", "--ignore-certificate-errors", "--no-first-run", "--no-default-browser-check",
     "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-extensions",
     "--window-size=1280,1000", "about:blank"], { env: environment, stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] });
-  browser.stderr.on("data", () => {});
-  browser.on("exit", () => { closed = true; });
+  browser = child;
+  child.stderr?.on("data", () => {});
+  child.on("exit", () => { closed = true; });
+  const responses = child.stdio[4];
+  if (!responses) throw new Error("browser pipe unavailable");
   let buffered = "";
-  browser.stdio[4].setEncoding("utf8");
-  browser.stdio[4].on("data", (chunk) => {
+  responses.setEncoding("utf8");
+  responses.on("data", (chunk) => {
     buffered += chunk;
     for (;;) {
       const end = buffered.indexOf("\0");
       if (end < 0) break;
-      const message = JSON.parse(buffered.slice(0, end));
+      const message: unknown = JSON.parse(buffered.slice(0, end));
       buffered = buffered.slice(end + 1);
-      if (message.id) {
-        const entry = pending.get(message.id);
-        if (!entry) continue;
-        clearTimeout(entry.deadline);
-        pending.delete(message.id);
-        if (message.error) entry.reject(new Error("CDP command rejected")); else entry.resolve(message.result);
-      } else {
-        for (const listener of listeners) listener(message);
-      }
+      if (isRecord(message)) dispatch(message);
     }
   });
   const target = await rpc("Target.createTarget", { url: "about:blank" });
-  const attached = await rpc("Target.attachToTarget", { targetId: target.targetId, flatten: true });
-  session = attached.sessionId;
+  const attached = await rpc("Target.attachToTarget", { targetId: stringField(target, "targetId"), flatten: true });
+  session = stringField(attached, "sessionId");
   await rpc("Page.enable");
   await rpc("Runtime.enable");
   await rpc("Network.enable");
@@ -125,23 +204,24 @@ try {
   await rpc("Browser.grantPermissions", { origin: config.origin, permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"] }, null);
   await rpc("Emulation.setDeviceMetricsOverride", { width: 1280, height: 1000, deviceScaleFactor: 1, mobile: false });
   listeners.push((event) => {
-    if (event.sessionId !== session) return;
-    if (event.method === "Network.requestWillBeSent") {
-      const { url, method } = event.params.request;
-      const parsed = new URL(url);
+    if (event["sessionId"] !== session) return;
+    const method = event["method"];
+    const params = event["params"];
+    if (method === "Network.requestWillBeSent") {
+      const parsed = new URL(stringField(params, "request", "url"));
       // Never retain URL fragments, request headers, bodies or authentication proofs.
-      requests.push({ origin: parsed.origin, path: parsed.pathname, method });
+      requests.push({ origin: parsed.origin, path: parsed.pathname, method: stringField(params, "request", "method") });
     }
-    if (event.method === "Network.responseReceived" && event.params.type === "Document") {
-      const headers = event.params.response.headers;
-      csp = headers["content-security-policy"] ?? headers["Content-Security-Policy"];
-      permissions = headers["permissions-policy"] ?? headers["Permissions-Policy"];
+    if (method === "Network.responseReceived" && field(params, "type") === "Document") {
+      const headers = field(params, "response", "headers");
+      documentHeaders.csp = optionalString(field(headers, "content-security-policy") ?? field(headers, "Content-Security-Policy"));
+      documentHeaders.permissions = optionalString(field(headers, "permissions-policy") ?? field(headers, "Permissions-Policy"));
     }
-    if (event.method === "Network.webSocketFrameSent") {
-      const payload = event.params.response.payloadData;
+    if (method === "Network.webSocketFrameSent") {
+      const payload = stringField(params, "response", "payloadData");
       sentFrames.push({ prompt: payload.includes('"send_prompt"'), fileContent: payload.includes("browser-fixture-marker") || payload.includes("__fileExecuted") });
     }
-    if (event.method === "Runtime.exceptionThrown") pageErrors.push(event.params.exceptionDetails.text);
+    if (method === "Runtime.exceptionThrown") pageErrors.push(String(field(params, "exceptionDetails", "text")));
   });
   await rpc("Page.addScriptToEvaluateOnNewDocument", { source: `
     window.__fileExecuted = false; window.__fileCopies = []; window.__fileWorkers = []; window.__cspViolations = [];
@@ -157,18 +237,24 @@ try {
   await rpc("Page.navigate", { url: config.url });
   config.url = "";
   await until(`document.querySelector('#app')?.dataset.connection === 'live'`, "authenticated WFE synchronization");
-  check(typeof csp === "string" && csp.includes("script-src 'self'") && !csp.includes("unsafe-eval") && !csp.includes("blob:"), "script policy weakened");
-  check(permissions.includes("clipboard-read=()"), "clipboard read policy weakened");
+  const documentCsp = documentHeaders.csp;
+  const documentPermissions = documentHeaders.permissions;
+  if (documentCsp === null || !documentCsp.includes("script-src 'self'") || documentCsp.includes("unsafe-eval") || documentCsp.includes("blob:")) {
+    throw new Error("script policy weakened");
+  }
+  if (documentPermissions === null || !documentPermissions.includes("clipboard-read=()")) {
+    throw new Error("clipboard read policy weakened");
+  }
   check(await evaluate("location.hash === ''"), "bootstrap fragment retained");
   if (!config.enabled) {
     stage = "disabled capability";
-    check(!csp.includes("unsafe-inline") && permissions.includes("clipboard-write=()"), "disabled policy weakened");
+    check(!documentCsp.includes("unsafe-inline") && documentPermissions.includes("clipboard-write=()"), "disabled policy weakened");
     check(await evaluate("document.querySelector('#files-toggle') === null"), "disabled file controls visible");
     check(!requests.some((request) => request.path.includes("monaco")), "disabled editor loaded");
     await screenshot();
   } else {
-    check(csp.includes("style-src 'self' 'unsafe-inline'") && csp.includes("worker-src 'self'"), "editor policy missing");
-    check(permissions.includes("clipboard-write=(self)"), "copy path policy missing");
+    check(documentCsp.includes("style-src 'self' 'unsafe-inline'") && documentCsp.includes("worker-src 'self'"), "editor policy missing");
+    check(documentPermissions.includes("clipboard-write=(self)"), "copy path policy missing");
     stage = "file pane opening";
     await click("#files-toggle");
     await until("document.querySelector('#files-monaco')?.dataset.editorReady === 'true' && document.querySelectorAll('.files-entry').length >= 5", "Monaco initialization");
@@ -228,7 +314,9 @@ try {
     await until("document.querySelector('#files-monaco')?.dataset.editorReady === 'true'", "editor reopen");
   }
   stage = "network and CSP audit";
-  violations.push(...await evaluate("window.__cspViolations"));
+  const observed = await evaluate("window.__cspViolations");
+  check(Array.isArray(observed), "page evaluation failed");
+  if (Array.isArray(observed)) violations.push(...observed);
   check(violations.length === 0, "CSP violation observed");
   check(!requests.some((request) => request.origin !== config.origin), "external application network request");
   check(requests.filter((request) => request.path.startsWith("/api/files/")).every((request) => request.method === "POST"), "file operation used a non-POST endpoint");

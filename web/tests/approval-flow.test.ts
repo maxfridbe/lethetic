@@ -1,24 +1,8 @@
+import "./support/app-globals.js";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-
-const stage = process.argv[2];
-if (stage === undefined) {
-  throw new Error("usage: approval-flow.test.mjs <compiled-web-root>");
-}
-
-globalThis.addEventListener = () => {};
-globalThis.window = globalThis;
-
-const appUrl = pathToFileURL(resolve(stage, "src/app.js"));
-const contractsUrl = pathToFileURL(resolve(stage, "src/generated/contracts.js"));
-const iconsUrl = pathToFileURL(resolve(stage, "src/icons.js"));
-const jsonUrl = pathToFileURL(resolve(stage, "src/json.js"));
-const keyboardUrl = pathToFileURL(resolve(stage, "src/app/keyboard.js"));
-const protocolUrl = pathToFileURL(resolve(stage, "src/protocol.js"));
-const {
+import {
   activitySpinnerKind,
   approvalConfirmationKey,
   approvalHasHiddenContent,
@@ -31,18 +15,35 @@ const {
   projectionLossMessages,
   toolBlockUsesJsonHighlighting,
   toolResultUsesAutoRendering,
-} = await import(appUrl.href);
-const {
+} from "../src/app.js";
+import type { KeyboardContext, KeyboardState } from "../src/app/state.js";
+import { handlePaletteKeyDown } from "../src/app/keyboard.js";
+import {
   COMMAND_ORDER,
   SPINNER_FRAMES,
   TOOL_SPINNER_FRAMES,
-  WFE_PROTOCOL_VERSION,
   WFE_PROTOCOL_SCHEMA_SHA256,
-} = await import(contractsUrl.href);
-const { activitySpinner } = await import(iconsUrl.href);
-const { inspectJson } = await import(jsonUrl.href);
-const { handlePaletteKeyDown } = await import(keyboardUrl.href);
-const {
+  WFE_PROTOCOL_VERSION,
+  type AccountingTotalsView,
+  type ActivityKind,
+  type CommandId,
+  type CommandView,
+  type DebuggerView,
+  type ICommandRequest,
+  type ICommandResponse,
+  type IProtocolHello,
+  type PendingApprovalView,
+  type ProjectionLossView,
+  type ProtocolCapabilities,
+  type RenderBlockView,
+  type ToolBlockKind,
+  type ToolBlockView,
+  type UsageView,
+  type WebAppSnapshot,
+} from "../src/generated/contracts.js";
+import { activitySpinner, type ActivitySpinnerKind } from "../src/icons.js";
+import { inspectJson } from "../src/json.js";
+import {
   applyStateChange,
   beginRemoteConnection,
   clientContractGate,
@@ -50,11 +51,14 @@ const {
   createRemoteState,
   parseServerMessage,
   reduceServerMessage,
-} = await import(protocolUrl.href);
+} from "../src/protocol.js";
+import { asKeyboardEvent, fakeKeyboardEvent } from "./support/dom-fakes.js";
+import { jsonClone, objectAt, type JsonObject, type JsonValue } from "./support/json.js";
+import { attr, isRecord, vnodeText } from "./support/vnode.js";
 
 const SESSION_ID = "11111111-2222-4333-8444-555555555555";
 
-function projectionLoss(overrides = {}) {
+function projectionLoss(overrides: Partial<ProjectionLossView> = {}): ProjectionLossView {
   return {
     filtered: false,
     redacted: false,
@@ -63,7 +67,7 @@ function projectionLoss(overrides = {}) {
   };
 }
 
-function approval(overrides = {}) {
+function approval(overrides: Partial<PendingApprovalView> = {}): PendingApprovalView {
   return {
     approval_id: "approval-1",
     session_id: SESSION_ID,
@@ -79,15 +83,22 @@ function approval(overrides = {}) {
   };
 }
 
-function snapshotForApproval(current) {
+function toolView(overrides: Partial<ToolBlockView> = {}): ToolBlockView {
   return {
-    pending_approval: current,
-    pending_question: null,
-    overlay: { data: null },
+    kind: "call",
+    tool_name: "write_file",
+    payload: "{}",
+    payload_loss: projectionLoss(),
+    ...overrides,
   };
 }
 
-function patchMessage(value) {
+function snapshotForApproval(current: PendingApprovalView): WebAppSnapshot {
+  return { ...completeSnapshot(), pending_approval: current };
+}
+
+/** Wire-level builders accept malformed fixtures, so the payload is untyped. */
+function patchMessage(value: unknown): string {
   return JSON.stringify({
     type: "state_patch",
     patch: {
@@ -99,7 +110,7 @@ function patchMessage(value) {
   });
 }
 
-function toolBlockPatch(tool) {
+function toolBlockPatch(tool: unknown): string {
   return JSON.stringify({
     type: "state_patch",
     patch: {
@@ -112,7 +123,7 @@ function toolBlockPatch(tool) {
           value: {
             blocks: [
               {
-                kind: tool.kind === "call" ? "tool_call" : "tool_result",
+                kind: isRecord(tool) && tool["kind"] === "call" ? "tool_call" : "tool_result",
                 content: "",
                 content_loss: projectionLoss(),
                 tool,
@@ -132,7 +143,7 @@ function toolBlockPatch(tool) {
   });
 }
 
-function emptyUsage() {
+function emptyUsage(): UsageView {
   return {
     uncached_input_tokens: "0",
     cache_read_input_tokens: "0",
@@ -144,7 +155,7 @@ function emptyUsage() {
   };
 }
 
-function accountingTotals() {
+function accountingTotals(): AccountingTotalsView {
   return {
     usage: emptyUsage(),
     estimated_cost: null,
@@ -155,7 +166,7 @@ function accountingTotals() {
   };
 }
 
-function completeSnapshot() {
+function completeSnapshot(): WebAppSnapshot {
   return {
     session: {
       session_id: SESSION_ID,
@@ -172,7 +183,7 @@ function completeSnapshot() {
     },
     pending_approval: null,
     pending_question: null,
-    commands: COMMAND_ORDER.map((id) => ({
+    commands: COMMAND_ORDER.map((id): CommandView => ({
       id,
       label: id,
       icon: "command",
@@ -236,7 +247,7 @@ function completeSnapshot() {
   };
 }
 
-function snapshotMessage(state) {
+function snapshotMessage(state: unknown): string {
   return JSON.stringify({
     type: "state_snapshot",
     snapshot: {
@@ -248,58 +259,41 @@ function snapshotMessage(state) {
   });
 }
 
-function vnodeText(vnode) {
-  if (typeof vnode === "string") {
-    return vnode;
-  }
-  if (typeof vnode?.text === "string") {
-    return vnode.text;
-  }
-  return Array.isArray(vnode?.children)
-    ? vnode.children.map(vnodeText).join("")
-    : "";
+interface PaletteOverrides extends Partial<KeyboardState> {
+  readonly selection?: (selected: number) => void;
 }
 
-function keyboardEvent(key, overrides = {}) {
-  const commandSurface = {};
-  return {
-    key,
-    ctrlKey: false,
-    altKey: false,
-    shiftKey: false,
-    metaKey: false,
-    isComposing: false,
-    repeat: false,
-    defaultPrevented: false,
-    target: commandSurface,
-    currentTarget: commandSurface,
-    preventDefault() {
-      this.defaultPrevented = true;
-    },
-    ...overrides,
-  };
-}
-
-function paletteKeyboardContext(snapshot, invoked, overrides = {}) {
+function paletteKeyboardContext(
+  snapshot: WebAppSnapshot,
+  invoked: string[],
+  overrides: PaletteOverrides = {},
+): KeyboardContext {
+  const { selection, ...stateOverrides } = overrides;
   return {
     state: {
       snapshot,
       palette: { query: "", selected: 0 },
       activePanel: "command_palette",
-      ...overrides,
+      debuggerDrawerOpen: false,
+      ...stateOverrides,
     },
     actions: {
+      openPalette: () => {},
+      closeOverlay: () => {},
+      stop: () => {},
+      toggleDebugger: () => {},
+      requestQuit: () => {},
       setPaletteSelection: (selected) => {
-        overrides.selection?.(selected);
+        selection?.(selected);
       },
       invokeCommand: (command) => invoked.push(command.id),
     },
   };
 }
 
-function snapshotWithCanonicalAccelerators() {
+function snapshotWithCanonicalAccelerators(): WebAppSnapshot {
   const snapshot = completeSnapshot();
-  const accelerators = new Map([
+  const accelerators = new Map<CommandId, string>([
     ["hotkeys", "h"],
     ["themes", "t"],
     ["clear-ui", "c"],
@@ -313,7 +307,7 @@ function snapshotWithCanonicalAccelerators() {
 
 test("palette command surface dispatches canonical accelerators only in context", () => {
   const snapshot = snapshotWithCanonicalAccelerators();
-  for (const [key, expected] of [
+  const accelerators: ReadonlyArray<readonly [string, CommandId]> = [
     ["h", "hotkeys"],
     ["H", "hotkeys"],
     ["t", "themes"],
@@ -322,10 +316,11 @@ test("palette command surface dispatches canonical accelerators only in context"
     ["C", "clear-ui"],
     ["d", "toggle-debugger"],
     ["D", "toggle-debugger"],
-  ]) {
-    const invoked = [];
-    const event = keyboardEvent(key, { shiftKey: key === key.toUpperCase() });
-    handlePaletteKeyDown(event, paletteKeyboardContext(snapshot, invoked));
+  ];
+  for (const [key, expected] of accelerators) {
+    const invoked: string[] = [];
+    const event = fakeKeyboardEvent(key, { shiftKey: key === key.toUpperCase() });
+    handlePaletteKeyDown(asKeyboardEvent(event), paletteKeyboardContext(snapshot, invoked));
     assert.deepEqual(invoked, [expected], key);
     assert.equal(event.defaultPrevented, true, key);
   }
@@ -339,17 +334,17 @@ test("palette command surface dispatches canonical accelerators only in context"
     { defaultPrevented: true },
     { target: {}, currentTarget: {} },
   ]) {
-    const invoked = [];
-    const event = keyboardEvent("d", overrides);
-    handlePaletteKeyDown(event, paletteKeyboardContext(snapshot, invoked));
+    const invoked: string[] = [];
+    const event = fakeKeyboardEvent("d", overrides);
+    handlePaletteKeyDown(asKeyboardEvent(event), paletteKeyboardContext(snapshot, invoked));
     assert.deepEqual(invoked, []);
   }
 
   const protectedSnapshot = snapshotWithCanonicalAccelerators();
   protectedSnapshot.overlay.active_panel = "tool_approval";
-  const protectedInvocations = [];
+  const protectedInvocations: string[] = [];
   handlePaletteKeyDown(
-    keyboardEvent("d"),
+    asKeyboardEvent(fakeKeyboardEvent("d")),
     paletteKeyboardContext(protectedSnapshot, protectedInvocations, {
       activePanel: "tool_approval",
     }),
@@ -358,26 +353,28 @@ test("palette command surface dispatches canonical accelerators only in context"
 
   const staleOverlaySnapshot = snapshotWithCanonicalAccelerators();
   staleOverlaySnapshot.overlay.active_panel = "themes";
-  const staleOverlayInvocations = [];
+  const staleOverlayInvocations: string[] = [];
   handlePaletteKeyDown(
-    keyboardEvent("d"),
+    asKeyboardEvent(fakeKeyboardEvent("d")),
     paletteKeyboardContext(staleOverlaySnapshot, staleOverlayInvocations),
   );
   assert.deepEqual(staleOverlayInvocations, ["toggle-debugger"]);
 
-  const wrongPanelInvocations = [];
+  const wrongPanelInvocations: string[] = [];
   handlePaletteKeyDown(
-    keyboardEvent("d"),
+    asKeyboardEvent(fakeKeyboardEvent("d")),
     paletteKeyboardContext(snapshot, wrongPanelInvocations, {
       activePanel: "ask_user",
     }),
   );
   assert.deepEqual(wrongPanelInvocations, []);
 
-  snapshot.commands.find((command) => command.id === "toggle-debugger").enabled = false;
-  const disabledInvocations = [];
+  const toggleDebugger = snapshot.commands.find((command) => command.id === "toggle-debugger");
+  assert.ok(toggleDebugger);
+  toggleDebugger.enabled = false;
+  const disabledInvocations: string[] = [];
   handlePaletteKeyDown(
-    keyboardEvent("d"),
+    asKeyboardEvent(fakeKeyboardEvent("d")),
     paletteKeyboardContext(snapshot, disabledInvocations),
   );
   assert.deepEqual(disabledInvocations, []);
@@ -385,20 +382,20 @@ test("palette command surface dispatches canonical accelerators only in context"
 
 test("palette command surface owns navigation and Enter", () => {
   const snapshot = snapshotWithCanonicalAccelerators();
-  let selection = null;
-  const invoked = [];
+  const selection: { value: number | null } = { value: null };
+  const invoked: string[] = [];
   const context = paletteKeyboardContext(snapshot, invoked, {
     selection: (value) => {
-      selection = value;
+      selection.value = value;
     },
   });
-  const down = keyboardEvent("ArrowDown");
-  handlePaletteKeyDown(down, context);
-  assert.equal(selection, 1);
+  const down = fakeKeyboardEvent("ArrowDown");
+  handlePaletteKeyDown(asKeyboardEvent(down), context);
+  assert.equal(selection.value, 1);
   assert.equal(down.defaultPrevented, true);
 
-  const enter = keyboardEvent("Enter");
-  handlePaletteKeyDown(enter, context);
+  const enter = fakeKeyboardEvent("Enter");
+  handlePaletteKeyDown(asKeyboardEvent(enter), context);
   assert.deepEqual(invoked, [COMMAND_ORDER[0]]);
   assert.equal(enter.defaultPrevented, true);
 });
@@ -432,13 +429,13 @@ test("protocol v6 admits bound decisions for hidden approval previews", () => {
     false,
   );
 
-  const missingFlag = approval();
-  delete missingFlag.preview_redacted;
+  const missingFlag = jsonClone(approval());
+  delete missingFlag["preview_redacted"];
   assert.equal(parseServerMessage(patchMessage(missingFlag)).ok, false);
 });
 
 test("protocol v6 requires exact tool projection loss records", () => {
-  const complete = {
+  const complete: ToolBlockView = {
     kind: "call",
     tool_name: "write_file",
     payload: '{"path":"notes.txt"}',
@@ -457,15 +454,15 @@ test("protocol v6 requires exact tool projection loss records", () => {
     );
   }
 
-  const mutateBlock = (tool, mutate) => {
-    const message = JSON.parse(toolBlockPatch(tool));
-    mutate(message.patch.changes[0].value.blocks[0]);
+  const mutateBlock = (tool: unknown, mutate: (block: JsonObject) => void): string => {
+    const message: JsonValue = JSON.parse(toolBlockPatch(tool));
+    mutate(objectAt(message, "patch", "changes", 0, "value", "blocks", 0));
     return JSON.stringify(message);
   };
   assert.equal(
     parseServerMessage(
       mutateBlock(complete, (block) => {
-        block.content_loss.redacted = true;
+        objectAt(block, "content_loss")["redacted"] = true;
       }),
     ).ok,
     false,
@@ -473,7 +470,7 @@ test("protocol v6 requires exact tool projection loss records", () => {
   assert.equal(
     parseServerMessage(
       mutateBlock(complete, (block) => {
-        block.kind = "tool_result";
+        block["kind"] = "tool_result";
       }),
     ).ok,
     false,
@@ -481,7 +478,7 @@ test("protocol v6 requires exact tool projection loss records", () => {
   assert.equal(
     parseServerMessage(
       mutateBlock(complete, (block) => {
-        block.content = "duplicate payload";
+        block["content"] = "duplicate payload";
       }),
     ).ok,
     false,
@@ -489,14 +486,14 @@ test("protocol v6 requires exact tool projection loss records", () => {
   assert.equal(
     parseServerMessage(
       mutateBlock(complete, (block) => {
-        block.kind = "text";
+        block["kind"] = "text";
       }),
     ).ok,
     false,
   );
 
-  const missing = structuredClone(complete);
-  delete missing.payload_loss.redacted;
+  const missing = jsonClone(complete);
+  delete objectAt(missing, "payload_loss")["redacted"];
   assert.equal(parseServerMessage(toolBlockPatch(missing)).ok, false);
   assert.equal(
     parseServerMessage(
@@ -507,7 +504,7 @@ test("protocol v6 requires exact tool projection loss records", () => {
   assert.equal(
     parseServerMessage(
       mutateBlock(complete, (block) => {
-        block.content_truncated = false;
+        block["content_truncated"] = false;
       }),
     ).ok,
     false,
@@ -558,14 +555,14 @@ test("protocol v6 validates expanded status and independent debugger state", () 
   });
   assert.equal(changed.status.python.policy_source, "cli_locked");
 
-  const displaySpellingOnWire = structuredClone(cliLocked);
-  displaySpellingOnWire.status.python.policy_source = "cli-locked";
+  const displaySpellingOnWire = jsonClone(cliLocked);
+  objectAt(displaySpellingOnWire, "status", "python")["policy_source"] = "cli-locked";
   assert.equal(
     parseServerMessage(snapshotMessage(displaySpellingOnWire)).ok,
     false,
   );
 
-  const debuggerValue = {
+  const debuggerValue: DebuggerView = {
     open: true,
     summary: "Actor active · browser mirror ready",
     entries: [
@@ -592,21 +589,23 @@ test("protocol v6 validates expanded status and independent debugger state", () 
     debuggerValue,
   );
 
-  const oldDiagnostics = structuredClone(snapshot);
-  oldDiagnostics.diagnostics = oldDiagnostics.debugger.entries;
-  delete oldDiagnostics.debugger;
+  const oldDiagnostics = jsonClone(snapshot);
+  const oldEntries = objectAt(oldDiagnostics, "debugger")["entries"];
+  assert.ok(oldEntries !== undefined);
+  oldDiagnostics["diagnostics"] = oldEntries;
+  delete oldDiagnostics["debugger"];
   assert.equal(parseServerMessage(snapshotMessage(oldDiagnostics)).ok, false);
 
-  const oldDebuggerPanel = structuredClone(snapshot);
-  oldDebuggerPanel.overlay.active_panel = "debugger";
+  const oldDebuggerPanel = jsonClone(snapshot);
+  objectAt(oldDebuggerPanel, "overlay")["active_panel"] = "debugger";
   assert.equal(parseServerMessage(snapshotMessage(oldDebuggerPanel)).ok, false);
 
-  const malformedLoss = structuredClone(snapshot);
-  malformedLoss.status.stop_reason_loss.truncation = "unknown";
+  const malformedLoss = jsonClone(snapshot);
+  objectAt(malformedLoss, "status", "stop_reason_loss")["truncation"] = "unknown";
   assert.equal(parseServerMessage(snapshotMessage(malformedLoss)).ok, false);
 
-  const missingDisplay = structuredClone(withContainerAndCost);
-  delete missingDisplay.usage.latest_turn.estimated_cost.display;
+  const missingDisplay = jsonClone(withContainerAndCost);
+  delete objectAt(missingDisplay, "usage", "latest_turn", "estimated_cost")["display"];
   assert.equal(parseServerMessage(snapshotMessage(missingDisplay)).ok, false);
 });
 
@@ -624,21 +623,21 @@ test("protocol v6 binds cancellation targets and optional file capability exactl
   };
   assert.equal(parseServerMessage(snapshotMessage(active)).ok, true);
 
-  const missingCancelId = structuredClone(active);
-  delete missingCancelId.activity.cancel_id;
+  const missingCancelId = jsonClone(active);
+  delete objectAt(missingCancelId, "activity")["cancel_id"];
   assert.equal(parseServerMessage(snapshotMessage(missingCancelId)).ok, false);
   const inconsistentCancelId = structuredClone(active);
   inconsistentCancelId.activity.cancellable = false;
   assert.equal(parseServerMessage(snapshotMessage(inconsistentCancelId)).ok, false);
 
-  const capabilities = {
+  const capabilities: ProtocolCapabilities = {
     state_patches: true,
     request_replay: true,
     session_names: true,
     exact_tool_approval: true,
     read_only_files: false,
   };
-  const hello = {
+  const hello: { type: "hello"; hello: IProtocolHello } = {
     type: "hello",
     hello: {
       protocol_version: WFE_PROTOCOL_VERSION,
@@ -653,19 +652,20 @@ test("protocol v6 binds cancellation targets and optional file capability exactl
   assert.equal(parseServerMessage(JSON.stringify(hello)).ok, true);
   hello.hello.capabilities.read_only_files = true;
   assert.equal(parseServerMessage(JSON.stringify(hello)).ok, true);
-  delete hello.hello.capabilities.read_only_files;
-  assert.equal(parseServerMessage(JSON.stringify(hello)).ok, false);
+  const withoutFiles = jsonClone(hello);
+  delete objectAt(withoutFiles, "hello", "capabilities")["read_only_files"];
+  assert.equal(parseServerMessage(JSON.stringify(withoutFiles)).ok, false);
 });
 
 test("protocol v6 accepts only authoritative history recall outcomes", () => {
-  const request = {
+  const request: Extract<ICommandRequest, { type: "select_history_entry" }> = {
     id: "history-request",
     expected_revision: 7,
     type: "select_history_entry",
     session_id: SESSION_ID,
     entry_id: "history-42",
   };
-  const response = {
+  const response: ICommandResponse = {
     id: request.id,
     result: {
       status: "ok",
@@ -705,8 +705,8 @@ test("protocol v6 accepts only authoritative history recall outcomes", () => {
     false,
   );
 
-  const malformed = structuredClone(response);
-  malformed.result.outcome.editor_content = null;
+  const malformed = jsonClone(response);
+  objectAt(malformed, "result", "outcome")["editor_content"] = null;
   assert.equal(
     parseServerMessage(
       JSON.stringify({ type: "command_response", response: malformed }),
@@ -716,14 +716,14 @@ test("protocol v6 accepts only authoritative history recall outcomes", () => {
 });
 
 test("protocol v6 reducer fails closed on v5 hello and snapshot", () => {
-  const capabilities = {
+  const capabilities: ProtocolCapabilities = {
     state_patches: true,
     request_replay: true,
     session_names: true,
     exact_tool_approval: true,
     read_only_files: false,
   };
-  const helloMessage = (protocolVersion, minimumProtocolVersion) =>
+  const helloMessage = (protocolVersion: number, minimumProtocolVersion: number): string =>
     JSON.stringify({
       type: "hello",
       hello: {
@@ -738,7 +738,7 @@ test("protocol v6 reducer fails closed on v5 hello and snapshot", () => {
     });
 
   const legacyHello = parseServerMessage(helloMessage(5, 5));
-  assert.equal(legacyHello.ok, true);
+  assert.ok(legacyHello.ok);
   let remote = beginRemoteConnection(createRemoteState());
   let reduced = reduceServerMessage(remote, legacyHello.message);
   assert.equal(reduced.state.phase, "incompatible");
@@ -747,18 +747,18 @@ test("protocol v6 reducer fails closed on v5 hello and snapshot", () => {
   const currentHello = parseServerMessage(
     helloMessage(WFE_PROTOCOL_VERSION, WFE_PROTOCOL_VERSION),
   );
-  assert.equal(currentHello.ok, true);
+  assert.ok(currentHello.ok);
   remote = beginRemoteConnection(createRemoteState());
   reduced = reduceServerMessage(remote, currentHello.message);
   assert.equal(reduced.state.phase, "awaiting_snapshot");
   assert.equal(reduced.effect, "none");
 
-  const legacySnapshotValue = JSON.parse(snapshotMessage(completeSnapshot()));
-  legacySnapshotValue.snapshot.protocol_version = 5;
+  const legacySnapshotValue: JsonValue = JSON.parse(snapshotMessage(completeSnapshot()));
+  objectAt(legacySnapshotValue, "snapshot")["protocol_version"] = 5;
   const legacySnapshot = parseServerMessage(
     JSON.stringify(legacySnapshotValue),
   );
-  assert.equal(legacySnapshot.ok, true);
+  assert.ok(legacySnapshot.ok);
   reduced = reduceServerMessage(reduced.state, legacySnapshot.message);
   assert.equal(reduced.state.phase, "incompatible");
   assert.equal(reduced.effect, "fatal");
@@ -806,8 +806,13 @@ test("approval panel identity changes with the pending call", () => {
   );
 });
 
+/** Object.entries loses key types; the record's keys are exactly K. */
+function typedEntries<K extends string, V>(record: Record<K, V>): Array<[K, V]> {
+  return Object.entries(record) as Array<[K, V]>;
+}
+
 test("live activity maps exhaustively to the authored TUI spinners", async () => {
-  const expected = {
+  const expected: Record<ActivityKind, ActivitySpinnerKind | null> = {
     idle: null,
     loading_session: null,
     awaiting_approval: null,
@@ -816,7 +821,7 @@ test("live activity maps exhaustively to the authored TUI spinners", async () =>
     processing: "regular",
     managing_lsp: "tool",
   };
-  for (const [kind, spinner] of Object.entries(expected)) {
+  for (const [kind, spinner] of typedEntries(expected)) {
     assert.equal(activitySpinnerKind(kind, true), spinner, kind);
     assert.equal(activitySpinnerKind(kind, false), null, `offline ${kind}`);
   }
@@ -833,25 +838,28 @@ test("live activity maps exhaustively to the authored TUI spinners", async () =>
     "⠆⠄",
   ]);
 
-  for (const [kind, frames] of [
+  const spinnerFrames: ReadonlyArray<readonly [ActivitySpinnerKind, readonly string[]]> = [
     ["regular", SPINNER_FRAMES],
     ["tool", TOOL_SPINNER_FRAMES],
-  ]) {
+  ];
+  for (const [kind, frames] of spinnerFrames) {
     const vnode = activitySpinner(kind);
+    const children = vnode.children ?? [];
     assert.equal(vnode.sel, "span");
-    assert.equal(vnode.data.attrs.class, `activity-spinner activity-spinner-${kind}`);
-    assert.equal(vnode.data.attrs["aria-hidden"], "true");
-    assert.equal(vnode.data.on, undefined);
-    assert.equal(vnode.children.length, frames.length);
-    assert.deepEqual(vnode.children.map(vnodeText), Array.from(frames));
+    assert.equal(attr(vnode, "class"), `activity-spinner activity-spinner-${kind}`);
+    assert.equal(attr(vnode, "aria-hidden"), "true");
+    assert.equal(vnode.data?.on, undefined);
+    assert.equal(children.length, frames.length);
+    assert.deepEqual(children.map(vnodeText), Array.from(frames));
     assert.ok(
-      vnode.children.every(
-        (frame) => frame.data.attrs.class === "activity-spinner-frame",
+      children.every(
+        (frame) => typeof frame === "object" && attr(frame, "class") === "activity-spinner-frame",
       ),
     );
   }
 
-  const styles = await readFile(resolve(stage, "styles.css"), "utf8");
+  // Tests run from <compiled root>/tests/, beside the copied distribution assets.
+  const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
   assert.match(
     styles,
     /\.activity-spinner-regular \.activity-spinner-frame\s*\{[^}]*400ms[^}]*\}/su,
@@ -931,14 +939,14 @@ test("JSON highlighting is attempted only for complete structured payloads", () 
     projectionLoss({ redacted: true }),
   ]) {
     assert.equal(
-      toolBlockUsesJsonHighlighting({ tool: { payload_loss } }),
+      toolBlockUsesJsonHighlighting({ tool: toolView({ payload_loss }) }),
       true,
     );
   }
-  for (const truncation of ["size_limit", "invalid_source"]) {
+  for (const truncation of ["size_limit", "invalid_source"] as const) {
     assert.equal(
       toolBlockUsesJsonHighlighting({
-        tool: { payload_loss: projectionLoss({ truncation }) },
+        tool: toolView({ payload_loss: projectionLoss({ truncation }) }),
       }),
       false,
     );
@@ -946,7 +954,7 @@ test("JSON highlighting is attempted only for complete structured payloads", () 
   assert.equal(
     blockContentIsLossy({
       content_loss: projectionLoss(),
-      tool: { payload_loss: projectionLoss({ redacted: true }) },
+      tool: toolView({ payload_loss: projectionLoss({ redacted: true }) }),
     }),
     true,
   );
@@ -960,7 +968,7 @@ test("JSON highlighting is attempted only for complete structured payloads", () 
   assert.equal(
     blockContentIsLossy({
       content_loss: projectionLoss(),
-      tool: { payload_loss: projectionLoss() },
+      tool: toolView({ payload_loss: projectionLoss() }),
     }),
     false,
   );
@@ -982,23 +990,23 @@ test("JSON highlighting is attempted only for complete structured payloads", () 
   assert.equal(
     markdownBlockUsesJsonHighlighting({
       content_loss: projectionLoss(),
-      tool: {
+      tool: toolView({
         payload_loss: projectionLoss({ truncation: "invalid_source" }),
-      },
+      }),
     }),
     false,
   );
   assert.equal(
     toolResultUsesAutoRendering({
       kind: "tool_result",
-      tool: { kind: "result" },
+      tool: toolView({ kind: "result" }),
     }),
     true,
   );
   assert.equal(
     toolResultUsesAutoRendering({
       kind: "tool_call",
-      tool: { kind: "call" },
+      tool: toolView({ kind: "call" }),
     }),
     false,
   );
@@ -1009,7 +1017,11 @@ test("JSON highlighting is attempted only for complete structured payloads", () 
 });
 
 test("visible chat allocates exact JSON demand before large prose", () => {
-  const toolBlock = (kind, payload, overrides = {}) => ({
+  const toolBlock = (
+    kind: ToolBlockKind,
+    payload: string,
+    overrides: Partial<ToolBlockView> = {},
+  ): RenderBlockView => ({
     kind: kind === "call" ? "tool_call" : "tool_result",
     content: "",
     content_loss: projectionLoss(),
@@ -1020,10 +1032,15 @@ test("visible chat allocates exact JSON demand before large prose", () => {
       payload_loss: projectionLoss(),
       ...overrides,
     },
+    title: null,
+    title_loss: projectionLoss(),
+    success: null,
+    usage: null,
+    estimated_cost: null,
   });
   const tinyPayload = '{"path":"[REDACTED-PATH]"}';
   const tinyDemand = inspectJson(tinyPayload);
-  assert.equal(tinyDemand.status, "valid");
+  assert.ok(tinyDemand.status === "valid");
   const redactedCall = toolBlock("call", tinyPayload, {
     payload_loss: projectionLoss({ redacted: true }),
   });

@@ -1,42 +1,56 @@
+import "./support/app-globals.js";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-
-const stage = process.argv[2];
-if (stage === undefined) {
-  throw new Error("usage: app-layout-status.test.mjs <compiled-web-root>");
-}
-
-globalThis.addEventListener = () => {};
-globalThis.window = globalThis;
-
-const moduleUrl = (path) => pathToFileURL(resolve(stage, path)).href;
-const { adjustedAnchorScrollTop } = await import(
-  moduleUrl("src/app/chat-anchor.js")
-);
-const { chatBlockAnchor, renderChatView } = await import(
-  moduleUrl("src/app/chat-view.js")
-);
-const { renderDebugger } = await import(moduleUrl("src/app/debugger.js"));
-const { rebaseChatWindowStart } = await import(
-  moduleUrl("src/app/helpers.js")
-);
-const { handleGlobalKeyDown } = await import(
-  moduleUrl("src/app/keyboard.js")
-);
-const { renderPanel } = await import(moduleUrl("src/app/panels.js"));
-const {
+import { adjustedAnchorScrollTop } from "../src/app/chat-anchor.js";
+import { chatBlockAnchor, renderChatView } from "../src/app/chat-view.js";
+import { renderDebugger } from "../src/app/debugger.js";
+import { rebaseChatWindowStart } from "../src/app/helpers.js";
+import { handleGlobalKeyDown } from "../src/app/keyboard.js";
+import { renderPanel } from "../src/app/panels.js";
+import type {
+  ChatViewActions,
+  ChatViewState,
+  KeyboardContext,
+  KeyboardState,
+  PanelActions,
+} from "../src/app/state.js";
+import {
   applicationStatusFields,
   pythonStatusLabel,
   transportStatusFields,
   usageBreakdown,
-} = await import(moduleUrl("src/app/status.js"));
+} from "../src/app/status.js";
+import type {
+  AccountingTotalsView,
+  ProjectionLossView,
+  RenderBlockView,
+  UsageView,
+  WebAppSnapshot,
+} from "../src/generated/contracts.js";
+import { noopChatViewActions } from "./support/app-fixtures.js";
+import {
+  asKeyboardEvent,
+  fakeKeyboardEvent,
+  type Mutable,
+} from "./support/dom-fakes.js";
+import {
+  attr,
+  classAttr,
+  find,
+  fire,
+  listener,
+  propValue,
+  vnodeText,
+  visit,
+} from "./support/vnode.js";
 
 const SESSION_ID = "11111111-2222-4333-8444-555555555555";
 
-function loss(overrides = {}) {
+/** A snapshot carrying an extra unsafe field that must never be rendered. */
+type SnapshotFixture = WebAppSnapshot & { current_dir: string };
+
+function loss(overrides: Partial<ProjectionLossView> = {}): ProjectionLossView {
   return {
     filtered: false,
     redacted: false,
@@ -45,7 +59,7 @@ function loss(overrides = {}) {
   };
 }
 
-function usage(overrides = {}) {
+function usage(overrides: Partial<UsageView> = {}): UsageView {
   return {
     uncached_input_tokens: "11",
     cache_read_input_tokens: "22",
@@ -58,7 +72,7 @@ function usage(overrides = {}) {
   };
 }
 
-function accounting(display, nanos) {
+function accounting(display: string, nanos: string): AccountingTotalsView {
   return {
     usage: usage(),
     estimated_cost: {
@@ -79,7 +93,21 @@ function accounting(display, nanos) {
   };
 }
 
-function snapshotFixture() {
+function textBlock(): RenderBlockView {
+  return {
+    kind: "text",
+    content: "",
+    content_loss: loss(),
+    tool: null,
+    title: null,
+    title_loss: loss(),
+    success: null,
+    usage: null,
+    estimated_cost: null,
+  };
+}
+
+function snapshotFixture(): SnapshotFixture {
   return {
     session: {
       session_id: SESSION_ID,
@@ -91,6 +119,7 @@ function snapshotFixture() {
       kind: "idle",
       fully_idle: true,
       cancellable: false,
+      cancel_id: null,
       progress_percent: null,
     },
     pending_approval: null,
@@ -197,7 +226,7 @@ function snapshotFixture() {
   };
 }
 
-function transportState(snapshot = snapshotFixture()) {
+function transportState(snapshot: WebAppSnapshot = snapshotFixture()): Mutable<ChatViewState> {
   return {
     snapshot,
     live: true,
@@ -215,58 +244,24 @@ function transportState(snapshot = snapshotFixture()) {
     draft: "",
     chatStart: 0,
     toast: null,
+    filesPane: null,
     overlay: null,
   };
 }
 
-function vnodeText(vnode) {
-  if (typeof vnode === "string") {
-    return vnode;
-  }
-  if (typeof vnode?.text === "string") {
-    return vnode.text;
-  }
-  return Array.isArray(vnode?.children)
-    ? vnode.children.map(vnodeText).join("")
-    : "";
+interface ChatFixture {
+  readonly state: Mutable<ChatViewState>;
+  readonly actions: ChatViewActions;
+  readonly toggles: string[];
 }
 
-function walk(vnode, visit) {
-  if (vnode === null || typeof vnode !== "object") {
-    return;
-  }
-  visit(vnode);
-  for (const child of vnode.children ?? []) {
-    walk(child, visit);
-  }
-}
-
-function findVNode(vnode, predicate) {
-  let found = null;
-  walk(vnode, (candidate) => {
-    if (found === null && predicate(candidate)) {
-      found = candidate;
-    }
-  });
-  return found;
-}
-
-function chatContext(debuggerWide) {
-  const toggles = [];
+function chatContext(debuggerWide: boolean): ChatFixture {
+  const toggles: string[] = [];
   return {
     state: { ...transportState(), debuggerWide },
-    actions: {
-      openPalette: () => {},
-      invokeCommand: () => {},
-      openPanel: () => {},
-      updateDraft: () => {},
-      submitPrompt: () => {},
-      stop: () => {},
+    actions: noopChatViewActions({
       toggleDebugger: () => toggles.push("toggle"),
-      onChatKeyDown: () => {},
-      onChatManualIntent: () => {},
-      onChatScroll: () => {},
-    },
+    }),
     toggles,
   };
 }
@@ -308,10 +303,9 @@ test("application status exposes every safe field and only formatted costs", () 
   ]) {
     assert.doesNotMatch(rendered, new RegExp(forbidden, "u"));
   }
-  assert.equal(
-    usageBreakdown(snapshot.status.request_usage).endsWith("*"),
-    true,
-  );
+  const requestUsage = snapshot.status.request_usage;
+  assert.ok(requestUsage !== null);
+  assert.equal(usageBreakdown(requestUsage).endsWith("*"), true);
   assert.match(pythonStatusLabel(snapshot.status.python), /0 grant\(s\)/u);
   const cliLocked = structuredClone(snapshot.status.python);
   cliLocked.policy_source = "cli_locked";
@@ -323,13 +317,13 @@ test("transport row reports retry pending and mirror state separately", () => {
   state.live = false;
   state.remoteReason = "Waiting for exact snapshot";
   state.transportStatus = {
-    phase: "retrying",
+    phase: "reconnecting",
     label: "Connection interrupted",
     attempt: 4,
     retryInMilliseconds: 2_400,
   };
   const rendered = JSON.stringify(transportStatusFields(state));
-  assert.match(rendered, /retrying: Connection interrupted/u);
+  assert.match(rendered, /reconnecting: Connection interrupted/u);
   assert.match(rendered, /not synchronized/u);
   assert.match(rendered, /3s \(attempt 4\)/u);
   assert.match(rendered, /"Pending","value":"3"/u);
@@ -340,43 +334,49 @@ test("transport row reports retry pending and mirror state separately", () => {
 test("debugger renders as a wide aside or narrow focus-trapped drawer", () => {
   const wideContext = chatContext(true);
   const wide = renderDebugger(wideContext);
+  assert.ok(wide);
   assert.equal(wide.sel, "aside");
-  assert.equal(wide.data.attrs.class, "debugger-pane");
-  assert.equal(wide.data.attrs.role, undefined);
+  assert.equal(attr(wide, "class"), "debugger-pane");
+  assert.equal(attr(wide, "role"), undefined);
   assert.match(vnodeText(wide), /3 older diagnostic event\(s\)/u);
   assert.match(vnodeText(wide), /Hostile <img src=x onerror=alert\(1\)> remains text/u);
-  walk(wide, (vnode) => assert.equal(vnode.data?.props?.innerHTML, undefined));
+  visit(wide, (vnode) => assert.equal(propValue(vnode, "innerHTML"), undefined));
 
   const narrowContext = chatContext(false);
   const narrow = renderDebugger(narrowContext);
-  assert.equal(narrow.data.attrs.class, "debugger-drawer-layer");
-  const drawer = findVNode(
+  assert.ok(narrow);
+  assert.equal(attr(narrow, "class"), "debugger-drawer-layer");
+  const drawer = find(
     narrow,
-    (vnode) => vnode.data?.attrs?.class === "debugger-drawer",
+    (vnode) => attr(vnode, "class") === "debugger-drawer",
   );
-  assert.equal(drawer.data.attrs.role, "dialog");
-  assert.equal(drawer.data.attrs["aria-modal"], "true");
-  assert.equal(drawer.data.attrs["data-focus-trap"], "true");
-  const close = findVNode(
+  assert.ok(drawer);
+  assert.equal(attr(drawer, "role"), "dialog");
+  assert.equal(attr(drawer, "aria-modal"), "true");
+  assert.equal(attr(drawer, "data-focus-trap"), "true");
+  const close = find(
     narrow,
-    (vnode) => vnode.data?.attrs?.class?.includes("debugger-close") === true,
+    (vnode) => classAttr(vnode).includes("debugger-close"),
   );
-  assert.equal(close.data.attrs["data-autofocus"], "true");
-  close.data.on.click();
+  assert.ok(close);
+  assert.equal(attr(close, "data-autofocus"), "true");
+  fire(close, "click");
   assert.deepEqual(narrowContext.toggles, ["toggle"]);
 
   const coveredContext = chatContext(false);
   coveredContext.state.activePanel = "tool_approval";
   const covered = renderDebugger(coveredContext);
-  const coveredDrawer = findVNode(
+  assert.ok(covered);
+  const coveredDrawer = find(
     covered,
-    (vnode) => vnode.data?.attrs?.class === "debugger-drawer",
+    (vnode) => attr(vnode, "class") === "debugger-drawer",
   );
-  assert.match(covered.data.attrs.class, /is-covered/u);
-  assert.equal(covered.data.attrs["aria-hidden"], "true");
-  assert.equal(covered.data.attrs.inert, "");
-  assert.equal(coveredDrawer.data.attrs["aria-modal"], undefined);
-  assert.equal(coveredDrawer.data.attrs["data-focus-trap"], undefined);
+  assert.ok(coveredDrawer);
+  assert.match(classAttr(covered), /is-covered/u);
+  assert.equal(attr(covered, "aria-hidden"), "true");
+  assert.equal(attr(covered, "inert"), "");
+  assert.equal(attr(coveredDrawer, "aria-modal"), undefined);
+  assert.equal(attr(coveredDrawer, "data-focus-trap"), undefined);
 
   const dismissedContext = chatContext(false);
   dismissedContext.state.debuggerDrawerDismissed = true;
@@ -386,41 +386,41 @@ test("debugger renders as a wide aside or narrow focus-trapped drawer", () => {
 test("root layout spans status rows and keeps the debugger outside overlays", () => {
   const context = chatContext(true);
   const view = renderChatView(context);
-  assert.match(view.data.attrs.class, /debugger-wide/u);
-  assert.match(view.data.attrs.class, /debugger-open/u);
-  const workspace = findVNode(
+  assert.match(classAttr(view), /debugger-wide/u);
+  assert.match(classAttr(view), /debugger-open/u);
+  const workspace = find(
     view,
-    (vnode) => vnode.data?.attrs?.class?.startsWith("workspace ") === true,
+    (vnode) => classAttr(vnode).startsWith("workspace "),
   );
   assert.ok(workspace);
   assert.ok(
-    findVNode(
+    find(
       workspace,
-      (vnode) => vnode.data?.attrs?.class === "conversation-column",
+      (vnode) => attr(vnode, "class") === "conversation-column",
     ),
   );
   assert.ok(
-    findVNode(workspace, (vnode) => vnode.data?.attrs?.class === "debugger-pane"),
+    find(workspace, (vnode) => attr(vnode, "class") === "debugger-pane"),
   );
   assert.ok(
-    findVNode(view, (vnode) => vnode.data?.attrs?.class === "status-level"),
+    find(view, (vnode) => attr(vnode, "class") === "status-level"),
   );
   assert.ok(
-    findVNode(
+    find(
       view,
-      (vnode) => vnode.data?.attrs?.class === "footer-level transport-level",
+      (vnode) => attr(vnode, "class") === "footer-level transport-level",
     ),
   );
 
   const dismissed = chatContext(false);
   dismissed.state.debuggerDrawerDismissed = true;
   const dismissedView = renderChatView(dismissed);
-  assert.doesNotMatch(dismissedView.data.attrs.class, /debugger-open/u);
-  assert.equal(dismissedView.data.attrs["data-debugger"], "closed");
+  assert.doesNotMatch(classAttr(dismissedView), /debugger-open/u);
+  assert.equal(attr(dismissedView, "data-debugger"), "closed");
   assert.equal(
-    findVNode(
+    find(
       dismissedView,
-      (vnode) => vnode.data?.attrs?.class === "debugger-drawer",
+      (vnode) => attr(vnode, "class") === "debugger-drawer",
     ),
     null,
   );
@@ -437,13 +437,13 @@ test("chat anchors remain stable across server truncation and reflow", () => {
 
   const previous = snapshotFixture();
   previous.blocks = {
-    blocks: Array.from({ length: 240 }, () => ({})),
+    blocks: Array.from({ length: 240 }, textBlock),
     omitted_before: 20,
     truncated: true,
   };
   const advanced = snapshotFixture();
   advanced.blocks = {
-    blocks: Array.from({ length: 210 }, () => ({})),
+    blocks: Array.from({ length: 210 }, textBlock),
     omitted_before: 50,
     truncated: true,
   };
@@ -451,7 +451,7 @@ test("chat anchors remain stable across server truncation and reflow", () => {
 
   const recovered = snapshotFixture();
   recovered.blocks = {
-    blocks: Array.from({ length: 300 }, () => ({})),
+    blocks: Array.from({ length: 300 }, textBlock),
     omitted_before: 10,
     truncated: false,
   };
@@ -459,23 +459,13 @@ test("chat anchors remain stable across server truncation and reflow", () => {
   assert.equal(rebaseChatWindowStart(239, previous, advanced), 209);
 });
 
-function keyboardEvent(key) {
-  return {
-    key,
-    ctrlKey: false,
-    altKey: false,
-    shiftKey: false,
-    metaKey: false,
-    target: {},
-    preventDefault() {
-      this.defaultPrevented = true;
-    },
-    defaultPrevented: false,
-  };
+interface KeyboardFixture {
+  readonly context: KeyboardContext;
+  readonly calls: string[];
 }
 
-function keyboardContext(overrides = {}) {
-  const calls = [];
+function keyboardContext(overrides: Partial<KeyboardState> = {}): KeyboardFixture {
+  const calls: string[] = [];
   return {
     context: {
       state: {
@@ -504,83 +494,134 @@ test("Escape prioritizes protected overlays then narrow debugger then Stop", () 
     activePanel: "tool_approval",
     debuggerDrawerOpen: true,
   });
-  handleGlobalKeyDown(keyboardEvent("Escape"), fixture.context);
+  handleGlobalKeyDown(asKeyboardEvent(fakeKeyboardEvent("Escape")), fixture.context);
   assert.deepEqual(fixture.calls, ["overlay"]);
 
   fixture = keyboardContext({ debuggerDrawerOpen: true });
-  handleGlobalKeyDown(keyboardEvent("Escape"), fixture.context);
+  handleGlobalKeyDown(asKeyboardEvent(fakeKeyboardEvent("Escape")), fixture.context);
   assert.deepEqual(fixture.calls, ["debugger"]);
 
   const snapshot = snapshotFixture();
   snapshot.activity.cancellable = true;
   fixture = keyboardContext({ snapshot });
-  handleGlobalKeyDown(keyboardEvent("Escape"), fixture.context);
+  handleGlobalKeyDown(asKeyboardEvent(fakeKeyboardEvent("Escape")), fixture.context);
   assert.deepEqual(fixture.calls, ["stop"]);
 
   fixture = keyboardContext();
-  handleGlobalKeyDown(keyboardEvent("d"), fixture.context);
+  handleGlobalKeyDown(asKeyboardEvent(fakeKeyboardEvent("d")), fixture.context);
   assert.deepEqual(fixture.calls, []);
 });
 
+interface FakeFocusable {
+  readonly name: string;
+  readonly offsetParent: object;
+  focus(): void;
+}
+
+interface FakeFocusTrap {
+  querySelectorAll(): FakeFocusable[];
+  contains(element: unknown): boolean;
+}
+
+interface FakeDocument {
+  activeElement: FakeFocusable;
+  querySelectorAll(): FakeFocusTrap[];
+}
+
 test("Tab remains inside the topmost focus trap", () => {
-  const originalDocument = globalThis.document;
-  const focused = [];
-  const makeFocusable = (name) => ({
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+  const focused: string[] = [];
+  const makeFocusable = (name: string): FakeFocusable => ({
     name,
     offsetParent: {},
     focus() {
       focused.push(name);
-      globalThis.document.activeElement = this;
+      fakeDocument.activeElement = this;
     },
   });
   const underlyingFirst = makeFocusable("underlying-first");
   const underlyingLast = makeFocusable("underlying-last");
   const topFirst = makeFocusable("top-first");
   const topLast = makeFocusable("top-last");
-  const underlyingElements = new Set([underlyingFirst, underlyingLast]);
-  const topElements = new Set([topFirst, topLast]);
-  const underlying = {
+  const underlyingElements = new Set<unknown>([underlyingFirst, underlyingLast]);
+  const topElements = new Set<unknown>([topFirst, topLast]);
+  const underlying: FakeFocusTrap = {
     querySelectorAll: () => [underlyingFirst, underlyingLast],
     contains: (element) => underlyingElements.has(element),
   };
-  const top = {
+  const top: FakeFocusTrap = {
     querySelectorAll: () => [topFirst, topLast],
     contains: (element) => topElements.has(element),
   };
-  globalThis.document = {
+  const fakeDocument: FakeDocument = {
     activeElement: underlyingFirst,
     querySelectorAll: () => [underlying, top],
   };
+  // Only the members used by the focus trap exist; Node has no Document.
+  Reflect.set(globalThis, "document", fakeDocument);
   try {
     const fixture = keyboardContext({
       activePanel: "tool_approval",
       debuggerDrawerOpen: true,
     });
-    const enterTop = keyboardEvent("Tab");
-    handleGlobalKeyDown(enterTop, fixture.context);
+    const enterTop = fakeKeyboardEvent("Tab");
+    handleGlobalKeyDown(asKeyboardEvent(enterTop), fixture.context);
     assert.equal(enterTop.defaultPrevented, true);
     assert.deepEqual(focused, ["top-first"]);
 
-    globalThis.document.activeElement = topLast;
-    const wrapForward = keyboardEvent("Tab");
-    handleGlobalKeyDown(wrapForward, fixture.context);
+    fakeDocument.activeElement = topLast;
+    const wrapForward = fakeKeyboardEvent("Tab");
+    handleGlobalKeyDown(asKeyboardEvent(wrapForward), fixture.context);
     assert.equal(wrapForward.defaultPrevented, true);
     assert.deepEqual(focused, ["top-first", "top-first"]);
 
-    globalThis.document.activeElement = topFirst;
-    const wrapBackward = keyboardEvent("Tab");
+    fakeDocument.activeElement = topFirst;
+    const wrapBackward = fakeKeyboardEvent("Tab");
     wrapBackward.shiftKey = true;
-    handleGlobalKeyDown(wrapBackward, fixture.context);
+    handleGlobalKeyDown(asKeyboardEvent(wrapBackward), fixture.context);
     assert.equal(wrapBackward.defaultPrevented, true);
     assert.deepEqual(focused, ["top-first", "top-first", "top-last"]);
   } finally {
     if (originalDocument === undefined) {
-      delete globalThis.document;
+      Reflect.deleteProperty(globalThis, "document");
     } else {
-      globalThis.document = originalDocument;
+      Object.defineProperty(globalThis, "document", originalDocument);
     }
   }
 });
+
+function noopPanelActions(overrides: Partial<PanelActions> = {}): PanelActions {
+  return {
+    close: () => {},
+    invokeCommand: () => {},
+    send: () => {},
+    sendConfirmable: () => {},
+    setPaletteQuery: () => {},
+    clampPaletteSelection: () => {},
+    onPaletteKeyDown: () => {},
+    selectHistoryEntry: () => {},
+    selectSystemPrompt: () => {},
+    submitSystemPrompt: () => {},
+    updateEditorName: () => {},
+    updateEditorContent: () => {},
+    createSystemPrompt: () => {},
+    updateSessionName: () => {},
+    submitSessionName: () => {},
+    cancelApprovalConfirmation: () => {},
+    decideApproval: () => {},
+    confirmHiddenApproval: () => {},
+    questionDraft: () => ({ selected: new Set<string>(), other: "" }),
+    toggleQuestionOption: () => {},
+    updateQuestionOther: () => {},
+    answersComplete: () => false,
+    submitAnswers: () => {},
+    cancelQuestion: () => {},
+    cancelEditorDiscard: () => {},
+    confirmationMatches: () => false,
+    confirm: () => {},
+    ...overrides,
+  };
+}
 
 test("palette autofocus belongs to the noneditable command surface", () => {
   const snapshot = snapshotFixture();
@@ -598,26 +639,27 @@ test("palette autofocus belongs to the noneditable command surface", () => {
       approvalConfirmation: null,
       revision: 0,
     },
-    actions: {
-      close: () => {},
-      invokeCommand: () => {},
-      setPaletteQuery: () => {},
-      clampPaletteSelection: () => {},
-      onPaletteKeyDown: () => {},
-    },
+    actions: noopPanelActions(),
   });
-  const search = findVNode(panel, (vnode) => vnode.data?.attrs?.id === "palette-search");
-  const surface = findVNode(panel, (vnode) => vnode.data?.attrs?.id === "palette-list");
-  assert.equal(search.data.attrs["data-autofocus"], undefined);
-  assert.equal(search.data.on.keydown, undefined);
-  assert.equal(surface.data.attrs["data-autofocus"], "true");
-  assert.equal(surface.data.attrs.tabindex, "0");
-  assert.equal(typeof surface.data.on.keydown, "function");
-  assert.ok(surface.children.every((option) => option.sel === "li"));
+  const search = find(panel, (vnode) => attr(vnode, "id") === "palette-search");
+  const surface = find(panel, (vnode) => attr(vnode, "id") === "palette-list");
+  assert.ok(search);
+  assert.ok(surface);
+  assert.equal(attr(search, "data-autofocus"), undefined);
+  assert.equal(listener(search, "keydown"), undefined);
+  assert.equal(attr(surface, "data-autofocus"), "true");
+  assert.equal(attr(surface, "tabindex"), "0");
+  assert.equal(typeof listener(surface, "keydown"), "function");
+  assert.ok(
+    (surface.children ?? []).every(
+      (option) => typeof option === "object" && option.sel === "li",
+    ),
+  );
 });
 
 test("CSS keeps four viewport rows, complete docks, and independent debugger scroll", async () => {
-  const styles = await readFile(resolve(stage, "styles.css"), "utf8");
+  // Tests run from <compiled root>/tests/, beside the copied distribution assets.
+  const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
   assert.match(
     styles,
     /\.app-shell\s*\{[^}]*grid-template-rows: auto minmax\(0, 1fr\) auto auto;/su,

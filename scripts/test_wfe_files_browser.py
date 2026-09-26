@@ -2,7 +2,8 @@
 """Exercise the real WFE with a disposable HTTPS process and Chrome profile.
 
 No provider prompts, existing profiles, private configuration, or running user
-processes are used. Chrome must already be available; this script installs nothing.
+processes are used. Chrome and the global TypeScript compiler (tsc) must already be
+available; this script installs nothing.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from pathlib import Path
 import pty
 import re
 import select
+import shutil
 import signal
 import socket
 import subprocess
@@ -23,7 +25,22 @@ import time
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-DRIVER = ROOT / "scripts/wfe_files_browser.mjs"
+TEST_TSCONFIG = ROOT / "web/tests/tsconfig.json"
+# Emitted path of web/tests/tools/wfe-files-browser.ts relative to the compiler outDir.
+DRIVER_OUTPUT = Path("tests/tools/wfe-files-browser.js")
+
+
+def compile_driver(destination: Path) -> Path:
+    """Type-check and compile the TypeScript CDP driver into a disposable directory."""
+    tsc = shutil.which("tsc")
+    if tsc is None:
+        raise RuntimeError("global tsc is required to compile the browser driver")
+    subprocess.run([tsc, "--project", str(TEST_TSCONFIG), "--outDir", str(destination),
+                    "--pretty", "false"], check=True)
+    driver = destination / DRIVER_OUTPUT
+    if not driver.is_file():
+        raise RuntimeError("browser driver compilation produced no output")
+    return driver
 
 
 def wait_process(pid: int, seconds: float) -> bool:
@@ -108,7 +125,8 @@ def launch(binary: Path, workspace: Path, home: Path, enabled: bool, tokenless: 
         raise
 
 
-def run_case(binary: Path, browser: Path, case: Path, enabled: bool, tokenless: bool) -> dict:
+def run_case(binary: Path, browser: Path, driver_script: Path, case: Path, enabled: bool,
+             tokenless: bool) -> dict:
     workspace = case / "workspace"
     home = case / "home"
     workspace.mkdir(parents=True)
@@ -142,7 +160,8 @@ def run_case(binary: Path, browser: Path, case: Path, enabled: bool, tokenless: 
                          "downloads": str(downloads), "origin": origin, "url": url,
                          "enabled": enabled, "screenshot": str(case / "browser.png"),
                          "source": source, "hostile": hostile}
-        driver = subprocess.Popen(["node", str(DRIVER)], stdin=subprocess.PIPE,
+        driver = subprocess.Popen(["node", "--experimental-default-type=module", str(driver_script)],
+                                  stdin=subprocess.PIPE,
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                   text=True, start_new_session=True)
         try:
@@ -189,9 +208,10 @@ def main() -> None:
     browser = args.browser.resolve(strict=True)
     evidence = Path(tempfile.mkdtemp(prefix="lethetic-wfe-files-acceptance-"))
     print(f"Browser evidence: {evidence}", flush=True)
+    driver_script = compile_driver(evidence / "driver")
     reports = []
     for name, enabled, tokenless in [("disabled", False, False), ("authenticated", True, False), ("tokenless", True, True)]:
-        reports.append(run_case(binary, browser, evidence / name, enabled, tokenless))
+        reports.append(run_case(binary, browser, driver_script, evidence / name, enabled, tokenless))
         print(f"Passed: {name}", flush=True)
     (evidence / "result.json").write_text(json.dumps(reports, indent=2) + "\n", encoding="utf-8")
     print("Real browser file acceptance passed; no provider prompts sent.", flush=True)

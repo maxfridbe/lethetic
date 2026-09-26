@@ -1,30 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-
-const stage = process.argv[2];
-if (stage === undefined) {
-  throw new Error("usage: chat-follow.test.mjs <compiled-web-root>");
-}
-
-const followUrl = pathToFileURL(resolve(stage, "src/chat-follow.js"));
-const {
+import {
   CHAT_BOTTOM_TOLERANCE_PX,
   CHAT_FOLLOW_HOLD_MILLISECONDS,
   ChatFollowController,
   isAtChatBottom,
-} = await import(followUrl.href);
+  type ChatFollowScheduler,
+  type ChatScrollMetrics,
+} from "../src/chat-follow.js";
 
-class FakeScheduler {
+interface FakeTimer {
+  readonly at: number;
+  readonly callback: () => void;
+}
+
+class FakeScheduler implements ChatFollowScheduler {
   nowMilliseconds = 0;
   nextHandle = 1;
-  timers = new Map();
-  frames = new Map();
+  readonly timers = new Map<number, FakeTimer>();
+  readonly frames = new Map<number, () => void>();
 
-  now = () => this.nowMilliseconds;
+  now = (): number => this.nowMilliseconds;
 
-  setTimeout = (callback, delayMilliseconds) => {
+  setTimeout = (callback: () => void, delayMilliseconds: number): number => {
     const handle = this.nextHandle++;
     this.timers.set(handle, {
       at: this.nowMilliseconds + Math.max(0, delayMilliseconds),
@@ -33,21 +31,21 @@ class FakeScheduler {
     return handle;
   };
 
-  clearTimeout = (handle) => {
+  clearTimeout = (handle: number): void => {
     this.timers.delete(handle);
   };
 
-  requestAnimationFrame = (callback) => {
+  requestAnimationFrame = (callback: () => void): number => {
     const handle = this.nextHandle++;
     this.frames.set(handle, callback);
     return handle;
   };
 
-  cancelAnimationFrame = (handle) => {
+  cancelAnimationFrame = (handle: number): void => {
     this.frames.delete(handle);
   };
 
-  advance(milliseconds) {
+  advance(milliseconds: number): void {
     const target = this.nowMilliseconds + milliseconds;
     while (true) {
       const next = Array.from(this.timers.entries())
@@ -64,7 +62,7 @@ class FakeScheduler {
     this.nowMilliseconds = target;
   }
 
-  flushAnimationFrame() {
+  flushAnimationFrame(): void {
     const frames = Array.from(this.frames.entries()).sort(
       (left, right) => left[0] - right[0],
     );
@@ -75,7 +73,11 @@ class FakeScheduler {
   }
 }
 
-function metrics(scrollTop, scrollHeight = 1_000, clientHeight = 200) {
+function metrics(
+  scrollTop: number,
+  scrollHeight = 1_000,
+  clientHeight = 200,
+): ChatScrollMetrics {
   return { scrollTop, scrollHeight, clientHeight };
 }
 
@@ -110,7 +112,7 @@ test("manual activity replaces one five-second inactivity deadline", () => {
   assert.equal(controller.remainingManualHoldMilliseconds, 5_000);
   assert.equal(scheduler.timers.size, 1);
 
-  let preservedTarget = null;
+  let preservedTarget: number | null = null;
   controller.requestPreservedPosition((target) => {
     preservedTarget = target;
     return 470;
@@ -191,7 +193,7 @@ test("expiry resumes without a state patch and ordinary reconnect work preserves
 test("owned scroll events are suppressed and positioning is coalesced", () => {
   const scheduler = new FakeScheduler();
   const controller = new ChatFollowController(scheduler, () => {});
-  const applied = [];
+  const applied: string[] = [];
 
   controller.requestBottomPosition(() => {
     applied.push("stale");
@@ -215,8 +217,7 @@ test("owned scroll events are suppressed and positioning is coalesced", () => {
 test("new input invalidates a queued bottom write", () => {
   const scheduler = new FakeScheduler();
   let bottomWrites = 0;
-  let controller;
-  controller = new ChatFollowController(scheduler, () => {
+  const controller: ChatFollowController = new ChatFollowController(scheduler, () => {
     controller.requestBottomPosition(() => {
       bottomWrites += 1;
       return 800;

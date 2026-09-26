@@ -253,7 +253,7 @@ Validate contracts, sources, vendored hashes, imports, compiler version, and che
 ./build-web.sh --check
 ```
 
-The script is working-directory independent, requires global TypeScript exactly 7.0.2, rejects a project-local compiler, and runs Rust contract generation with Cargo locked and offline. Normal Cargo builds embed the checked-in `web/dist`; they do not run npm, download browser assets, or silently regenerate the SPA.
+Both modes also compile the strict TypeScript tests in `web/tests` (Node `node:test`, no packages; ambient Node declarations in `web/tests/node-env.d.ts`) into a temporary directory outside `web/dist` and run them against the staged build. The script is working-directory independent, requires global TypeScript exactly 7.0.2, rejects a project-local compiler, and runs Rust contract generation with Cargo locked and offline. Normal Cargo builds embed the checked-in `web/dist`; they do not run npm, download browser assets, or silently regenerate the SPA.
 
 Vendored components:
 
@@ -271,7 +271,7 @@ cargo build --locked --offline --bin lethetic
 python3 scripts/test_wfe_files_browser.py --browser /path/to/chrome
 ```
 
-The Python/Node-standard-library driver uses a new workspace, private home and browser profile, no model prompts, and no existing WFE/controller token. It exercises disabled/enabled and tokenless modes, actual Monaco read-only rendering, hostile text, downloads/ZIP, Copy Path, CSP, module workers, layout and disposal. It installs no dependencies and leaves the user's running sessions alone.
+The script compiles its TypeScript CDP driver (`web/tests/tools/wfe-files-browser.ts`) with the global `tsc` into the evidence directory. The Python/Node-standard-library driver uses a new workspace, private home and browser profile, no model prompts, and no existing WFE/controller token. It exercises disabled/enabled and tokenless modes, actual Monaco read-only rendering, hostile text, downloads/ZIP, Copy Path, CSP, module workers, layout and disposal. It installs no dependencies and leaves the user's running sessions alone.
 
 ## Rendering and privacy
 

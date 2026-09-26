@@ -24,15 +24,8 @@ SRC = WEB / "src"
 CONFIG = WEB / "tsconfig.json"
 ASSET_LIST = SCRIPT.with_name("dist-assets.json")
 SUPPORT_FILES = {
-    "app-layout-status.test.mjs",
-    "approval-flow.test.mjs",
-    "chat-follow.test.mjs",
     "check-pipeline.sh",
     "dist-assets.json",
-    "files-pane.test.mjs",
-    "json-rendering.test.mjs",
-    "markdown-rendering.test.mjs",
-    "transport-auth.test.mjs",
     "verify-web-assets.py",
 }
 HEX_SHA256 = re.compile(r"[0-9a-f]{64}\Z")

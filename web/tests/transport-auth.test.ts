@@ -1,28 +1,58 @@
+import { TEST_ORIGIN as origin } from "./support/transport-globals.js";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import type { ICommandRequest } from "../src/generated/contracts.js";
+import { classifyBootstrapFragment } from "../src/safety.js";
+import {
+  BrowserTransport,
+  type BrowserTransportEvents,
+  type TransportStatus,
+} from "../src/transport.js";
+import { nth } from "./support/collections.js";
+import { isRecord } from "./support/vnode.js";
 
-const stage = process.argv[2];
-if (stage === undefined) {
-  throw new Error("usage: transport-auth.test.mjs <compiled-web-root>");
-}
-
-const origin = "https://brainiac:11223";
 const firstProof = `lethetic-wfe-v1.${"A".repeat(43)}`;
 const secondProof = `lethetic-wfe-v1.${"B".repeat(43)}`;
-Object.defineProperty(globalThis, "location", {
-  configurable: true,
-  value: { origin, protocol: "https:" },
-});
-globalThis.addEventListener = () => {};
 
-const transportUrl = pathToFileURL(resolve(stage, "src/transport.js"));
-const safetyUrl = pathToFileURL(resolve(stage, "src/safety.js"));
-const { BrowserTransport } = await import(transportUrl.href);
-const { classifyBootstrapFragment } = await import(safetyUrl.href);
+type FetchInput = RequestInfo | URL;
 
-function events(overrides = {}) {
+/** The subset of a fetch Response that the transport reads. */
+interface FakeResponse {
+  readonly ok: boolean;
+  readonly status: number;
+  readonly headers?: Headers;
+  readonly body?: { cancel(): Promise<void> } | null;
+}
+
+interface FetchCall {
+  readonly input: FetchInput;
+  readonly init: RequestInit | undefined;
+}
+
+type FakeFetch = (input: FetchInput, init?: RequestInit) => Promise<FakeResponse>;
+
+/** Install a fetch double; its partial responses are not real Response objects. */
+function installFetch(fetch: FakeFetch): void {
+  Reflect.set(globalThis, "fetch", fetch);
+}
+
+function requestJson(init: RequestInit | undefined): unknown {
+  const body = init?.body;
+  assert.ok(typeof body === "string", "request body is not a string");
+  return JSON.parse(body);
+}
+
+function sessionResponse(proof: string): FakeResponse {
+  return {
+    ok: true,
+    status: 204,
+    headers: new Headers({
+      "X-Lethetic-WebSocket-Protocol": proof,
+    }),
+  };
+}
+
+function events(overrides: Partial<BrowserTransportEvents> = {}): BrowserTransportEvents {
   return {
     socketOpened() {},
     authenticationEpochChanged() {},
@@ -34,51 +64,64 @@ function events(overrides = {}) {
   };
 }
 
-function hasFileErrorCode(code) {
-  return (error) => error?.name === "FileServiceError" && error.code === code;
+function hasFileErrorCode(code: string): (error: unknown) => boolean {
+  return (error) =>
+    isRecord(error) && error["name"] === "FileServiceError" && error["code"] === code;
+}
+
+interface FakeTimer {
+  readonly callback: () => void;
+  readonly deadline: number;
 }
 
 class FakeTimers {
   #nextId = 1;
   #now = 0;
-  #timers = new Map();
+  readonly #timers = new Map<number, FakeTimer>();
 
-  setTimeout(callback, delay = 0) {
+  setTimeout(callback: TimerHandler, delay: number | undefined = 0): number {
+    if (typeof callback !== "function") {
+      throw new Error("string timer handlers are not supported");
+    }
     const id = this.#nextId;
     this.#nextId += 1;
     const normalizedDelay = Math.max(0, Number(delay));
     this.#timers.set(id, {
-      callback,
+      callback: () => {
+        callback();
+      },
       deadline: this.#now + normalizedDelay,
     });
     return id;
   }
 
-  clearTimeout(id) {
-    this.#timers.delete(id);
+  clearTimeout(id: number | undefined): void {
+    if (id !== undefined) {
+      this.#timers.delete(id);
+    }
   }
 
-  delays() {
+  delays(): number[] {
     return Array.from(
       this.#timers.values(),
       ({ deadline }) => deadline - this.#now,
     ).sort((left, right) => left - right);
   }
 
-  async #flushMicrotasks() {
+  async #flushMicrotasks(): Promise<void> {
     for (let index = 0; index < 8; index += 1) {
       await Promise.resolve();
     }
   }
 
-  #nextTimer() {
+  #nextTimer(): [number, FakeTimer] | undefined {
     return Array.from(this.#timers.entries()).sort(
       ([leftId, left], [rightId, right]) =>
         left.deadline - right.deadline || leftId - rightId,
     )[0];
   }
 
-  async advanceBy(milliseconds) {
+  async advanceBy(milliseconds: number): Promise<void> {
     const target = this.#now + milliseconds;
     while (true) {
       const next = this.#nextTimer();
@@ -95,16 +138,86 @@ class FakeTimers {
     await this.#flushMicrotasks();
   }
 
-  async runNext() {
+  async runNext(): Promise<number> {
     const next = this.#nextTimer();
-    assert.notEqual(next, undefined, "no fake timer was scheduled");
+    assert.ok(next !== undefined, "no fake timer was scheduled");
     const delay = next[1].deadline - this.#now;
     await this.advanceBy(delay);
     return delay;
   }
 }
 
-async function withFakeBrowser(run) {
+type EventCallback = (event: unknown) => void;
+
+class FakeWebSocket {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSING = 2;
+  static readonly CLOSED = 3;
+
+  readyState: number = FakeWebSocket.CONNECTING;
+  bufferedAmount = 0;
+  readonly sent: string[] = [];
+  closeCode: number | null = null;
+  closeReason: string | null = null;
+  readonly url: string;
+  readonly protocol: string | readonly string[] | undefined;
+  readonly #listeners = new Map<string, EventCallback[]>();
+
+  constructor(url: string | URL, protocol?: string | readonly string[]) {
+    this.url = String(url);
+    this.protocol = protocol;
+    FakeWebSocket.created?.push(this);
+  }
+
+  /** Receives each constructed socket while a fake browser is installed. */
+  static created: FakeWebSocket[] | null = null;
+
+  addEventListener(type: string, callback: EventCallback): void {
+    const listeners = this.#listeners.get(type) ?? [];
+    listeners.push(callback);
+    this.#listeners.set(type, listeners);
+  }
+
+  send(value: string): void {
+    this.sent.push(value);
+  }
+
+  close(code: number | null = null, reason: string | null = null): void {
+    this.closeCode = code;
+    this.closeReason = reason;
+    this.readyState = FakeWebSocket.CLOSING;
+  }
+
+  open(): void {
+    this.readyState = FakeWebSocket.OPEN;
+    this.#emit("open", {});
+  }
+
+  serverClose(): void {
+    this.readyState = FakeWebSocket.CLOSED;
+    this.#emit("close", {});
+  }
+
+  #emit(type: string, event: unknown): void {
+    for (const listener of this.#listeners.get(type) ?? []) {
+      listener(event);
+    }
+  }
+}
+
+interface FakeNavigator {
+  onLine: boolean;
+}
+
+interface FakeBrowser {
+  readonly timers: FakeTimers;
+  readonly sockets: FakeWebSocket[];
+  readonly navigator: FakeNavigator;
+  readonly dispatch: (type: string, event?: unknown) => void;
+}
+
+async function withFakeBrowser(run: (browser: FakeBrowser) => Promise<void>): Promise<void> {
   const originalFetch = globalThis.fetch;
   const originalWebSocket = globalThis.WebSocket;
   const originalSetTimeout = globalThis.setTimeout;
@@ -115,76 +228,31 @@ async function withFakeBrowser(run) {
     "navigator",
   );
   const timers = new FakeTimers();
-  const sockets = [];
-  const listeners = new Map();
-  const navigatorState = { onLine: true };
-
-  class FakeWebSocket {
-    static CONNECTING = 0;
-    static OPEN = 1;
-    static CLOSING = 2;
-    static CLOSED = 3;
-
-    readyState = FakeWebSocket.CONNECTING;
-    bufferedAmount = 0;
-    sent = [];
-    closeCode = null;
-    closeReason = null;
-    #listeners = new Map();
-
-    constructor(url, protocol) {
-      this.url = String(url);
-      this.protocol = protocol;
-      sockets.push(this);
-    }
-
-    addEventListener(type, callback) {
-      const listeners = this.#listeners.get(type) ?? [];
-      listeners.push(callback);
-      this.#listeners.set(type, listeners);
-    }
-
-    send(value) {
-      this.sent.push(value);
-    }
-
-    close(code = null, reason = null) {
-      this.closeCode = code;
-      this.closeReason = reason;
-      this.readyState = FakeWebSocket.CLOSING;
-    }
-
-    open() {
-      this.readyState = FakeWebSocket.OPEN;
-      this.#emit("open", {});
-    }
-
-    serverClose() {
-      this.readyState = FakeWebSocket.CLOSED;
-      this.#emit("close", {});
-    }
-
-    #emit(type, event) {
-      for (const listener of this.#listeners.get(type) ?? []) {
-        listener(event);
-      }
-    }
-  }
+  const sockets: FakeWebSocket[] = [];
+  const listeners = new Map<string, EventCallback[]>();
+  const navigatorState: FakeNavigator = { onLine: true };
 
   Object.defineProperty(globalThis, "navigator", {
     configurable: true,
     value: navigatorState,
   });
-  globalThis.WebSocket = FakeWebSocket;
+  FakeWebSocket.created = sockets;
+  // The double implements only the WebSocket surface the transport uses.
+  Reflect.set(globalThis, "WebSocket", FakeWebSocket);
   globalThis.setTimeout = (callback, delay) =>
     timers.setTimeout(callback, delay);
   globalThis.clearTimeout = (id) => timers.clearTimeout(id);
-  globalThis.addEventListener = (type, callback) => {
+  globalThis.addEventListener = (type: string, callback: unknown) => {
+    if (typeof callback !== "function") {
+      throw new Error("listener objects are not supported");
+    }
     const registered = listeners.get(type) ?? [];
-    registered.push(callback);
+    registered.push((event) => {
+      callback(event);
+    });
     listeners.set(type, registered);
   };
-  const dispatch = (type, event = {}) => {
+  const dispatch = (type: string, event: unknown = {}): void => {
     for (const listener of listeners.get(type) ?? []) {
       listener(event);
     }
@@ -200,11 +268,12 @@ async function withFakeBrowser(run) {
   } finally {
     globalThis.fetch = originalFetch;
     globalThis.WebSocket = originalWebSocket;
+    FakeWebSocket.created = null;
     globalThis.setTimeout = originalSetTimeout;
     globalThis.clearTimeout = originalClearTimeout;
     globalThis.addEventListener = originalAddEventListener;
     if (navigatorDescriptor === undefined) {
-      delete globalThis.navigator;
+      Reflect.deleteProperty(globalThis, "navigator");
     } else {
       Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
     }
@@ -213,17 +282,17 @@ async function withFakeBrowser(run) {
 
 test("authentication uses browser CORS mode under no-referrer", async () => {
   await withFakeBrowser(async () => {
-    let captured = null;
-    globalThis.fetch = async (input, init) => {
-      captured = { input, init };
+    const seen: { call: FetchCall | null } = { call: null };
+    installFetch(async (input, init) => {
+      seen.call = { input, init };
       return {
         ok: false,
         status: 401,
         headers: new Headers(),
       };
-    };
+    });
 
-    const statuses = [];
+    const statuses: TransportStatus[] = [];
     const transport = new BrowserTransport(
       events({
         transportStatus(status) {
@@ -233,22 +302,23 @@ test("authentication uses browser CORS mode under no-referrer", async () => {
     );
 
     await transport.authenticate("test-controller-token");
-    assert.notEqual(captured, null);
+    const captured = seen.call;
+    assert.ok(captured !== null);
     assert.equal(captured.input, "/auth");
-    assert.equal(captured.init.method, "POST");
-    assert.equal(captured.init.mode, "cors");
-    assert.equal(captured.init.credentials, "same-origin");
-    assert.equal(captured.init.cache, "no-store");
-    assert.equal(captured.init.redirect, "error");
-    assert.equal(captured.init.referrerPolicy, "no-referrer");
-    assert.deepEqual(captured.init.headers, {
+    assert.equal(captured.init?.method, "POST");
+    assert.equal(captured.init?.mode, "cors");
+    assert.equal(captured.init?.credentials, "same-origin");
+    assert.equal(captured.init?.cache, "no-store");
+    assert.equal(captured.init?.redirect, "error");
+    assert.equal(captured.init?.referrerPolicy, "no-referrer");
+    assert.deepEqual(captured.init?.headers, {
       "Content-Type": "application/json",
     });
-    assert.deepEqual(JSON.parse(captured.init.body), {
+    assert.deepEqual(requestJson(captured.init), {
       token: "test-controller-token",
     });
     assert.equal(
-      Object.keys(captured.init.headers).some(
+      Object.keys(captured.init?.headers ?? {}).some(
         (name) => name.toLocaleLowerCase() === "origin",
       ),
       false,
@@ -259,25 +329,19 @@ test("authentication uses browser CORS mode under no-referrer", async () => {
 
 test("file requests require synchronization and the negotiated read-only capability", async () => {
   await withFakeBrowser(async ({ sockets }) => {
-    const calls = [];
-    const fileResponse = { ok: true, status: 200, body: null };
-    globalThis.fetch = async (input, init) => {
+    const calls: FetchCall[] = [];
+    const fileResponse: FakeResponse = { ok: true, status: 200, body: null };
+    installFetch(async (input, init) => {
       calls.push({ input, init });
       if (input === "/auth/session") {
-        return {
-          ok: true,
-          status: 204,
-          headers: new Headers({
-            "X-Lethetic-WebSocket-Protocol": firstProof,
-          }),
-        };
+        return sessionResponse(firstProof);
       }
       return fileResponse;
-    };
+    });
 
     const transport = new BrowserTransport(events());
     await transport.authenticateSession();
-    const socket = sockets[0];
+    const socket = nth(sockets, 0);
     socket.open();
     const signal = new AbortController().signal;
 
@@ -314,24 +378,18 @@ test("file requests require synchronization and the negotiated read-only capabil
 
 test("file requests use only exact endpoints, bounded paths, and the connection proof header", async () => {
   await withFakeBrowser(async ({ sockets }) => {
-    const calls = [];
-    globalThis.fetch = async (input, init) => {
+    const calls: FetchCall[] = [];
+    installFetch(async (input, init) => {
       if (input === "/auth/session") {
-        return {
-          ok: true,
-          status: 204,
-          headers: new Headers({
-            "X-Lethetic-WebSocket-Protocol": firstProof,
-          }),
-        };
+        return sessionResponse(firstProof);
       }
       calls.push({ input, init });
       return { ok: true, status: 200, body: null };
-    };
+    });
 
     const transport = new BrowserTransport(events());
     await transport.authenticateSession();
-    sockets[0].open();
+    nth(sockets, 0).open();
     transport.noteHello(true);
     transport.markSynchronized();
 
@@ -340,30 +398,31 @@ test("file requests use only exact endpoints, bounded paths, and the connection 
       ["/api/files/read", "notes/naïve file.txt"],
       ["/api/files/download", "artifacts/result.bin"],
       ["/api/files/archive", "artifacts"],
-    ];
+    ] as const;
     for (const [endpoint, path] of cases) {
       const signal = new AbortController().signal;
       await transport.requestFile(endpoint, path, signal);
-      const call = calls.at(-1);
+      const call = nth(calls, -1);
       assert.equal(call.input, endpoint);
-      assert.equal(call.init.method, "POST");
-      assert.equal(call.init.credentials, "same-origin");
-      assert.equal(call.init.mode, "cors");
-      assert.equal(call.init.cache, "no-store");
-      assert.equal(call.init.redirect, "error");
-      assert.equal(call.init.referrerPolicy, "no-referrer");
-      assert.equal(call.init.signal, signal);
-      assert.deepEqual(call.init.headers, {
+      assert.equal(call.init?.method, "POST");
+      assert.equal(call.init?.credentials, "same-origin");
+      assert.equal(call.init?.mode, "cors");
+      assert.equal(call.init?.cache, "no-store");
+      assert.equal(call.init?.redirect, "error");
+      assert.equal(call.init?.referrerPolicy, "no-referrer");
+      assert.equal(call.init?.signal, signal);
+      assert.deepEqual(call.init?.headers, {
         "Content-Type": "application/json",
         "X-Lethetic-WebSocket-Protocol": firstProof,
       });
-      assert.equal(call.input.includes(firstProof), false);
-      assert.deepEqual(JSON.parse(call.init.body), { path });
-      assert.equal(call.init.body.includes(firstProof), false);
+      assert.equal(String(call.input).includes(firstProof), false);
+      assert.deepEqual(requestJson(call.init), { path });
+      assert.equal(String(call.init?.body).includes(firstProof), false);
     }
     assert.equal(calls.length, cases.length);
 
-    const invalidEndpoints = [
+    // Deliberately outside the FileEndpoint union: the transport must reject them.
+    const invalidEndpoints: readonly string[] = [
       "/api/files/list?path=notes",
       "/api/files/READ",
       "/api/files/delete",
@@ -372,7 +431,7 @@ test("file requests use only exact endpoints, bounded paths, and the connection 
     for (const endpoint of invalidEndpoints) {
       await assert.rejects(
         transport.requestFile(
-          endpoint,
+          endpoint as Parameters<BrowserTransport["requestFile"]>[0],
           "notes/file.txt",
           new AbortController().signal,
         ),
@@ -411,28 +470,21 @@ test("file requests use only exact endpoints, bounded paths, and the connection 
 test("a fresh authentication epoch cancels a late file response", async () => {
   await withFakeBrowser(async ({ sockets }) => {
     let authenticationCount = 0;
-    let resolveFile = null;
+    const pendingFile: { resolve: ((response: FakeResponse) => void) | null } = { resolve: null };
     let fileBodyCancellations = 0;
-    globalThis.fetch = async (input) => {
+    installFetch(async (input) => {
       if (input === "/auth/session") {
         authenticationCount += 1;
-        return {
-          ok: true,
-          status: 204,
-          headers: new Headers({
-            "X-Lethetic-WebSocket-Protocol":
-              authenticationCount === 1 ? firstProof : secondProof,
-          }),
-        };
+        return sessionResponse(authenticationCount === 1 ? firstProof : secondProof);
       }
-      return new Promise((resolveResponse) => {
-        resolveFile = resolveResponse;
+      return new Promise<FakeResponse>((resolveResponse) => {
+        pendingFile.resolve = resolveResponse;
       });
-    };
+    });
 
     const transport = new BrowserTransport(events());
     await transport.authenticateSession();
-    sockets[0].open();
+    nth(sockets, 0).open();
     transport.noteHello(true);
     transport.markSynchronized();
 
@@ -441,11 +493,12 @@ test("a fresh authentication epoch cancels a late file response", async () => {
       "notes/file.txt",
       new AbortController().signal,
     );
-    assert.notEqual(resolveFile, null);
+    const resolveFile = pendingFile.resolve;
+    assert.ok(resolveFile !== null);
 
     await transport.authenticateSession();
     assert.equal(authenticationCount, 2);
-    assert.equal(sockets.at(-1).protocol, secondProof);
+    assert.equal(nth(sockets, -1).protocol, secondProof);
 
     resolveFile({
       ok: true,
@@ -474,8 +527,8 @@ test("empty bootstrap is tokenless while malformed fragments never downgrade", (
 
 test("tokenless authentication posts an exact empty object and honors Retry-After", async () => {
   await withFakeBrowser(async ({ timers, sockets }) => {
-    const calls = [];
-    globalThis.fetch = async (input, init) => {
+    const calls: FetchCall[] = [];
+    installFetch(async (input, init) => {
       calls.push({ input, init });
       if (calls.length === 1) {
         return {
@@ -484,46 +537,33 @@ test("tokenless authentication posts an exact empty object and honors Retry-Afte
           headers: new Headers({ "Retry-After": "60" }),
         };
       }
-      return {
-        ok: true,
-        status: 204,
-        headers: new Headers({
-          "X-Lethetic-WebSocket-Protocol": firstProof,
-        }),
-      };
-    };
+      return sessionResponse(firstProof);
+    });
 
     const transport = new BrowserTransport(events());
     await transport.authenticateSession();
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].input, "/auth/session");
-    assert.deepEqual(JSON.parse(calls[0].init.body), {});
+    assert.equal(nth(calls, 0).input, "/auth/session");
+    assert.deepEqual(requestJson(nth(calls, 0).init), {});
     assert.deepEqual(timers.delays(), [60_000]);
     assert.equal(sockets.length, 0);
 
     assert.equal(await timers.runNext(), 60_000);
     assert.equal(calls.length, 2);
     assert.equal(sockets.length, 1);
-    assert.equal(sockets[0].protocol, firstProof);
-    assert.equal(sockets[0].url, `${origin.replace("https:", "wss:")}/ws`);
+    assert.equal(nth(sockets, 0).protocol, firstProof);
+    assert.equal(nth(sockets, 0).url, `${origin.replace("https:", "wss:")}/ws`);
   });
 });
 
 test("pre-open failure reauthenticates once and never replays pending commands across epochs", async () => {
   await withFakeBrowser(async ({ timers, sockets }) => {
-    const fetchCalls = [];
-    globalThis.fetch = async (input, init) => {
+    const fetchCalls: FetchCall[] = [];
+    installFetch(async (input, init) => {
       fetchCalls.push({ input, init });
-      const proof = fetchCalls.length === 1 ? firstProof : secondProof;
-      return {
-        ok: true,
-        status: 204,
-        headers: new Headers({
-          "X-Lethetic-WebSocket-Protocol": proof,
-        }),
-      };
-    };
-    const abandoned = [];
+      return sessionResponse(fetchCalls.length === 1 ? firstProof : secondProof);
+    });
+    const abandoned: ICommandRequest[][] = [];
     const transport = new BrowserTransport(
       events({
         authenticationEpochChanged(requests) {
@@ -535,19 +575,19 @@ test("pre-open failure reauthenticates once and never replays pending commands a
     await transport.authenticateSession();
     assert.equal(fetchCalls.length, 1);
     assert.equal(sockets.length, 1);
-    const first = sockets[0];
+    const first = nth(sockets, 0);
     first.open();
     transport.noteHello();
     transport.markSynchronized();
     const request = transport.send({ type: "request_snapshot" }, 0);
-    assert.notEqual(request, null);
+    assert.ok(request !== null);
     assert.equal(first.sent.length, 1);
     assert.equal(transport.pendingCount, 1);
 
     first.serverClose();
     assert.equal(await timers.runNext(), 400);
     assert.equal(sockets.length, 2);
-    const staleProofSocket = sockets[1];
+    const staleProofSocket = nth(sockets, 1);
     assert.equal(staleProofSocket.protocol, firstProof);
     staleProofSocket.serverClose();
     staleProofSocket.serverClose();
@@ -555,12 +595,12 @@ test("pre-open failure reauthenticates once and never replays pending commands a
     assert.equal(await timers.runNext(), 800);
 
     assert.equal(fetchCalls.length, 2);
-    assert.equal(fetchCalls[1].input, "/auth/session");
+    assert.equal(nth(fetchCalls, 1).input, "/auth/session");
     assert.equal(sockets.length, 3);
-    const refreshed = sockets[2];
+    const refreshed = nth(sockets, 2);
     assert.equal(refreshed.protocol, secondProof);
     assert.equal(abandoned.length, 1);
-    assert.deepEqual(abandoned[0].map(({ id }) => id), [request.id]);
+    assert.deepEqual(nth(abandoned, 0).map(({ id }) => id), [request.id]);
     assert.equal(transport.pendingCount, 0);
 
     refreshed.open();
@@ -573,8 +613,8 @@ test("pre-open failure reauthenticates once and never replays pending commands a
 
 test("token authentication retries retryable bootstrap failures", async () => {
   await withFakeBrowser(async ({ timers, sockets }) => {
-    const calls = [];
-    globalThis.fetch = async (input, init) => {
+    const calls: FetchCall[] = [];
+    installFetch(async (input, init) => {
       calls.push({ input, init });
       if (calls.length === 1) {
         return {
@@ -583,14 +623,8 @@ test("token authentication retries retryable bootstrap failures", async () => {
           headers: new Headers({ "Retry-After": "1" }),
         };
       }
-      return {
-        ok: true,
-        status: 204,
-        headers: new Headers({
-          "X-Lethetic-WebSocket-Protocol": firstProof,
-        }),
-      };
-    };
+      return sessionResponse(firstProof);
+    });
 
     const transport = new BrowserTransport(events());
     await transport.authenticate("retryable-controller-token");
@@ -599,19 +633,19 @@ test("token authentication retries retryable bootstrap failures", async () => {
 
     assert.equal(await timers.runNext(), 1_000);
     assert.equal(calls.length, 2);
-    assert.equal(calls[1].input, "/auth");
-    assert.deepEqual(JSON.parse(calls[1].init.body), {
+    assert.equal(nth(calls, 1).input, "/auth");
+    assert.deepEqual(requestJson(nth(calls, 1).init), {
       token: "retryable-controller-token",
     });
     assert.equal(sockets.length, 1);
-    assert.equal(sockets[0].protocol, firstProof);
+    assert.equal(nth(sockets, 0).protocol, firstProof);
   });
 });
 
 test("offline and online events cannot bypass Retry-After", async () => {
   await withFakeBrowser(async ({ timers, sockets, navigator, dispatch }) => {
     let calls = 0;
-    globalThis.fetch = async () => {
+    installFetch(async () => {
       calls += 1;
       if (calls === 1) {
         return {
@@ -620,14 +654,8 @@ test("offline and online events cannot bypass Retry-After", async () => {
           headers: new Headers({ "Retry-After": "60" }),
         };
       }
-      return {
-        ok: true,
-        status: 204,
-        headers: new Headers({
-          "X-Lethetic-WebSocket-Protocol": firstProof,
-        }),
-      };
-    };
+      return sessionResponse(firstProof);
+    });
 
     const transport = new BrowserTransport(events());
     await transport.authenticateSession();
@@ -649,14 +677,16 @@ test("offline and online events cannot bypass Retry-After", async () => {
 
 test("authentication is aborted at its client-side deadline", async () => {
   await withFakeBrowser(async ({ timers }) => {
-    let signal = null;
-    globalThis.fetch = async (_input, init) =>
-      new Promise((_resolve, reject) => {
-        signal = init.signal;
+    const seen: { signal: AbortSignal | null } = { signal: null };
+    installFetch(async (_input, init) =>
+      new Promise<FakeResponse>((_resolve, reject) => {
+        const signal = init?.signal;
+        assert.ok(signal);
+        seen.signal = signal;
         signal.addEventListener("abort", () => {
           reject(new DOMException("aborted", "AbortError"));
         });
-      });
+      }));
 
     const transport = new BrowserTransport(events());
     const authentication = transport.authenticateSession();
@@ -664,7 +694,8 @@ test("authentication is aborted at its client-side deadline", async () => {
     await timers.advanceBy(10_000);
     await authentication;
 
-    assert.notEqual(signal, null);
+    const signal = seen.signal;
+    assert.ok(signal !== null);
     assert.equal(signal.aborted, true);
     assert.deepEqual(timers.delays(), [400]);
     transport.closePermanently("test complete");
@@ -675,67 +706,50 @@ test("authentication is aborted at its client-side deadline", async () => {
 test("online events cannot create a socket during session authentication", async () => {
   await withFakeBrowser(async ({ timers, sockets, dispatch }) => {
     let calls = 0;
-    let resolveRefresh = null;
-    globalThis.fetch = async () => {
+    const pendingRefresh: { resolve: ((response: FakeResponse) => void) | null } = { resolve: null };
+    installFetch(async () => {
       calls += 1;
       if (calls === 1) {
-        return {
-          ok: true,
-          status: 204,
-          headers: new Headers({
-            "X-Lethetic-WebSocket-Protocol": firstProof,
-          }),
-        };
+        return sessionResponse(firstProof);
       }
-      return new Promise((resolveResponse) => {
-        resolveRefresh = resolveResponse;
+      return new Promise<FakeResponse>((resolveResponse) => {
+        pendingRefresh.resolve = resolveResponse;
       });
-    };
+    });
 
     const transport = new BrowserTransport(events());
     await transport.authenticateSession();
     assert.equal(sockets.length, 1);
-    sockets[0].open();
-    sockets[0].serverClose();
+    nth(sockets, 0).open();
+    nth(sockets, 0).serverClose();
     assert.equal(await timers.runNext(), 400);
     assert.equal(calls, 1);
     assert.equal(sockets.length, 2);
-    sockets[1].serverClose();
+    nth(sockets, 1).serverClose();
     assert.equal(await timers.runNext(), 800);
     assert.equal(calls, 2);
 
     dispatch("online");
     assert.equal(sockets.length, 2);
-    assert.notEqual(resolveRefresh, null);
-    resolveRefresh({
-      ok: true,
-      status: 204,
-      headers: new Headers({
-        "X-Lethetic-WebSocket-Protocol": secondProof,
-      }),
-    });
+    const resolveRefresh = pendingRefresh.resolve;
+    assert.ok(resolveRefresh !== null);
+    resolveRefresh(sessionResponse(secondProof));
     for (let index = 0; index < 8; index += 1) {
       await Promise.resolve();
     }
 
     assert.equal(sockets.length, 3);
-    assert.equal(sockets[2].protocol, secondProof);
+    assert.equal(nth(sockets, 2).protocol, secondProof);
   });
 });
 
 test("liveness response deadline is not postponed by synchronization traffic", async () => {
   await withFakeBrowser(async ({ timers, sockets }) => {
-    globalThis.fetch = async () => ({
-      ok: true,
-      status: 204,
-      headers: new Headers({
-        "X-Lethetic-WebSocket-Protocol": firstProof,
-      }),
-    });
+    installFetch(async () => sessionResponse(firstProof));
 
     const transport = new BrowserTransport(events());
     await transport.authenticateSession();
-    const socket = sockets[0];
+    const socket = nth(sockets, 0);
     socket.open();
     transport.noteHello();
     transport.markSynchronized();
@@ -755,17 +769,11 @@ test("liveness response deadline is not postponed by synchronization traffic", a
 
 test("stale state has a hard recovery deadline", async () => {
   await withFakeBrowser(async ({ timers, sockets }) => {
-    globalThis.fetch = async () => ({
-      ok: true,
-      status: 204,
-      headers: new Headers({
-        "X-Lethetic-WebSocket-Protocol": firstProof,
-      }),
-    });
+    installFetch(async () => sessionResponse(firstProof));
 
     const transport = new BrowserTransport(events());
     await transport.authenticateSession();
-    const socket = sockets[0];
+    const socket = nth(sockets, 0);
     socket.open();
     transport.noteHello();
     transport.markSynchronized();
@@ -782,15 +790,9 @@ test("stale state has a hard recovery deadline", async () => {
 
 test("BFCache restoration creates a fresh socket without discarding its proof", async () => {
   await withFakeBrowser(async ({ sockets, dispatch }) => {
-    globalThis.fetch = async () => ({
-      ok: true,
-      status: 204,
-      headers: new Headers({
-        "X-Lethetic-WebSocket-Protocol": firstProof,
-      }),
-    });
+    installFetch(async () => sessionResponse(firstProof));
 
-    const statuses = [];
+    const statuses: TransportStatus[] = [];
     const transport = new BrowserTransport(
       events({
         transportStatus(status) {
@@ -799,7 +801,7 @@ test("BFCache restoration creates a fresh socket without discarding its proof", 
       }),
     );
     await transport.authenticateSession();
-    const original = sockets[0];
+    const original = nth(sockets, 0);
     original.open();
     transport.noteHello();
     transport.markSynchronized();
@@ -810,7 +812,7 @@ test("BFCache restoration creates a fresh socket without discarding its proof", 
     dispatch("pageshow", { persisted: true });
 
     assert.equal(sockets.length, 2);
-    assert.equal(sockets[1].protocol, firstProof);
+    assert.equal(nth(sockets, 1).protocol, firstProof);
     assert.equal(statuses.at(-1)?.phase, "reconnecting");
   });
 });
@@ -818,18 +820,12 @@ test("BFCache restoration creates a fresh socket without discarding its proof", 
 test("same-process session refresh preserves replay state", async () => {
   await withFakeBrowser(async ({ timers, sockets }) => {
     let fetchCalls = 0;
-    globalThis.fetch = async () => {
+    installFetch(async () => {
       fetchCalls += 1;
-      return {
-        ok: true,
-        status: 204,
-        headers: new Headers({
-          "X-Lethetic-WebSocket-Protocol": firstProof,
-        }),
-      };
-    };
+      return sessionResponse(firstProof);
+    });
 
-    const abandoned = [];
+    const abandoned: ICommandRequest[][] = [];
     const transport = new BrowserTransport(
       events({
         authenticationEpochChanged(requests) {
@@ -838,58 +834,54 @@ test("same-process session refresh preserves replay state", async () => {
       }),
     );
     await transport.authenticateSession();
-    const original = sockets[0];
+    const original = nth(sockets, 0);
     original.open();
     transport.noteHello();
     transport.markSynchronized();
     const request = transport.send({ type: "request_snapshot" }, 0);
-    assert.notEqual(request, null);
+    assert.ok(request !== null);
 
     original.serverClose();
     assert.equal(await timers.runNext(), 400);
-    sockets[1].serverClose();
+    nth(sockets, 1).serverClose();
     assert.equal(await timers.runNext(), 800);
 
     assert.equal(fetchCalls, 2);
     assert.equal(sockets.length, 3);
     assert.deepEqual(abandoned, []);
     assert.equal(transport.pendingCount, 1);
-    const refreshed = sockets[2];
+    const refreshed = nth(sockets, 2);
     refreshed.open();
     transport.noteHello();
     transport.markSynchronized();
     assert.equal(refreshed.sent.length, 1);
-    assert.equal(JSON.parse(refreshed.sent[0]).id, request.id);
+    const replayed: unknown = JSON.parse(nth(refreshed.sent, 0));
+    assert.ok(isRecord(replayed));
+    assert.equal(replayed["id"], request.id);
   });
 });
 
 test("fresh session proof survives bounded pre-open admission failures", async () => {
   await withFakeBrowser(async ({ timers, sockets }) => {
     let fetchCalls = 0;
-    globalThis.fetch = async () => {
+    installFetch(async () => {
       fetchCalls += 1;
-      return {
-        ok: true,
-        status: 204,
-        headers: new Headers({
-          "X-Lethetic-WebSocket-Protocol": firstProof,
-        }),
-      };
-    };
+      return sessionResponse(firstProof);
+    });
 
     const transport = new BrowserTransport(events());
     await transport.authenticateSession();
     for (const expectedDelay of [400, 800, 1_600, 3_200]) {
-      sockets.at(-1).serverClose();
+      nth(sockets, -1).serverClose();
       assert.equal(await timers.runNext(), expectedDelay);
       assert.equal(fetchCalls, 1);
-      assert.equal(sockets.at(-1).protocol, firstProof);
+      assert.equal(nth(sockets, -1).protocol, firstProof);
     }
 
-    sockets.at(-1).serverClose();
+    nth(sockets, -1).serverClose();
     assert.equal(await timers.runNext(), 6_400);
     assert.equal(fetchCalls, 2);
     assert.equal(sockets.length, 6);
-    assert.equal(sockets.at(-1).protocol, firstProof);
+    assert.equal(nth(sockets, -1).protocol, firstProof);
   });
 });
