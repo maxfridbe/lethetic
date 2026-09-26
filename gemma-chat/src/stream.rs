@@ -1,5 +1,5 @@
 use crate::sse::parse_sse_line;
-use crate::types::{AssistantToolCall, Chunk, FunctionCall, StreamEvent, Usage};
+use crate::types::{AssistantToolCall, Chunk, Delta, FunctionCall, StreamEvent, Usage};
 use std::collections::HashMap;
 
 #[derive(Default)]
@@ -105,11 +105,24 @@ impl StreamParser {
         }
 
         if let Some(pending) = self.pending_done.as_mut() {
-            if pending.terminal_error.is_none() {
-                pending.terminal_error =
-                    Some("Provider sent choice data after its finish reason".to_string());
+            // OpenRouter-style providers echo the finished choice (empty delta,
+            // same finish reason) on the trailing usage chunk. That carries no
+            // data, so it is not an error; anything with real content is.
+            let choices = chunk.choices.as_ref().expect("nonempty choices");
+            let harmless_echo = choices.len() == 1
+                && choices[0].delta.as_ref().is_none_or(Delta::is_empty)
+                && choices[0]
+                    .finish_reason
+                    .as_deref()
+                    .filter(|reason| *reason != "null")
+                    .is_none_or(|reason| Some(reason) == pending.stop_reason.as_deref());
+            if !harmless_echo {
+                if pending.terminal_error.is_none() {
+                    pending.terminal_error =
+                        Some("Provider sent choice data after its finish reason".to_string());
+                }
+                self.tool_calls.clear();
             }
-            self.tool_calls.clear();
             return events;
         }
 
@@ -663,6 +676,41 @@ mod tests {
             event,
             StreamEvent::ToolCallComplete { .. } | StreamEvent::Done { .. }
         )));
+    }
+
+    #[test]
+    fn openrouter_usage_chunk_echoing_the_finished_choice_is_accepted() {
+        let mut parser = StreamParser::new();
+        parser.process_line(r#"data: {"choices":[{"index":0,"delta":{"content":"pong","role":"assistant"},"finish_reason":null}]}"#);
+        parser.process_line(r#"data: {"choices":[{"index":0,"delta":{"content":"","role":"assistant","reasoning":null},"finish_reason":"stop"}]}"#);
+        let usage = parser.process_line(r#"data: {"choices":[{"index":0,"delta":{"content":"","role":"assistant"},"finish_reason":"stop"}],"usage":{"prompt_tokens":9,"completion_tokens":371,"total_tokens":380}}"#);
+        assert!(matches!(usage.as_slice(), [StreamEvent::UsageUpdate(_)]));
+        let events = parser.process_line("data: [DONE]");
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, StreamEvent::Done { .. })),
+            "{events:?}"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, StreamEvent::Error(_)))
+        );
+
+        // Real content after the finish reason is still rejected.
+        let mut parser = StreamParser::new();
+        parser.process_line(
+            r#"data: {"choices":[{"delta":{"content":"a"},"finish_reason":"stop"}]}"#,
+        );
+        parser.process_line(
+            r#"data: {"choices":[{"delta":{"content":"late"},"finish_reason":null}]}"#,
+        );
+        let events = parser.process_line("data: [DONE]");
+        assert!(matches!(
+            events.as_slice(),
+            [StreamEvent::Error(error)] if error.contains("after its finish reason")
+        ));
     }
 
     #[test]

@@ -240,6 +240,19 @@ pub(crate) struct Delta {
 }
 
 impl Delta {
+    /// True when the delta carries no text, reasoning, or tool-call data.
+    /// Providers such as OpenRouter repeat the finished choice with an empty
+    /// delta on their trailing usage chunk.
+    pub fn is_empty(&self) -> bool {
+        self.content.as_deref().unwrap_or("").is_empty()
+            && self.reasoning_content.as_deref().unwrap_or("").is_empty()
+            && self.reasoning_text.as_deref().unwrap_or("").is_empty()
+            && self
+                .tool_calls
+                .as_ref()
+                .is_none_or(|calls| calls.is_empty())
+    }
+
     pub fn reasoning(&self) -> Option<&str> {
         self.reasoning_content
             .as_deref()
