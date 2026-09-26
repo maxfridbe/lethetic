@@ -4,6 +4,7 @@
 
 mod test_live_auto_summarize;
 mod test_live_azure;
+mod test_live_claude_proxy;
 mod test_live_client_stream;
 mod test_live_extended_coverage;
 mod test_live_hello;

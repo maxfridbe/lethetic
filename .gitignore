@@ -23,3 +23,7 @@ brainiac-nvidia/
 
 # Local config overlay (secrets)
 config.local.yml
+
+# Local agent/editor state
+.claude/
+.antigravitycli/

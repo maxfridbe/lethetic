@@ -1,18 +1,20 @@
-use std::time::Duration;
 use serial_test::serial;
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
+use lethetic::client::StreamEvent;
+use lethetic::client::trigger_llm_request;
 use lethetic::config::Config;
 use lethetic::context::ContextManager;
 use lethetic::system_prompt;
-use lethetic::client::trigger_llm_request;
-use lethetic::client::StreamEvent;
 
 fn azure_config() -> Result<Config, String> {
     let cfg = Config::load("config.yml")?;
-    
+
     // Resolve the Azure server from model_servers
-    let azure = cfg.model_servers.iter()
+    let azure = cfg
+        .model_servers
+        .iter()
         .find(|s| s.name.contains("Azure") || s.model.contains("DeepSeek-V4"))
         .ok_or_else(|| "No Azure server defined in config.yml model_servers".to_string())?;
 
@@ -21,8 +23,17 @@ fn azure_config() -> Result<Config, String> {
         model: azure.model.clone(),
         context_size: azure.context_size.unwrap_or(262144),
         tool_wrapper: None,
+        tool_profile: Default::default(),
+        python_runtime: Default::default(),
+        python_invocation: Default::default(),
+        active_server: Some(azure.connection_id().to_string()),
+        connection_kind: azure.kind,
         api_key: azure.api_key.clone(),
         estimate_cost: None,
+        pricing: azure
+            .pricing
+            .clone()
+            .filter(|pricing| pricing.applies_to(&azure.model)),
         input_cost_per_1m: azure.input_cost_per_1m,
         output_cost_per_1m: azure.output_cost_per_1m,
         enable_image_processing_tool: false,
@@ -40,7 +51,9 @@ async fn run_azure(prompt: &str) -> Result<String, String> {
     let client = reqwest::Client::new();
 
     let sys = system_prompt::SystemPromptManager::resolve_prompt(
-        system_prompt::DEFAULT_PROMPT_TEMPLATE, ".", &config,
+        system_prompt::DEFAULT_PROMPT_TEMPLATE,
+        ".",
+        &config,
     );
     let mut ctx = ContextManager::new(config.context_size, Some(sys));
     ctx.add_message("user", prompt);
@@ -48,10 +61,7 @@ async fn run_azure(prompt: &str) -> Result<String, String> {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let cancel = CancellationToken::new();
 
-    trigger_llm_request(
-        client, config.clone(), &ctx,
-        tx, cancel, false, None,
-    );
+    trigger_llm_request(client, config.clone(), &ctx, tx, cancel, false, None)?;
 
     let mut text = String::new();
     let result = tokio::time::timeout(Duration::from_secs(180), async {
@@ -65,7 +75,8 @@ async fn run_azure(prompt: &str) -> Result<String, String> {
             }
         }
         Ok(text.clone())
-    }).await;
+    })
+    .await;
 
     result.map_err(|_| "Timeout after 180s".to_string())?
 }
@@ -76,7 +87,9 @@ async fn run_azure_tool(prompt: &str) -> Result<(String, serde_json::Value), Str
     let client = reqwest::Client::new();
 
     let sys = system_prompt::SystemPromptManager::resolve_prompt(
-        system_prompt::DEFAULT_PROMPT_TEMPLATE, ".", &config,
+        system_prompt::DEFAULT_PROMPT_TEMPLATE,
+        ".",
+        &config,
     );
     let mut ctx = ContextManager::new(config.context_size, Some(sys));
     ctx.add_message("user", prompt);
@@ -84,7 +97,7 @@ async fn run_azure_tool(prompt: &str) -> Result<(String, serde_json::Value), Str
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let cancel = CancellationToken::new();
 
-    trigger_llm_request(client, config.clone(), &ctx, tx, cancel, false, None);
+    trigger_llm_request(client, config.clone(), &ctx, tx, cancel, false, None)?;
 
     let mut text = String::new();
     let mut tool_name: Option<String> = None;
@@ -94,7 +107,7 @@ async fn run_azure_tool(prompt: &str) -> Result<(String, serde_json::Value), Str
         loop {
             match rx.recv().await {
                 Some(StreamEvent::Chunk(c)) => text.push_str(&c),
-                Some(StreamEvent::ToolCalls(calls)) => {
+                Some(StreamEvent::ToolCalls { calls, .. }) => {
                     if let Some(tc) = calls.first() {
                         tool_name = Some(tc.function.name.clone());
                         tool_args = Some(tc.function.arguments.clone());
@@ -107,7 +120,8 @@ async fn run_azure_tool(prompt: &str) -> Result<(String, serde_json::Value), Str
             }
         }
         Ok(())
-    }).await;
+    })
+    .await;
 
     result.map_err(|_| "Timeout after 180s".to_string())??;
 
@@ -129,7 +143,11 @@ async fn test_azure_hello() {
     match run_azure("Reply with exactly: Hello from Azure").await {
         Ok(resp) => {
             println!("Response: {}", resp);
-            assert!(resp.to_lowercase().contains("hello"), "Unexpected response: {}", resp);
+            assert!(
+                resp.to_lowercase().contains("hello"),
+                "Unexpected response: {}",
+                resp
+            );
         }
         Err(e) => panic!("{}", e),
     }
@@ -141,11 +159,19 @@ async fn test_azure_write_file_no_markers() {
     let (tool, args) = run_azure_tool(
         "Use the 'write_file' tool to write 'fn main() {}' to 'src/main.rs'. Output ONLY the tool call."
     ).await.expect("write_file tool call failed");
-    
+
     assert_eq!(tool, "write_file");
     let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("");
-    assert!(!content.contains("<|\"|>"), "Content should NOT contain asymmetric markers: {}", content);
-    assert!(content.contains("fn main"), "Content should contain the code block: {}", content);
+    assert!(
+        !content.contains("<|\"|>"),
+        "Content should NOT contain asymmetric markers: {}",
+        content
+    );
+    assert!(
+        content.contains("fn main"),
+        "Content should contain the code block: {}",
+        content
+    );
 }
 
 #[tokio::test]
@@ -156,12 +182,28 @@ async fn test_azure_write_csharp_helloworld() {
     ).await.expect("write_file C# tool call failed");
 
     assert_eq!(tool, "write_file");
-    
+
     let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
-    assert!(path.contains("Program.cs"), "Path should contain Program.cs: {}", path);
-    
+    assert!(
+        path.contains("Program.cs"),
+        "Path should contain Program.cs: {}",
+        path
+    );
+
     let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("");
-    assert!(!content.contains("<|\"|>"), "Content should NOT contain asymmetric markers: {}", content);
-    assert!(content.contains("Console.WriteLine"), "Content should contain Console.WriteLine: {}", content);
-    assert!(content.contains("Hello World") || content.contains("Hello, World"), "Content should contain hello world string: {}", content);
+    assert!(
+        !content.contains("<|\"|>"),
+        "Content should NOT contain asymmetric markers: {}",
+        content
+    );
+    assert!(
+        content.contains("Console.WriteLine"),
+        "Content should contain Console.WriteLine: {}",
+        content
+    );
+    assert!(
+        content.contains("Hello World") || content.contains("Hello, World"),
+        "Content should contain hello world string: {}",
+        content
+    );
 }

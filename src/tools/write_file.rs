@@ -1,14 +1,12 @@
-use serde_json::json;
-use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
+use crate::tools::{FunctionDefinition, Tool};
+use serde_json::json;
 use std::fs;
 use std::path::Path;
 
 pub fn get_definition(parser: &str) -> Tool {
     let content_description = match parser {
-        "qwen3" | "default" | "generic" => {
-            "The complete literal content to write to the file."
-        }
+        "qwen3" | "default" | "generic" => "The complete literal content to write to the file.",
         _ => {
             "The complete literal content to write. You MUST wrap this value in asymmetric markers: <|\"|>your content here<|\"|>"
         }
@@ -53,11 +51,16 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     format!("{} Writing file: `{}`", icons::SUCCESS, path)
 }
 
-pub async fn execute(path: &str, content: &str, cwd: &str, cancellation_token: tokio_util::sync::CancellationToken) -> String {
-
+pub async fn execute(
+    path: &str,
+    content: &str,
+    cwd: &str,
+    cancellation_token: tokio_util::sync::CancellationToken,
+) -> String {
     let full_file_path = Path::new(cwd).join(path);
-    
+
     tokio::select! {
+        biased;
         _ = cancellation_token.cancelled() => {
             "[Operation Cancelled by User]".to_string()
         }
@@ -77,5 +80,29 @@ pub async fn execute(path: &str, content: &str, cwd: &str, cancellation_token: t
                 Err(e) => format!("ERROR: Failed to write to {}: {}", full_file_path.display(), e),
             }
         } => res
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn pre_cancelled_write_does_not_create_a_file() {
+        let dir = tempdir().unwrap();
+        let token = tokio_util::sync::CancellationToken::new();
+        token.cancel();
+
+        let result = execute(
+            "never-created.txt",
+            "private content",
+            dir.path().to_str().unwrap(),
+            token,
+        )
+        .await;
+
+        assert_eq!(result, "[Operation Cancelled by User]");
+        assert!(!dir.path().join("never-created.txt").exists());
     }
 }

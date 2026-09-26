@@ -1,6 +1,6 @@
-use serde_json::json;
-use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
+use crate::tools::{FunctionDefinition, Tool};
+use serde_json::json;
 use std::fs;
 use std::path::Path;
 
@@ -54,6 +54,7 @@ pub async fn execute(
     let full_path = Path::new(cwd).join(path);
 
     tokio::select! {
+        biased;
         _ = cancellation_token.cancelled() => "[Operation Cancelled by User]".to_string(),
         res = async {
             match fs::read_to_string(&full_path) {

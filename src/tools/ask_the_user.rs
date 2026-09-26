@@ -1,6 +1,6 @@
-use serde_json::json;
-use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
+use crate::tools::{FunctionDefinition, Tool};
+use serde_json::json;
 
 pub fn get_definition() -> Tool {
     Tool {
@@ -29,7 +29,6 @@ pub fn get_definition() -> Tool {
         },
     }
 }
-
 
 pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     if let Some(desc) = arguments["description"].as_str() {

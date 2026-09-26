@@ -7,6 +7,7 @@ const BASE_URL: &str = "http://brainiac-nvidia:7210/v1";
 const MODEL: &str = "Gemma-4-26B-TurboQuant-262k";
 
 #[tokio::test]
+#[ignore = "requires the configured live TurboQuant server"]
 async fn test_live_simple_reply() {
     let client = reqwest::Client::new();
     let msgs = vec![Message::user("Reply with exactly: PONG")];
@@ -19,7 +20,10 @@ async fn test_live_simple_reply() {
     while let Some(event) = stream.next().await {
         match event {
             StreamEvent::TextDelta(s) => text.push_str(&s),
-            StreamEvent::Done { .. } => { got_done = true; break; }
+            StreamEvent::Done { .. } => {
+                got_done = true;
+                break;
+            }
             StreamEvent::Error(e) => panic!("Error: {e}"),
             _ => {}
         }
@@ -31,6 +35,7 @@ async fn test_live_simple_reply() {
 }
 
 #[tokio::test]
+#[ignore = "requires the configured live TurboQuant server"]
 async fn test_live_reasoning_present() {
     let client = reqwest::Client::new();
     let msgs = vec![Message::user("What is 17 * 43?")];
@@ -61,6 +66,7 @@ async fn test_live_reasoning_present() {
 }
 
 #[tokio::test]
+#[ignore = "requires the configured live TurboQuant server"]
 async fn test_live_tool_call() {
     use serde_json::json;
     let client = reqwest::Client::new();
@@ -78,13 +84,17 @@ async fn test_live_tool_call() {
     )];
 
     let msgs = vec![
-        Message::system("You are a helpful assistant. Use the calculate tool when asked to compute math."),
+        Message::system(
+            "You are a helpful assistant. Use the calculate tool when asked to compute math.",
+        ),
         Message::user("What is 12 * 15? Use the calculate tool."),
     ];
 
-    let mut stream = stream_chat(&client, BASE_URL, MODEL, &msgs, &tools, 400, None, None, None)
-        .await
-        .expect("stream_chat failed");
+    let mut stream = stream_chat(
+        &client, BASE_URL, MODEL, &msgs, &tools, 400, None, None, None,
+    )
+    .await
+    .expect("stream_chat failed");
 
     let mut tool_name = String::new();
     let mut tool_args = serde_json::Value::Null;
@@ -96,12 +106,18 @@ async fn test_live_tool_call() {
                 println!("Tool call started: {name}");
                 tool_name = name;
             }
-            StreamEvent::ToolCallComplete { name, arguments, .. } => {
+            StreamEvent::ToolCallComplete {
+                name, arguments, ..
+            } => {
                 println!("Tool call complete: {name} args={arguments}");
                 tool_name = name;
                 tool_args = arguments;
             }
-            StreamEvent::Done { completion_tokens, prompt_tokens, .. } => {
+            StreamEvent::Done {
+                completion_tokens,
+                prompt_tokens,
+                ..
+            } => {
                 println!("Done: completion={completion_tokens:?} prompt={prompt_tokens:?}");
                 got_done = true;
                 break;
@@ -114,9 +130,7 @@ async fn test_live_tool_call() {
     }
 
     assert!(got_done, "Never received Done");
-    if !tool_name.is_empty() {
-        assert_eq!(tool_name, "calculate");
-        println!("Tool args: {tool_args}");
-    }
+    assert_eq!(tool_name, "calculate", "model did not call calculate");
+    assert!(tool_args.is_object(), "tool arguments were not an object");
+    println!("Tool args: {tool_args}");
 }
-

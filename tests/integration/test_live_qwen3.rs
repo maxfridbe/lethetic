@@ -1,17 +1,19 @@
-use std::time::Duration;
 use serial_test::serial;
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
+use lethetic::client::StreamEvent;
+use lethetic::client::trigger_llm_request;
 use lethetic::config::Config;
 use lethetic::context::ContextManager;
 use lethetic::system_prompt;
-use lethetic::client::trigger_llm_request;
-use lethetic::client::StreamEvent;
 
 fn qwen3_config() -> Result<Config, String> {
     let cfg = Config::load("config.yml")?;
     // Resolve the Qwen3 server from model_servers
-    let qwen = cfg.model_servers.iter()
+    let qwen = cfg
+        .model_servers
+        .iter()
         .find(|s| s.parser == "qwen3")
         .ok_or_else(|| "No qwen3 server defined in config.yml model_servers".to_string())?;
     Ok(Config {
@@ -19,8 +21,17 @@ fn qwen3_config() -> Result<Config, String> {
         model: qwen.model.clone(),
         context_size: 262144,
         tool_wrapper: None,
+        tool_profile: Default::default(),
+        python_runtime: Default::default(),
+        python_invocation: Default::default(),
+        active_server: Some(qwen.connection_id().to_string()),
+        connection_kind: qwen.kind,
         api_key: None,
         estimate_cost: None,
+        pricing: qwen
+            .pricing
+            .clone()
+            .filter(|pricing| pricing.applies_to(&qwen.model)),
         input_cost_per_1m: None,
         output_cost_per_1m: None,
         enable_image_processing_tool: false,
@@ -39,7 +50,9 @@ async fn run_qwen3(prompt: &str) -> Result<String, String> {
     let client = reqwest::Client::new();
 
     let sys = system_prompt::SystemPromptManager::resolve_prompt(
-        system_prompt::DEFAULT_PROMPT_TEMPLATE, ".", &config,
+        system_prompt::DEFAULT_PROMPT_TEMPLATE,
+        ".",
+        &config,
     );
     let mut ctx = ContextManager::new(config.context_size, Some(sys));
     ctx.add_message("user", prompt);
@@ -47,10 +60,7 @@ async fn run_qwen3(prompt: &str) -> Result<String, String> {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let cancel = CancellationToken::new();
 
-    trigger_llm_request(
-        client, config.clone(), &ctx,
-        tx, cancel, false, None,
-    );
+    trigger_llm_request(client, config.clone(), &ctx, tx, cancel, false, None)?;
 
     let mut text = String::new();
     let result = tokio::time::timeout(Duration::from_secs(180), async {
@@ -64,7 +74,8 @@ async fn run_qwen3(prompt: &str) -> Result<String, String> {
             }
         }
         Ok(text.clone())
-    }).await;
+    })
+    .await;
 
     result.map_err(|_| "Timeout after 180s".to_string())?
 }
@@ -78,7 +89,9 @@ async fn run_qwen3_tool(prompt: &str) -> Result<String, String> {
     let client = reqwest::Client::new();
 
     let sys = system_prompt::SystemPromptManager::resolve_prompt(
-        system_prompt::DEFAULT_PROMPT_TEMPLATE, ".", &config,
+        system_prompt::DEFAULT_PROMPT_TEMPLATE,
+        ".",
+        &config,
     );
     let mut ctx = ContextManager::new(config.context_size, Some(sys));
     ctx.add_message("user", prompt);
@@ -86,7 +99,7 @@ async fn run_qwen3_tool(prompt: &str) -> Result<String, String> {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let cancel = CancellationToken::new();
 
-    trigger_llm_request(client, config.clone(), &ctx, tx, cancel, false, None);
+    trigger_llm_request(client, config.clone(), &ctx, tx, cancel, false, None)?;
 
     let mut text = String::new();
     let mut tool_name: Option<String> = None;
@@ -95,7 +108,7 @@ async fn run_qwen3_tool(prompt: &str) -> Result<String, String> {
         loop {
             match rx.recv().await {
                 Some(StreamEvent::Chunk(c)) => text.push_str(&c),
-                Some(StreamEvent::ToolCalls(calls)) => {
+                Some(StreamEvent::ToolCalls { calls, .. }) => {
                     if let Some(tc) = calls.first() {
                         tool_name = Some(tc.function.name.clone());
                     }
@@ -107,7 +120,8 @@ async fn run_qwen3_tool(prompt: &str) -> Result<String, String> {
             }
         }
         Ok(())
-    }).await;
+    })
+    .await;
 
     result.map_err(|_| "Timeout after 180s".to_string())??;
 
@@ -145,18 +159,20 @@ async fn test_qwen3_hello() {
 #[tokio::test]
 #[serial(llm)]
 async fn test_qwen3_calculate() {
-    let tool = run_qwen3_tool(
-        "Use the 'calculate' tool to evaluate: 7 * 8. Output ONLY the tool call."
-    ).await.expect("calculate tool call");
+    let tool =
+        run_qwen3_tool("Use the 'calculate' tool to evaluate: 7 * 8. Output ONLY the tool call.")
+            .await
+            .expect("calculate tool call");
     assert_eq!(tool, "calculate");
 }
 
 #[tokio::test]
 #[serial(llm)]
 async fn test_qwen3_run_shell_command() {
-    let tool = run_qwen3_tool(
-        "Use 'run_shell_command' to run: echo hello. Output ONLY the tool call."
-    ).await.expect("run_shell_command tool call");
+    let tool =
+        run_qwen3_tool("Use 'run_shell_command' to run: echo hello. Output ONLY the tool call.")
+            .await
+            .expect("run_shell_command tool call");
     assert_eq!(tool, "run_shell_command");
 }
 
@@ -164,8 +180,10 @@ async fn test_qwen3_run_shell_command() {
 #[serial(llm)]
 async fn test_qwen3_read_file() {
     let tool = run_qwen3_tool(
-        "Use 'read_file' to read the file at path 'config.yml'. Output ONLY the tool call."
-    ).await.expect("read_file tool call");
+        "Use 'read_file' to read the file at path 'config.yml'. Output ONLY the tool call.",
+    )
+    .await
+    .expect("read_file tool call");
     assert_eq!(tool, "read_file");
 }
 

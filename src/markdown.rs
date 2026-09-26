@@ -1,12 +1,12 @@
+use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
 };
-use pulldown_cmark::{Event, Parser, Tag, CodeBlockKind, TagEnd, Options, HeadingLevel};
-use syntect::easy::HighlightLines;
-use syntect::parsing::SyntaxSet;
-use syntect::highlighting::ThemeSet;
 use std::sync::LazyLock;
+use syntect::easy::HighlightLines;
+use syntect::highlighting::ThemeSet;
+use syntect::parsing::SyntaxSet;
 
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
 static THEME_SET: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
@@ -18,8 +18,80 @@ pub fn warm_highlighter() {
     LazyLock::force(&THEME_SET);
 }
 
+pub fn highlight_source(source: &str, language: &str, theme: &crate::ui::Theme) -> Text<'static> {
+    let language_lower = language.to_lowercase();
+    let extension = match language_lower.as_str() {
+        "sh" | "shell" | "bash" | "zsh" | "fish" => "sh",
+        "rs" | "rust" => "rs",
+        "cs" | "csharp" | "c#" => "cs",
+        "js" | "javascript" => "js",
+        "ts" | "tsx" | "typescript" => "js",
+        "py" | "python" => "py",
+        "cpp" | "c++" | "cc" => "cpp",
+        "json" => "json",
+        "toml" => "toml",
+        "yaml" | "yml" => "yaml",
+        "md" | "markdown" => "md",
+        other => other,
+    };
+    let syntax = SYNTAX_SET
+        .find_syntax_by_extension(extension)
+        .or_else(|| SYNTAX_SET.find_syntax_by_name(language))
+        .or_else(|| SYNTAX_SET.find_syntax_by_token(language))
+        .unwrap_or_else(|| SYNTAX_SET.find_syntax_plain_text());
+    let mut highlighter = HighlightLines::new(syntax, &THEME_SET.themes["base16-ocean.dark"]);
+    let mut highlighted = Text::default();
+
+    let source = source.strip_suffix('\n').unwrap_or(source);
+    for line in source.split('\n') {
+        let numbered = line.len() >= 7
+            && line
+                .chars()
+                .take(6)
+                .all(|character| character.is_whitespace() || character.is_ascii_digit())
+            && line.chars().nth(6) == Some('\t');
+        let (prefix, code) = if numbered {
+            let (prefix, code) = line.split_at(7);
+            (Some(prefix), code)
+        } else {
+            (None, line)
+        };
+        let mut spans = Vec::new();
+        if let Some(prefix) = prefix {
+            spans.push(Span::styled(
+                prefix.to_string(),
+                Style::default()
+                    .fg(theme.system_fg)
+                    .add_modifier(Modifier::DIM),
+            ));
+        }
+        match highlighter.highlight_line(code, &SYNTAX_SET) {
+            Ok(ranges) => {
+                for (style, text) in ranges {
+                    let foreground =
+                        Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
+                    spans.push(Span::styled(
+                        text.to_string(),
+                        Style::default().fg(foreground).bg(theme.terminal_bg),
+                    ));
+                }
+            }
+            Err(_) => spans.push(Span::styled(
+                code.to_string(),
+                Style::default().fg(theme.output_fg).bg(theme.terminal_bg),
+            )),
+        }
+        highlighted.lines.push(Line::from(spans));
+    }
+    highlighted
+}
+
 /// Render buffered table rows as box-drawn lines with columns padded to equal width.
-fn render_table(rows: &[Vec<Line<'static>>], has_header: bool, theme: &crate::ui::Theme) -> Vec<Line<'static>> {
+fn render_table(
+    rows: &[Vec<Line<'static>>],
+    has_header: bool,
+    theme: &crate::ui::Theme,
+) -> Vec<Line<'static>> {
     let border = Style::default().fg(theme.system_fg);
     let ncols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
     if ncols == 0 {
@@ -71,9 +143,9 @@ pub fn render_markdown(content: &str, theme: &crate::ui::Theme) -> Text<'static>
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
-    
+
     let parser = Parser::new_ext(content, options);
-    
+
     let mut current_line = Line::default();
     let mut in_code_block: Option<String> = None;
     let base_style = Style::default().fg(theme.output_fg);
@@ -100,7 +172,10 @@ pub fn render_markdown(content: &str, theme: &crate::ui::Theme) -> Text<'static>
                     _ => theme.warning_fg,
                 };
                 let prefix = "#".repeat(level as usize) + " ";
-                current_line.spans.push(Span::styled(prefix, Style::default().fg(color).add_modifier(Modifier::BOLD)));
+                current_line.spans.push(Span::styled(
+                    prefix,
+                    Style::default().fg(color).add_modifier(Modifier::BOLD),
+                ));
                 current_style = Style::default().fg(color).add_modifier(Modifier::BOLD);
             }
             Event::End(TagEnd::Heading(_)) => {
@@ -152,7 +227,8 @@ pub fn render_markdown(content: &str, theme: &crate::ui::Theme) -> Text<'static>
             }
             Event::End(TagEnd::Table) => {
                 in_table = false;
-                text.lines.extend(render_table(&table_rows, table_has_header, theme));
+                text.lines
+                    .extend(render_table(&table_rows, table_has_header, theme));
             }
             Event::Start(Tag::TableHead) => {
                 in_table_header = true;
@@ -177,56 +253,9 @@ pub fn render_markdown(content: &str, theme: &crate::ui::Theme) -> Text<'static>
             }
 
             Event::Text(t) => {
-                if let Some(lang) = &in_code_block {
-                    let lang_lower = lang.to_lowercase();
-                    let ext = match lang_lower.as_str() {
-                        "sh" | "shell" | "bash" | "zsh" | "fish" => "sh",
-                        "rs" | "rust"                             => "rs",
-                        "cs" | "csharp" | "c#"                   => "cs",
-                        "js" | "javascript"                       => "js",
-                        "ts" | "tsx" | "typescript"               => "js", // syntect has no TS syntax; JS grammar covers it
-                        "py" | "python"                           => "py",
-                        "cpp" | "c++" | "cc"                      => "cpp",
-                        "json"                                    => "json",
-                        "toml"                                    => "toml",
-                        "yaml" | "yml"                            => "yaml",
-                        "md" | "markdown"                         => "md",
-                        other                                     => other,
-                    };
-                    let syntax = SYNTAX_SET.find_syntax_by_extension(ext)
-                        .or_else(|| SYNTAX_SET.find_syntax_by_name(lang))
-                        .or_else(|| SYNTAX_SET.find_syntax_by_token(lang))
-                        .unwrap_or_else(|| SYNTAX_SET.find_syntax_plain_text());
-                    let mut h = HighlightLines::new(syntax, &THEME_SET.themes["base16-ocean.dark"]);
-                    
-                    for line_str in t.lines() {
-                        // Check if the line starts with a 6-char number prefix + tab (from read_file)
-                        if line_str.len() >= 7 && line_str.chars().take(6).all(|c| c.is_whitespace() || c.is_ascii_digit()) && line_str.chars().nth(6) == Some('\t') {
-                            let (prefix, code) = line_str.split_at(7);
-                            let mut spans = Vec::new();
-                            
-                            // Add dimmed line number
-                            spans.push(Span::styled(prefix.to_string(), Style::default().fg(theme.system_fg).add_modifier(Modifier::DIM)));
-                            
-                            // Highlight the rest of the code
-                            if let Ok(ranges) = h.highlight_line(code, &SYNTAX_SET) {
-                                for (style, text) in ranges {
-                                    let fg = Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
-                                    spans.push(Span::styled(text.to_string(), Style::default().fg(fg).bg(theme.terminal_bg)));
-                                }
-                            } else {
-                                spans.push(Span::styled(code.to_string(), Style::default().fg(theme.output_fg).bg(theme.terminal_bg)));
-                            }
-                            text.lines.push(Line::from(spans));
-                        } else if let Ok(ranges) = h.highlight_line(line_str, &SYNTAX_SET) {
-                            let mut spans = Vec::new();
-                            for (style, text) in ranges {
-                                let fg = Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
-                                spans.push(Span::styled(text.to_string(), Style::default().fg(fg).bg(theme.terminal_bg)));
-                            }
-                            text.lines.push(Line::from(spans));
-                        }
-                    }
+                if let Some(language) = &in_code_block {
+                    text.lines
+                        .extend(highlight_source(&t, language, theme).lines);
                 } else {
                     let mut style = current_style;
                     if in_table_header {
@@ -244,9 +273,13 @@ pub fn render_markdown(content: &str, theme: &crate::ui::Theme) -> Text<'static>
                 let style = Style::default().fg(theme.warning_fg).bg(theme.terminal_bg);
                 if in_table {
                     // No outer padding inside cells — it would skew column widths
-                    table_cell.spans.push(Span::styled(format!("`{}`", t), style));
+                    table_cell
+                        .spans
+                        .push(Span::styled(format!("`{}`", t), style));
                 } else {
-                    current_line.spans.push(Span::styled(format!(" `{}` ", t), style));
+                    current_line
+                        .spans
+                        .push(Span::styled(format!(" `{}` ", t), style));
                 }
             }
             Event::SoftBreak | Event::HardBreak => {
@@ -259,7 +292,7 @@ pub fn render_markdown(content: &str, theme: &crate::ui::Theme) -> Text<'static>
             _ => {}
         }
     }
-    
+
     if !current_line.spans.is_empty() {
         text.lines.push(current_line);
     }

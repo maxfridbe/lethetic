@@ -1,10 +1,10 @@
-use serde_json::json;
-use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
-use tokio_util::sync::CancellationToken;
+use crate::client::StreamEvent;
+use crate::tools::{FunctionDefinition, Tool};
+use serde_json::json;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
-use crate::client::StreamEvent;
+use tokio_util::sync::CancellationToken;
 
 pub fn get_definition() -> Tool {
     Tool {
@@ -42,10 +42,20 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     format!("{} Executing shell command: `{}`", icons::SHELL, command)
 }
 
-pub async fn execute(command: &str, cwd: &str, cancellation_token: CancellationToken, tx: mpsc::UnboundedSender<StreamEvent>) -> (String, String) {
+pub async fn execute(
+    command: &str,
+    cwd: &str,
+    cancellation_token: CancellationToken,
+    tx: mpsc::UnboundedSender<StreamEvent>,
+) -> (String, String) {
     let mut child = match crate::platform::spawn_streaming_shell(command, cwd) {
         Ok(c) => c,
-        Err(e) => return (format!("ERROR: Failed to spawn shell: {}", e), cwd.to_string()),
+        Err(e) => {
+            return (
+                format!("ERROR: Failed to spawn shell: {}", e),
+                cwd.to_string(),
+            );
+        }
     };
 
     let stdout = child.stdout.take().expect("Failed to open stdout");

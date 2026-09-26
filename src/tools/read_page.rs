@@ -1,8 +1,8 @@
-use serde_json::json;
-use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
-use reqwest::Client;
+use crate::tools::{FunctionDefinition, Tool, ToolExecution};
 use h2m::convert;
+use reqwest::Client;
+use serde_json::json;
 
 pub fn get_definition() -> Tool {
     Tool {
@@ -41,24 +41,41 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
 }
 
 pub async fn execute(url: &str, cancellation_token: tokio_util::sync::CancellationToken) -> String {
+    execute_classified(url, ".", cancellation_token)
+        .await
+        .output
+}
+
+pub(super) async fn execute_classified(
+    url: &str,
+    cwd: &str,
+    cancellation_token: tokio_util::sync::CancellationToken,
+) -> ToolExecution {
     let client = Client::new();
-    
-    tokio::select! {
+
+    let result = tokio::select! {
+        biased;
         _ = cancellation_token.cancelled() => {
-            "[Operation Cancelled by User]".to_string()
+            return ToolExecution::error("[Operation Cancelled by User]", cwd);
         }
-        res = async {
-            match client.get(url).send().await {
-                Ok(res) => {
-                    match res.text().await {
-                        Ok(html) => {
-                            convert(&html)
-                        }
-                        Err(e) => format!("ERROR: Failed to read response body: {}", e),
-                    }
-                }
-                Err(e) => format!("ERROR: Failed to fetch URL {}: {}", url, e),
-            }
-        } => res
+        result = fetch(url, &client) => result,
+    };
+
+    match result {
+        Ok(html) => ToolExecution::success(convert(&html), cwd),
+        Err(error) => ToolExecution::error(error, cwd),
     }
+}
+
+async fn fetch(url: &str, client: &Client) -> Result<String, String> {
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| format!("ERROR: Failed to fetch URL {url}: {error}"))?;
+    let status = response.status();
+    let body = response.text().await.map_err(|error| {
+        format!("ERROR: Failed to read HTTP {status} response body for {url}: {error}")
+    })?;
+    super::http_response::classify_body(url, status, body)
 }

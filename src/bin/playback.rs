@@ -1,9 +1,11 @@
-use std::io::{BufRead, BufReader};
-use lethetic::parser::StreamParser;
 use lethetic::app::BlockType;
+use lethetic::parser::StreamParser;
+use std::io::{BufRead, BufReader};
 
 fn main() {
-    let path = std::env::args().nth(1).unwrap_or_else(|| ".lethetic/tokens.jsonl".to_string());
+    let path = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| ".lethetic/tokens.jsonl".to_string());
 
     let file = match std::fs::File::open(&path) {
         Ok(f) => f,
@@ -18,7 +20,8 @@ fn main() {
     let mut parser = StreamParser::new();
     let mut total_chunks = 0usize;
     let mut total_blocks = 0usize;
-    let mut block_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut block_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     let mut last_state = parser.state;
 
     for (line_no, line) in BufReader::new(file).lines().enumerate() {
@@ -42,7 +45,7 @@ fn main() {
         // Tool events bypass the text parser — log them separately
         if kind == "tool" {
             let name = entry["name"].as_str().unwrap_or("?");
-            let id   = entry["id"].as_str().unwrap_or("?");
+            let id = entry["id"].as_str().unwrap_or("?");
             println!("[t={}ms kind=tool] → call: {} (id={})", t_ms, name, id);
             continue;
         }
@@ -67,7 +70,11 @@ fn main() {
 
         println!(
             "[t={}ms kind={}] {} → {} block(s)  {:?}",
-            t_ms, kind, transition, results.len(), chunk_preview
+            t_ms,
+            kind,
+            transition,
+            results.len(),
+            chunk_preview
         );
 
         for (bt, content) in &results {
@@ -97,13 +104,15 @@ fn main() {
 
 fn block_type_label(bt: &BlockType) -> &'static str {
     match bt {
-        BlockType::Thought    => "Thought",
-        BlockType::Text       => "Text",
+        BlockType::Thought => "Thought",
+        BlockType::Text => "Text",
+        BlockType::ProviderError => "ProviderError",
         BlockType::Formulating => "Formulating",
-        BlockType::ToolCall   => "ToolCall",
+        BlockType::ToolCall => "ToolCall",
         BlockType::ToolResult => "ToolResult",
-        BlockType::User       => "User",
-        BlockType::Markdown   => "Markdown",
-        BlockType::Divider    => "Divider",
+        BlockType::ToolError => "ToolError",
+        BlockType::User => "User",
+        BlockType::Markdown => "Markdown",
+        BlockType::Divider => "Divider",
     }
 }

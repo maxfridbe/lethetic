@@ -1,9 +1,9 @@
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout},
     style::Style,
     text::{Line, Span},
     widgets::{Block as UIBlock, Borders, Clear, Paragraph},
-    Frame,
 };
 
 use crate::{app::App, icons, ui::centered_rect};
@@ -50,7 +50,11 @@ pub fn render_compaction_popup(f: &mut Frame, app: &App) {
     let scroll = popup.scroll.min(max_scroll);
 
     let scroll_hint = if total_lines > visible_height {
-        format!(" [{}/{}]", (scroll + visible_height).min(total_lines), total_lines)
+        format!(
+            " [{}/{}]",
+            (scroll + visible_height).min(total_lines),
+            total_lines
+        )
     } else {
         String::new()
     };

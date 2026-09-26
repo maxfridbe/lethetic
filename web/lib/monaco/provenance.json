@@ -1,0 +1,480 @@
+{
+  "version": "0.56.0",
+  "archive": "https://registry.npmjs.org/monaco-editor/-/monaco-editor-0.56.0.tgz",
+  "archive_sha256": "b74bc4437205c194b779b0f21e5e7fcd3b4e9acbf3f7c8732a545d2059fb7412",
+  "entrypoints": [
+    "vs/editor/editor.api.js",
+    "vs/basic-languages/monaco.contribution.js",
+    "vs/editor/contrib/find/browser/findController.js",
+    "vs/editor/editor.worker.js"
+  ],
+  "stylesheets": [
+    "vs/base/browser/ui/codicons/codicon/codicon.css",
+    "vs/base/browser/ui/codicons/codicon/codicon-modifiers.css"
+  ],
+  "preparation": "scripts/vendor_monaco.py (Python standard library only)",
+  "patches": [
+    {
+      "path": "vs/base/browser/ui/actionbar/actionViewItems.js",
+      "upstream_sha256": "c7dc9c3d433c6821fc094801eb998f38f7a9e7ada58c3254686f9ce96605f000",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/actionbar/actionbar.js",
+      "upstream_sha256": "714ed95d16c1daf86735b75fe308de20ac2d7ea2939579494dd65004165bcfeb",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/aria/aria.js",
+      "upstream_sha256": "86fc11d1ab0f8ebc6ec436661d35dcb46e90d5b8136ad245d21614e80cc6a7fd",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/button/button.js",
+      "upstream_sha256": "e24fbe7b8eebecc2bf9887af36a3e2c19f4337782814ec4d5df686a6f58d6424",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/codicons/codicon/codicon.css",
+      "upstream_sha256": "1ce4b06d1e3b7f1a877c4ff2d2c7060deadda126be5b80f2417d6eddfed68417",
+      "changes": [
+        "canonical local stylesheet/embedded-image URLs"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/contextview/contextview.js",
+      "upstream_sha256": "02fa681986193a16bf184f511bfb8528f135b9d2c73877ce18b8deb45ac2ae38",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/countBadge/countBadge.js",
+      "upstream_sha256": "86b16c17433c55ed40424d318c3dcb730dadfee36c51cf02d6387a86757dd91b",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/dnd/dnd.js",
+      "upstream_sha256": "b6173a56d5770feca3613010b0fff03e022462958e5292a1dc129bb12c406b63",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/dropdown/dropdown.js",
+      "upstream_sha256": "6e6d5c950ac2cbdfd5d994147da3dac26695682f8c92f23199a8df273f22223e",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/dropdown/dropdownActionViewItem.js",
+      "upstream_sha256": "eefd82340a97a670a2bb7947cc17ed56bac2728008a906480bf3ec7c0b3053e7",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/findinput/findInput.js",
+      "upstream_sha256": "5862594df2d5f199bfbc6a2662ff2c78c3355e789f27dbdd5e59bd2c45a571c5",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/findinput/replaceInput.js",
+      "upstream_sha256": "7607fd26929a396a48272c7ca1c6b6b75cad73e66bde737d8f0d711545943621",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/hover/hoverWidget.js",
+      "upstream_sha256": "9ce47a28df052e2a10fad006e5edc6f37d1246a4ac3c13b6733199bf7594a6a2",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/iconLabel/iconLabel.js",
+      "upstream_sha256": "5785992423d90ebd40b301fd1db759148b634b9cb1a294429e952a9a02c73617",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/inputbox/inputBox.js",
+      "upstream_sha256": "32d9b27993a04fcbcbc24f62cf0b5380c8a8d7209cf0083f5c978ca4cfc2d95e",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/keybindingLabel/keybindingLabel.js",
+      "upstream_sha256": "3bc74b3a3c46f0126316d9c990ec73371b403dde91a7abf78509b035af0581dd",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/list/listPaging.js",
+      "upstream_sha256": "39d5a06c87cebd8b7fca2664acda5f9c2b3ec2af442403e12d1581873f5e610f",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/list/listWidget.js",
+      "upstream_sha256": "4faf55d8cb47499a5e228a452a1b2d62f863ca5ced1e62adce99f26ac3d44783",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/mouseCursor/mouseCursor.js",
+      "upstream_sha256": "861ffd09ab45e8cd91019537bdcd5f990ac3f42feb8fd2ea5db6fa1973d94d18",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/progressbar/progressbar.js",
+      "upstream_sha256": "dede93f3afc7484f8e6a09ad61d54cc09867c7f28a3fbb674f9b827ef5f19e90",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/sash/sash.js",
+      "upstream_sha256": "851295b4e2bbfc79430a2fb59a35bfb9f6013ec937706eafc62de3de4a9757ae",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/scrollbar/scrollableElement.js",
+      "upstream_sha256": "48b36f83913b161b3f19b85d32a0ef0fc1d0dd22afd37e7e1fcb8f6b5252d744",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/selectBox/selectBox.js",
+      "upstream_sha256": "c69ffdf8171107e6ff12ba420cae4befd547a880eb4f0433e5952f092548afb0",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/selectBox/selectBoxCustom.js",
+      "upstream_sha256": "f6a3d6db7a10951bfbef907047d0ae8bed062729ef49f2fb36b129d8648f689a",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/splitview/splitview.js",
+      "upstream_sha256": "da2a32bbae9c48b0a58b6c7870117a690fcfb3d69e28cf1187c55a18557ff058",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/table/tableWidget.js",
+      "upstream_sha256": "e4cabd8867dc50ed97e6acf353b7cb404fe90c56bcc959da92f0ddae846c7988",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/toggle/toggle.js",
+      "upstream_sha256": "2e31f0c6863786c0b110f24d342f947aed43b9a3d8131caee51e44a5d6454ef2",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/toolbar/toolbar.js",
+      "upstream_sha256": "1108e544b283813d406f7512f7066cdc891e40900726b7bbf1c348006bc62a2c",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/base/browser/ui/tree/abstractTree.js",
+      "upstream_sha256": "dd20dced54a9ee1a5fd3749fa13da09be212ecea3d7b94575abd34fac3eed9fe",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/controller/editContext/native/nativeEditContext.js",
+      "upstream_sha256": "e6579f0bf4ea4d61ccc4fe7361733c872c9aaed61786fb27bc70ddfc83ce0d62",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/controller/editContext/textArea/textAreaEditContext.js",
+      "upstream_sha256": "7cb14c0cdd0fd8bd0c3d1fbe128241b571a5889240f53e1617286c5536a953db",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/gpu/css/decorationCssRuleExtractor.js",
+      "upstream_sha256": "f0ec80121842372ac448cc15b8414c4104d4773da5931ca2e3cb54cfd17a18e6",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/viewParts/blockDecorations/blockDecorations.js",
+      "upstream_sha256": "3d706e77ff094344eabd037c902f0c8e086a3acdfbaec5a3ee4434894587bf71",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/viewParts/currentLineHighlight/currentLineHighlight.js",
+      "upstream_sha256": "bf81f14a1ac9343b1f3c0f81ff1a6ae692fdc9757291268d1ee2d07f410748f4",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/viewParts/decorations/decorations.js",
+      "upstream_sha256": "b843de573e3bb03654e552a85c8b8420c5984fa3944a568cd8612d0e3653f4dd",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/viewParts/glyphMargin/glyphMargin.js",
+      "upstream_sha256": "fa74f26f2cb543e19e2cadc7d1533d25057b375233585a42f050bf2865a251ac",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/viewParts/gpuMark/gpuMark.js",
+      "upstream_sha256": "132087b523afe06a028d43c5e3c3332f8cff9b7da29627bf25391e7825699138",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/viewParts/indentGuides/indentGuides.js",
+      "upstream_sha256": "603452d331348a12ee97999abeddcba1ed25c4a6b7815e2c81483f07c0f2815f",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/viewParts/lineNumbers/lineNumbers.js",
+      "upstream_sha256": "1ec7e3be24743bcc7a4930d6bcd36eb7434bfb79ce1441bf76fb4748081aea13",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/viewParts/linesDecorations/linesDecorations.js",
+      "upstream_sha256": "8760dd3f7519acaa8f1e5ed263be4231c53703e0be324477a27c23b681f5c3c5",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/viewParts/margin/margin.js",
+      "upstream_sha256": "fbe44b0a9a14bd6fbc8db87fc32b772fb8aefa2145ab1ebd73a0ee4524424f24",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/viewParts/marginDecorations/marginDecorations.js",
+      "upstream_sha256": "2a5d690a6f0c53a51c68cf21ca7d0879c5c8c7417bfd9c28de05dd31d8470c53",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/viewParts/minimap/minimap.js",
+      "upstream_sha256": "eb92f90c3b5c5a50b9c3d028db9fad49030614563ef3cb39b96952b1d828ba11",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/viewParts/overlayWidgets/overlayWidgets.js",
+      "upstream_sha256": "41204f643d3b7ee15dc40a8a58dcb2f3f5b7a99dc0acfe3396775615b4daf507",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/viewParts/rulers/rulers.js",
+      "upstream_sha256": "232e73076b87d91ea6aa2bfe70fff7d5944f6c23b9ab317bb193ca0225daa88b",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/viewParts/scrollDecoration/scrollDecoration.js",
+      "upstream_sha256": "6ac9f0cd7df72eaed43c18376ef0521c303bf74207ca4c25b862f882da962f76",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/viewParts/selections/selections.js",
+      "upstream_sha256": "9de809cad373c5b339ba174c42124e9402ce668ce9faebe83a7825fbaca69a00",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/viewParts/viewCursors/viewCursors.js",
+      "upstream_sha256": "6cf4760cef2a452234eeb8d61138c0dfc88c07df980b84925e5e09a88d3d0eac",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/viewParts/viewLines/viewLines.js",
+      "upstream_sha256": "2c865efa8adbf9c6cb49f63a6cb6f66a2bf0b79e8f979c2a195725ef0235deb8",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/viewParts/whitespace/whitespace.js",
+      "upstream_sha256": "37975d394550244aa90647beb8e9f098beadf67e83f019ec34550724b51c70dd",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/widget/codeEditor/codeEditorWidget.js",
+      "upstream_sha256": "75523866322e3eae54083ef617b4819a0d78ead2e2119b3985d4ef8019c283b9",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/widget/diffEditor/components/accessibleDiffViewer.js",
+      "upstream_sha256": "93285375f887cbbbad79c3149769497b0925f41f6d8939363c6939c3fa5beb23",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/widget/diffEditor/diffEditorWidget.js",
+      "upstream_sha256": "a92bc8f637923f65159d536fd0a8c1d9eee9ec75e1a28820ecc73ba8835bacb4",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/widget/markdownRenderer/browser/editorMarkdownCodeBlockRenderer.js",
+      "upstream_sha256": "fbf1e31af238f4eaae72e498fd8ebbefe56bac878a67993a63aa67b9ae812419",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/browser/widget/multiDiffEditor/multiDiffEditorWidgetImpl.js",
+      "upstream_sha256": "bd95779991a49b3b5e911c5454035a9627c52027d079d16caa89b2d6ea169656",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/common/diff/externalLinesDiffComputer.js",
+      "upstream_sha256": "b0d977939feaadaafcd077d0f92ad304eab9282f167f7829b0934d3650e70637",
+      "changes": [
+        "disable optional runtime external diff/package import"
+      ]
+    },
+    {
+      "path": "vs/editor/contrib/find/browser/findOptionsWidget.js",
+      "upstream_sha256": "98a194540f0f673fb7b160d8afeadc91403a7cee4788c53dea03c0defcb61c34",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/contrib/find/browser/findWidget.js",
+      "upstream_sha256": "4779f751ffc2155073d4b4ce476e50415b578e1faa914f3e433388c4c7daf2ed",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/standalone/browser/quickInput/standaloneQuickInputService.js",
+      "upstream_sha256": "81d92432102696fd6d870c58856f4f756f021b96f2f5525c8722a4b2e139254e",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/editor/standalone/browser/services/standaloneWebWorkerService.js",
+      "upstream_sha256": "2822b6537d55db9c525d73f4ce9c30d51bbe99ccf9deecd1fd205cd2cc30376b",
+      "changes": [
+        "reject missing explicit worker hook instead of fallback"
+      ]
+    },
+    {
+      "path": "vs/editor/standalone/browser/standaloneEditor.js",
+      "upstream_sha256": "de388da73bacb110e53de41981c87551f740d0dc069d1516caca6e958442918d",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/platform/actions/browser/menuEntryActionViewItem.js",
+      "upstream_sha256": "531911b0dcb7bf5ba58032de18ab28764789b0db2e16193f6ee92ddfa6e40673",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/platform/hover/browser/hoverWidget.js",
+      "upstream_sha256": "e3a887b2c27ecbac6c38a2dff7d2b37ec861d1b1793cd0a7be7e3485be53f061",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/platform/quickinput/browser/quickInput.js",
+      "upstream_sha256": "8e4656ba429de7029d9e23590b1c21a7107fc81d8209a2bff1ae5cbac17b8913",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/platform/quickinput/browser/quickInputBox.js",
+      "upstream_sha256": "b01ba1014bfc7a2ed9910742e545014aa1596488c0f483ce61c896bc34f3bdb9",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/platform/quickinput/browser/quickInputUtils.js",
+      "upstream_sha256": "d8b8b2591bf009df7e93a0159aefbefc15788b543c1d3349095251e11f68d053",
+      "changes": [
+        "move side-effect CSS imports to the linked stylesheet"
+      ]
+    }
+  ]
+}

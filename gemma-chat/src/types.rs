@@ -26,19 +26,53 @@ pub struct Message {
 
 impl Message {
     pub fn system(content: impl Into<String>) -> Self {
-        Self { role: Role::System, content: Value::String(content.into()), tool_call_id: None, tool_calls: None, reasoning_content: None }
+        Self {
+            role: Role::System,
+            content: Value::String(content.into()),
+            tool_call_id: None,
+            tool_calls: None,
+            reasoning_content: None,
+        }
     }
     pub fn user(content: impl Into<String>) -> Self {
-        Self { role: Role::User, content: Value::String(content.into()), tool_call_id: None, tool_calls: None, reasoning_content: None }
+        Self {
+            role: Role::User,
+            content: Value::String(content.into()),
+            tool_call_id: None,
+            tool_calls: None,
+            reasoning_content: None,
+        }
     }
     pub fn assistant(content: impl Into<String>) -> Self {
-        Self { role: Role::Assistant, content: Value::String(content.into()), tool_call_id: None, tool_calls: None, reasoning_content: None }
+        Self {
+            role: Role::Assistant,
+            content: Value::String(content.into()),
+            tool_call_id: None,
+            tool_calls: None,
+            reasoning_content: None,
+        }
     }
-    pub fn assistant_with_tools(content: impl Into<String>, tool_calls: Vec<AssistantToolCall>, reasoning: Option<String>) -> Self {
-        Self { role: Role::Assistant, content: Value::String(content.into()), tool_call_id: None, tool_calls: Some(tool_calls), reasoning_content: reasoning }
+    pub fn assistant_with_tools(
+        content: impl Into<String>,
+        tool_calls: Vec<AssistantToolCall>,
+        reasoning: Option<String>,
+    ) -> Self {
+        Self {
+            role: Role::Assistant,
+            content: Value::String(content.into()),
+            tool_call_id: None,
+            tool_calls: Some(tool_calls),
+            reasoning_content: reasoning,
+        }
     }
     pub fn tool_result(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
-        Self { role: Role::Tool, content: Value::String(content.into()), tool_call_id: Some(tool_call_id.into()), tool_calls: None, reasoning_content: None }
+        Self {
+            role: Role::Tool,
+            content: Value::String(content.into()),
+            tool_call_id: Some(tool_call_id.into()),
+            tool_calls: None,
+            reasoning_content: None,
+        }
     }
 }
 
@@ -74,7 +108,11 @@ impl ToolDefinition {
     pub fn new(name: impl Into<String>, description: impl Into<String>, parameters: Value) -> Self {
         Self {
             kind: "function".into(),
-            function: FunctionDefinition { name: name.into(), description: description.into(), parameters },
+            function: FunctionDefinition {
+                name: name.into(),
+                description: description.into(),
+                parameters,
+            },
         }
     }
 }
@@ -88,15 +126,86 @@ pub enum StreamEvent {
     /// Final response text chunk
     TextDelta(String),
     /// Start of a tool call (id + function name)
-    ToolCallStart { id: String, index: usize, name: String },
+    ToolCallStart {
+        id: String,
+        index: usize,
+        name: String,
+    },
     /// Streamed fragment of tool call JSON arguments
     ToolCallDelta { index: usize, args_fragment: String },
     /// All chunks received; complete parsed arguments
-    ToolCallComplete { index: usize, id: String, name: String, arguments: Value },
+    ToolCallComplete {
+        index: usize,
+        id: String,
+        name: String,
+        arguments: Value,
+    },
+    /// Provider usage observed before the terminal framing marker.
+    UsageUpdate(Usage),
     /// Generation finished
-    Done { completion_tokens: Option<u32>, prompt_tokens: Option<u32>, tg_per_s: Option<f64>, pp_per_s: Option<f64> },
+    Done {
+        completion_tokens: Option<u32>,
+        prompt_tokens: Option<u32>,
+        usage: Option<Usage>,
+        tg_per_s: Option<f64>,
+        pp_per_s: Option<f64>,
+        stop_reason: Option<String>,
+    },
     /// Server or parse error
     Error(String),
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+pub struct Usage {
+    pub completion_tokens: Option<u64>,
+    pub prompt_tokens: Option<u64>,
+    pub total_tokens: Option<u64>,
+    pub prompt_tokens_details: Option<PromptTokenDetails>,
+    /// Nonstandard extension used by some compatible providers.
+    pub uncached_input_tokens: Option<u64>,
+    /// Nonstandard extension used by some compatible providers.
+    pub cache_read_input_tokens: Option<u64>,
+    /// Nonstandard extension used by some compatible providers.
+    pub cache_creation_input_tokens: Option<u64>,
+}
+
+impl Usage {
+    pub(crate) fn merged_with(mut self, newer: Self) -> Self {
+        self.completion_tokens = newer.completion_tokens.or(self.completion_tokens);
+        self.prompt_tokens = newer.prompt_tokens.or(self.prompt_tokens);
+        self.total_tokens = newer.total_tokens.or(self.total_tokens);
+        self.prompt_tokens_details = match (self.prompt_tokens_details, newer.prompt_tokens_details)
+        {
+            (Some(older), Some(newer)) => Some(older.merged_with(newer)),
+            (older, newer) => newer.or(older),
+        };
+        self.uncached_input_tokens = newer.uncached_input_tokens.or(self.uncached_input_tokens);
+        self.cache_read_input_tokens = newer
+            .cache_read_input_tokens
+            .or(self.cache_read_input_tokens);
+        self.cache_creation_input_tokens = newer
+            .cache_creation_input_tokens
+            .or(self.cache_creation_input_tokens);
+        self
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+pub struct PromptTokenDetails {
+    pub cached_tokens: Option<u64>,
+}
+
+impl PromptTokenDetails {
+    fn merged_with(mut self, newer: Self) -> Self {
+        self.cached_tokens = newer.cached_tokens.or(self.cached_tokens);
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Completion {
+    pub text: String,
+    pub usage: Option<Usage>,
 }
 
 // ── Internal chunk schema (mirrors opencode's zod schema) ─────────────────────
@@ -104,7 +213,7 @@ pub enum StreamEvent {
 #[derive(Debug, Deserialize)]
 pub(crate) struct Chunk {
     pub choices: Option<Vec<ChunkChoice>>,
-    pub usage: Option<UsageChunk>,
+    pub usage: Option<Usage>,
     pub timings: Option<Timings>,
 }
 
@@ -132,7 +241,9 @@ pub(crate) struct Delta {
 
 impl Delta {
     pub fn reasoning(&self) -> Option<&str> {
-        self.reasoning_content.as_deref().or(self.reasoning_text.as_deref())
+        self.reasoning_content
+            .as_deref()
+            .or(self.reasoning_text.as_deref())
     }
 }
 
@@ -147,10 +258,4 @@ pub(crate) struct ToolCallDelta {
 pub(crate) struct FunctionDelta {
     pub name: Option<String>,
     pub arguments: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct UsageChunk {
-    pub completion_tokens: Option<u32>,
-    pub prompt_tokens: Option<u32>,
 }

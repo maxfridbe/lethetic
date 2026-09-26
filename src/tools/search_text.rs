@@ -1,7 +1,6 @@
-
-use serde_json::json;
-use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
+use crate::tools::{FunctionDefinition, Tool};
+use serde_json::json;
 
 pub fn get_definition() -> Tool {
     Tool {
@@ -41,7 +40,12 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
     }
     let pattern = arguments["pattern"].as_str().unwrap_or("");
     let path = arguments["path"].as_str().unwrap_or(".");
-    format!("{} Searching for `{}` in `{}`", icons::SEARCH, pattern, path)
+    format!(
+        "{} Searching for `{}` in `{}`",
+        icons::SEARCH,
+        pattern,
+        path
+    )
 }
 
 pub async fn execute(
@@ -64,7 +68,8 @@ async fn run_search(pattern: &str, search_path: &str, cwd: &str) -> String {
         "rg",
         ["-n", "--color=never", "--no-heading", pattern, search_path],
         Some(cwd),
-    ).await;
+    )
+    .await;
 
     if let Ok(out) = rg {
         let stdout = String::from_utf8_lossy(&out.stdout);
@@ -76,40 +81,63 @@ async fn run_search(pattern: &str, search_path: &str, cwd: &str) -> String {
             if stdout.trim().is_empty() && stderr.trim().is_empty() {
                 return "No matches found.".to_string();
             }
-            let status = out.status.code().map_or("signaled".to_string(), |c| c.to_string());
-            return format!("EXIT_CODE: {}\nSTDOUT:\n{}\nSTDERR:\n{}", status, stdout, stderr);
+            let status = out
+                .status
+                .code()
+                .map_or("signaled".to_string(), |c| c.to_string());
+            return format!(
+                "EXIT_CODE: {}\nSTDOUT:\n{}\nSTDERR:\n{}",
+                status, stdout, stderr
+            );
         }
     }
 
     // Fallback: grep with explicit exclusions
     let result = crate::platform::command_output(
         "grep",
-        ["-rn", "--color=never", "-I",
-         "--exclude-dir=target", "--exclude-dir=.git",
-         "--exclude-dir=node_modules", "--exclude-dir=.lethetic",
-         pattern, search_path],
+        [
+            "-rn",
+            "--color=never",
+            "-I",
+            "--exclude-dir=target",
+            "--exclude-dir=.git",
+            "--exclude-dir=node_modules",
+            "--exclude-dir=.lethetic",
+            pattern,
+            search_path,
+        ],
         Some(cwd),
-    ).await;
+    )
+    .await;
 
     match result {
         Ok(out) => {
             let stdout = String::from_utf8_lossy(&out.stdout);
             let stderr = String::from_utf8_lossy(&out.stderr);
-            let status = out.status.code().map_or("signaled".to_string(), |c| c.to_string());
+            let status = out
+                .status
+                .code()
+                .map_or("signaled".to_string(), |c| c.to_string());
             if stdout.is_empty() && stderr.is_empty() && status == "1" {
                 return "No matches found.".to_string();
             }
-            format!("EXIT_CODE: {}\nSTDOUT:\n{}\nSTDERR:\n{}", status, stdout, stderr)
+            format!(
+                "EXIT_CODE: {}\nSTDOUT:\n{}\nSTDERR:\n{}",
+                status, stdout, stderr
+            )
         }
-        Err(e) => format!("ERROR: Failed to run search (neither 'rg' nor 'grep' are available or executable: {})", e),
+        Err(e) => format!(
+            "ERROR: Failed to run search (neither 'rg' nor 'grep' are available or executable: {})",
+            e
+        ),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use std::fs;
+    use tempfile::tempdir;
 
     #[tokio::test]
     async fn test_search_finds_pattern() {
@@ -125,7 +153,13 @@ mod tests {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("a.rs"), "fn hello() {}").unwrap();
         let token = tokio_util::sync::CancellationToken::new();
-        let r = execute("fn xyz_nonexistent", ".", dir.path().to_str().unwrap(), token).await;
+        let r = execute(
+            "fn xyz_nonexistent",
+            ".",
+            dir.path().to_str().unwrap(),
+            token,
+        )
+        .await;
         assert!(r.contains("No matches"), "{}", r);
     }
 }

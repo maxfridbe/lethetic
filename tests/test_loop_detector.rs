@@ -1,4 +1,4 @@
-use lethetic::loop_detector::{LoopDetector, LoopDetectorConfig, LoopDetectionMode};
+use lethetic::loop_detector::{LoopDetectionMode, LoopDetector, LoopDetectorConfig};
 
 #[test]
 fn test_loop_detection_latest_ignore() {
@@ -19,7 +19,10 @@ If the file is in `./shaders/`, and we are in `./spinning_cube/src/main.rs`, the
 Wait, let's check the contents of `shaders/` to see what's there."#;
 
     let result = detector.check(content);
-    assert!(result.is_some(), "Should have detected 3 'Wait,' phrases with threshold 3");
+    assert!(
+        result.is_some(),
+        "Should have detected 3 'Wait,' phrases with threshold 3"
+    );
 }
 
 #[test]
@@ -40,7 +43,10 @@ If the file is in `./shaders/`, and we are in `./spinning_cube/src/main.rs`, the
 Wait, let's check the contents of `shaders/` to see what's there."#;
 
     let result = detector.check(content);
-    assert!(result.is_none(), "Should NOT have triggered at the default threshold of 10 (as it only has 3 phrases)");
+    assert!(
+        result.is_none(),
+        "Should NOT have triggered at the default threshold of 10 (as it only has 3 phrases)"
+    );
 }
 
 #[test]
@@ -55,7 +61,7 @@ fn test_ngram_with_real_repetition() {
 
     let part = "Wait, if the file is at `src/main.rs`, then `../../shaders/gouraud.vs` would be at the root's sibling directory or something?";
     let content = format!("{} Some other text. {}", part, part);
-    
+
     let result = detector.check(&content);
     assert!(result.is_some());
 }

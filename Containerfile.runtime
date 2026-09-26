@@ -1,0 +1,20 @@
+# Build only with an explicitly approved image that is already present locally.
+# The caller must pass --pull=never and a fully resolved BASE_IMAGE reference.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+LABEL org.lethetic.runtime="python-nonlocal-v1" \
+      org.lethetic.runtime.abi="lethetic-python-runtime-v4"
+
+USER 0:0
+
+COPY --chown=0:0 --chmod=0555 target/release/lethetic-runtime /usr/local/libexec/lethetic/lethetic-runtime
+
+RUN test -x /usr/local/bin/python3 \
+ && test -x /usr/bin/apt-get \
+ && test -x /usr/local/libexec/lethetic/lethetic-runtime \
+ && ln -s /usr/local/libexec/lethetic/lethetic-runtime /usr/local/bin/lethetic-pkg \
+ && /usr/local/libexec/lethetic/lethetic-runtime image-self-test lethetic-python-runtime-v4
+
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["/usr/local/libexec/lethetic/lethetic-runtime"]

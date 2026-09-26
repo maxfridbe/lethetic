@@ -1,6 +1,6 @@
-use serde_json::json;
-use crate::tools::{Tool, FunctionDefinition};
 use super::icons;
+use crate::tools::{FunctionDefinition, Tool};
+use serde_json::json;
 use std::fs;
 use std::path::Path;
 
@@ -63,7 +63,12 @@ pub async fn execute(
     let path = path.trim_matches(|c| c == '\'' || c == '"');
     let full_path = Path::new(cwd).join(path);
 
+    if old_string.is_empty() {
+        return "ERROR: old_string must not be empty.".to_string();
+    }
+
     tokio::select! {
+        biased;
         _ = cancellation_token.cancelled() => "[Operation Cancelled by User]".to_string(),
         res = async {
             if old_string.is_empty() {
@@ -113,7 +118,11 @@ fn find_match_lines(content: &str, needle: &str) -> Vec<usize> {
         let line_no = content[..abs_pos].lines().count() + 1;
         results.push(line_no);
         search_from = if needle.is_empty() {
-            abs_pos + content[abs_pos..].chars().next().map_or(1, |c| c.len_utf8())
+            abs_pos
+                + content[abs_pos..]
+                    .chars()
+                    .next()
+                    .map_or(1, |c| c.len_utf8())
         } else {
             abs_pos + needle.len()
         };
@@ -124,17 +133,28 @@ fn find_match_lines(content: &str, needle: &str) -> Vec<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use std::fs;
+    use tempfile::tempdir;
 
     #[tokio::test]
     async fn test_replace_single_match() {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("f.txt"), "hello world").unwrap();
         let token = tokio_util::sync::CancellationToken::new();
-        let r = execute("f.txt", "world", "Rust", false, dir.path().to_str().unwrap(), token).await;
+        let r = execute(
+            "f.txt",
+            "world",
+            "Rust",
+            false,
+            dir.path().to_str().unwrap(),
+            token,
+        )
+        .await;
         assert!(r.contains("Successfully"), "{}", r);
-        assert_eq!(fs::read_to_string(dir.path().join("f.txt")).unwrap(), "hello Rust");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("f.txt")).unwrap(),
+            "hello Rust"
+        );
     }
 
     #[tokio::test]
@@ -142,7 +162,15 @@ mod tests {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("f.txt"), "foo foo foo").unwrap();
         let token = tokio_util::sync::CancellationToken::new();
-        let r = execute("f.txt", "foo", "bar", false, dir.path().to_str().unwrap(), token).await;
+        let r = execute(
+            "f.txt",
+            "foo",
+            "bar",
+            false,
+            dir.path().to_str().unwrap(),
+            token,
+        )
+        .await;
         assert!(r.contains("ERROR") && r.contains("3"), "{}", r);
     }
 
@@ -160,8 +188,61 @@ mod tests {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("f.txt"), "foo foo foo").unwrap();
         let token = tokio_util::sync::CancellationToken::new();
-        let r = execute("f.txt", "foo", "bar", true, dir.path().to_str().unwrap(), token).await;
+        let r = execute(
+            "f.txt",
+            "foo",
+            "bar",
+            true,
+            dir.path().to_str().unwrap(),
+            token,
+        )
+        .await;
         assert!(r.contains("3"), "{}", r);
-        assert_eq!(fs::read_to_string(dir.path().join("f.txt")).unwrap(), "bar bar bar");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("f.txt")).unwrap(),
+            "bar bar bar"
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_old_string_is_rejected_without_writing() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("f.txt");
+        fs::write(&path, "unchanged").unwrap();
+
+        let result = execute(
+            "f.txt",
+            "",
+            "replacement",
+            false,
+            dir.path().to_str().unwrap(),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await;
+
+        assert_eq!(result, "ERROR: old_string must not be empty.");
+        assert_eq!(fs::read_to_string(path).unwrap(), "unchanged");
+    }
+
+    #[tokio::test]
+    async fn pre_cancelled_replace_does_not_modify_the_file() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("f.txt");
+        fs::write(&path, "old").unwrap();
+        let token = tokio_util::sync::CancellationToken::new();
+        token.cancel();
+
+        let result = execute(
+            "f.txt",
+            "old",
+            "new",
+            false,
+            dir.path().to_str().unwrap(),
+            token,
+        )
+        .await;
+
+        assert_eq!(result, "[Operation Cancelled by User]");
+        assert_eq!(fs::read_to_string(path).unwrap(), "old");
     }
 }
