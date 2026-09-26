@@ -318,6 +318,7 @@ pub(crate) async fn apply_loaded(
     app.context_manager.clear();
     app.context_manager.set_messages(messages);
     finish_loaded_view_state(app);
+    app.refresh_todos();
     app.needs_save = needs_migration_save;
 
     let migration_result = if needs_migration_save {

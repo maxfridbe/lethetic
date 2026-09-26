@@ -3,7 +3,7 @@
 export const WFE_MAX_COMMAND_MESSAGE_BYTES = 262144;
 export const WFE_MAX_SERVER_MESSAGE_BYTES = 4194304;
 export const WFE_PROTOCOL_VERSION = 6;
-export const WFE_PROTOCOL_SCHEMA_SHA256 = "c31238fd135c6d63bf6990a17df3e97a0139fdb91fd78fa5a9ae289cff84a584";
+export const WFE_PROTOCOL_SCHEMA_SHA256 = "71aa24a4ba9d9e394e0b88f6e8a1399a5a4c9ec132a58da537159e11e9984e46";
 export const COMMAND_ORDER = [
     "hotkeys",
     "themes",
@@ -13,6 +13,7 @@ export const COMMAND_ORDER = [
     "clear-ui",
     "clear-context",
     "toggle-debugger",
+    "toggle-todos",
     "sessions",
     "name-session",
     "latest-files",

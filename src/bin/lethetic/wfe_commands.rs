@@ -67,6 +67,7 @@ fn wfe_panel_for_command(command: lethetic::commands::CommandId) -> Option<Panel
         | CommandId::PythonPermissive => Some(PanelId::AgentMode),
         CommandId::LoopDetection
         | CommandId::RemoteControl
+        | CommandId::ToggleTodos
         | CommandId::ClearUi
         | CommandId::ClearContext
         | CommandId::ToggleDebugger

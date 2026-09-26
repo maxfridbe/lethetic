@@ -667,6 +667,9 @@ pub(crate) async fn handle_stream_event(
             is_error,
             provenance,
         } => {
+            if func_name == "todowrite" || func_name == "python" {
+                context.app.refresh_todos();
+            }
             let presentation_id = id.as_deref().unwrap_or("local_operation");
             let presented = lethetic::tools::present_tool_execution(
                 presentation_id,
@@ -995,6 +998,7 @@ pub(crate) async fn handle_stream_event(
             context.app.should_redraw = true;
         }
         StreamEvent::TodoUpdated(snapshot) => {
+            context.app.todos = snapshot.clone();
             let active = snapshot
                 .todos
                 .iter()

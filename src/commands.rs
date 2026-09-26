@@ -12,6 +12,7 @@ pub enum CommandId {
     ClearUi,
     ClearContext,
     ToggleDebugger,
+    ToggleTodos,
     Sessions,
     NameSession,
     LatestFiles,
@@ -112,7 +113,7 @@ pub struct CommandContext {
 }
 
 impl CommandId {
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 22] = [
         Self::Hotkeys,
         Self::Themes,
         Self::InputHistory,
@@ -121,6 +122,7 @@ impl CommandId {
         Self::ClearUi,
         Self::ClearContext,
         Self::ToggleDebugger,
+        Self::ToggleTodos,
         Self::Sessions,
         Self::NameSession,
         Self::LatestFiles,
@@ -230,7 +232,7 @@ impl CommandId {
     }
 }
 
-pub const COMMAND_SPECS: [CommandSpec; 21] = [
+pub const COMMAND_SPECS: [CommandSpec; 22] = [
     CommandSpec {
         id: CommandId::Hotkeys,
         base_label: "Hotkeys",
@@ -302,6 +304,15 @@ pub const COMMAND_SPECS: [CommandSpec; 21] = [
         accelerator: Some('d'),
         requires_idle: false,
         description: "Show or hide the debug log pane (F12).",
+    },
+    CommandSpec {
+        id: CommandId::ToggleTodos,
+        base_label: "Toggle Todo List",
+        icon: IconId::Debug,
+        behavior: CommandBehavior::Execute,
+        accelerator: None,
+        requires_idle: false,
+        description: "Show or hide the model's remaining todos on the right (F9).",
     },
     CommandSpec {
         id: CommandId::Sessions,
@@ -437,8 +448,8 @@ mod tests {
             serialized.len(),
             serialized.iter().collect::<HashSet<_>>().len()
         );
-        assert_eq!(serialized[8], "\"sessions\"");
-        assert_eq!(serialized[9], "\"name-session\"");
+        assert_eq!(serialized[9], "\"sessions\"");
+        assert_eq!(serialized[10], "\"name-session\"");
         assert_eq!(CommandId::ALL.len(), COMMAND_SPECS.len());
         let mut accelerators = HashSet::new();
         for id in CommandId::ALL {
@@ -476,6 +487,7 @@ mod tests {
             session_name: Some("Demo".to_string()),
             has_history: false,
             fully_idle: false,
+            ..Default::default()
         };
         assert_eq!(
             CommandId::LoopDetection.view(&context).label,

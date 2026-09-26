@@ -1448,6 +1448,7 @@ export function commandResponseMatchesRequest(
           case "clear-ui":
           case "toggle-debugger":
           case "remote-control":
+          case "toggle-todos":
             return null;
           case "clear-context":
           case "delete-python-runtime":

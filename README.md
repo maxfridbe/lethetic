@@ -476,6 +476,7 @@ These keys describe the terminal UI. Browser palette accelerators, editable-targ
 | **Page Up / Down** | Scroll output 20 lines |
 | **F1 / Ctrl+P** | Command Palette |
 | **F12** | Toggle debugger pane |
+| **F9** | Toggle the todo list pane: the model's remaining todos on the right, stacked above the debugger when both are open |
 | **Ctrl+O** | Hide or show thinking blocks (persisted per session) |
 | **Click 󰇻** | Copy a block's content to the clipboard via `wl-copy` |
 | **Ctrl+C** | State-aware cancel/exit: cancel active provider, tool, initial Python backend probe, Python policy validation, image pull/setup, or LSP work and wait for containment; otherwise exit gracefully (including pending approval/question) |
@@ -492,6 +493,7 @@ These keys describe the terminal UI. Browser palette accelerators, editable-targ
 | Clear UI (Keep Context) | Clear display, keep context |
 | Clear All Context | Clear display and context, start fresh after confirmation |
 | Toggle Debugger | Show/hide debug log pane |
+| Toggle Todo List | Show/hide the model's todo list pane (F9) |
 | Sessions | Load, resume, compact, or delete sessions. **C** compacts the selected session: pick any configured model, the log is summarised in parallel windows with a streaming merge, and the result is saved as a new resumable session that inherits the source's model, prompt, theme, history, and cost |
 | Name/Rename Session | Set display-only durable session metadata without changing its UUID or path |
 | Latest Files | View and manage file context cache |

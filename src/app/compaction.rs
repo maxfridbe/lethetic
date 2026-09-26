@@ -75,6 +75,36 @@ impl App {
         };
     }
 
+    /// Re-read the todo list the model's tools maintain in
+    /// `.lethetic/todos.json` (workspace root, then the tool cwd).
+    pub fn refresh_todos(&mut self) {
+        let roots = [
+            self.tool_runtime.workspace_root().to_path_buf(),
+            std::path::PathBuf::from(&self.current_dir),
+        ];
+        for root in roots {
+            if let Ok(snapshot) =
+                crate::todo_store::TodoStore::open(&root).and_then(|store| store.get())
+                && (!snapshot.todos.is_empty() || snapshot.revision > 0)
+            {
+                self.todos = snapshot;
+                return;
+            }
+        }
+        self.todos = Default::default();
+    }
+
+    pub fn toggle_todos(&mut self) {
+        self.show_todos = !self.show_todos;
+        if self.show_todos {
+            self.refresh_todos();
+        }
+        for block in &mut self.blocks {
+            block.invalidate();
+        }
+        self.should_redraw = true;
+    }
+
     pub fn toggle_hide_thinking(&mut self) {
         self.hide_thinking = !self.hide_thinking;
         for block in &mut self.blocks {

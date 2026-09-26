@@ -176,6 +176,9 @@ pub struct App {
     pub remote_control_target: Option<String>,
     /// Remote control was forced by a launch flag and cannot be changed here.
     pub remote_control_locked: bool,
+    /// Right-hand todo pane (F9) and its cached contents.
+    pub show_todos: bool,
+    pub todos: crate::todo_store::TodoSnapshot,
     pub hide_thinking: bool,
     /// Layout of the output panel from the last draw — used for mouse hit-testing.
     pub last_output_rect: Rect,
@@ -395,6 +398,8 @@ impl App {
             rc_info: None,
             remote_control_target: None,
             remote_control_locked: false,
+            show_todos: false,
+            todos: Default::default(),
             hide_thinking: false,
             last_output_rect: Rect::default(),
             last_block_line_counts: Vec::new(),

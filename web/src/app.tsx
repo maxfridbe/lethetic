@@ -754,6 +754,7 @@ export class SpaApplication implements BrowserTransportEvents {
       case "python-nonlocal":
       case "python-permissive":
       case "remote-control":
+      case "toggle-todos":
         this.#send({ type: "invoke_command", command_id: command.id });
         return;
       default:

@@ -135,6 +135,10 @@ pub fn dispatch_command(app: &mut App, command: CommandId) -> AppEventOutcome {
             app.show_palette = false;
             app.show_debug = !app.show_debug;
         }
+        CommandId::ToggleTodos => {
+            app.show_palette = false;
+            app.toggle_todos();
+        }
         CommandId::Sessions => {
             app.show_palette = false;
             app.refresh_session_list();

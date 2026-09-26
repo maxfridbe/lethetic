@@ -6,6 +6,7 @@ mod overlays;
 mod python_setup;
 mod remote_control;
 mod status;
+mod todos;
 
 pub use crate::theme::Theme;
 pub use block::{render_block_to_lines, render_block_to_lines_with_cost_visibility};
@@ -23,6 +24,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     status::render_processing(f, app, areas.processing);
     status::render_status(f, app, areas.status);
     status::render_debug(f, app, areas.debug);
+    todos::render(f, app, areas.todos);
     if overlays::render_primary(f, app) {
         model_catalog::render(f, app);
         remote_control::render(f, app);

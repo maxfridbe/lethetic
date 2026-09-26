@@ -872,6 +872,10 @@ fn handle_global_key(app: &mut App, key: event::KeyEvent) -> bool {
             app.should_redraw = true;
             return true;
         }
+        KeyCode::F(9) => {
+            app.toggle_todos();
+            return true;
+        }
         _ => {}
     }
     false

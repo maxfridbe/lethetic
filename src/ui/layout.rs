@@ -12,6 +12,7 @@ pub(super) struct UiAreas {
     pub(super) input: Rect,
     pub(super) status: Rect,
     pub(super) debug: Rect,
+    pub(super) todos: Rect,
     pub(super) inner_width: u16,
 }
 
@@ -26,7 +27,7 @@ pub(super) fn calculate_areas(app: &App, area: Rect) -> UiAreas {
     let main_layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(
-            if app.show_debug {
+            if app.show_debug || app.show_todos {
                 [Constraint::Percentage(50), Constraint::Percentage(50)]
             } else {
                 [Constraint::Percentage(100), Constraint::Min(0)]
@@ -35,6 +36,18 @@ pub(super) fn calculate_areas(app: &App, area: Rect) -> UiAreas {
         )
         .split(area);
 
+    // Right column: todos on top, debugger below when both are open.
+    let right = match (app.show_todos, app.show_debug) {
+        (true, true) => {
+            let split = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+                .split(main_layout[1]);
+            (split[0], split[1])
+        }
+        (true, false) => (main_layout[1], Rect::default()),
+        _ => (Rect::default(), main_layout[1]),
+    };
     let inner_width = main_layout[0].width.saturating_sub(4);
     let prefix_len = 2;
     let input_height = (((app.input.len() + prefix_len) as u16 / inner_width.max(1)) + 3).min(10);
@@ -56,7 +69,8 @@ pub(super) fn calculate_areas(app: &App, area: Rect) -> UiAreas {
         processing: left_layout[1],
         input: left_layout[2],
         status: left_layout[3],
-        debug: main_layout[1],
+        debug: right.1,
+        todos: right.0,
         inner_width,
     }
 }

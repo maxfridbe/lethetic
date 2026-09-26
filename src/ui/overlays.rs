@@ -840,6 +840,7 @@ fn render_hotkeys(f: &mut ratatui::Frame, app: &mut App) {
                 .fg(Color::Cyan),
         )]),
         Line::from(vec![Span::raw("  F12       : Toggle Debugger Pane")]),
+        Line::from(vec![Span::raw("  F9        : Toggle Todo List Pane")]),
         Line::from(vec![Span::raw(
             "  F10       : Toggle Mouse (for terminal selection)",
         )]),
