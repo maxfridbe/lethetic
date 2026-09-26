@@ -19,7 +19,13 @@ cargo run --bin lethetic
 
 # Headless / scripted
 cargo run --bin lethetic -- --command "Fix all TypeScript errors in src/"
+
+# Browser control (bare --rc asks how to bind) and a sandboxed Python-only agent
+lethetic --rc
+lethetic --python-only isolated
 ```
+
+The debugger pane starts hidden (F12 shows it, F9 shows the model's todo list). Ctrl+P opens the command palette; type to fuzzy-filter it. Each directory remembers the model you last selected, and resuming a session restores its model, prompt, Agent Mode, theme and loop-detection mode.
 
 ### Optional browser controller
 
@@ -91,7 +97,12 @@ Lethetic selects its primary model configuration from:
 1. `./config.yml` (checked first)
 2. `~/.config/lethetic/config.yml`
 
-A sibling `config.local.yml` overlays the selected file for machine-specific endpoints or keys. Python-mode settings use separate managed sidecars so the TUI never rewrites model configuration or secrets:
+A sibling `config.local.yml` overlays the selected file for machine-specific endpoints or keys (entries merge by `name`). Lethetic also keeps two small state files it writes itself, so the hand-edited config is never rewritten:
+
+- `.lethetic/last_model.json` in each working directory: the model last selected there, re-activated at startup.
+- `~/.config/lethetic/saved_models.yml`: models added from the model picker's catalog scan, plus their catalog list prices, merged into each connection's `models` list at startup.
+
+Python-mode settings use separate managed sidecars so the TUI never rewrites model configuration or secrets:
 
 1. `~/.config/lethetic/python-mode.yml`
 2. `<workspace>/.lethetic/python-mode.yml` (overrides global)
@@ -182,9 +193,14 @@ Lethetic connects to an already-running proxy; it never starts, stops, authorize
 
 Start and authorize `claude-code-proxy` separately, then choose **Ctrl+P → Models → Claude Code Proxy**. Connection errors remain visibly offline instead of silently switching providers.
 
-### API-equivalent pricing estimates
+### Cost: reported charges and estimates
 
-Structured `pricing` is scoped to exact model IDs. The bundled `gpt-5.6-sol` entry uses the rates effective 2026-08-25 (promotional validity currently documented through 2026-11-21): uncached input `$4.00/M`, cached-read input `$0.40/M`, cache creation/write `$5.00/M`, and output `$20.00/M`. Each provider request above 272,000 input tokens is priced with input ×2 and output ×1.5 before requests are summed. Lethetic preserves provider cache categories, records every tool continuation idempotently, and shows latest logical-turn plus cumulative chat-session estimates. `*` marks incomplete/unpriced usage and `†` marks stale pricing. These are API-equivalent estimates only—not actual OAuth/Codex subscription, credit, or invoice charges.
+When a provider reports the actual charge (OpenRouter sends `usage.cost` on every response), Lethetic shows it as **cost** and uses it for turn and session totals. Otherwise it estimates from a price table:
+
+- a connection's structured `pricing` block for the exact model, or
+- the list price captured when you scan that connection's catalog in the model picker (OpenRouter publishes per-token prices).
+
+Estimates are labelled **EST API-eq**. Structured `pricing` is scoped to exact model IDs. The bundled `gpt-5.6-sol` entry uses the rates effective 2026-08-25 (promotional validity currently documented through 2026-11-21): uncached input `$4.00/M`, cached-read input `$0.40/M`, cache creation/write `$5.00/M`, and output `$20.00/M`. Each provider request above 272,000 input tokens is priced with input ×2 and output ×1.5 before requests are summed. Lethetic preserves provider cache categories, records every tool continuation idempotently, and shows latest logical-turn plus cumulative chat-session estimates. `*` marks incomplete/unpriced usage and `†` marks stale pricing. These are API-equivalent estimates only—not actual OAuth/Codex subscription, credit, or invoice charges.
 
 ---
 
@@ -299,6 +315,11 @@ Headless output prints the session, managed workspace, runtime, exact container,
 - Resets the stream parser to the new dialect
 - Preserves the active Python runspace because the chat session did not change
 - Updates the status bar with connection and model identity
+- Remembers the choice for this working directory (`.lethetic/last_model.json`)
+
+Press **s** on a row to scan that connection's full catalog: type to filter (several words must all match), Enter adds the model to the picker. Additions are stored in `~/.config/lethetic/saved_models.yml`; a scan also records catalog list prices for the models already in the picker.
+
+For codex, one `claude_code_proxy` entry per reasoning effort (`extra_body.output_config.effort: max | high | medium`, each with its own `id`) gives effort choices in the same picker.
 
 ---
 
@@ -410,7 +431,7 @@ All other model-originated tool names are rejected at dispatch in Python-only mo
 | Tool | Description |
 |---|---|
 | `repo_overview` | Ecosystem detection, 2-level dir tree, README preview, entry points. |
-| `todowrite` | Write a structured todo list (status + priority) to `.lethetic/todos.json`. |
+| `todowrite` | Write a structured todo list (status + priority) to `.lethetic/todos.json`. F9 shows it live in a right-hand pane. |
 | `task` | Spawn an autonomous sub-agent with all tools except `task` and `ask_the_user`. 5-minute timeout; sub-agent progress streamed to parent UI. |
 
 ### Document & Vision *(requires `enable_image_processing_tool: true`)*
@@ -434,7 +455,7 @@ All other model-originated tool names are rejected at dispatch in Python-only mo
 
 ### Loop detection
 
-Combined NGram + phrase-frequency watchdog. Only model text/thought output is checked — tool results (compiler errors, stack traces) are excluded to prevent false positives.
+Combined NGram + phrase-frequency watchdog (the default). Only model text/thought output is checked — tool results (compiler errors, stack traces) are excluded to prevent false positives. Block length is not capped by default, because long legitimate reasoning tripped a pure size limit; the **Combined + block limit** mode (Ctrl+P → Loop Detection cycles modes) adds a 10,000-character cap back.
 
 - NGram window: 128 chars, threshold: 4 occurrences
 - Phrase frequency: tracks self-correction phrases (`"Actually,"`, `"Wait,"`, etc.)
@@ -489,13 +510,13 @@ These keys describe the terminal UI. Browser palette accelerators, editable-targ
 | Hotkeys | Show key reference |
 | Themes | Pick from 30 built-in themes |
 | Input History | Browse and restore previous prompts (shared across sessions of a project via `.lethetic/history.json`) |
-| Loop Detection | Cycle detection mode (Off/NGram/Phrase/Combined) |
+| Loop Detection | Cycle detection mode (Off / Block limit only / NGram / Phrase / Combined / Combined + block limit) |
 | System Prompt | Edit or switch prompt template |
 | Clear UI (Keep Context) | Clear display, keep context |
 | Clear All Context | Clear display and context, start fresh after confirmation |
 | Toggle Debugger | Show/hide debug log pane |
 | Toggle Todo List | Show/hide the model's todo list pane (F9) |
-| Sessions | Load, resume, compact, or delete sessions. **C** compacts the selected session: pick any configured model, the log is summarised in parallel windows with a streaming merge, and the result is saved as a new resumable session that inherits the source's model, prompt, theme, history, and cost |
+| Sessions | Load, resume, compact, or delete sessions. Each entry shows its model, Agent Mode and remote control on a second line; resuming restores those settings (launch flags still win, and remote control is never restarted automatically). **C** compacts the selected session: pick any configured model, the log is summarised in parallel windows with a streaming merge, and the result is saved as a new resumable session that inherits the source's model, prompt, theme, history, and cost |
 | Name/Rename Session | Set display-only durable session metadata without changing its UUID or path |
 | Latest Files | View and manage file context cache |
 | Models | Switch between configured model servers |
@@ -527,10 +548,10 @@ The Linux PTY lifecycle suite covers the browser-first and optional-TUI gates (i
 
 ### Live integration tests
 
-Require the server(s) to be running. Tests within and across test binaries are serialized via the `llm` named lock — Gemma4 and Qwen3 tests cannot run simultaneously.
+The non-ignored live tests run on a hosted connection, OpenRouter by default, so they never touch local GPU servers. They read `~/.config/lethetic/config.yml` (override with `LETHETIC_LIVE_CONFIG`) and the connection id `openrouter` (override with `LETHETIC_LIVE_SERVER`). Tests that need a local llama.cpp server, Azure, or the codex proxy are ignored unless you pass `--ignored`. Tests are serialized via the `llm` named lock.
 
 ```bash
-# All live modules (tests use the shared `live` target)
+# Hosted live tests
 cargo test --test live -- --nocapture
 
 # One module/filter

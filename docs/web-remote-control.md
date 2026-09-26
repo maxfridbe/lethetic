@@ -9,6 +9,10 @@ lethetic --wfe-remote-control https://127.0.0.1:11223
 
 `--rc [TARGET]` accepts `host`, `host:port`, or a full `https://` URL (default port 11223) and is the same as `--wfe-remote-control`. `--rc-open`, `--rc-files`, `--rc-only`, `--rc-tls-cert`, `--rc-tls-key`, and `--rc-token-file` are short spellings of `--wfe-disable-authtoken`, `--wfe-files localonly`, `--service`, `--wfe-tls-cert`, `--wfe-tls-key`, and `--wfe-auth-token-file`. Bare `--rc` lists this machine's addresses and asks for address, port, authentication, file sharing, and surface, then prints the equivalent flags.
 
+Remote control can also be started and stopped inside a running terminal session with **Ctrl+P → Remote Control: start / stop**. The dialog asks the same questions as bare `--rc`, then shows the controller URL, listeners and certificate fingerprint in a popup. While it runs, a status line under the input shows the target, auth mode, file sharing and connected browsers. When `--rc` started it at launch the palette item is disabled, and browsers cannot start or stop it.
+
+The run loop publishes state to browsers only after something changed, at most every 100 ms; command responses publish immediately before replying. Redaction results are memoized per text, so unchanged transcript blocks are not rescanned on each publish.
+
 The web frontend is optional. Without `--wfe-remote-control`, Lethetic does not open a web listener. WFE cannot be combined with `--command`.
 
 ## Read-only launch-directory files
