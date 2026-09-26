@@ -1,5 +1,6 @@
 use crate::app::App;
 
+#[derive(Clone)]
 pub(super) struct RedactionOutcome {
     pub(super) text: String,
     pub(super) redacted: bool,
@@ -8,6 +9,27 @@ pub(super) struct RedactionOutcome {
 
 pub(super) struct Redactor {
     values: Vec<String>,
+    /// Identifies this sensitive-value set in the memo below.
+    values_fingerprint: u64,
+}
+
+/// Redaction results memoized per (sensitive-value set, text, limit). The
+/// browser projection re-runs on every publish over the whole transcript,
+/// and old blocks never change, so each text is scanned once.
+const REDACTION_MEMO_CAPACITY: usize = 4096;
+
+thread_local! {
+    static REDACTION_MEMO: std::cell::RefCell<std::collections::HashMap<(u64, u64, usize), RedactionOutcome>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+fn fingerprint<T: std::hash::Hash + ?Sized>(value: &T) -> u64 {
+    use std::hash::{BuildHasher, Hasher};
+    static STATE: std::sync::LazyLock<std::collections::hash_map::RandomState> =
+        std::sync::LazyLock::new(std::collections::hash_map::RandomState::new);
+    let mut hasher = STATE.build_hasher();
+    value.hash(&mut hasher);
+    hasher.finish()
 }
 
 impl Redactor {
@@ -64,7 +86,11 @@ impl Redactor {
         add_sensitive_fragments(&mut values, &app.system_prompt, true);
         values.sort_by(|left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)));
         values.dedup();
-        Self { values }
+        let values_fingerprint = fingerprint(&values);
+        Self {
+            values,
+            values_fingerprint,
+        }
     }
 
     pub(super) fn redact_and_truncate(&self, value: &str, max_bytes: usize) -> (String, bool) {
@@ -78,6 +104,22 @@ impl Redactor {
         value: &str,
         max_bytes: usize,
     ) -> RedactionOutcome {
+        let key = (self.values_fingerprint, fingerprint(value), max_bytes);
+        if let Some(hit) = REDACTION_MEMO.with(|memo| memo.borrow().get(&key).cloned()) {
+            return hit;
+        }
+        let outcome = self.redact_and_truncate_uncached(value, max_bytes);
+        REDACTION_MEMO.with(|memo| {
+            let mut memo = memo.borrow_mut();
+            if memo.len() >= REDACTION_MEMO_CAPACITY {
+                memo.clear();
+            }
+            memo.insert(key, outcome.clone());
+        });
+        outcome
+    }
+
+    fn redact_and_truncate_uncached(&self, value: &str, max_bytes: usize) -> RedactionOutcome {
         if max_bytes == 0 {
             return RedactionOutcome {
                 text: String::new(),

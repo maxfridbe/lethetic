@@ -151,6 +151,9 @@ impl ActorSurface {
     }
 }
 
+/// Minimum spacing between browser state publications from the run loop.
+const WFE_PUBLISH_INTERVAL: Duration = Duration::from_millis(100);
+
 pub(crate) async fn run_actor(
     app: &mut App,
     config: &mut Config,
@@ -170,6 +173,12 @@ pub(crate) async fn run_actor(
     // Listener started from the command palette; the launch-time one is
     // owned by the caller.
     let mut in_session_server: Option<lethetic::wfe::server::WfeServerHandle> = None;
+    // Projecting the whole app for the browser is expensive (it walks every
+    // transcript block), so publish only after something happened and at
+    // most every WFE_PUBLISH_INTERVAL. Browser commands publish on their own
+    // before replying, so they never wait on this throttle.
+    let mut wfe_dirty = true;
+    let mut last_wfe_publish: Option<std::time::Instant> = None;
     let mut last_tick = std::time::Instant::now();
     let mut last_save = std::time::Instant::now();
     let mut shutdown_announced = false;
@@ -192,6 +201,7 @@ pub(crate) async fn run_actor(
 
     loop {
         if let Some(request) = context.remote_control_request.take() {
+            wfe_dirty = true;
             handle_remote_control_request(
                 request,
                 &mut context,
@@ -207,9 +217,14 @@ pub(crate) async fn run_actor(
                 runtime.record_operational(OperationalEvent::Shutdown(shutdown_kind(reason)));
             }
         }
-        let publish_failed = wfe_runtime
-            .as_mut()
-            .is_some_and(|runtime| runtime.publish(context.app).is_err());
+        let publish_due =
+            wfe_dirty && last_wfe_publish.is_none_or(|last| last.elapsed() >= WFE_PUBLISH_INTERVAL);
+        let publish_failed = publish_due
+            && wfe_runtime.as_mut().is_some_and(|runtime| {
+                wfe_dirty = false;
+                last_wfe_publish = Some(std::time::Instant::now());
+                runtime.publish(context.app).is_err()
+            });
         if publish_failed {
             context
                 .begin_fatal_shutdown(ShutdownReason::WfeFailure, "WFE state publication failed");
@@ -259,6 +274,7 @@ pub(crate) async fn run_actor(
             last_save = std::time::Instant::now();
         }
 
+        let mut idle_tick = false;
         tokio::select! {
             biased;
             signal = async {
@@ -423,6 +439,7 @@ pub(crate) async fn run_actor(
             }
 
             _ = tokio::time::sleep(Duration::from_millis(16)) => {
+                idle_tick = true;
                 if context.app.is_processing
                     && last_tick.elapsed() >= Duration::from_millis(100)
                 {
@@ -430,6 +447,9 @@ pub(crate) async fn run_actor(
                     last_tick = std::time::Instant::now();
                 }
             }
+        }
+        if !idle_tick {
+            wfe_dirty = true;
         }
     }
 
