@@ -1,7 +1,6 @@
 use super::session_state::is_forbidden_session_name_character;
 use super::setup_input::handle_python_setup_key;
 use super::*;
-use crate::commands::CommandId;
 use crate::python_setup::PythonSetupStage;
 use crossterm::event::{self, KeyCode, KeyModifiers};
 
@@ -526,26 +525,36 @@ fn handle_hotkeys_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
 }
 
 fn handle_palette_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
+    app.should_redraw = true;
     match key.code {
-        KeyCode::Char('q') | KeyCode::Esc => {
+        KeyCode::Esc => {
             app.show_palette = false;
-            app.should_redraw = true;
+            app.palette_query.clear();
+            app.palette_state.select(Some(0));
         }
-        KeyCode::Down | KeyCode::Char('j') => app.next_palette_item(),
-        KeyCode::Up | KeyCode::Char('k') => app.previous_palette_item(),
+        KeyCode::Down | KeyCode::Tab => app.next_palette_item(),
+        KeyCode::Up | KeyCode::BackTab => app.previous_palette_item(),
         KeyCode::Enter => {
             let index = app.palette_state.selected().unwrap_or(0);
-            let command = app
-                .palette_items
-                .get(index)
-                .copied()
-                .unwrap_or(CommandId::Hotkeys);
-            return dispatch_command(app, command);
-        }
-        KeyCode::Char(accelerator) => {
-            if let Some(command) = CommandId::from_accelerator(accelerator) {
+            if let Some(command) = app.palette_matches().get(index).copied() {
+                app.palette_query.clear();
+                app.palette_state.select(Some(0));
                 return dispatch_command(app, command);
             }
+        }
+        KeyCode::Backspace => {
+            app.palette_query.pop();
+            app.palette_state.select(Some(0));
+        }
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.palette_query.clear();
+            app.palette_state.select(Some(0));
+        }
+        KeyCode::Char(character)
+            if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
+        {
+            app.palette_query.push(character);
+            app.palette_state.select(Some(0));
         }
         _ => {}
     }
@@ -902,6 +911,9 @@ fn handle_output_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
     AppEventOutcome::Continue
 }
 
+/// Two Esc presses within this window stop active work.
+pub const DOUBLE_ESC_WINDOW: std::time::Duration = std::time::Duration::from_millis(800);
+
 fn handle_main_input_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
     match key.code {
         KeyCode::Up if key.modifiers.contains(KeyModifiers::ALT) => {
@@ -1103,7 +1115,19 @@ fn handle_main_input_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome
         }
         KeyCode::Esc => {
             if app.is_processing || app.is_executing_tool {
-                return AppEventOutcome::Stop;
+                // Two presses within the window stop; one only arms, so a
+                // stray Esc cannot cancel a long run.
+                let now = std::time::Instant::now();
+                if app
+                    .stop_esc_armed_at
+                    .is_some_and(|armed| now.duration_since(armed) <= DOUBLE_ESC_WINDOW)
+                {
+                    app.stop_esc_armed_at = None;
+                    return AppEventOutcome::Stop;
+                }
+                app.stop_esc_armed_at = Some(now);
+                app.stop_reason = "Press Esc again to stop".to_string();
+                app.should_redraw = true;
             } else {
                 app.show_palette = true;
                 app.should_redraw = true;
@@ -1142,6 +1166,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::CommandId;
     use crate::config::Config;
 
     fn key(code: KeyCode, modifiers: KeyModifiers) -> event::KeyEvent {
@@ -1182,6 +1207,45 @@ mod tests {
                 Some(ApprovalDecision::Deny)
             );
         }
+    }
+
+    #[test]
+    fn palette_typing_filters_and_enter_runs_the_top_match() {
+        let mut app = App::new(&Config::default());
+        app.show_session_manager = false;
+        app.show_palette = true;
+        for character in "tdl".chars() {
+            handle_key(
+                &mut app,
+                key(KeyCode::Char(character), KeyModifiers::empty()),
+            );
+        }
+        assert_eq!(app.palette_matches()[0], CommandId::ToggleTodos);
+        handle_key(&mut app, key(KeyCode::Enter, KeyModifiers::empty()));
+        assert!(app.show_todos);
+        assert!(!app.show_palette);
+        assert!(app.palette_query.is_empty());
+
+        app.show_palette = true;
+        handle_key(&mut app, key(KeyCode::Char('q'), KeyModifiers::empty()));
+        assert!(app.show_palette, "q is filter text, not close");
+        handle_key(&mut app, key(KeyCode::Esc, KeyModifiers::empty()));
+        assert!(!app.show_palette);
+        assert!(app.palette_query.is_empty());
+    }
+
+    #[test]
+    fn stopping_needs_two_quick_escapes() {
+        let mut app = App::new(&Config::default());
+        app.show_session_manager = false;
+        app.is_processing = true;
+        let esc = || key(KeyCode::Esc, KeyModifiers::empty());
+        assert_eq!(handle_key(&mut app, esc()), AppEventOutcome::Continue);
+        assert!(app.stop_reason.contains("Esc again"));
+        assert_eq!(handle_key(&mut app, esc()), AppEventOutcome::Stop);
+
+        app.stop_esc_armed_at = Some(std::time::Instant::now() - DOUBLE_ESC_WINDOW * 2);
+        assert_eq!(handle_key(&mut app, esc()), AppEventOutcome::Continue);
     }
 
     #[test]

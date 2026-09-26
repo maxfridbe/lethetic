@@ -230,9 +230,88 @@ export function orderedCommands(snapshot) {
     }
     return commands;
 }
+/**
+ * fzf-style score for one query term (mirrors src/fuzzy.rs): every character
+ * must appear in order; consecutive runs, word starts and early matches rank
+ * higher. Returns null when the term does not match.
+ */
+function scoreTerm(term, text) {
+    const first = term[0];
+    if (first === undefined) {
+        return null;
+    }
+    let best = null;
+    for (let start = 0; start < text.length; start += 1) {
+        if (text[start] !== first) {
+            continue;
+        }
+        let score = 0;
+        let position = start;
+        let previous = null;
+        let matched = true;
+        for (const needle of term) {
+            let index = -1;
+            for (let cursor = position; cursor < text.length; cursor += 1) {
+                if (text[cursor] === needle) {
+                    index = cursor;
+                    break;
+                }
+            }
+            if (index < 0) {
+                matched = false;
+                break;
+            }
+            score += 16;
+            const before = index === 0 ? undefined : text[index - 1];
+            if (before === undefined || !/[\p{L}\p{N}]/u.test(before)) {
+                score += 12;
+            }
+            if (previous === null) {
+                score -= Math.min(index, 10);
+            }
+            else if (index === previous + 1) {
+                score += 10;
+            }
+            else {
+                score -= Math.min(index - previous - 1, 12);
+            }
+            previous = index;
+            position = index + 1;
+        }
+        if (matched) {
+            best = best === null ? score : Math.max(best, score);
+        }
+    }
+    return best;
+}
+export function fuzzyScore(query, text) {
+    const characters = Array.from(text.toLocaleLowerCase());
+    let total = 0;
+    for (const term of query.split(/\s+/u).filter((part) => part.length > 0)) {
+        const score = scoreTerm(Array.from(term.toLocaleLowerCase()), characters);
+        if (score === null) {
+            return null;
+        }
+        total += score;
+    }
+    return total;
+}
 export function filteredCommands(snapshot, query) {
-    const normalized = query.trim().toLocaleLowerCase();
-    return orderedCommands(snapshot).filter((command) => `${command.label} ${command.id}`.toLocaleLowerCase().includes(normalized));
+    const commands = orderedCommands(snapshot);
+    if (query.trim().length === 0) {
+        return commands;
+    }
+    const ranked = [];
+    commands.forEach((command, index) => {
+        const main = fuzzyScore(query, command.label);
+        const extra = fuzzyScore(query, command.description);
+        const score = Math.max(main ?? -Infinity, extra === null ? -Infinity : Math.trunc(extra / 2));
+        if (score !== -Infinity) {
+            ranked.push({ command, score, index });
+        }
+    });
+    ranked.sort((left, right) => right.score - left.score || left.index - right.index);
+    return ranked.map((entry) => entry.command);
 }
 export function orderedThemes(snapshot) {
     const runtime = new Map(snapshot.themes.map((theme) => [theme.theme_id, theme]));

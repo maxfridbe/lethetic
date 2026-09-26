@@ -474,7 +474,8 @@ These keys describe the terminal UI. Browser palette accelerators, editable-targ
 | **Up / Down** (at input boundary) | Scroll output line by line |
 | **Alt + Up / Down** | Scroll output at any time |
 | **Page Up / Down** | Scroll output 20 lines |
-| **F1 / Ctrl+P** | Command Palette |
+| **F1 / Ctrl+P** | Command Palette: type to fuzzy-filter (ranked by match), ↑↓ to move, Enter to run, Esc to close |
+| **Esc Esc** (within 0.8 s) | Stop the active response or tool; a single Esc only arms it |
 | **F12** | Toggle debugger pane |
 | **F9** | Toggle the todo list pane: the model's remaining todos on the right, stacked above the debugger when both are open |
 | **Ctrl+O** | Hide or show thinking blocks (persisted per session) |

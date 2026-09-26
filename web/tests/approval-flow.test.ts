@@ -281,6 +281,7 @@ function paletteKeyboardContext(
       openPalette: () => {},
       closeOverlay: () => {},
       stop: () => {},
+      armStop: () => {},
       toggleDebugger: () => {},
       requestQuit: () => {},
       setPaletteSelection: (selected) => {

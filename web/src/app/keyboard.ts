@@ -109,6 +109,10 @@ function trapOverlayFocus(event: KeyboardEvent): void {
   }
 }
 
+/** Two Escape presses within this window stop active work. */
+export const DOUBLE_ESCAPE_WINDOW_MS = 800;
+let lastStopEscapeAt = 0;
+
 export function handleGlobalKeyDown(
   event: KeyboardEvent,
   context: KeyboardContext,
@@ -133,7 +137,16 @@ export function handleGlobalKeyDown(
       context.actions.toggleDebugger();
     } else if (context.state.snapshot?.activity.cancellable === true) {
       event.preventDefault();
-      context.actions.stop();
+      // Two presses within the window stop; one only arms, so a stray
+      // Escape cannot cancel a long run.
+      const now = Date.now();
+      if (now - lastStopEscapeAt <= DOUBLE_ESCAPE_WINDOW_MS) {
+        lastStopEscapeAt = 0;
+        context.actions.stop();
+      } else {
+        lastStopEscapeAt = now;
+        context.actions.armStop();
+      }
     }
     return;
   }

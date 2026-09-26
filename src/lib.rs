@@ -6,6 +6,7 @@ pub mod compact;
 pub mod config;
 pub mod context;
 pub mod context_vercel;
+pub mod fuzzy;
 pub mod headless;
 #[cfg(target_os = "linux")]
 pub mod headless_session;

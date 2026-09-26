@@ -152,6 +152,8 @@ export interface KeyboardActions {
   readonly openPalette: () => void;
   readonly closeOverlay: () => void;
   readonly stop: () => void;
+  /** First Escape during active work: tell the user a second one stops. */
+  readonly armStop: () => void;
   readonly toggleDebugger: () => void;
   readonly requestQuit: () => void;
   readonly setPaletteSelection: (selected: number) => void;

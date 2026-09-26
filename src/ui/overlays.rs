@@ -127,8 +127,8 @@ fn render_palette(f: &mut ratatui::Frame, app: &mut App) {
     }
     let area = centered_rect(70, 70, f.area());
     f.render_widget(Clear, area);
-    let items: Vec<ListItem> = app
-        .palette_items
+    let matches = app.palette_matches();
+    let items: Vec<ListItem> = matches
         .iter()
         .map(|command| {
             let view = app.command_view(*command);
@@ -156,7 +156,20 @@ fn render_palette(f: &mut ratatui::Frame, app: &mut App) {
         List::new(items)
             .block(
                 UIBlock::default()
-                    .title(format!("{} Command Palette", icons::COMMAND))
+                    .title(if app.palette_query.is_empty() {
+                        format!(
+                            "{} Command Palette  (type to filter · ↑↓ · Enter · Esc)",
+                            icons::COMMAND
+                        )
+                    } else {
+                        format!(
+                            "{} Command Palette › {}▏  ({} match{})",
+                            icons::COMMAND,
+                            app.palette_query,
+                            matches.len(),
+                            if matches.len() == 1 { "" } else { "es" }
+                        )
+                    })
                     .borders(Borders::ALL)
                     .style(Style::default().bg(app.theme.terminal_bg)),
             )
@@ -830,7 +843,7 @@ fn render_hotkeys(f: &mut ratatui::Frame, app: &mut App) {
         )]),
         Line::from(vec![Span::raw("  PGUP/PGDN : Fast Scroll Output")]),
         Line::from(vec![Span::raw(
-            "  ESC       : Open Command Palette / Stop Output",
+            "  ESC       : Open Command Palette · ESC ESC (quickly): Stop Output",
         )]),
         Line::from(vec![]),
         Line::from(vec![Span::styled(

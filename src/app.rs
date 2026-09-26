@@ -53,6 +53,10 @@ pub struct App {
     pub show_palette: bool,
     pub palette_state: ListState,
     pub palette_items: Vec<CommandId>,
+    /// Type-to-filter text in the command palette.
+    pub palette_query: String,
+    /// First Esc while work runs arms a stop; a second one soon after stops.
+    pub stop_esc_armed_at: Option<std::time::Instant>,
     pub theme: Theme,
     pub themes: Vec<Theme>,
     pub show_theme_menu: bool,
@@ -261,6 +265,8 @@ impl App {
             show_palette: false,
             palette_state,
             palette_items: CommandId::ALL.to_vec(),
+            palette_query: String::new(),
+            stop_esc_armed_at: None,
             theme: {
                 config
                     .theme

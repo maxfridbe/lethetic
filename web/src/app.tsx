@@ -1510,6 +1510,7 @@ export class SpaApplication implements BrowserTransportEvents {
         openPalette: () => this.#openPalette(),
         closeOverlay: () => this.#closeOverlay(),
         stop: () => this.#sendStop(),
+        armStop: () => this.#showToast("Press Esc again to stop."),
         toggleDebugger: () => this.#toggleDebugger(),
         requestQuit: () => {
           this.#sendConfirmable({

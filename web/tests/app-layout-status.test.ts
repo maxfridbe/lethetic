@@ -479,6 +479,7 @@ function keyboardContext(overrides: Partial<KeyboardState> = {}): KeyboardFixtur
         openPalette: () => calls.push("palette"),
         closeOverlay: () => calls.push("overlay"),
         stop: () => calls.push("stop"),
+        armStop: () => calls.push("arm-stop"),
         toggleDebugger: () => calls.push("debugger"),
         requestQuit: () => calls.push("quit"),
         setPaletteSelection: () => {},
@@ -505,7 +506,9 @@ test("Escape prioritizes protected overlays then narrow debugger then Stop", () 
   snapshot.activity.cancellable = true;
   fixture = keyboardContext({ snapshot });
   handleGlobalKeyDown(asKeyboardEvent(fakeKeyboardEvent("Escape")), fixture.context);
-  assert.deepEqual(fixture.calls, ["stop"]);
+  assert.deepEqual(fixture.calls, ["arm-stop"]);
+  handleGlobalKeyDown(asKeyboardEvent(fakeKeyboardEvent("Escape")), fixture.context);
+  assert.deepEqual(fixture.calls, ["arm-stop", "stop"]);
 
   fixture = keyboardContext();
   handleGlobalKeyDown(asKeyboardEvent(fakeKeyboardEvent("d")), fixture.context);

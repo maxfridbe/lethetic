@@ -8,10 +8,24 @@ impl App {
                 .select(Some(self.total_line_count.saturating_sub(1)));
         }
     }
+    /// Palette commands filtered and ranked by the typed query.
+    pub fn palette_matches(&self) -> Vec<CommandId> {
+        crate::fuzzy::rank(
+            &self.palette_query,
+            &self.palette_items,
+            |command| self.command_view(*command).label,
+            |command| self.command_view(*command).description,
+        )
+    }
+
     pub fn next_palette_item(&mut self) {
+        let count = self.palette_matches().len();
+        if count == 0 {
+            return;
+        }
         let i = match self.palette_state.selected() {
             Some(i) => {
-                if i >= self.palette_items.len() - 1 {
+                if i >= count - 1 {
                     0
                 } else {
                     i + 1
@@ -24,10 +38,14 @@ impl App {
     }
 
     pub fn previous_palette_item(&mut self) {
+        let count = self.palette_matches().len();
+        if count == 0 {
+            return;
+        }
         let i = match self.palette_state.selected() {
             Some(i) => {
                 if i == 0 {
-                    self.palette_items.len() - 1
+                    count - 1
                 } else {
                     i - 1
                 }
