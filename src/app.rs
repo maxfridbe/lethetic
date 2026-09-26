@@ -3,6 +3,7 @@ mod commands;
 mod compaction;
 mod input;
 mod lifecycle;
+mod model_catalog;
 mod navigation;
 mod python_session;
 mod session_state;
@@ -14,6 +15,7 @@ pub use commands::{AppEventOutcome, dispatch_command};
 pub use compaction::CompactionPopupState;
 pub use input::handle_key;
 pub use lifecycle::SessionSummary;
+pub use model_catalog::ModelCatalogState;
 pub use session_state::{
     SessionDirectoryBinding, SessionState, SessionWorkspaceBinding, normalize_session_display_name,
 };
@@ -163,6 +165,8 @@ pub struct App {
     /// When Some, the model picker is choosing a compaction model for this session ID.
     pub compact_model_picker_src: Option<String>,
     pub compaction_popup: Option<CompactionPopupState>,
+    /// "Scan for more" catalog opened from the model picker.
+    pub model_catalog: Option<ModelCatalogState>,
     pub hide_thinking: bool,
     /// Layout of the output panel from the last draw — used for mouse hit-testing.
     pub last_output_rect: Rect,
@@ -377,6 +381,7 @@ impl App {
             lsp_install_cancel_pending: false,
             compact_model_picker_src: None,
             compaction_popup: None,
+            model_catalog: None,
             hide_thinking: false,
             last_output_rect: Rect::default(),
             last_block_line_counts: Vec::new(),

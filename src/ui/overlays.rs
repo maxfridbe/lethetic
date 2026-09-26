@@ -209,7 +209,7 @@ fn render_model_switcher(f: &mut ratatui::Frame, app: &mut App) {
         )
     } else {
         format!(
-            "{} Models  (↑↓ navigate · Enter: switch · q: close)",
+            "{} Models  (↑↓ navigate · Enter: switch · s: scan for more · q: close)",
             icons::MODEL
         )
     };

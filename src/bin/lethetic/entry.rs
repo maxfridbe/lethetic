@@ -81,6 +81,8 @@ async fn run_cli(
     let python_policy_source =
         lethetic::python_policy::load_resolved_policy(&mut config, &workspace_root)?;
     config.merge_matching_server_settings();
+    // Models and prices saved from the model picker's catalog scan.
+    lethetic::saved_models::SavedModels::load().apply(&mut config);
     // Reopen with the model last selected in this directory.
     config.restore_last_model(&workspace_root);
     let mut python_policy =

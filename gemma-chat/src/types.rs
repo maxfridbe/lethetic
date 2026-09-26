@@ -167,6 +167,20 @@ pub struct Usage {
     pub cache_read_input_tokens: Option<u64>,
     /// Nonstandard extension used by some compatible providers.
     pub cache_creation_input_tokens: Option<u64>,
+    /// Actual charge reported by the provider (OpenRouter `usage.cost`, USD),
+    /// stored in billionths of a dollar.
+    #[serde(default, rename = "cost", deserialize_with = "cost_nanos")]
+    pub cost_nanos: Option<u64>,
+}
+
+fn cost_nanos<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<f64>::deserialize(deserializer)?;
+    Ok(value
+        .filter(|cost| cost.is_finite() && *cost >= 0.0)
+        .map(|cost| (cost * 1e9).round() as u64))
 }
 
 impl Usage {
@@ -186,6 +200,7 @@ impl Usage {
         self.cache_creation_input_tokens = newer
             .cache_creation_input_tokens
             .or(self.cache_creation_input_tokens);
+        self.cost_nanos = newer.cost_nanos.or(self.cost_nanos);
         self
     }
 }

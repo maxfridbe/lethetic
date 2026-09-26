@@ -9,6 +9,7 @@ mod input;
 mod internal;
 mod lifecycle;
 mod line_reader;
+mod model_catalog;
 mod provider;
 mod rc_wizard;
 mod runtime;

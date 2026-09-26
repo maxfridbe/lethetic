@@ -18,13 +18,15 @@ enum InputLayer {
     Palette,
     LatestFiles,
     ModelSwitcher,
+    ModelCatalog,
     LspManager,
     ThemeMenu,
     Approval,
 }
 
 // Later-rendered overlays receive input first so visual and keyboard z-order agree.
-const INPUT_LAYER_PRECEDENCE: [InputLayer; 14] = [
+const INPUT_LAYER_PRECEDENCE: [InputLayer; 15] = [
+    InputLayer::ModelCatalog,
     InputLayer::SessionName,
     InputLayer::Hotkeys,
     InputLayer::PromptEditor,
@@ -55,6 +57,7 @@ impl InputLayer {
             Self::Palette => app.show_palette,
             Self::LatestFiles => app.show_latest_files,
             Self::ModelSwitcher => app.show_model_switcher,
+            Self::ModelCatalog => app.model_catalog.is_some(),
             Self::LspManager => app.show_lsp_manager,
             Self::ThemeMenu => app.show_theme_menu,
             Self::Approval => app.show_approval_prompt,
@@ -85,6 +88,7 @@ fn dispatch_input_layer(app: &mut App, key: event::KeyEvent, layer: InputLayer) 
         InputLayer::Palette => handle_palette_key(app, key),
         InputLayer::LatestFiles => handle_latest_files_key(app, key),
         InputLayer::ModelSwitcher => handle_model_switcher_key(app, key),
+        InputLayer::ModelCatalog => super::model_catalog::handle_model_catalog_key(app, key),
         InputLayer::LspManager => handle_lsp_manager_key(app, key),
         InputLayer::ThemeMenu => handle_theme_menu_key(app, key),
         InputLayer::Approval => handle_approval_key(app, key),
@@ -608,6 +612,26 @@ fn handle_latest_files_key(app: &mut App, key: event::KeyEvent) -> AppEventOutco
 fn handle_model_switcher_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
     let num_models = app.available_models.len();
     match key.code {
+        KeyCode::Char('s') | KeyCode::Char('S') if app.compact_model_picker_src.is_none() => {
+            if let Some(choice) = app
+                .model_switcher_state
+                .selected()
+                .and_then(|index| app.available_models.get(index))
+            {
+                let connection_id = choice.connection_id.clone();
+                let name = app
+                    .config
+                    .model_servers
+                    .iter()
+                    .find(|server| server.connection_id() == connection_id)
+                    .map(|server| server.name.clone())
+                    .unwrap_or_else(|| connection_id.clone());
+                app.model_catalog = Some(ModelCatalogState::new(connection_id.clone(), name));
+                app.show_model_switcher = false;
+                app.should_redraw = true;
+                return AppEventOutcome::ScanModels { connection_id };
+            }
+        }
         KeyCode::Esc | KeyCode::Char('q') => {
             app.show_model_switcher = false;
             if app.compact_model_picker_src.take().is_some() {

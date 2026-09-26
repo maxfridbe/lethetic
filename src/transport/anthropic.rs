@@ -480,6 +480,7 @@ pub async fn discover_models(
                     Some(ModelInfo {
                         id: id.to_string(),
                         display_name: model["display_name"].as_str().unwrap_or(id).to_string(),
+                        pricing: None,
                     })
                 })
                 .collect()

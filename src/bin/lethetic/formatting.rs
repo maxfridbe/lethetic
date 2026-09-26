@@ -197,6 +197,18 @@ pub(crate) fn print_accounting_estimates(
     turn: &lethetic::accounting::AccountingTotals,
     session: &lethetic::accounting::AccountingTotals,
 ) {
+    let reported = session
+        .estimated_cost
+        .as_ref()
+        .is_some_and(|cost| cost.provenance_kind == "provider_reported");
+    if reported {
+        println!(
+            "\nCost turn: {}\nCost session: {}\n(Charged amount reported by the provider.)",
+            format_accounting_estimate(turn),
+            format_accounting_estimate(session),
+        );
+        return;
+    }
     println!(
         "\nEST API-eq turn: {}\nEST API-eq session: {}\n(API-equivalent estimate; OAuth/Codex subscription or credit billing may differ.)",
         format_accounting_estimate(turn),

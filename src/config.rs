@@ -392,6 +392,10 @@ pub struct ModelServer {
     /// `model` instead of probing `/v1/models` (OpenRouter returns hundreds).
     #[serde(default = "default_discover_models")]
     pub discover_models: bool,
+    /// Per-model list prices recorded by the model picker's catalog scan
+    /// (see `saved_models.rs`); used when `pricing` does not cover a model.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub model_pricing: Vec<PricingConfig>,
     /// Optional allowlist of model IDs to show for this connection in the
     /// model switcher. Discovery results outside the list are dropped; when
     /// discovery is off or returns nothing, the listed IDs are shown as
@@ -833,7 +837,12 @@ impl Config {
         let connection_id = server.connection_id().to_string();
         let pricing = server
             .pricing
-            .filter(|pricing| pricing.applies_to(&model_id));
+            .filter(|pricing| pricing.applies_to(&model_id))
+            .or_else(|| {
+                (server.model_pricing.iter())
+                    .find(|pricing| pricing.applies_to(&model_id))
+                    .cloned()
+            });
 
         self.active_server = Some(connection_id);
         self.connection_kind = server.kind;
@@ -1073,6 +1082,7 @@ mod tests {
             context_mode: None,
             theme: None,
             discover_models: true,
+            model_pricing: Vec::new(),
             models: Vec::new(),
         }
     }

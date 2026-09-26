@@ -196,6 +196,18 @@ impl PreparedAgentRequest {
 pub struct ModelInfo {
     pub id: String,
     pub display_name: String,
+    /// List prices when the catalog publishes them (OpenRouter does).
+    pub pricing: Option<CatalogPricing>,
+}
+
+/// Per-token USD prices as published by a model catalog, kept as the
+/// original decimal strings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CatalogPricing {
+    pub prompt: String,
+    pub completion: String,
+    pub cache_read: Option<String>,
+    pub cache_write: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

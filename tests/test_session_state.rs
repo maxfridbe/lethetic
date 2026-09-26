@@ -151,6 +151,7 @@ fn test_usage_and_request_ledger_roundtrip_and_rebuild() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().to_str().unwrap();
     let usage = lethetic::accounting::Usage {
+        reported_cost_nanos: None,
         uncached_input_tokens: 10,
         cache_read_input_tokens: 80,
         cache_creation_input_tokens: 10,

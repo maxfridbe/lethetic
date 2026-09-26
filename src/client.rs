@@ -125,6 +125,11 @@ pub enum StreamEvent {
     DebugLog(String),
     TokenUpdate(u32, f64),
     ModelsReady(Vec<ModelChoice>),
+    /// Full catalog for the model picker's "scan for more" view.
+    ModelCatalogReady {
+        connection_id: String,
+        result: Result<Vec<transport::ModelInfo>, String>,
+    },
     /// Streamed progress text for the session compaction popup.
     CompactionChunk(String),
     /// Terminal compaction result; the run loop turns a summary into a new session.
@@ -186,6 +191,18 @@ fn request_accounting(
     completed: bool,
 ) -> crate::accounting::ProviderRequestAccounting {
     let estimated_cost = usage.and_then(|usage| {
+        if let Some(nanos) = usage.reported_cost_nanos {
+            return Some(crate::accounting::EstimatedCost {
+                currency: "USD".to_string(),
+                nanos,
+                incomplete: false,
+                mixed_pricing: false,
+                long_context_applied: false,
+                pricing_effective_as_of: chrono::Local::now().format("%Y-%m-%d").to_string(),
+                pricing_valid_through: None,
+                provenance_kind: "provider_reported".to_string(),
+            });
+        }
         config
             .pricing
             .as_ref()

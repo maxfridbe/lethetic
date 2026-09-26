@@ -545,6 +545,33 @@ pub(crate) async fn handle_app_event_outcome(
             }
             app.should_redraw = true;
         }
+        AppEventOutcome::ScanModels { connection_id } => {
+            match crate::model_catalog::scan(
+                config,
+                client,
+                tx,
+                background_cancellation.child_token(),
+                connection_id,
+            ) {
+                Some(task) => auxiliary_tasks.push(task),
+                None => {
+                    app.model_catalog = None;
+                    app.stop_reason = "⚠ That connection is not in the config".to_string();
+                }
+            }
+            app.should_redraw = true;
+        }
+        AppEventOutcome::SaveModel {
+            connection_id,
+            model_id,
+        } => {
+            crate::model_catalog::save(app, config, &connection_id, &model_id);
+            return Box::pin(handle_app_event_outcome(
+                AppEventOutcome::FetchModels,
+                runtime,
+            ))
+            .await;
+        }
         AppEventOutcome::CompactSession {
             session_id,
             connection_id,

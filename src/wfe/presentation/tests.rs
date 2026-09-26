@@ -1010,6 +1010,7 @@ fn wfe_status_uses_the_shared_summary_and_cost_markers() {
     app.memory_usage = 321;
     app.git_status = "2 files dirty".to_string();
     app.server_usage = Some(Usage {
+        reported_cost_nanos: None,
         uncached_input_tokens: 11,
         cache_read_input_tokens: 22,
         cache_creation_input_tokens: 33,

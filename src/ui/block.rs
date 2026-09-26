@@ -146,7 +146,8 @@ fn user_block_header(label: String, block: &RenderBlock, include_estimated_cost:
     }
     if include_estimated_cost && let Some(cost) = &block.estimated_cost {
         header = format!(
-            "{header} · EST API-eq turn: {}",
+            "{header} · {} turn: {}",
+            crate::status_summary::cost_label(cost),
             format_estimated_cost(cost)
         );
     }

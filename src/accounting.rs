@@ -281,6 +281,10 @@ pub struct Usage {
     pub total_input_tokens: Option<u64>,
     #[serde(default)]
     pub breakdown_complete: bool,
+    /// Actual charge the provider reported for this usage, in billionths of
+    /// a USD. When present it replaces the price-table estimate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reported_cost_nanos: Option<u64>,
 }
 
 impl Usage {
@@ -328,6 +332,10 @@ impl Usage {
             output_tokens: self.output_tokens.saturating_add(other.output_tokens),
             total_input_tokens: Some(component_total),
             breakdown_complete: self.breakdown_complete && other.breakdown_complete,
+            reported_cost_nanos: match (self.reported_cost_nanos, other.reported_cost_nanos) {
+                (Some(left), Some(right)) => Some(left.saturating_add(right)),
+                (left, right) => left.or(right),
+            },
         }
     }
 }
@@ -480,7 +488,9 @@ impl AccountingTotals {
     pub fn record(&mut self, request: &RequestAccounting) {
         self.request_count = self.request_count.saturating_add(1);
         self.usage = self.usage.saturating_add(request.usage);
-        if !request.usage.breakdown_complete {
+        // A provider-reported charge is exact even when the token breakdown
+        // is partial, so it does not make the total incomplete.
+        if !request.usage.breakdown_complete && request.usage.reported_cost_nanos.is_none() {
             self.incomplete_usage_request_count =
                 self.incomplete_usage_request_count.saturating_add(1);
         }

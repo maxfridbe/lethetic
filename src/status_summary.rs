@@ -184,6 +184,16 @@ pub fn accounting_cost(totals: &AccountingTotals) -> Option<EstimatedCost> {
     Some(cost)
 }
 
+/// "cost" for charges the provider reported, "EST API-eq" for estimates
+/// from a price table.
+pub fn cost_label(cost: &EstimatedCost) -> &'static str {
+    if cost.provenance_kind == "provider_reported" {
+        "cost"
+    } else {
+        "EST API-eq"
+    }
+}
+
 pub fn format_estimated_cost(cost: &EstimatedCost) -> String {
     let amount = if cost.currency == "USD" {
         format!("${:.6}", cost.amount())

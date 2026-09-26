@@ -155,6 +155,7 @@ fn convert_usage(raw: &gemma_chat::Usage) -> Usage {
         breakdown_complete: all_components_reported
             && raw.completion_tokens.is_some()
             && reported_components_consistent,
+        reported_cost_nanos: raw.cost_nanos,
     }
 }
 
@@ -324,9 +325,29 @@ pub async fn discover_models(
                 .iter()
                 .filter_map(|model| {
                     let id = model["id"].as_str()?;
+                    let price = |field: &str| {
+                        model["pricing"][field]
+                            .as_str()
+                            .filter(|value| !value.is_empty())
+                            .map(str::to_string)
+                    };
+                    let pricing =
+                        price("prompt")
+                            .zip(price("completion"))
+                            .map(|(prompt, completion)| crate::transport::CatalogPricing {
+                                prompt,
+                                completion,
+                                cache_read: price("input_cache_read"),
+                                cache_write: price("input_cache_write"),
+                            });
                     Some(ModelInfo {
                         id: id.to_string(),
-                        display_name: model["display_name"].as_str().unwrap_or(id).to_string(),
+                        display_name: model["display_name"]
+                            .as_str()
+                            .or_else(|| model["name"].as_str())
+                            .unwrap_or(id)
+                            .to_string(),
+                        pricing,
                     })
                 })
                 .collect()

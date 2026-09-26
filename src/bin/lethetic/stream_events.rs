@@ -325,6 +325,12 @@ pub(crate) async fn handle_stream_event(
         } => {
             crate::compaction::finish(context.app, &source_session_id, result);
         }
+        StreamEvent::ModelCatalogReady {
+            connection_id,
+            result,
+        } => {
+            crate::model_catalog::ready(context.app, context.config, connection_id, result);
+        }
         StreamEvent::ModelsReady(models) => {
             context.app.available_models = models;
             if !context.app.available_models.is_empty() {

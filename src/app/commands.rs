@@ -22,6 +22,15 @@ pub enum AppEventOutcome {
     ToggleHistory,
     FetchModels,
     SwitchModel(String, String), // (connection_id, model_id)
+    /// Fetch a connection's full catalog for the "scan for more" picker.
+    ScanModels {
+        connection_id: String,
+    },
+    /// Add a model from the catalog to the connection's saved list.
+    SaveModel {
+        connection_id: String,
+        model_id: String,
+    },
     OpenPythonSetup {
         preset: Option<crate::python_setup::PythonSetupPreset>,
     },

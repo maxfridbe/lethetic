@@ -1,6 +1,7 @@
 mod block;
 mod chat;
 mod layout;
+mod model_catalog;
 mod overlays;
 mod python_setup;
 mod status;
@@ -22,6 +23,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     status::render_status(f, app, areas.status);
     status::render_debug(f, app, areas.debug);
     if overlays::render_primary(f, app) {
+        model_catalog::render(f, app);
         crate::compact::render_compaction_popup(f, app);
         return;
     }
@@ -29,5 +31,6 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
         python_setup::render(f, app);
     }
     overlays::render_secondary(f, app);
+    model_catalog::render(f, app);
     crate::compact::render_compaction_popup(f, app);
 }
