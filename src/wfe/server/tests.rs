@@ -255,7 +255,7 @@ fn snapshot_after_patch_tracks_only_state_sent_to_the_client() {
     );
     let known = IStateSnapshot::new(0, 0, initial_state.clone()).unwrap();
     let mut semantic = initial_state;
-    semantic.debugger.open = false;
+    semantic.debugger.open = !semantic.debugger.open;
     let patch = IStatePatch::between(1, 0, 1, &known.state, &semantic).unwrap();
     let patched = snapshot_after_patch(&known, &patch).unwrap();
     assert_eq!(patched.state, semantic);

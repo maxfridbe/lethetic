@@ -290,7 +290,7 @@ impl App {
             tool_spinner_index: 0,
             is_executing_tool: false,
             tool_output_preview: String::new(),
-            show_debug: true,
+            show_debug: false,
             debug_log: Vec::new(),
             should_redraw: true,
             tool_calls_processed_this_request: false,
