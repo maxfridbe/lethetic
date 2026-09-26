@@ -552,7 +552,7 @@ pub(crate) async fn handle_app_event_outcome(
                 model_id,
             );
         }
-        AppEventOutcome::OpenPythonSetup => {
+        AppEventOutcome::OpenPythonSetup { preset } => {
             if let Err(error) = app.python_policy.ensure_ui_mutable() {
                 app.stop_reason = format!("⚠ {error}");
             } else if python_setup_operation.is_some() || !app.is_fully_idle() {
@@ -561,10 +561,12 @@ pub(crate) async fn handle_app_event_outcome(
                         .to_string();
             } else {
                 let workspace = app.tool_runtime.workspace_root().to_path_buf();
-                app.python_setup = Some(lethetic::python_setup::PythonSetupDialog::new(
-                    config,
-                    workspace.clone(),
-                ));
+                let mut dialog =
+                    lethetic::python_setup::PythonSetupDialog::new(config, workspace.clone());
+                if let Some(preset) = preset {
+                    dialog.apply_preset(preset, config);
+                }
+                app.python_setup = Some(dialog);
                 let draft = config.clone();
                 if let Err(error) = PythonSetupOperation::start_child(
                     python_setup_operation,

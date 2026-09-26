@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 
 pub const WFE_PROTOCOL_V6_SCHEMA_SHA256: &str =
-    "915a1efd4bf273a17db628dd0f552bdb02c79cc42d8eaa5290e66d6fed2a4328";
+    "586d00c9f1755b30a99b89cf16592d3265f49e7a4497658a78c369543487d287";
 
 pub fn protocol_schema_sha256() -> String {
     let digest = Sha256::digest(contracts::typescript_declarations().as_bytes());

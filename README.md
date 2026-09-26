@@ -497,7 +497,11 @@ These keys describe the terminal UI. Browser palette accelerators, editable-targ
 | Latest Files | View and manage file context cache |
 | Models | Switch between configured model servers |
 | LSP Servers | View install status; Enter installs only when a safe installer is configured, otherwise shows manual guidance (no fallback installer) |
-| Agent Mode | Choose General or Python-only and configure Host/sandbox policy |
+| Agent Mode | Choose General or Python-only and configure Host/sandbox policy step by step |
+| Agent Mode: General tools | Preset: back to the General tool set, confirm and go |
+| Python-only: isolated | Preset: rootless Podman, launch cwd read/write, no network, no package installs |
+| Python-only: nonlocal packages | Preset: retained Podman with the public HTTP(S) broker and `lethetic-pkg` |
+| Python-only: permissive network | Preset: rootless Podman with full host/LAN/VPN/Internet reachability |
 | Delete Python runtime/packages | Remove this chat’s retained package layer; keep source/session |
 | Quit | Exit after confirmation |
 

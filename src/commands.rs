@@ -18,6 +18,10 @@ pub enum CommandId {
     Models,
     LspServers,
     AgentMode,
+    AgentGeneral,
+    PythonIsolated,
+    PythonNonlocal,
+    PythonPermissive,
     DeletePythonRuntime,
     Quit,
 }
@@ -102,7 +106,7 @@ pub struct CommandContext {
 }
 
 impl CommandId {
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 20] = [
         Self::Hotkeys,
         Self::Themes,
         Self::InputHistory,
@@ -117,9 +121,25 @@ impl CommandId {
         Self::Models,
         Self::LspServers,
         Self::AgentMode,
+        Self::AgentGeneral,
+        Self::PythonIsolated,
+        Self::PythonNonlocal,
+        Self::PythonPermissive,
         Self::DeletePythonRuntime,
         Self::Quit,
     ];
+
+    /// Commands that open the Agent Mode dialog, directly or through a preset.
+    pub fn opens_agent_mode(self) -> bool {
+        matches!(
+            self,
+            Self::AgentMode
+                | Self::AgentGeneral
+                | Self::PythonIsolated
+                | Self::PythonNonlocal
+                | Self::PythonPermissive
+        )
+    }
 
     pub fn spec(self) -> &'static CommandSpec {
         COMMAND_SPECS
@@ -149,7 +169,7 @@ impl CommandId {
         };
         let enabled = match self {
             Self::InputHistory => context.has_history,
-            Self::AgentMode if context.agent_mode_locked => false,
+            command if command.opens_agent_mode() && context.agent_mode_locked => false,
             command if command.spec().requires_idle => context.fully_idle,
             _ => true,
         };
@@ -160,10 +180,12 @@ impl CommandId {
             }
             Self::NameSession => "Wait for the active turn before naming the session".to_string(),
             Self::LspServers => "Wait for the active turn before managing LSP servers".to_string(),
-            Self::AgentMode if context.agent_mode_locked => {
+            command if command.opens_agent_mode() && context.agent_mode_locked => {
                 crate::python_policy::CLI_PYTHON_POLICY_LOCKED_ERROR.to_string()
             }
-            Self::AgentMode => "Wait for the active turn before configuring Agent Mode".to_string(),
+            command if command.opens_agent_mode() => {
+                "Wait for the active turn before configuring Agent Mode".to_string()
+            }
             Self::DeletePythonRuntime => {
                 "Wait for the active turn before deleting Python packages".to_string()
             }
@@ -181,7 +203,7 @@ impl CommandId {
     }
 }
 
-pub const COMMAND_SPECS: [CommandSpec; 16] = [
+pub const COMMAND_SPECS: [CommandSpec; 20] = [
     CommandSpec {
         id: CommandId::Hotkeys,
         base_label: "Hotkeys",
@@ -290,6 +312,38 @@ pub const COMMAND_SPECS: [CommandSpec; 16] = [
         id: CommandId::AgentMode,
         base_label: "Agent Mode",
         icon: IconId::Command,
+        behavior: CommandBehavior::OpenPanel,
+        accelerator: None,
+        requires_idle: true,
+    },
+    CommandSpec {
+        id: CommandId::AgentGeneral,
+        base_label: "Agent Mode: General tools",
+        icon: IconId::Command,
+        behavior: CommandBehavior::OpenPanel,
+        accelerator: None,
+        requires_idle: true,
+    },
+    CommandSpec {
+        id: CommandId::PythonIsolated,
+        base_label: "Python-only: isolated (Podman, no network)",
+        icon: IconId::Processing,
+        behavior: CommandBehavior::OpenPanel,
+        accelerator: None,
+        requires_idle: true,
+    },
+    CommandSpec {
+        id: CommandId::PythonNonlocal,
+        base_label: "Python-only: nonlocal packages (retained Podman)",
+        icon: IconId::Processing,
+        behavior: CommandBehavior::OpenPanel,
+        accelerator: None,
+        requires_idle: true,
+    },
+    CommandSpec {
+        id: CommandId::PythonPermissive,
+        base_label: "Python-only: permissive network (Podman)",
+        icon: IconId::Processing,
         behavior: CommandBehavior::OpenPanel,
         accelerator: None,
         requires_idle: true,

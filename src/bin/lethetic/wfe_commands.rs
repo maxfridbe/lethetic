@@ -60,7 +60,11 @@ fn wfe_panel_for_command(command: lethetic::commands::CommandId) -> Option<Panel
         CommandId::LatestFiles => Some(PanelId::LatestFiles),
         CommandId::Models => Some(PanelId::Models),
         CommandId::LspServers => Some(PanelId::LspServers),
-        CommandId::AgentMode => Some(PanelId::AgentMode),
+        CommandId::AgentMode
+        | CommandId::AgentGeneral
+        | CommandId::PythonIsolated
+        | CommandId::PythonNonlocal
+        | CommandId::PythonPermissive => Some(PanelId::AgentMode),
         CommandId::LoopDetection
         | CommandId::ClearUi
         | CommandId::ClearContext
@@ -97,7 +101,7 @@ pub(crate) fn execute_wfe_command<'a>(
                     Ok(CommandOutcome::PanelOpened {
                         panel: PanelId::LoopDetection,
                     })
-                } else if command_id == lethetic::commands::CommandId::AgentMode {
+                } else if command_id.opens_agent_mode() {
                     wfe.open_agent_modes(context.app);
                     Ok(CommandOutcome::PanelOpened {
                         panel: PanelId::AgentMode,

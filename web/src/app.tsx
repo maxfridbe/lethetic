@@ -749,6 +749,10 @@ export class SpaApplication implements BrowserTransportEvents {
       case "models":
       case "lsp-servers":
       case "agent-mode":
+      case "agent-general":
+      case "python-isolated":
+      case "python-nonlocal":
+      case "python-permissive":
         this.#send({ type: "invoke_command", command_id: command.id });
         return;
       default:

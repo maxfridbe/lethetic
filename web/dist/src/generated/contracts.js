@@ -3,7 +3,7 @@
 export const WFE_MAX_COMMAND_MESSAGE_BYTES = 262144;
 export const WFE_MAX_SERVER_MESSAGE_BYTES = 4194304;
 export const WFE_PROTOCOL_VERSION = 6;
-export const WFE_PROTOCOL_SCHEMA_SHA256 = "915a1efd4bf273a17db628dd0f552bdb02c79cc42d8eaa5290e66d6fed2a4328";
+export const WFE_PROTOCOL_SCHEMA_SHA256 = "586d00c9f1755b30a99b89cf16592d3265f49e7a4497658a78c369543487d287";
 export const COMMAND_ORDER = [
     "hotkeys",
     "themes",
@@ -19,6 +19,10 @@ export const COMMAND_ORDER = [
     "models",
     "lsp-servers",
     "agent-mode",
+    "agent-general",
+    "python-isolated",
+    "python-nonlocal",
+    "python-permissive",
     "delete-python-runtime",
     "quit"
 ];

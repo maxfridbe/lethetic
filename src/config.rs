@@ -404,6 +404,62 @@ fn default_discover_models() -> bool {
     true
 }
 
+/// Sandboxed Python-only profiles shared by the `--python-only` CLI modes and
+/// the command-palette presets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PythonPreset {
+    /// Transient rootless Podman, no network, no package installs.
+    Isolated,
+    /// Retained Podman with the public HTTP(S) broker and `lethetic-pkg`.
+    Nonlocal,
+    /// Transient rootless Podman with full network reachability.
+    Permissive,
+}
+
+impl PythonPreset {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Isolated => "isolated",
+            Self::Nonlocal => "nonlocal",
+            Self::Permissive => "permissive",
+        }
+    }
+}
+
+impl Config {
+    /// Rewrite the tool profile and Python runtime for `preset`: Python-only,
+    /// rootless Podman, launch cwd mounted read/write, no extra grants.
+    /// Workspace exposure is left alone; only the CLI literal modes change it.
+    pub fn apply_python_preset(&mut self, preset: PythonPreset) {
+        self.tool_profile = ToolProfile::PythonOnly;
+        self.python_runtime.target = Some(PythonExecutionTarget::Sandbox);
+        self.python_runtime.sandbox.backend = Some(SandboxBackend::Podman);
+        self.python_runtime.sandbox.workspace_access = Some(AccessMode::ReadWrite);
+        self.python_runtime.sandbox.grants.clear();
+        match preset {
+            PythonPreset::Isolated => {
+                self.python_runtime.sandbox.network = Some(NetworkAccess::None);
+                self.python_runtime.sandbox.package_access = PackageAccess::Disabled;
+            }
+            PythonPreset::Nonlocal => {
+                self.python_runtime.sandbox.network = Some(NetworkAccess::Nonlocal);
+                self.python_runtime.sandbox.package_access = PackageAccess::Session;
+                if self.python_runtime.sandbox.podman_image.trim().is_empty()
+                    || self.python_runtime.sandbox.podman_image
+                        == "docker.io/library/python:3.13-slim"
+                {
+                    self.python_runtime.sandbox.podman_image =
+                        DEFAULT_RETAINED_PODMAN_IMAGE.to_string();
+                }
+            }
+            PythonPreset::Permissive => {
+                self.python_runtime.sandbox.network = Some(NetworkAccess::Full);
+                self.python_runtime.sandbox.package_access = PackageAccess::Disabled;
+            }
+        }
+    }
+}
+
 impl ModelServer {
     pub fn connection_id(&self) -> &str {
         self.id.as_deref().unwrap_or(&self.name)

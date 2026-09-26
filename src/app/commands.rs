@@ -22,7 +22,9 @@ pub enum AppEventOutcome {
     ToggleHistory,
     FetchModels,
     SwitchModel(String, String), // (connection_id, model_id)
-    OpenPythonSetup,
+    OpenPythonSetup {
+        preset: Option<crate::python_setup::PythonSetupPreset>,
+    },
     CancelPythonSetup {
         dismiss_when_settled: bool,
     },
@@ -140,7 +142,24 @@ pub fn dispatch_command(app: &mut App, command: CommandId) -> AppEventOutcome {
         }
         CommandId::AgentMode => {
             app.show_palette = false;
-            return AppEventOutcome::OpenPythonSetup;
+            return AppEventOutcome::OpenPythonSetup { preset: None };
+        }
+        CommandId::AgentGeneral
+        | CommandId::PythonIsolated
+        | CommandId::PythonNonlocal
+        | CommandId::PythonPermissive => {
+            use crate::config::PythonPreset;
+            use crate::python_setup::PythonSetupPreset;
+            app.show_palette = false;
+            let preset = match command {
+                CommandId::AgentGeneral => PythonSetupPreset::General,
+                CommandId::PythonIsolated => PythonSetupPreset::Python(PythonPreset::Isolated),
+                CommandId::PythonNonlocal => PythonSetupPreset::Python(PythonPreset::Nonlocal),
+                _ => PythonSetupPreset::Python(PythonPreset::Permissive),
+            };
+            return AppEventOutcome::OpenPythonSetup {
+                preset: Some(preset),
+            };
         }
         CommandId::DeletePythonRuntime => {
             app.show_palette = false;

@@ -372,40 +372,16 @@ pub(crate) fn apply_literal_python_mode(
     config: &mut Config,
     mode: LiteralPythonMode,
 ) -> Result<(), String> {
-    use lethetic::config::{
-        AccessMode, NetworkAccess, PackageAccess, PythonExecutionTarget, PythonWorkspaceExposure,
-        SandboxBackend, ToolProfile,
-    };
+    use lethetic::config::{PythonPreset, PythonWorkspaceExposure};
 
-    config.tool_profile = ToolProfile::PythonOnly;
-    config.python_runtime.target = Some(PythonExecutionTarget::Sandbox);
-    config.python_runtime.sandbox.backend = Some(SandboxBackend::Podman);
-    config.python_runtime.sandbox.workspace_access = Some(AccessMode::ReadWrite);
-    config.python_runtime.sandbox.grants.clear();
+    config.apply_python_preset(match mode {
+        LiteralPythonMode::FullyIsolated => PythonPreset::Isolated,
+        LiteralPythonMode::Nonlocal => PythonPreset::Nonlocal,
+        LiteralPythonMode::Permissive => PythonPreset::Permissive,
+    });
+    // Literal flags share the canonical launch cwd; TUI presets keep the
+    // ordinary managed-workspace exposure.
     config.python_invocation.workspace_exposure = PythonWorkspaceExposure::SharedLaunchCwd;
-
-    match mode {
-        LiteralPythonMode::FullyIsolated => {
-            config.python_runtime.sandbox.network = Some(NetworkAccess::None);
-            config.python_runtime.sandbox.package_access = PackageAccess::Disabled;
-        }
-        LiteralPythonMode::Nonlocal => {
-            config.python_runtime.sandbox.network = Some(NetworkAccess::Nonlocal);
-            config.python_runtime.sandbox.package_access = PackageAccess::Session;
-            if config.python_runtime.sandbox.podman_image.trim().is_empty()
-                || config.python_runtime.sandbox.podman_image
-                    == "docker.io/library/python:3.13-slim"
-            {
-                config.python_runtime.sandbox.podman_image =
-                    lethetic::config::DEFAULT_RETAINED_PODMAN_IMAGE.to_string();
-            }
-        }
-        LiteralPythonMode::Permissive => {
-            config.python_runtime.sandbox.network = Some(NetworkAccess::Full);
-            config.python_runtime.sandbox.package_access = PackageAccess::Disabled;
-        }
-    }
-
     config.python_mode_validation_error().map_or(Ok(()), Err)
 }
 

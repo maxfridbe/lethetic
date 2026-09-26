@@ -213,6 +213,14 @@ impl PathPickerState {
     }
 }
 
+/// A palette preset that pre-fills the Agent Mode dialog and jumps to its
+/// confirmation screen once the backend probe finishes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PythonSetupPreset {
+    General,
+    Python(crate::config::PythonPreset),
+}
+
 #[derive(Debug, Clone)]
 pub struct PythonSetupDialog {
     pub stage: PythonSetupStage,
@@ -258,6 +266,24 @@ impl PythonSetupDialog {
             self.stage,
             PythonSetupStage::Probing | PythonSetupStage::Pulling | PythonSetupStage::Applying
         )
+    }
+
+    /// Pre-fill the dialog from a preset as a one-time policy and land on the
+    /// confirmation screen after probing; Esc still walks back to edit.
+    pub fn apply_preset(&mut self, preset: PythonSetupPreset, base: &Config) {
+        match preset {
+            PythonSetupPreset::General => {
+                self.profile = ToolProfile::General;
+            }
+            PythonSetupPreset::Python(python) => {
+                let mut draft = base.clone();
+                draft.apply_python_preset(python);
+                self.profile = draft.tool_profile;
+                self.runtime = draft.python_runtime;
+            }
+        }
+        self.persistence = PolicyPersistence::OneTime;
+        self.previous_stage = Some(PythonSetupStage::Confirm);
     }
 
     pub fn snapshot(&self) -> PythonPolicySnapshot {

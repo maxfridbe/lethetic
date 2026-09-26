@@ -19,7 +19,7 @@ const MAX_WIRE_ARRAY_LENGTH = 20_000;
 const CANONICAL_SESSION_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 const SUPPORTED_SCHEMA_SHA256 =
-  "915a1efd4bf273a17db628dd0f552bdb02c79cc42d8eaa5290e66d6fed2a4328" as const;
+  "586d00c9f1755b30a99b89cf16592d3265f49e7a4497658a78c369543487d287" as const;
 
 // This assignment intentionally fails at compile time whenever regenerated
 // contracts change without a corresponding application review.
@@ -1440,6 +1440,10 @@ export function commandResponseMatchesRequest(
           case "lsp-servers":
             return "lsp_servers";
           case "agent-mode":
+          case "agent-general":
+          case "python-isolated":
+          case "python-nonlocal":
+          case "python-permissive":
             return "agent_mode";
           case "clear-ui":
           case "toggle-debugger":
