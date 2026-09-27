@@ -25,27 +25,27 @@ function renderHeader(context) {
             h("span", null, transportStatus.label)),
         h("div", { attrs: { class: "session-summary" } },
             h("span", { attrs: { class: "eyebrow" } }, "Session"),
-            h("strong", null, snapshot === null ? "Waiting for state" : sessionLabel(snapshot))),
+            h("div", { attrs: { class: "session-name-row" } },
+                h("strong", null, snapshot === null ? "Waiting for state" : sessionLabel(snapshot)),
+                h("button", { attrs: {
+                        type: "button",
+                        class: "icon-button session-rename",
+                        "aria-label": "Name or rename the current session",
+                        title: "Rename session",
+                    }, props: { disabled: !live || snapshot === null }, on: {
+                        click: () => {
+                            if (snapshot === null) {
+                                return;
+                            }
+                            const command = commandForId(snapshot, "name-session");
+                            if (command !== null) {
+                                context.actions.invokeCommand(command);
+                            }
+                        },
+                    } }, uiIcon("edit")))),
         h("div", { attrs: { class: "model-summary" } },
             h("span", { attrs: { class: "eyebrow" } }, "Model"),
-            h("span", null, snapshot?.status.model_label ?? "—")),
-        h("button", { attrs: {
-                type: "button",
-                class: "text-button",
-                "aria-label": "Name or rename the current session",
-            }, props: { disabled: !live || snapshot === null }, on: {
-                click: () => {
-                    if (snapshot === null) {
-                        return;
-                    }
-                    const command = commandForId(snapshot, "name-session");
-                    if (command !== null) {
-                        context.actions.invokeCommand(command);
-                    }
-                },
-            } },
-            uiIcon("edit"),
-            "Name")));
+            h("span", null, snapshot?.status.model_label ?? "—"))));
 }
 function projectionLosses(block) {
     return block.tool === null

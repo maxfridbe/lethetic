@@ -64,36 +64,38 @@ function renderHeader(context: ChatViewContext): VNode {
       </div>
       <div attrs={{ class: "session-summary" }}>
         <span attrs={{ class: "eyebrow" }}>Session</span>
-        <strong>
-          {snapshot === null ? "Waiting for state" : sessionLabel(snapshot)}
-        </strong>
+        <div attrs={{ class: "session-name-row" }}>
+          <strong>
+            {snapshot === null ? "Waiting for state" : sessionLabel(snapshot)}
+          </strong>
+          <button
+            attrs={{
+              type: "button",
+              class: "icon-button session-rename",
+              "aria-label": "Name or rename the current session",
+              title: "Rename session",
+            }}
+            props={{ disabled: !live || snapshot === null }}
+            on={{
+              click: () => {
+                if (snapshot === null) {
+                  return;
+                }
+                const command = commandForId(snapshot, "name-session");
+                if (command !== null) {
+                  context.actions.invokeCommand(command);
+                }
+              },
+            }}
+          >
+            {uiIcon("edit")}
+          </button>
+        </div>
       </div>
       <div attrs={{ class: "model-summary" }}>
         <span attrs={{ class: "eyebrow" }}>Model</span>
         <span>{snapshot?.status.model_label ?? "—"}</span>
       </div>
-      <button
-        attrs={{
-          type: "button",
-          class: "text-button",
-          "aria-label": "Name or rename the current session",
-        }}
-        props={{ disabled: !live || snapshot === null }}
-        on={{
-          click: () => {
-            if (snapshot === null) {
-              return;
-            }
-            const command = commandForId(snapshot, "name-session");
-            if (command !== null) {
-              context.actions.invokeCommand(command);
-            }
-          },
-        }}
-      >
-        {uiIcon("edit")}
-        Name
-      </button>
     </header>
   );
 }
