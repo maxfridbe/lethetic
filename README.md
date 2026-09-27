@@ -50,41 +50,14 @@ The protocol-v6 browser UI uses canonical `H`/`T`/`C`/`D` palette accelerators f
 
 ---
 
-## Server Setup
+## Model servers
 
-Lethetic is tuned for a **TurboQuant llama.cpp** server. Two models are supported simultaneously via GPU hot-swap (each sleeps when idle, wakes on request).
+Lethetic is a client: it does not install or run model servers. Point `model_servers` in `config.yml` at anything it speaks:
 
-### Gemma 4 26B — port 7210
+- **OpenAI-compatible chat completions**: llama.cpp `llama-server` (or a router in front of several), vLLM, OpenRouter, Azure, and similar.
+- **Anthropic Messages via `claude-code-proxy`**: Codex/ChatGPT subscription models such as gpt-5.6-sol and gpt-6-astra (see below).
 
-```bash
-bash setup_gemma4_server.sh
-```
-
-Automates: build TurboQuant llama.cpp fork with CUDA, download `gemma-4-26B-A4B-it-UD-Q5_K_S.gguf`, install chat template, create `gemma4.service`.
-
-Key parameters:
-- `--cache-type-k turbo3 --cache-type-v turbo3` — TurboQuant KV quantization
-- `--ctx-size 262144` — 256k context
-- `--reasoning on --jinja` — chain-of-thought + custom tool-call template
-- `--temp 0.2 --repeat-penalty 1.09`
-
-### Qwen3 27B MTP — port 7211
-
-```bash
-bash setup_qwen3_server.sh
-```
-
-Downloads `Qwen3.6-27B-Q5_K_M.gguf` and creates `qwen3.service`.
-
-Key parameters:
-- `--cache-type-k turbo3 --cache-type-v turbo3` — required for full 262k context with TurboQuant KV quantization
-- `--ctx-size 262144` — 262k context
-- `--reasoning on --jinja`
-- `--temp 0.2 --repeat-penalty 1.05`
-
-### GPU memory notes
-
-Both models use `--sleep-idle-seconds 30s`. When idle, each releases GPU VRAM. With two RTX cards (≈24GB total), only one model is resident at a time. Switching models causes a ~5–10s reload pause on first request.
+Each entry picks its `parser` dialect and `kind`; the model picker lists every configured connection and shows unreachable ones as offline.
 
 ---
 
@@ -498,6 +471,7 @@ These keys describe the terminal UI. Browser palette accelerators, editable-targ
 | **F1 / Ctrl+P** | Command Palette: type to fuzzy-filter (ranked by match), ↑↓ to move, Enter to run, Esc to close |
 | **Esc Esc** (within 0.8 s) | Stop the active response or tool; a single Esc only arms it |
 | **F12** | Toggle debugger pane |
+| **F10** | Toggle mouse capture: off lets you select and copy text with the mouse; on (default) makes the wheel scroll the output. Shift+drag also selects in most terminals |
 | **F9** | Toggle the todo list pane: the model's remaining todos on the right, stacked above the debugger when both are open |
 | **Ctrl+O** | Hide or show thinking blocks (persisted per session) |
 | **Click 󰇻** | Copy a block's content to the clipboard via `wl-copy` |

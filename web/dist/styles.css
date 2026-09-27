@@ -1635,3 +1635,11 @@ progress {
 .code-highlight .code-key {
   color: var(--theme-json-key-fg);
 }
+
+.code-highlight .code-added {
+  color: var(--theme-success-fg);
+}
+
+.code-highlight .code-removed {
+  color: var(--theme-error-fg);
+}

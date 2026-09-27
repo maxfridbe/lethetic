@@ -130,8 +130,81 @@ pub fn warm_highlighter() {
     LazyLock::force(&CATEGORY_THEME);
 }
 
+/// Line-oriented highlighting for formats syntect does not bundle: TOML,
+/// INI/conf, `.env` and Dockerfile. Same theme categories as syntect output.
+fn highlight_config_like(
+    source: &str,
+    dockerfile: bool,
+    theme: &crate::ui::Theme,
+) -> Text<'static> {
+    let style = |category: CodeCategory| {
+        let style = Style::default()
+            .fg(category.color(theme))
+            .bg(theme.terminal_bg);
+        if matches!(category, CodeCategory::Comment) {
+            style.add_modifier(Modifier::ITALIC)
+        } else {
+            style
+        }
+    };
+    let value_spans = |value: &str, spans: &mut Vec<Span<'static>>| {
+        let trimmed = value.trim();
+        let category = if trimmed.starts_with('"') || trimmed.starts_with('\'') {
+            CodeCategory::StringLiteral
+        } else if matches!(trimmed, "true" | "false" | "yes" | "no" | "on" | "off")
+            || trimmed.parse::<f64>().is_ok()
+        {
+            CodeCategory::Number
+        } else {
+            CodeCategory::Plain
+        };
+        spans.push(Span::styled(value.to_string(), style(category)));
+    };
+    let mut text = Text::default();
+    for line in source.strip_suffix('\n').unwrap_or(source).split('\n') {
+        let mut spans = Vec::new();
+        let body = line.trim_start();
+        let indent = &line[..line.len() - body.len()];
+        spans.push(Span::styled(indent.to_string(), style(CodeCategory::Plain)));
+        if body.starts_with('#') || body.starts_with(';') {
+            spans.push(Span::styled(body.to_string(), style(CodeCategory::Comment)));
+        } else if dockerfile {
+            let (word, rest) = body.split_at(body.find(char::is_whitespace).unwrap_or(body.len()));
+            if !word.is_empty() && word.chars().all(|c| c.is_ascii_uppercase()) {
+                spans.push(Span::styled(word.to_string(), style(CodeCategory::Keyword)));
+                value_spans(rest, &mut spans);
+            } else {
+                value_spans(body, &mut spans);
+            }
+        } else if body.starts_with('[') {
+            spans.push(Span::styled(body.to_string(), style(CodeCategory::Type)));
+        } else if let Some(position) = body.find(['=', ':']) {
+            let (key, rest) = body.split_at(position);
+            spans.push(Span::styled(key.to_string(), style(CodeCategory::Key)));
+            spans.push(Span::styled(
+                rest[..1].to_string(),
+                style(CodeCategory::Plain),
+            ));
+            value_spans(&rest[1..], &mut spans);
+        } else {
+            spans.push(Span::styled(body.to_string(), style(CodeCategory::Plain)));
+        }
+        text.lines.push(Line::from(spans));
+    }
+    text
+}
+
 pub fn highlight_source(source: &str, language: &str, theme: &crate::ui::Theme) -> Text<'static> {
     let language_lower = language.to_lowercase();
+    match language_lower.as_str() {
+        "toml" | "ini" | "cfg" | "conf" | "env" | "dotenv" | "editorconfig" | "gitconfig" => {
+            return highlight_config_like(source, false, theme);
+        }
+        "dockerfile" | "containerfile" | "docker" => {
+            return highlight_config_like(source, true, theme);
+        }
+        _ => {}
+    }
     let extension = match language_lower.as_str() {
         "sh" | "shell" | "bash" | "zsh" | "fish" => "sh",
         "rs" | "rust" => "rs",
@@ -143,6 +216,18 @@ pub fn highlight_source(source: &str, language: &str, theme: &crate::ui::Theme) 
         "json" => "json",
         "toml" => "toml",
         "yaml" | "yml" => "yaml",
+        "html" | "htm" | "xml" | "svg" | "css" | "sql" | "diff" | "patch" | "lua" | "rb"
+        | "ruby" | "php" | "go" | "java" | "kotlin" | "scala" | "makefile" | "make" => {
+            match language_lower.as_str() {
+                "ruby" => "rb",
+                "kotlin" => "java",
+                "makefile" => "make",
+                "patch" => "diff",
+                "htm" => "html",
+                "svg" => "xml",
+                other => other,
+            }
+        }
         "md" | "markdown" => "md",
         other => other,
     };
@@ -440,5 +525,36 @@ mod theme_highlight_tests {
         assert_eq!(color_of("42"), Some(theme.thought_fg));
         assert_eq!(color_of("hello"), Some(theme.json_val_fg));
         assert_eq!(color_of("main"), Some(theme.highlight_fg));
+    }
+}
+
+#[cfg(test)]
+mod config_highlight_tests {
+    use super::*;
+
+    #[test]
+    fn toml_yaml_and_dockerfile_use_theme_categories() {
+        let theme = crate::ui::Theme::default();
+        let color_of = |text: &Text<'static>, needle: &str| {
+            text.lines
+                .iter()
+                .flat_map(|line| line.spans.iter())
+                .find(|span| span.content.contains(needle))
+                .and_then(|span| span.style.fg)
+        };
+        let toml = highlight_source(
+            "[package]\nname = \"demo\"\n# note\nedition = 2024\n",
+            "toml",
+            &theme,
+        );
+        assert_eq!(color_of(&toml, "[package]"), Some(theme.warning_fg));
+        assert_eq!(color_of(&toml, "name"), Some(theme.json_key_fg));
+        assert_eq!(color_of(&toml, "demo"), Some(theme.json_val_fg));
+        assert_eq!(color_of(&toml, "note"), Some(theme.system_fg));
+        assert_eq!(color_of(&toml, "2024"), Some(theme.thought_fg));
+        let docker = highlight_source("FROM rust:1\nRUN cargo build\n", "dockerfile", &theme);
+        assert_eq!(color_of(&docker, "FROM"), Some(theme.tool_fg));
+        let yaml = highlight_source("name: demo\ncount: 3\n", "yaml", &theme);
+        assert_ne!(color_of(&yaml, "name"), Some(theme.output_fg));
     }
 }

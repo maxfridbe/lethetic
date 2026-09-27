@@ -492,3 +492,20 @@ test("fenced rust code is tokenized into theme-coloured classes", () => {
   assert.equal(classOf('"hello"'), "code-string");
   assert.equal(highlightCode("plain", "unknown-lang"), null);
 });
+
+test("config, markup, sql and diff fences are highlighted", () => {
+  const classes = (source: string, language: string): string[] =>
+    (highlightCode(source, language) ?? []).flatMap((child) => {
+      if (typeof child === "string") {
+        return [];
+      }
+      const value = child.data?.attrs?.["class"];
+      return typeof value === "string" ? [`${value}:${child.text ?? ""}`] : [];
+    });
+  assert.ok(classes('name = "demo"\n# note\n', "toml").includes("code-key:name"));
+  assert.ok(classes("key: 3\n", "yaml").includes("code-key:key"));
+  assert.ok(classes("SELECT id FROM users", "sql").includes("code-keyword:SELECT"));
+  assert.ok(classes('<div class="x">hi</div>', "html").includes("code-key:div"));
+  assert.ok(classes("+added\n-removed\n", "diff").includes("code-added:+added"));
+  assert.ok(classes("FROM rust:1\nRUN make", "dockerfile").includes("code-keyword:FROM"));
+});
