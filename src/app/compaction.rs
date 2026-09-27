@@ -87,11 +87,18 @@ impl App {
                 crate::todo_store::TodoStore::open(&root).and_then(|store| store.get())
                 && (!snapshot.todos.is_empty() || snapshot.revision > 0)
             {
-                self.todos = snapshot;
+                self.set_todos(snapshot);
                 return;
             }
         }
-        self.todos = Default::default();
+        self.set_todos(Default::default());
+    }
+
+    /// Update the todo pane and the todo block sent with the latest message.
+    pub fn set_todos(&mut self, snapshot: crate::todo_store::TodoSnapshot) {
+        self.context_manager
+            .set_todo_summary(render_todo_context(&snapshot));
+        self.todos = snapshot;
     }
 
     pub fn toggle_todos(&mut self) {
@@ -250,4 +257,28 @@ impl App {
         self.refresh_session_list();
         Ok(session_id)
     }
+}
+
+/// The todo list as the model sees it, or `None` when there are no items.
+pub(crate) fn render_todo_context(snapshot: &crate::todo_store::TodoSnapshot) -> Option<String> {
+    const MAX_ITEMS: usize = 40;
+    if snapshot.todos.is_empty() {
+        return None;
+    }
+    let mut text = String::from(
+        "<todos>\nYour current plan. Keep it updated with todowrite as you finish or change steps.\n",
+    );
+    for todo in snapshot.todos.iter().take(MAX_ITEMS) {
+        text.push_str(&format!(
+            "- [{}] ({}) {}\n",
+            todo.status.as_str(),
+            todo.priority.as_str(),
+            todo.content
+        ));
+    }
+    if snapshot.todos.len() > MAX_ITEMS {
+        text.push_str(&format!("- … {} more\n", snapshot.todos.len() - MAX_ITEMS));
+    }
+    text.push_str("</todos>");
+    Some(text)
 }

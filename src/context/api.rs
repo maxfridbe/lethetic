@@ -43,6 +43,8 @@ enum FileTier {
 struct FileSections {
     active: Vec<String>,
     latest: Vec<String>,
+    /// The model's current todo list, rendered for context.
+    todos: Option<String>,
 }
 
 impl FileSections {
@@ -150,8 +152,66 @@ enum FileRead {
     NonUtf8,
 }
 
+/// Tool results older than the most recent `FULL_TOOL_RESULTS` are shortened
+/// to their first and last lines in the request (the session keeps them in
+/// full). Tool output was ~87% of long sessions' context.
+const FULL_TOOL_RESULTS: usize = 6;
+const SHORTENED_HEAD_LINES: usize = 20;
+const SHORTENED_TAIL_LINES: usize = 20;
+/// Outputs with few but very long lines are also cut by characters.
+const SHORTENED_MAX_CHARS: usize = 4_000;
+
+fn shorten_tool_output(text: &str) -> Option<String> {
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.len() > SHORTENED_HEAD_LINES + SHORTENED_TAIL_LINES + 5 {
+        let omitted = lines.len() - SHORTENED_HEAD_LINES - SHORTENED_TAIL_LINES;
+        return Some(format!(
+            "{}\n… {omitted} lines omitted from this older tool output (re-run the tool if you need them) …\n{}",
+            lines[..SHORTENED_HEAD_LINES].join("\n"),
+            lines[lines.len() - SHORTENED_TAIL_LINES..].join("\n")
+        ));
+    }
+    if text.len() > SHORTENED_MAX_CHARS {
+        let head_end = floor_char_boundary(text, SHORTENED_MAX_CHARS / 2);
+        let tail_start = floor_char_boundary(text, text.len() - SHORTENED_MAX_CHARS / 4);
+        let omitted = tail_start - head_end;
+        return Some(format!(
+            "{}\n… {omitted} characters omitted from this older tool output …\n{}",
+            &text[..head_end],
+            &text[tail_start..]
+        ));
+    }
+    None
+}
+
+fn floor_char_boundary(text: &str, mut index: usize) -> usize {
+    index = index.min(text.len());
+    while !text.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+fn shorten_old_tool_results(conversation: &mut [Message]) {
+    let tool_indices: Vec<usize> = conversation
+        .iter()
+        .enumerate()
+        .filter(|(_, message)| message.role == Role::Tool)
+        .map(|(index, _)| index)
+        .collect();
+    let keep_from = tool_indices.len().saturating_sub(FULL_TOOL_RESULTS);
+    for &index in &tool_indices[..keep_from] {
+        if let Content::Text(text) = &conversation[index].content
+            && let Some(shortened) = shorten_tool_output(text)
+        {
+            conversation[index].content = Content::Text(shortened);
+        }
+    }
+}
+
 pub(super) fn prepare(ctx: &ContextManager) -> PreparedApiContext {
     let mut projection = project_messages(ctx);
+    shorten_old_tool_results(&mut projection.conversation);
     let base_messages = assemble_messages(ctx.mode, &projection, &FileSections::default());
     let mut base_estimate = estimate_api_messages(&base_messages);
     trim_projected_conversation(
@@ -166,7 +226,8 @@ pub(super) fn prepare(ctx: &ContextManager) -> PreparedApiContext {
     let available = ctx.max_tokens.saturating_sub(base_estimate);
     let file_tokens = file_ceiling.min(available);
     let file_byte_budget = file_tokens.saturating_mul(CHARS_PER_TOKEN);
-    let files = prepare_files(ctx, file_byte_budget);
+    let mut files = prepare_files(ctx, file_byte_budget);
+    files.todos = ctx.todo_summary.clone();
     let messages = assemble_messages(ctx.mode, &projection, &files);
     let estimated_tokens = estimate_api_messages(&messages);
 
@@ -229,6 +290,16 @@ fn project_messages(ctx: &ContextManager) -> Projection {
                 }
             }
             "user" => conversation.push(Message::user(message.content.clone())),
+            "assistant"
+                if message.tool_calls.as_deref().unwrap_or_default().is_empty()
+                    && ctx.strip_thinking(&message.content).trim().is_empty() =>
+            {
+                // A reply that failed before producing anything (stream
+                // error, cancellation). Say so instead of sending a blank turn.
+                conversation.push(Message::assistant(
+                    "[My previous reply was interrupted before it produced any output.]",
+                ));
+            }
             "assistant" => {
                 let calls = message
                     .tool_calls
@@ -283,41 +354,67 @@ fn project_messages(ctx: &ContextManager) -> Projection {
     }
 }
 
+/// Build the request. The system message holds only the stable prompt, so the
+/// server can reuse its processed prefix across turns; cached files and the
+/// todo list, which change as the model works, ride on the latest user
+/// message instead. Without a user message they fall back to the system one.
 fn assemble_messages(
     mode: ContextMode,
     projection: &Projection,
     files: &FileSections,
 ) -> Vec<Message> {
     let file_parts = files.rendered_parts(mode);
-    let mut system = Vec::new();
-    if let Some(root) = &projection.root_system {
-        system.push(root.clone());
-    }
+    let mut working = Vec::new();
     match mode {
         ContextMode::Lethetic => {
             if let Some(latest) = file_parts.first()
                 && !files.latest.is_empty()
             {
-                system.push(latest.clone());
+                working.push(latest.clone());
             }
-            system.extend(projection.history_system.iter().cloned());
             if !files.active.is_empty()
                 && let Some(active) = file_parts.last()
             {
-                system.push(active.clone());
+                working.push(active.clone());
             }
         }
-        ContextMode::Vercel => {
-            system.extend(file_parts);
-            system.extend(projection.history_system.iter().cloned());
-        }
+        ContextMode::Vercel => working.extend(file_parts),
+    }
+    if let Some(todos) = &files.todos {
+        working.push(todos.clone());
     }
 
-    let mut messages = Vec::with_capacity(projection.conversation.len() + 1);
+    let mut system = Vec::new();
+    if let Some(root) = &projection.root_system {
+        system.push(root.clone());
+    }
+    system.extend(projection.history_system.iter().cloned());
+
+    let mut conversation = projection.conversation.clone();
+    let latest_user = conversation
+        .iter()
+        .rposition(|message| message.role == Role::User);
+    match latest_user {
+        Some(index) if !working.is_empty() => {
+            let block = working.join("\n\n");
+            let message = &mut conversation[index];
+            message.content = match &message.content {
+                Content::Text(text) => Content::Text(format!("{block}\n\n{text}")),
+                Content::Parts(parts) => {
+                    let mut with_block = vec![ContentPart::Text(block)];
+                    with_block.extend(parts.iter().cloned());
+                    Content::Parts(with_block)
+                }
+            };
+        }
+        _ => system.extend(working),
+    }
+
+    let mut messages = Vec::with_capacity(conversation.len() + 1);
     if !system.is_empty() {
         messages.push(Message::system(system.join("\n\n")));
     }
-    messages.extend(projection.conversation.iter().cloned());
+    messages.extend(conversation);
     messages
 }
 

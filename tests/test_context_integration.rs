@@ -395,13 +395,15 @@ fn test_structured_tool_inputs_count_toward_trim_budget() {
     );
 }
 
+/// Cached files ride on the latest user message (not the system prompt),
+/// so read the text of every message.
 fn prepared_system_text(prepared: &lethetic::context::PreparedApiContext) -> String {
     prepared
         .messages()
         .iter()
-        .find(|message| message.role == lethetic::transport::Role::System)
         .map(|message| message.content.text())
-        .unwrap_or_default()
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn assert_growing_cached_file_is_bounded(mode: lethetic::context::ContextMode) {
@@ -501,14 +503,15 @@ fn test_vercel_context_mode_formatting() {
     assert_eq!(api_msgs[0].role, lethetic::transport::Role::System);
     assert_eq!(api_msgs[1].role, lethetic::transport::Role::User);
 
-    let system_content = match &api_msgs[0].content {
-        lethetic::transport::Content::Text(text) => text,
-        _ => panic!("Expected string content in system message"),
-    };
-    // It should contain both the system prompt instructions and the file content formatted in markdown
+    let system_content = api_msgs[0].content.text();
+    let user_content = api_msgs[1].content.text();
+    // The stable system prompt stays in the system message; the file content
+    // (formatted in markdown) rides on the latest user message, before its text.
     assert!(system_content.contains("You are a helpful assistant"));
-    assert!(system_content.contains("## File: foo.rs"));
-    assert!(system_content.contains("fn foo() {}"));
+    assert!(!system_content.contains("## File: foo.rs"));
+    assert!(user_content.contains("## File: foo.rs"));
+    assert!(user_content.contains("fn foo() {}"));
+    assert!(user_content.ends_with("Hello"));
 }
 
 #[test]
@@ -650,4 +653,65 @@ fn failed_request_start_persistence_rolls_back_provisional_accounting() {
         blocks_before[0].logical_turn_id
     );
     assert!(app.blocks[0].usage.is_none());
+}
+
+#[test]
+fn older_tool_outputs_are_shortened_and_blank_failed_turns_are_noted() {
+    let mut ctx = ContextManager::new(200_000, Some("system".to_string()));
+    ctx.add_message("user", "do the work");
+    let long_output: String = (0..200).map(|i| format!("line {i}\n")).collect();
+    for index in 0..8 {
+        let call = lethetic::context::ToolCall {
+            id: format!("call_{index}"),
+            provider_id: None,
+            function: lethetic::context::FunctionCall {
+                name: "run_shell_command".to_string(),
+                arguments: serde_json::json!({"command": "seq 200"}),
+            },
+        };
+        ctx.upsert_assistant_tool_call_with_provider("", vec![call], None);
+        ctx.add_tool_message(format!("call_{index}"), "run_shell_command", &long_output);
+    }
+    ctx.add_message("assistant", "");
+    ctx.add_message("user", "continue");
+    let messages = ctx.prepare_api_context().into_messages();
+    let tools: Vec<String> = messages
+        .iter()
+        .filter(|m| m.role == lethetic::transport::Role::Tool)
+        .map(|m| m.content.text())
+        .collect();
+    assert_eq!(tools.len(), 8);
+    for older in &tools[..2] {
+        assert!(older.contains("lines omitted"), "{older}");
+        assert!(older.contains("line 0") && older.contains("line 199"));
+    }
+    for recent in &tools[2..] {
+        assert!(!recent.contains("omitted"));
+    }
+    assert!(messages.iter().any(|m| {
+        m.role == lethetic::transport::Role::Assistant
+            && m.content
+                .text()
+                .contains("interrupted before it produced any output")
+    }));
+}
+
+#[test]
+fn todo_list_rides_on_the_latest_user_message() {
+    let mut ctx = ContextManager::new(200_000, Some("system".to_string()));
+    ctx.set_todo_summary(Some(
+        "<todos>\n- [pending] (high) write main.rs\n</todos>".into(),
+    ));
+    ctx.add_message("user", "first");
+    ctx.add_message("assistant", "ok");
+    ctx.add_message("user", "second");
+    let messages = ctx.prepare_api_context().into_messages();
+    let users: Vec<String> = messages
+        .iter()
+        .filter(|m| m.role == lethetic::transport::Role::User)
+        .map(|m| m.content.text())
+        .collect();
+    assert!(!users[0].contains("<todos>"));
+    assert!(users[1].contains("write main.rs") && users[1].ends_with("second"));
+    assert!(!messages[0].content.text().contains("<todos>"));
 }

@@ -49,6 +49,10 @@ CurrentWorkingDir:[CWD]
 [TOOL_CALL_FORMAT]
 "#;
 
+/// Appended after the prompt template in General mode so the plan survives
+/// turns (the model's thinking is not replayed in history).
+pub const PLANNING_GUIDANCE: &str = "# Planning\nFor any task with more than two steps, write a todo list with the `todowrite` tool before starting and update it as steps finish or change. The current list is shown in a <todos> block with the latest user message; use it to pick up where you left off instead of re-checking what you already verified.";
+
 pub const TOOL_CALL_FORMAT_GEMMA4: &str = r#"# Tool call format
 ALL tool call argument values that are strings MUST be wrapped in asymmetric markers:
   <|"|>your content here<|"|>
@@ -357,6 +361,9 @@ impl SystemPromptManager {
             .replace("[TOOL_CALL_FORMAT]", tool_call_fmt);
         match python_capability_guidance(config) {
             Some(guidance) => format!("{resolved}\n\n{guidance}"),
+            None if config.tool_profile == crate::config::ToolProfile::General => {
+                format!("{resolved}\n\n{PLANNING_GUIDANCE}")
+            }
             None => resolved,
         }
     }

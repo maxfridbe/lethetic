@@ -998,7 +998,7 @@ pub(crate) async fn handle_stream_event(
             context.app.should_redraw = true;
         }
         StreamEvent::TodoUpdated(snapshot) => {
-            context.app.todos = snapshot.clone();
+            context.app.set_todos(snapshot.clone());
             let active = snapshot
                 .todos
                 .iter()

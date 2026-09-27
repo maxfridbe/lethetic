@@ -297,6 +297,9 @@ pub struct CachedFile {
 }
 
 pub struct ContextManager {
+    /// Current todo list rendered for the request, set by the app whenever
+    /// `.lethetic/todos.json` changes.
+    pub(crate) todo_summary: Option<String>,
     pub(crate) max_tokens: usize,
     pub(crate) messages: Vec<Message>,
     pub(crate) system_prompt: Option<String>,
@@ -312,6 +315,7 @@ pub struct ContextManager {
 impl ContextManager {
     pub fn new(max_tokens: usize, system_prompt: Option<String>) -> Self {
         Self {
+            todo_summary: None,
             max_tokens,
             messages: Vec::new(),
             system_prompt,
@@ -345,6 +349,11 @@ impl ContextManager {
                 &format!("Current working directory: {}", self.cwd),
             );
         }
+    }
+
+    /// Set (or clear) the todo list block included with the latest message.
+    pub fn set_todo_summary(&mut self, summary: Option<String>) {
+        self.todo_summary = summary;
     }
 
     pub fn update_system_prompt(&mut self, prompt: String) {

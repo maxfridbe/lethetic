@@ -433,6 +433,7 @@ impl App {
         if let Some(error) = session_store_error {
             app.stop_reason = format!("Session storage unavailable: {error}");
         }
+        app.refresh_todos();
         app.refresh_session_list();
         if !app.session_summaries.is_empty() {
             app.show_session_manager = true;
