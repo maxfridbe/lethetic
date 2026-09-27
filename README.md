@@ -468,7 +468,8 @@ These keys describe the terminal UI. Browser palette accelerators, editable-targ
 | **Up / Down** (at input boundary) | Scroll output line by line |
 | **Alt + Up / Down** | Scroll output at any time |
 | **Page Up / Down** | Scroll output 20 lines |
-| **F1 / Ctrl+P** | Command Palette: type to fuzzy-filter (ranked by match), ↑↓ to move, Enter to run, Esc to close |
+| **Ctrl+P** (or Esc when idle) | Command Palette: type to fuzzy-filter (ranked by match), ↑↓ to move, Enter to run, Esc to close |
+| **F1** | Hotkeys reference (also Ctrl+P → Hotkeys) |
 | **Esc Esc** (within 0.8 s) | Stop the active response or tool; a single Esc only arms it |
 | **F12** | Toggle debugger pane |
 | **F10** | Toggle mouse capture: off lets you select and copy text with the mouse; on (default) makes the wheel scroll the output. Shift+drag also selects in most terminals |

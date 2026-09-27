@@ -2,7 +2,7 @@ use crate::app::App;
 use crate::icons;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block as UIBlock, Borders, Clear, List, ListItem, Paragraph, Wrap},
 };
@@ -833,76 +833,122 @@ fn render_prompt_editor(f: &mut ratatui::Frame, app: &mut App) {
     }
 }
 
+/// Every terminal shortcut, grouped. Keep in sync with the README table.
+const HOTKEYS: &[(&str, &[(&str, &str)])] = &[
+    (
+        "Commands",
+        &[
+            (
+                "Ctrl+P / Esc",
+                "Command palette: type to fuzzy-filter, ↑↓ move, Enter run, Esc close",
+            ),
+            ("F1", "This hotkey reference"),
+            ("Enter", "Send prompt / confirm selection"),
+            ("Alt+Enter", "New line in the prompt"),
+            ("Up (empty prompt)", "Input history"),
+        ],
+    ),
+    (
+        "Stopping and quitting",
+        &[
+            (
+                "Esc Esc",
+                "Stop the running reply or tool (two presses within 0.8 s)",
+            ),
+            (
+                "Ctrl+C",
+                "Cancel active work; press again when idle to quit",
+            ),
+        ],
+    ),
+    (
+        "Output",
+        &[
+            ("Tab", "Switch focus between input and output"),
+            (
+                "Up / Down",
+                "Scroll output (at the input edge, or when output is focused)",
+            ),
+            ("Alt+Up / Alt+Down", "Scroll output one line at any time"),
+            ("PgUp / PgDn", "Scroll output 20 lines"),
+            ("Ctrl+Home / Ctrl+End", "Jump to the top / bottom"),
+            ("Mouse wheel", "Scroll output"),
+            ("Click 󰇻", "Copy a block's content (wl-copy)"),
+            ("Ctrl+L", "Clear the screen, keep the context"),
+        ],
+    ),
+    (
+        "Panes and view",
+        &[
+            ("F9", "Todo list pane (the model's remaining todos)"),
+            ("F12", "Debugger pane"),
+            (
+                "F10",
+                "Mouse capture off/on: off lets you select text; Shift+drag also works",
+            ),
+            ("Ctrl+O", "Hide / show thinking blocks"),
+        ],
+    ),
+    (
+        "In lists and dialogs",
+        &[
+            (
+                "Sessions: Enter / C / N / D / X",
+                "Resume / compact / new / delete / wipe all",
+            ),
+            (
+                "Models: s",
+                "Scan the connection's catalog; type to filter, Enter adds",
+            ),
+            ("Approval: A / O / D", "Always allow / allow once / deny"),
+        ],
+    ),
+];
+
 fn render_hotkeys(f: &mut ratatui::Frame, app: &mut App) {
     if !app.show_hotkeys {
         return;
     }
-    let area = centered_rect(70, 70, f.area());
+    let area = centered_rect(80, 85, f.area());
     f.render_widget(Clear, area);
-    let hotkeys_text = vec![
-        Line::from(vec![Span::styled(
-            "Navigation",
+    let key_width = HOTKEYS
+        .iter()
+        .flat_map(|(_, keys)| keys.iter().map(|(key, _)| key.chars().count()))
+        .max()
+        .unwrap_or(10);
+    let mut lines = Vec::new();
+    for (section, keys) in HOTKEYS {
+        if !lines.is_empty() {
+            lines.push(Line::from(""));
+        }
+        lines.push(Line::from(Span::styled(
+            *section,
             Style::default()
                 .add_modifier(Modifier::BOLD)
-                .fg(Color::Cyan),
-        )]),
-        Line::from(vec![Span::raw(
-            "  TAB       : Toggle Focus between Input and Output",
-        )]),
-        Line::from(vec![Span::raw(
-            "  UP / DOWN : Scroll Output (when focused)",
-        )]),
-        Line::from(vec![Span::raw("  PGUP/PGDN : Fast Scroll Output")]),
-        Line::from(vec![Span::raw(
-            "  ESC       : Open Command Palette · ESC ESC (quickly): Stop Output",
-        )]),
-        Line::from(vec![]),
-        Line::from(vec![Span::styled(
-            "Global Toggles",
-            Style::default()
-                .add_modifier(Modifier::BOLD)
-                .fg(Color::Cyan),
-        )]),
-        Line::from(vec![Span::raw("  F12       : Toggle Debugger Pane")]),
-        Line::from(vec![Span::raw("  F9        : Toggle Todo List Pane")]),
-        Line::from(vec![Span::raw(
-            "  F10       : Toggle Mouse (for terminal selection)",
-        )]),
-        Line::from(vec![Span::raw(
-            "  Wheel     : Scroll output one line up/down",
-        )]),
-        Line::from(vec![Span::raw("  CTRL + P  : Command Palette")]),
-        Line::from(vec![Span::raw("  CTRL + O  : Toggle Hide/Show Thinking")]),
-        Line::from(vec![Span::raw("  CTRL + L  : Clear UI (Keep Context)")]),
-        Line::from(vec![Span::raw(
-            "  Click 󰇻   : Copy a block's content to the clipboard (wl-copy)",
-        )]),
-        Line::from(vec![]),
-        Line::from(vec![Span::styled(
-            "General",
-            Style::default()
-                .add_modifier(Modifier::BOLD)
-                .fg(Color::Cyan),
-        )]),
-        Line::from(vec![Span::raw(
-            "  ENTER     : Send Prompt / Confirm Selection",
-        )]),
-        Line::from(vec![Span::raw(
-            "  CTRL + C  : Stop Output (1st) / Quit (2nd)",
-        )]),
-        Line::from(vec![]),
-        Line::from(vec![Span::styled(
-            "Press ESC or ENTER to close",
-            Style::default()
-                .add_modifier(Modifier::ITALIC)
-                .fg(Color::DarkGray),
-        )]),
-    ];
+                .fg(app.theme.highlight_fg),
+        )));
+        for (key, action) in *keys {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  {key:<key_width$}  "),
+                    Style::default().fg(app.theme.tool_fg),
+                ),
+                Span::styled(*action, Style::default().fg(app.theme.output_fg)),
+            ]));
+        }
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Esc or Enter closes",
+        Style::default()
+            .add_modifier(Modifier::ITALIC)
+            .fg(app.theme.system_fg),
+    )));
     f.render_widget(
-        Paragraph::new(hotkeys_text)
+        Paragraph::new(lines)
             .block(
                 UIBlock::default()
-                    .title(format!("{} Hotkeys Reference", icons::COMMAND))
+                    .title(format!("{} Hotkeys", icons::COMMAND))
                     .borders(Borders::ALL)
                     .style(Style::default().bg(app.theme.terminal_bg)),
             )

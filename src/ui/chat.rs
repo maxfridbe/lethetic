@@ -352,7 +352,7 @@ pub(super) fn render_input(f: &mut ratatui::Frame, app: &App, area: Rect, inner_
         .title(input_title)
         .title_top(
             Line::from(Span::styled(
-                " Ctrl+P: commands · F9: todos · F10: select text · F12: debug ",
+                " Ctrl+P: commands · F1: keys · F9: todos · F10: select · F12: debug ",
                 Style::default().fg(app.theme.system_fg),
             ))
             .right_aligned(),

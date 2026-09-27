@@ -240,7 +240,7 @@ pub const COMMAND_SPECS: [CommandSpec; 22] = [
         behavior: CommandBehavior::OpenPanel,
         accelerator: Some('h'),
         requires_idle: false,
-        description: "Keyboard shortcuts for the terminal UI.",
+        description: "Every keyboard shortcut in the terminal UI (also F1).",
     },
     CommandSpec {
         id: CommandId::Themes,

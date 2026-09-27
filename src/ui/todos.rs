@@ -122,3 +122,40 @@ mod tests {
         assert!(screen.contains("[x] · scaffold crate"));
     }
 }
+
+#[cfg(test)]
+mod hotkeys_tests {
+    use crate::app::App;
+    use crate::config::Config;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use ratatui::{Terminal, backend::TestBackend};
+
+    #[test]
+    fn f1_opens_the_full_hotkey_reference() {
+        let mut app = App::new(&Config::default());
+        app.show_session_manager = false;
+        crate::app::handle_key(&mut app, KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE));
+        assert!(app.show_hotkeys);
+        let mut terminal = Terminal::new(TestBackend::new(150, 60)).unwrap();
+        terminal
+            .draw(|frame| crate::ui::ui(frame, &mut app))
+            .unwrap();
+        let screen: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        for needle in [
+            "Esc Esc",
+            "F9",
+            "F10",
+            "Ctrl+O",
+            "Models: s",
+            "Stop the running reply",
+        ] {
+            assert!(screen.contains(needle), "missing {needle}");
+        }
+    }
+}
