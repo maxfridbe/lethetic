@@ -22,6 +22,7 @@ fn sample_state() -> SessionState {
             tool_result_is_error: false,
         }],
         blocks: vec![RenderBlock {
+            duration_ms: None,
             block_type: BlockType::User,
             content: "hello".to_string(),
             title: None,
@@ -44,6 +45,7 @@ fn sample_state() -> SessionState {
         python_policy: None,
         loop_mode: None,
         remote_control: None,
+        tool_use_counts: Default::default(),
         needs_migration_save: false,
     }
 }
@@ -265,6 +267,7 @@ fn legacy_error_blocks_migrate_to_typed_provenance_without_losing_local_detail()
     state.schema_version = 0;
     state.blocks = vec![
         RenderBlock {
+            duration_ms: None,
             block_type: BlockType::Text,
             content: format!(
                 "Partial assistant response.\n\n{} ERROR: quota denied {provider_sentinel}\n",
@@ -281,6 +284,7 @@ fn legacy_error_blocks_migrate_to_typed_provenance_without_losing_local_detail()
             cached_line_count: None,
         },
         RenderBlock {
+            duration_ms: None,
             block_type: BlockType::ToolResult,
             content: format!("Sub-agent failed: quota denied {tool_sentinel}"),
             title: Some("Run validation".to_string()),
@@ -410,6 +414,7 @@ fn interrupted_tool_call_repair_adds_a_matching_ui_error() {
         tool_result_is_error: false,
     }];
     state.blocks = vec![RenderBlock {
+        duration_ms: None,
         block_type: BlockType::ToolCall,
         content: format!(
             "call:calculate{}",
@@ -456,6 +461,7 @@ fn obsolete_empty_session_provider_error_is_only_removed_from_legacy_schema() {
         state.schema_version = schema_version;
         state.messages.clear();
         state.blocks = vec![RenderBlock {
+            duration_ms: None,
             block_type: BlockType::ProviderError,
             content: obsolete.clone(),
             title: None,

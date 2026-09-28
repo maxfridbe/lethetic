@@ -369,8 +369,14 @@ impl App {
             python_policy,
             loop_mode,
             system_prompt,
+            tool_use_counts,
             ..
         } = state;
+        self.tool_use_counts = if tool_use_counts.is_empty() {
+            App::tool_use_counts_from_messages(&messages)
+        } else {
+            tool_use_counts
+        };
         self.pending_session_settings = Some(SessionSettings {
             system_prompt,
             connection_id,
@@ -779,6 +785,7 @@ impl App {
         self.shared_python_workspace = None;
         self.blocks.clear();
         self.blocks.push(RenderBlock {
+            duration_ms: None,
             block_type: BlockType::Text,
             content: "New session started. Type a prompt to begin.".to_string(),
             title: None,
@@ -794,6 +801,7 @@ impl App {
         self.context_manager.clear();
         self.logical_turn_usage = None;
         self.accounting = crate::accounting::SessionAccounting::default();
+        self.tool_use_counts.clear();
         self.reset_session_view_state();
         self.needs_save = true;
         self.save_session_checked()?;
@@ -1135,6 +1143,7 @@ mod tests {
 
     fn cached_block(line_count: usize) -> RenderBlock {
         RenderBlock {
+            duration_ms: None,
             block_type: BlockType::Text,
             content: "loaded".to_string(),
             title: None,

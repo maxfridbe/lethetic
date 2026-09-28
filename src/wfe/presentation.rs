@@ -489,6 +489,7 @@ fn project_blocks(
             } else {
                 None
             },
+            duration_label: crate::status_summary::block_duration_label(block),
         });
     }
     projected.reverse();
@@ -517,6 +518,7 @@ fn project_blocks(
                 success: None,
                 usage: None,
                 estimated_cost: None,
+                duration_label: None,
             },
         );
     }
@@ -811,6 +813,7 @@ fn project_status(app: &App, redactor: &Redactor) -> StatusView {
     };
 
     StatusView {
+        tool_use: app.tool_use_summary().unwrap_or_default(),
         stop_reason: stop_reason.text,
         stop_reason_loss,
         model_label: redactor

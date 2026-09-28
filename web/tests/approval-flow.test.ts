@@ -132,6 +132,7 @@ function toolBlockPatch(tool: unknown): string {
                 success: null,
                 usage: null,
                 estimated_cost: null,
+                duration_label: null,
               },
             ],
             omitted_before: 0,
@@ -236,6 +237,7 @@ function completeSnapshot(): WebAppSnapshot {
       file_count: 0,
       visible_block_count: 0,
       git_state: "clean",
+      tool_use: "",
     },
     debugger: {
       open: false,
@@ -1038,6 +1040,7 @@ test("visible chat allocates exact JSON demand before large prose", () => {
     success: null,
     usage: null,
     estimated_cost: null,
+    duration_label: null,
   });
   const tinyPayload = '{"path":"[REDACTED-PATH]"}';
   const tinyDemand = inspectJson(tinyPayload);

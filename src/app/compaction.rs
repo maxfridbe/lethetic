@@ -282,3 +282,137 @@ pub(crate) fn render_todo_context(snapshot: &crate::todo_store::TodoSnapshot) ->
     text.push_str("</todos>");
     Some(text)
 }
+
+impl App {
+    pub fn record_tool_use(&mut self, name: &str) {
+        *self.tool_use_counts.entry(name.to_string()).or_insert(0) += 1;
+        self.needs_save = true;
+    }
+
+    /// Rebuild counts from the conversation (sessions saved before counts
+    /// were recorded).
+    pub fn tool_use_counts_from_messages(
+        messages: &[crate::context::Message],
+    ) -> std::collections::BTreeMap<String, u64> {
+        let mut counts = std::collections::BTreeMap::new();
+        for call in messages
+            .iter()
+            .flat_map(|message| message.tool_calls.iter().flatten())
+        {
+            *counts.entry(call.function.name.clone()).or_insert(0) += 1;
+        }
+        counts
+    }
+
+    /// "87 shell commands, 10 edits, 4 file writes, 5 line reads", most used
+    /// first; `None` before the first tool call.
+    pub fn tool_use_summary(&self) -> Option<String> {
+        tool_use_summary(&self.tool_use_counts)
+    }
+}
+
+pub fn tool_use_summary(counts: &std::collections::BTreeMap<String, u64>) -> Option<String> {
+    let label = |name: &str, count: u64| -> String {
+        let (singular, plural) = match name {
+            "run_shell_command" => ("shell command", "shell commands"),
+            "edit" | "replace_text" | "apply_patch" => ("edit", "edits"),
+            "write_file" => ("file write", "file writes"),
+            "read_file" => ("file read", "file reads"),
+            "read_file_lines" => ("line read", "line reads"),
+            "read_folder" => ("folder read", "folder reads"),
+            "search_text" | "glob" | "find_symbol" => ("search", "searches"),
+            "todowrite" => ("todo update", "todo updates"),
+            "fetch_url" | "web_fetch" | "read_page" | "web_search" => ("web fetch", "web fetches"),
+            "task" => ("sub-agent", "sub-agents"),
+            "python" => ("python cell", "python cells"),
+            other => return format!("{count} {other}"),
+        };
+        format!("{count} {}", if count == 1 { singular } else { plural })
+    };
+    // Merge names that share a label (edit/replace_text/apply_patch...).
+    let mut merged: Vec<(String, u64)> = Vec::new();
+    for (name, count) in counts {
+        let key = label(name, 2)
+            .trim_start_matches(char::is_numeric)
+            .trim()
+            .to_string();
+        match merged.iter_mut().find(|(existing, _)| *existing == key) {
+            Some((_, total)) => *total += count,
+            None => merged.push((key, *count)),
+        }
+    }
+    if merged.is_empty() {
+        return None;
+    }
+    merged.sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
+    let parts: Vec<String> = merged
+        .iter()
+        .map(|(plural_label, count)| {
+            let name = counts
+                .keys()
+                .find(|name| label(name, 2).ends_with(plural_label.as_str()))
+                .cloned()
+                .unwrap_or_default();
+            label(&name, *count)
+        })
+        .collect();
+    Some(parts.join(", "))
+}
+
+#[cfg(test)]
+mod tool_use_tests {
+    #[test]
+    fn summary_merges_and_orders_by_use() {
+        let mut counts = std::collections::BTreeMap::new();
+        counts.insert("run_shell_command".to_string(), 87);
+        counts.insert("edit".to_string(), 7);
+        counts.insert("replace_text".to_string(), 3);
+        counts.insert("write_file".to_string(), 4);
+        counts.insert("read_file_lines".to_string(), 5);
+        counts.insert("read_file".to_string(), 1);
+        assert_eq!(
+            super::tool_use_summary(&counts).unwrap(),
+            "87 shell commands, 10 edits, 5 line reads, 4 file writes, 1 file read"
+        );
+        assert!(super::tool_use_summary(&Default::default()).is_none());
+    }
+}
+
+#[cfg(test)]
+mod timing_tests {
+    use crate::app::{App, BlockType};
+    use crate::config::Config;
+
+    #[test]
+    fn thought_and_tool_blocks_record_how_long_they_took() {
+        let mut app = App::new(&Config::default());
+        app.show_session_manager = false;
+        app.add_segment("planning".to_string(), BlockType::Thought);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        app.tool_call_started_at = Some(std::time::Instant::now());
+        app.add_segment_with_title("call:run{}".to_string(), BlockType::ToolCall, "Run".into());
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        app.add_segment_with_title(
+            "EXIT_CODE: 0".to_string(),
+            BlockType::ToolResult,
+            "Run".into(),
+        );
+        let thought = app
+            .blocks
+            .iter()
+            .find(|b| b.block_type == BlockType::Thought)
+            .unwrap();
+        assert!(thought.duration_ms.unwrap() >= 20);
+        let result = app
+            .blocks
+            .iter()
+            .find(|b| b.block_type == BlockType::ToolResult)
+            .unwrap();
+        assert!(result.duration_ms.unwrap() >= 20);
+        assert!(
+            crate::status_summary::block_duration_label(result)
+                .unwrap()
+                .starts_with("tool call took")
+        );
+    }
+}

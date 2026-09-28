@@ -51,6 +51,10 @@ pub struct RenderBlock {
     pub estimated_cost: Option<crate::accounting::EstimatedCost>,
     #[serde(default)]
     pub logical_turn_id: Option<String>,
+    /// How long this step took: thinking time for Thought blocks, execution
+    /// time for tool results. Shown as a line under the block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
     #[serde(skip)]
     pub cached_lines: Option<Vec<Line<'static>>>,
     /// Line count of the last render at the current width. Survives cache
@@ -127,6 +131,7 @@ impl RenderBlock {
 
     fn new(block_type: BlockType, content: String, title: Option<String>, success: bool) -> Self {
         Self {
+            duration_ms: None,
             block_type,
             content,
             title,
@@ -230,6 +235,7 @@ pub(crate) fn migrate_legacy_error_blocks(blocks: &mut Vec<RenderBlock>) -> bool
                 block.invalidate();
                 migrated.push(block);
                 migrated.push(RenderBlock {
+                    duration_ms: None,
                     block_type: error_kind.block_type(),
                     content: error_content,
                     title: None,
@@ -270,6 +276,7 @@ pub(crate) fn migrate_legacy_error_blocks(blocks: &mut Vec<RenderBlock>) -> bool
                     block.invalidate();
                     migrated.push(block);
                     migrated.push(RenderBlock {
+                        duration_ms: None,
                         block_type: BlockType::ToolError,
                         content: error_content,
                         title: error_title,
@@ -368,6 +375,7 @@ pub(crate) fn reconcile_interrupted_tool_error_blocks(
         }
 
         additions.push(RenderBlock {
+            duration_ms: None,
             block_type: BlockType::ToolError,
             content: crate::context::INTERRUPTED_TOOL_RESULT.to_string(),
             title: Some(description),
@@ -486,9 +494,32 @@ impl App {
         self.add_block(cleaned_content, b_type, title);
     }
 
+    /// Close the timing of a Thought block that is still open (the model
+    /// moved on or the reply ended).
+    pub fn finish_thought_timing(&mut self) {
+        let Some(started) = self.block_started_at else {
+            return;
+        };
+        if let Some(last) = self.blocks.last_mut()
+            && last.block_type == BlockType::Thought
+            && last.duration_ms.is_none()
+        {
+            last.duration_ms = Some(started.elapsed().as_millis() as u64);
+            last.invalidate();
+            self.should_redraw = true;
+        }
+    }
+
     pub(super) fn add_block(&mut self, content: String, b_type: BlockType, title: Option<String>) {
+        self.finish_thought_timing();
+        self.block_started_at = Some(std::time::Instant::now());
+        let tool_duration_ms = matches!(b_type, BlockType::ToolResult | BlockType::ToolError)
+            .then(|| self.tool_call_started_at.take())
+            .flatten()
+            .map(|started| started.elapsed().as_millis() as u64);
         if b_type == BlockType::User && !self.blocks.is_empty() {
             self.blocks.push(RenderBlock {
+                duration_ms: None,
                 block_type: BlockType::Divider,
                 content: String::new(),
                 title: None,
@@ -510,6 +541,7 @@ impl App {
         };
 
         self.blocks.push(RenderBlock {
+            duration_ms: tool_duration_ms,
             block_type: b_type.clone(),
             content: content.clone(),
             title: title.clone(),
@@ -621,6 +653,7 @@ impl App {
     pub fn clear_ui_preserving_context(&mut self) {
         self.blocks.clear();
         self.blocks.push(RenderBlock {
+            duration_ms: None,
             block_type: BlockType::Text,
             content: "UI Cleared. (Context preserved)".to_string(),
             title: None,
@@ -646,6 +679,7 @@ mod tests {
 
     fn legacy_tool_block(content: &str) -> RenderBlock {
         RenderBlock {
+            duration_ms: None,
             block_type: BlockType::ToolResult,
             content: content.to_string(),
             title: Some("Action".to_string()),

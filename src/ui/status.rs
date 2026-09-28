@@ -211,6 +211,16 @@ pub(super) fn render_status(f: &mut ratatui::Frame, app: &App, area: Rect) {
         format!("{}MB ", summary.memory_mebibytes),
         Style::default().fg(app.theme.thought_fg),
     ));
+    if let Some(bytes) = app.lethetic_dir_bytes {
+        spans.push(Span::styled(
+            "| .lethetic: ",
+            Style::default().fg(app.theme.system_fg),
+        ));
+        spans.push(Span::styled(
+            format!("{} ", crate::status_summary::format_bytes(bytes)),
+            Style::default().fg(app.theme.thought_fg),
+        ));
+    }
     spans.push(Span::styled(
         "| Files: ",
         Style::default().fg(app.theme.system_fg),
@@ -228,7 +238,16 @@ pub(super) fn render_status(f: &mut ratatui::Frame, app: &App, area: Rect) {
         Style::default().fg(app.theme.thought_fg),
     ));
 
-    let status_text = vec![Line::from(spans), Line::from(line2_spans)];
+    let mut status_text = vec![Line::from(spans), Line::from(line2_spans)];
+    if let Some(summary) = app.tool_use_summary() {
+        status_text.push(Line::from(vec![
+            Span::styled(
+                format!("{} Tool use: ", icons::COMMAND),
+                Style::default().fg(app.theme.system_fg),
+            ),
+            Span::styled(summary, Style::default().fg(app.theme.output_fg)),
+        ]));
+    }
     f.render_widget(Paragraph::new(status_text).wrap(Wrap { trim: true }), area);
 }
 

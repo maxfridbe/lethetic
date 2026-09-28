@@ -434,6 +434,14 @@ Combined NGram + phrase-frequency watchdog (the default). Only model text/though
 - Phrase frequency: tracks self-correction phrases (`"Actually,"`, `"Wait,"`, etc.)
 - On detection: auto-injects correction prompt; on persistent loop: hands control to user
 
+### Plan tracking
+
+Every tool call except `todowrite` carries a required `todo_id` naming the todo item it serves. After each call the harness checks `.lethetic/todos.json` and appends a **HARNESS WARNING** to the tool result when the id is missing, unknown, or already completed/cancelled, so the model keeps its plan accurate. `todowrite` items need ids (missing ones are assigned `t1`, `t2`, …). The current list travels with the latest message as a `<todos>` block, and F9 shows it.
+
+### Timing
+
+Each thinking block shows how long the engine thought, and each tool result shows how long the call took (`⏱ engine thought for 1m 05s`, `⏱ tool call took 3.2s`), in the terminal and the browser.
+
 ### Duplicate tool call detection
 
 Same tool + same key parameters called repeatedly:
@@ -449,7 +457,7 @@ If the model responds with a short text describing what it's about to do (withou
 
 ### TUI stop-reason status area
 
-The status area shows connection/model identity, the active General or Python execution profile (backend, network, workspace access, grant count, and policy source), and why the engine stopped:
+The status area shows memory use and the size of the working directory's `.lethetic` state (refreshed every ~20 s), a **Tool use** line counting this session's calls (e.g. `87 shell commands, 10 edits, 5 line reads, 4 file writes`), connection/model identity, the active General or Python execution profile (backend, network, workspace access, grant count, and policy source), and why the engine stopped:
 - `Response complete (N tokens)` / `Response complete (N tokens, context X% full)`
 - `→ Tool dispatched: <tool>` / `→ Loop #N detected — auto-correcting`
 - `⚠ Context saturated` / `⚠ Persistent loop terminated` / `⚠ Minimal response`

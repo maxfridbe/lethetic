@@ -341,3 +341,64 @@ mod tests {
         );
     }
 }
+
+/// Human-readable size: 512B, 14K, 200M, 1.4G.
+pub fn format_bytes(bytes: u64) -> String {
+    const K: f64 = 1024.0;
+    let value = bytes as f64;
+    if value < K {
+        format!("{bytes}B")
+    } else if value < K * K {
+        format!("{:.0}K", value / K)
+    } else if value < K * K * K {
+        format!("{:.0}M", value / (K * K))
+    } else {
+        format!("{:.1}G", value / (K * K * K))
+    }
+}
+
+#[cfg(test)]
+mod format_bytes_tests {
+    #[test]
+    fn sizes_are_short() {
+        assert_eq!(super::format_bytes(512), "512B");
+        assert_eq!(super::format_bytes(200 * 1024 * 1024), "200M");
+        assert_eq!(super::format_bytes(3 * 1024 * 1024 * 1024 / 2), "1.5G");
+    }
+}
+
+/// "850ms", "4.2s", "2m 05s", "1h 03m".
+pub fn format_duration_ms(ms: u64) -> String {
+    if ms < 1_000 {
+        format!("{ms}ms")
+    } else if ms < 60_000 {
+        format!("{:.1}s", ms as f64 / 1_000.0)
+    } else if ms < 3_600_000 {
+        format!("{}m {:02}s", ms / 60_000, (ms / 1_000) % 60)
+    } else {
+        format!("{}h {:02}m", ms / 3_600_000, (ms / 60_000) % 60)
+    }
+}
+
+/// The line shown under a timed block, if it has a duration.
+pub fn block_duration_label(block: &crate::app::RenderBlock) -> Option<String> {
+    use crate::app::BlockType;
+    let duration = format_duration_ms(block.duration_ms?);
+    match block.block_type {
+        BlockType::Thought => Some(format!("engine thought for {duration}")),
+        BlockType::ToolResult => Some(format!("tool call took {duration}")),
+        BlockType::ToolError => Some(format!("tool call failed after {duration}")),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod duration_tests {
+    #[test]
+    fn durations_read_naturally() {
+        assert_eq!(super::format_duration_ms(850), "850ms");
+        assert_eq!(super::format_duration_ms(4_200), "4.2s");
+        assert_eq!(super::format_duration_ms(125_000), "2m 05s");
+        assert_eq!(super::format_duration_ms(3_780_000), "1h 03m");
+    }
+}

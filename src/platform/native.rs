@@ -1757,3 +1757,32 @@ mod windows_tests {
         assert_eq!(names, vec!["state.json"]);
     }
 }
+
+/// Total size of regular files under `root` (symlinks are not followed).
+/// `None` when the directory does not exist.
+pub fn directory_size_bytes(root: &Path) -> Option<u64> {
+    let metadata = std::fs::symlink_metadata(root).ok()?;
+    if !metadata.is_dir() {
+        return None;
+    }
+    let mut total = 0_u64;
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_dir() {
+                pending.push(entry.path());
+            } else if file_type.is_file()
+                && let Ok(metadata) = entry.metadata()
+            {
+                total = total.saturating_add(metadata.len());
+            }
+        }
+    }
+    Some(total)
+}

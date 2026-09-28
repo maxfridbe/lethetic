@@ -303,6 +303,8 @@ fn prepare_python_tool_call(
 }
 
 fn add_tool_call_to_transcript(app: &mut App, tool_call: &ToolCall, description: &str) {
+    app.record_tool_use(&tool_call.function.name);
+    app.tool_call_started_at = Some(std::time::Instant::now());
     app.log_debug(&format!(
         "[TOOL CALL] {}: {}",
         tool_call.function.name, description

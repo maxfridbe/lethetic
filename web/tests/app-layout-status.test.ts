@@ -104,6 +104,7 @@ function textBlock(): RenderBlockView {
     success: null,
     usage: null,
     estimated_cost: null,
+    duration_label: null,
   };
 }
 
@@ -203,6 +204,7 @@ function snapshotFixture(): SnapshotFixture {
       file_count: 9,
       visible_block_count: 17,
       git_state: "dirty",
+      tool_use: "87 shell commands, 10 edits",
     },
     debugger: {
       open: true,

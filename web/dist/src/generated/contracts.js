@@ -3,7 +3,7 @@
 export const WFE_MAX_COMMAND_MESSAGE_BYTES = 262144;
 export const WFE_MAX_SERVER_MESSAGE_BYTES = 4194304;
 export const WFE_PROTOCOL_VERSION = 6;
-export const WFE_PROTOCOL_SCHEMA_SHA256 = "71aa24a4ba9d9e394e0b88f6e8a1399a5a4c9ec132a58da537159e11e9984e46";
+export const WFE_PROTOCOL_SCHEMA_SHA256 = "f2706dd72fd1c0178b560c74f717b92e61e42eeb94f9937f5e89bd5a19d078ee";
 export const COMMAND_ORDER = [
     "hotkeys",
     "themes",

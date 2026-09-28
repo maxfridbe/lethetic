@@ -45,6 +45,7 @@ fn snapshot_projection_redacts_known_secrets_endpoints_and_paths() {
     let prompt_excerpt = "Do not reveal this private system instruction segment to remote views.";
     app.system_prompt = format!("system header\n{prompt_excerpt}\nsystem footer");
     app.blocks.push(RenderBlock {
+        duration_ms: None,
         block_type: BlockType::Text,
         content: format!(
             "key={} url={} cwd={} extra=controller-secret path=/etc/private/config redirect=https://unregistered.internal/error password=hunter2 prompt={prompt_excerpt}",
@@ -89,6 +90,7 @@ fn block_projection_is_utf8_safe_and_bounded() {
     let mut app = App::new(&config);
     for index in 0..205 {
         app.blocks.push(RenderBlock {
+            duration_ms: None,
             block_type: BlockType::Text,
             content: format!("{index}:{}", "🦀".repeat(20_000)),
             title: None,
@@ -124,6 +126,7 @@ fn escaped_block_projection_fits_the_server_message_budget() {
     app.blocks.clear();
     for _ in 0..32 {
         app.blocks.push(RenderBlock {
+            duration_ms: None,
             block_type: BlockType::Text,
             content: "\u{0001}".repeat(MAX_WEB_BLOCK_CONTENT_BYTES),
             title: None,
@@ -188,6 +191,7 @@ fn redacted_fenced_json_reports_redaction_without_fake_truncation() {
     let config = Config::default();
     let mut app = App::new(&config);
     app.blocks.push(RenderBlock {
+        duration_ms: None,
         block_type: BlockType::Text,
         content: "```json\n{\"path\":\"/etc/private/data\"}\n```".to_string(),
         title: None,
@@ -214,6 +218,7 @@ fn runtime_notice_never_projects_a_raw_podman_container_id() {
     let container_id = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     let mut app = App::new(&Config::default());
     app.blocks.push(RenderBlock {
+        duration_ms: None,
         block_type: BlockType::Text,
         content: format!(
             "Podman container {container_id} resumed; network: none; mounted R/W cwd: /private/work"
@@ -259,6 +264,7 @@ fn rendered_runtime_notice_projects_only_the_validated_operational_name() {
 
     let mut app = App::new(&Config::default());
     app.blocks.push(RenderBlock {
+        duration_ms: None,
         block_type: BlockType::Text,
         content: rendered,
         title: None,
@@ -283,6 +289,7 @@ fn complete_python_code_projection_is_valid_json_and_only_filtered() {
     let config = Config::default();
     let mut app = App::new(&config);
     app.blocks.push(RenderBlock {
+        duration_ms: None,
         block_type: BlockType::ToolCall,
         content: format!(
             "call:python{}",
@@ -325,6 +332,7 @@ fn incomplete_python_source_uses_an_explicit_invalid_safe_projection() {
     let config = Config::default();
     let mut app = App::new(&config);
     app.blocks.push(RenderBlock {
+        duration_ms: None,
         block_type: BlockType::ToolCall,
         content: r#"call:python{"code":42,"description":"not executable"}"#.to_string(),
         title: Some("Python".to_string()),
@@ -370,6 +378,7 @@ fn tool_blocks_are_structured_and_path_redacted() {
     let config = Config::default();
     let mut app = App::new(&config);
     app.blocks.push(RenderBlock {
+        duration_ms: None,
         block_type: BlockType::ToolCall,
         content: r#"call:python{"code":"open('/etc/private/data')","description":"Inspect data","tool_call_id":"private-provider-id"}"#.to_string(),
         title: Some("Python".to_string()),
@@ -405,6 +414,7 @@ fn redacted_tool_result_retains_complete_markdown_payload() {
     app.cwd = private_root.to_string();
     app.current_dir = private_root.to_string();
     app.blocks.push(RenderBlock {
+        duration_ms: None,
         block_type: BlockType::ToolResult,
         content: format!(
             "# Repository Overview: `{private_root}`\n\n## Directory Structure\n```text\nproject/\n└── src/\n```\n\nTail retained."
@@ -443,6 +453,7 @@ fn successful_scrubbed_python_result_preserves_harmless_text_and_public_tracebac
     app.cwd = private_root.to_string();
     app.current_dir = private_root.to_string();
     app.blocks.push(RenderBlock {
+        duration_ms: None,
         block_type: BlockType::ToolResult,
         content: format!(
             concat!(
@@ -495,6 +506,7 @@ fn tool_call_block_never_discloses_a_tail_hidden_by_the_approval_limit() {
         "tail": tail,
     });
     app.blocks.push(RenderBlock {
+        duration_ms: None,
         block_type: BlockType::ToolCall,
         content: format!(
             "call:write_file{}",
@@ -1229,6 +1241,7 @@ fn legacy_error_block_shapes_are_filtered_without_losing_safe_partial_text() {
     let tool_sentinel = "defdefdefdefdefdefdefdefdefdefdefdef";
     let patch_sentinel = "ghighighighighighighighighighighighi";
     app.blocks.push(RenderBlock {
+        duration_ms: None,
         block_type: BlockType::Text,
         content: format!(
             "Partial assistant response.\n\n{} ERROR: quota denied tenant violet {provider_sentinel}\n",
@@ -1245,6 +1258,7 @@ fn legacy_error_block_shapes_are_filtered_without_losing_safe_partial_text() {
         cached_line_count: None,
     });
     app.blocks.push(RenderBlock {
+        duration_ms: None,
         block_type: BlockType::ToolResult,
         content: format!("\nSub-agent failed: quota denied tenant orange {tool_sentinel}\n"),
         title: Some("Run validation".to_string()),
@@ -1258,6 +1272,7 @@ fn legacy_error_block_shapes_are_filtered_without_losing_safe_partial_text() {
         cached_line_count: None,
     });
     app.blocks.push(RenderBlock {
+        duration_ms: None,
         block_type: BlockType::ToolResult,
         content: format!(
             "STDOUT:\npatch diagnostic tenant amber {patch_sentinel}\nSTDERR:\npatch failed"
@@ -1319,6 +1334,7 @@ fn merged_legacy_success_and_failure_keeps_prefix_but_filters_error_tail() {
     app.blocks.clear();
     let raw = "validation completed\nERROR: quota denied tenant violet merged-local-42";
     app.blocks.push(RenderBlock {
+        duration_ms: None,
         block_type: BlockType::ToolResult,
         content: raw.to_string(),
         title: Some("Action".to_string()),
@@ -1406,6 +1422,7 @@ fn all_known_legacy_tool_error_families_use_fixed_browser_payloads() {
     app.blocks = fixtures
         .iter()
         .map(|(content, _)| RenderBlock {
+            duration_ms: None,
             block_type: BlockType::ToolResult,
             content: (*content).to_string(),
             title: Some("Action".to_string()),

@@ -98,6 +98,8 @@ pub struct App {
     pub scroll: u16,
     pub auto_scroll: bool,
     pub memory_usage: u64,
+    /// Size of the working directory's `.lethetic` state, refreshed every ~20 s.
+    pub lethetic_dir_bytes: Option<u64>,
     pub system_prompt: String,
     pub show_prompt_editor: bool,
     pub is_editing_prompt: bool,
@@ -192,6 +194,12 @@ pub struct App {
     /// Settings of a session resumed by the library path (`--session-id`),
     /// waiting for the run loop to apply them.
     pub pending_session_settings: Option<SessionSettings>,
+    /// Tool calls made in this session, by tool name.
+    pub tool_use_counts: std::collections::BTreeMap<String, u64>,
+    /// When the newest transcript block started (Thought timing).
+    pub(crate) block_started_at: Option<std::time::Instant>,
+    /// When the pending tool call was dispatched (tool result timing).
+    pub(crate) tool_call_started_at: Option<std::time::Instant>,
     /// When the streamed reply checkpoint was last written to disk.
     last_partial_checkpoint_save: Option<std::time::Instant>,
     pub todos: crate::todo_store::TodoSnapshot,
@@ -259,6 +267,7 @@ impl App {
             input: String::new(),
             cursor_pos: 0,
             blocks: vec![RenderBlock {
+                duration_ms: None,
                 block_type: BlockType::Text,
                 content: "Type a prompt to begin. Ctrl+P (or Esc) opens the command palette; F12 shows the debugger."
                     .to_string(),
@@ -334,6 +343,7 @@ impl App {
             scroll: 0,
             auto_scroll: true,
             memory_usage: 0,
+            lethetic_dir_bytes: None,
             system_prompt: system_prompt.clone(),
             show_prompt_editor: false,
             is_editing_prompt: false,
@@ -423,6 +433,9 @@ impl App {
             show_todos: false,
             pending_session_settings: None,
             last_partial_checkpoint_save: None,
+            tool_use_counts: Default::default(),
+            block_started_at: None,
+            tool_call_started_at: None,
             todos: Default::default(),
             hide_thinking: false,
             last_output_rect: Rect::default(),

@@ -245,6 +245,9 @@ pub struct SessionState {
     /// resuming never starts a listener on its own).
     #[serde(default)]
     pub remote_control: Option<String>,
+    /// Tool calls made in this session, by tool name.
+    #[serde(default)]
+    pub tool_use_counts: std::collections::BTreeMap<String, u64>,
     #[serde(skip)]
     pub needs_migration_save: bool,
 }
@@ -307,6 +310,7 @@ impl Default for SessionState {
             python_policy: None,
             loop_mode: None,
             remote_control: None,
+            tool_use_counts: Default::default(),
             needs_migration_save: false,
         }
     }
@@ -709,6 +713,7 @@ impl App {
             )),
             loop_mode: Some(self.loop_detector.config.mode),
             remote_control: self.remote_control_target.clone(),
+            tool_use_counts: self.tool_use_counts.clone(),
             needs_migration_save: false,
         };
         let needs_creation_commit = !self.session_creation_committed;

@@ -256,7 +256,92 @@ fn general_tools(config: &crate::config::Config) -> Vec<Tool> {
         tools.push(process_image::get_definition());
         tools.push(process_pdf_image::get_definition());
     }
+    for tool in &mut tools {
+        add_todo_reference(tool);
+    }
     tools
+}
+
+/// Tools that name a todo item. `todowrite` creates the items, so it is
+/// the one tool that does not.
+fn serves_todo(name: &str) -> bool {
+    name != "todowrite"
+}
+
+/// Add a required `todo_id` argument: every call says which plan item it
+/// serves, and the harness warns when that item is missing or finished.
+fn add_todo_reference(tool: &mut Tool) {
+    if !serves_todo(&tool.function.name) {
+        return;
+    }
+    let parameters = &mut tool.function.parameters;
+    if let Some(properties) = parameters["properties"].as_object_mut() {
+        properties.insert(
+            "todo_id".to_string(),
+            serde_json::json!({
+                "type": "string",
+                "description": "id of the todo item (from the <todos> list) this call works on. Create or update the list with todowrite first."
+            }),
+        );
+    }
+    if let Some(required) = parameters["required"].as_array_mut() {
+        required.push(serde_json::json!("todo_id"));
+    }
+}
+
+/// Harness note appended to a tool result when its `todo_id` does not match
+/// an open item in `.lethetic/todos.json`. Never blocks the call.
+pub fn todo_reference_warning(
+    func_name: &str,
+    arguments: &serde_json::Value,
+    workspace: &std::path::Path,
+) -> Option<String> {
+    if !serves_todo(func_name) {
+        return None;
+    }
+    let snapshot = crate::todo_store::TodoStore::open(workspace)
+        .and_then(|store| store.get())
+        .unwrap_or_default();
+    let ids: Vec<&str> = snapshot
+        .todos
+        .iter()
+        .filter_map(|todo| todo.id.as_deref())
+        .collect();
+    let known = if ids.is_empty() {
+        "the todo list is empty".to_string()
+    } else {
+        format!("known ids: {}", ids.join(", "))
+    };
+    let Some(todo_id) = arguments["todo_id"]
+        .as_str()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+    else {
+        return Some(format!(
+            "⚠ HARNESS WARNING: this call did not name a todo_id ({known}). Keep the plan current with todowrite and name the item each call serves."
+        ));
+    };
+    match snapshot
+        .todos
+        .iter()
+        .find(|todo| todo.id.as_deref() == Some(todo_id))
+    {
+        None => Some(format!(
+            "⚠ HARNESS WARNING: todo_id '{todo_id}' is not in the todo list ({known}). Add it with todowrite or use an existing id."
+        )),
+        Some(todo)
+            if matches!(
+                todo.status,
+                crate::todo_store::TodoStatus::Completed | crate::todo_store::TodoStatus::Cancelled
+            ) =>
+        {
+            Some(format!(
+                "⚠ HARNESS WARNING: todo_id '{todo_id}' is already {}. Reopen it or pick the item you are actually working on with todowrite.",
+                todo.status.as_str()
+            ))
+        }
+        Some(_) => None,
+    }
 }
 
 pub fn get_tools_for_surface(config: &crate::config::Config, surface: ToolSurface) -> Vec<Tool> {
@@ -450,6 +535,42 @@ pub fn execute_with_runtime<'a>(
 }
 
 pub fn execute_with_runtime_and_request_hook<'a>(
+    runtime: &'a crate::tool_runtime::ToolRuntime,
+    func_name: &'a str,
+    arguments: &'a serde_json::Value,
+    cwd: &'a str,
+    cancellation_token: tokio_util::sync::CancellationToken,
+    tx: tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>,
+    client: &'a reqwest::Client,
+    config: &'a crate::config::Config,
+    request_hook: Option<crate::client::RequestStartedHook>,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ToolExecution> + Send + 'a>> {
+    Box::pin(async move {
+        let mut execution = execute_dispatch(
+            runtime,
+            func_name,
+            arguments,
+            cwd,
+            cancellation_token,
+            tx,
+            client,
+            config,
+            request_hook,
+        )
+        .await;
+        if config.tool_profile == crate::config::ToolProfile::General
+            && !execution.output.starts_with("[Operation Cancelled")
+            && let Some(warning) =
+                todo_reference_warning(func_name, arguments, runtime.workspace_root())
+        {
+            execution.output = format!("{}\n\n{warning}", execution.output);
+        }
+        execution
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_dispatch<'a>(
     runtime: &'a crate::tool_runtime::ToolRuntime,
     func_name: &'a str,
     arguments: &'a serde_json::Value,
@@ -1103,6 +1224,47 @@ mod tests {
 
         assert!(execution.is_error);
         assert_eq!(execution.output, "[Operation Cancelled by User]");
+    }
+
+    #[tokio::test]
+    async fn tool_results_warn_when_todo_id_is_missing_unknown_or_finished() {
+        let workspace = tempfile::tempdir().unwrap();
+        let root = workspace.path();
+        let none = todo_reference_warning("read_file", &serde_json::json!({}), root).unwrap();
+        assert!(none.contains("did not name a todo_id") && none.contains("empty"));
+        crate::tools::todowrite::execute(
+            &serde_json::json!([
+                {"id": "build", "content": "fix build", "status": "in_progress", "priority": "high"},
+                {"content": "write docs", "status": "completed", "priority": "low"}
+            ]),
+            root.to_str().unwrap(),
+        )
+        .await;
+        assert!(
+            todo_reference_warning("edit", &serde_json::json!({"todo_id": "build"}), root)
+                .is_none()
+        );
+        let unknown =
+            todo_reference_warning("edit", &serde_json::json!({"todo_id": "nope"}), root).unwrap();
+        assert!(
+            unknown.contains("'nope' is not in the todo list") && unknown.contains("build, t1")
+        );
+        let finished =
+            todo_reference_warning("edit", &serde_json::json!({"todo_id": "t1"}), root).unwrap();
+        assert!(finished.contains("already completed"));
+        assert!(todo_reference_warning("todowrite", &serde_json::json!({}), root).is_none());
+        let config = Config::default();
+        let shell = get_all_tools(&config)
+            .into_iter()
+            .find(|tool| tool.function.name == "run_shell_command")
+            .unwrap();
+        assert!(
+            shell.function.parameters["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|v| v == "todo_id")
+        );
     }
 
     #[tokio::test]

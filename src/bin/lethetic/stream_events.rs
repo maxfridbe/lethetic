@@ -513,9 +513,11 @@ pub(crate) async fn handle_stream_event(
         StreamEvent::DebugLog(msg) => {
             if msg.starts_with("STATS|") {
                 let parts: Vec<&str> = msg.split('|').collect();
-                if parts.len() == 3 {
+                if parts.len() >= 3 {
                     context.app.memory_usage = parts[1].parse().unwrap_or(0);
                     context.app.git_status = parts[2].to_string();
+                    context.app.lethetic_dir_bytes =
+                        parts.get(3).and_then(|size| size.parse().ok());
                     context.app.should_redraw = true;
                 }
             } else if let Some(dir) = msg.strip_prefix("DIR_UPDATE|") {
@@ -1136,6 +1138,7 @@ pub(crate) async fn handle_stream_event(
             stop_reason: provider_stop_reason,
             provider_content,
         } => {
+            context.app.finish_thought_timing();
             if context.cancellation_pending {
                 context
                     .app
@@ -1326,6 +1329,7 @@ pub(crate) async fn handle_stream_event(
             }
         }
         StreamEvent::Error(e) => {
+            context.app.finish_thought_timing();
             if let Err(error) = context.app.commit_partial_assistant_checkpoint() {
                 context
                     .app

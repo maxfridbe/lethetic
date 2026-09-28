@@ -1666,3 +1666,11 @@ progress {
 .code-highlight .code-removed {
   color: var(--theme-error-fg);
 }
+
+.block-duration {
+  margin: 0.35rem 0 0;
+  color: var(--theme-system-fg);
+  font-size: 0.75rem;
+  font-style: italic;
+  opacity: 0.8;
+}

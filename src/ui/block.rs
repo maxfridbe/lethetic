@@ -206,6 +206,17 @@ pub fn render_block_to_lines_with_cost_visibility(
             decorate_content_line(line, block, width, theme, &status_block, base_style)
         }),
     );
+    if let Some(label) = crate::status_summary::block_duration_label(block) {
+        output.push(Line::from(vec![
+            status_block.clone(),
+            Span::styled(
+                format!("⏱ {label}"),
+                Style::default()
+                    .fg(theme.system_fg)
+                    .add_modifier(Modifier::DIM | Modifier::ITALIC),
+            ),
+        ]));
+    }
     if block.block_type == BlockType::User {
         output.push(Line::from(vec![
             status_block,
@@ -681,6 +692,7 @@ mod tests {
     #[test]
     fn user_block_cost_respects_render_visibility_policy() {
         let block = RenderBlock {
+            duration_ms: None,
             block_type: BlockType::User,
             content: "request".to_string(),
             title: None,

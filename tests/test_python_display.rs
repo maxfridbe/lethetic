@@ -27,6 +27,7 @@ fn python_tool_history_renders_real_highlighted_source_lines() {
         serde_json::to_string(&call.function.arguments).unwrap()
     );
     let block = RenderBlock {
+        duration_ms: None,
         block_type: BlockType::ToolCall,
         content,
         title: Some("format the preview".to_string()),

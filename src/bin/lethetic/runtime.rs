@@ -822,7 +822,19 @@ fn spawn_background_tasks(context: &RuntimeContext<'_>) -> BackgroundTasks {
     let stats_tx = context.tx.clone();
     let stats_cancel = context.background_cancellation.clone();
     handles.push(tokio::spawn(async move {
+        // The .lethetic walk is cheap but not free: refresh it every ~20 s.
+        let mut lethetic_bytes: Option<u64> = None;
+        let mut sample_index: u64 = 0;
         loop {
+            if sample_index % 10 == 0 {
+                lethetic_bytes = tokio::task::spawn_blocking(|| {
+                    lethetic::platform::directory_size_bytes(std::path::Path::new(".lethetic"))
+                })
+                .await
+                .ok()
+                .flatten();
+            }
+            sample_index = sample_index.wrapping_add(1);
             let sample = async {
                 let memory = lethetic::platform::process_rss_mb();
                 let git = get_git_info().await;
@@ -832,8 +844,13 @@ fn spawn_background_tasks(context: &RuntimeContext<'_>) -> BackgroundTasks {
                 _ = stats_cancel.cancelled() => break,
                 sample = sample => sample,
             };
+            let size = lethetic_bytes
+                .map(|bytes| bytes.to_string())
+                .unwrap_or_default();
             if stats_tx
-                .send(StreamEvent::DebugLog(format!("STATS|{memory}|{git}")))
+                .send(StreamEvent::DebugLog(format!(
+                    "STATS|{memory}|{git}|{size}"
+                )))
                 .is_err()
             {
                 break;

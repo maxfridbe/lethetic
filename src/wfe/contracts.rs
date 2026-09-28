@@ -744,6 +744,8 @@ pub struct RenderBlockView {
     pub success: Option<bool>,
     pub usage: Option<UsageView>,
     pub estimated_cost: Option<CostView>,
+    /// "engine thought for 1m 05s" / "tool call took 3.2s".
+    pub duration_label: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -1051,6 +1053,8 @@ pub struct StatusView {
     pub file_count: u32,
     pub visible_block_count: u16,
     pub git_state: GitStateView,
+    /// "87 shell commands, 10 edits, …", empty before the first tool call.
+    pub tool_use: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

@@ -415,6 +415,7 @@ function isRenderBlockView(value: unknown): value is Wire.RenderBlockView {
       "success",
       "usage",
       "estimated_cost",
+      "duration_label",
     ]) &&
     isCatalogKey(value["kind"], BLOCK_KINDS) &&
     isString(value["content"]) &&
@@ -426,6 +427,7 @@ function isRenderBlockView(value: unknown): value is Wire.RenderBlockView {
     isNullable(value["success"], isBoolean) &&
     isNullable(value["usage"], isUsageView) &&
     isNullable(value["estimated_cost"], isCostView) &&
+    isNullable(value["duration_label"], isString) &&
     renderBlockToolSemantics(value)
   );
 }
@@ -798,6 +800,7 @@ function isStatusView(value: unknown): value is Wire.StatusView {
       "file_count",
       "visible_block_count",
       "git_state",
+      "tool_use",
     ]) &&
     isString(value["stop_reason"]) &&
     isProjectionLossView(value["stop_reason_loss"]) &&
@@ -816,7 +819,8 @@ function isStatusView(value: unknown): value is Wire.StatusView {
     value["file_count"] >= 0 &&
     isFiniteInteger(value["visible_block_count"]) &&
     value["visible_block_count"] >= 0 &&
-    isCatalogKey(value["git_state"], GIT_STATES)
+    isCatalogKey(value["git_state"], GIT_STATES) &&
+    isString(value["tool_use"])
   );
 }
 

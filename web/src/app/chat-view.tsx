@@ -194,6 +194,9 @@ function renderBlock(
       </header>
       {content.length === 0 ? null : renderedContent}
       {renderProjectionLossNotices(block)}
+      {block.duration_label === null ? null : (
+        <p attrs={{ class: "block-duration" }}>⏱ {block.duration_label}</p>
+      )}
       {block.usage === null ? null : (
         <details attrs={{ class: "block-usage" }}>
           <summary>Usage</summary>

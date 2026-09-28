@@ -43,7 +43,11 @@ export type UsageView = { uncached_input_tokens: string, cache_read_input_tokens
 
 export type CostView = { display: string, currency: string, nanos: string, incomplete: boolean, mixed_pricing: boolean, long_context_applied: boolean, pricing_effective_as_of: string, pricing_valid_through: string | null, provenance_kind: string, };
 
-export type RenderBlockView = { kind: BlockKind, content: string, content_loss: ProjectionLossView, tool: ToolBlockView | null, title: string | null, title_loss: ProjectionLossView, success: boolean | null, usage: UsageView | null, estimated_cost: CostView | null, };
+export type RenderBlockView = { kind: BlockKind, content: string, content_loss: ProjectionLossView, tool: ToolBlockView | null, title: string | null, title_loss: ProjectionLossView, success: boolean | null, usage: UsageView | null, estimated_cost: CostView | null, 
+/**
+ * "engine thought for 1m 05s" / "tool call took 3.2s".
+ */
+duration_label: string | null, };
 
 export type BlockListView = { blocks: Array<RenderBlockView>, omitted_before: number, truncated: boolean, };
 
@@ -101,7 +105,11 @@ export type PythonContainerView = { kind: PythonContainerKindView, name: string,
 
 export type PythonIsolationView = { profile: PythonProfileView, target: PythonTargetView | null, backend: PythonBackendView | null, network: NetworkAccessView | null, workspace_access: WorkspaceAccessView | null, grant_count: number, policy_source: PythonPolicySourceView, container: PythonContainerView | null, };
 
-export type StatusView = { stop_reason: string, stop_reason_loss: ProjectionLossView, model_label: string, provider_label: string, provider_transport: ModelTransportView, python: PythonIsolationView, tokens_per_second: string | null, prompt_tokens_per_second: string | null, context_tokens: string, context_limit_tokens: string, context_source: ContextUsageSourceView, request_usage: UsageView | null, memory_mebibytes: string, file_count: number, visible_block_count: number, git_state: GitStateView, };
+export type StatusView = { stop_reason: string, stop_reason_loss: ProjectionLossView, model_label: string, provider_label: string, provider_transport: ModelTransportView, python: PythonIsolationView, tokens_per_second: string | null, prompt_tokens_per_second: string | null, context_tokens: string, context_limit_tokens: string, context_source: ContextUsageSourceView, request_usage: UsageView | null, memory_mebibytes: string, file_count: number, visible_block_count: number, git_state: GitStateView, 
+/**
+ * "87 shell commands, 10 edits, …", empty before the first tool call.
+ */
+tool_use: string, };
 
 export type DiagnosticSeverity = "info" | "warning" | "error";
 
@@ -198,7 +206,7 @@ export const WFE_MAX_SERVER_MESSAGE_BYTES = 4194304 as const;
 
 export const WFE_PROTOCOL_VERSION = 6 as const;
 
-export const WFE_PROTOCOL_SCHEMA_SHA256 = "71aa24a4ba9d9e394e0b88f6e8a1399a5a4c9ec132a58da537159e11e9984e46" as const;
+export const WFE_PROTOCOL_SCHEMA_SHA256 = "f2706dd72fd1c0178b560c74f717b92e61e42eeb94f9937f5e89bd5a19d078ee" as const;
 
 export const COMMAND_ORDER = [
   "hotkeys",

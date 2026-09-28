@@ -144,6 +144,7 @@ fn semantically_equal(left: &WebAppSnapshot, right: &WebAppSnapshot) -> bool {
         && left.status.context_tokens == right.status.context_tokens
         && left.status.context_limit_tokens == right.status.context_limit_tokens
         && left.status.context_source == right.status.context_source
+        && left.status.tool_use == right.status.tool_use
         && left.status.request_usage == right.status.request_usage
         && left.status.file_count == right.status.file_count
         && left.status.visible_block_count == right.status.visible_block_count

@@ -21,7 +21,7 @@ pub fn get_definition() -> Tool {
                             "properties": {
                                 "id": {
                                     "type": "string",
-                                    "description": "Short unique identifier, e.g. 'setup-db', 'write-tests'"
+                                    "description": "Short unique identifier, e.g. 'setup-db', 'write-tests'. Other tool calls name it in their todo_id."
                                 },
                                 "content": {
                                     "type": "string",
@@ -38,7 +38,7 @@ pub fn get_definition() -> Tool {
                                     "description": "Task priority"
                                 }
                             },
-                            "required": ["content", "status", "priority"]
+                            "required": ["id", "content", "status", "priority"]
                         }
                     },
                     "description": {
@@ -78,10 +78,27 @@ pub(super) async fn execute_classified(
     if cancellation_token.is_cancelled() {
         return ToolExecution::error("[Operation Cancelled by User]", cwd);
     }
-    let todos = match TodoStore::parse_todos(todos) {
+    let mut todos = match TodoStore::parse_todos(todos) {
         Ok(todos) => todos,
         Err(error) => return ToolExecution::error(format!("ERROR: {error}"), cwd),
     };
+    // Every item needs an id so tool calls can name the item they serve.
+    let mut next = 1;
+    for index in 0..todos.len() {
+        if todos[index]
+            .id
+            .as_deref()
+            .is_none_or(|id| id.trim().is_empty())
+        {
+            while todos
+                .iter()
+                .any(|todo| todo.id.as_deref() == Some(&format!("t{next}")))
+            {
+                next += 1;
+            }
+            todos[index].id = Some(format!("t{next}"));
+        }
+    }
     let store = match TodoStore::open(Path::new(cwd)) {
         Ok(store) => store,
         Err(error) => {

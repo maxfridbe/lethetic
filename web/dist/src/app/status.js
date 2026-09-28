@@ -79,6 +79,9 @@ export function applicationStatusFields(snapshot) {
             value: `${boundedText(status.provider_label)} (${providerTransportLabel(status.provider_transport)})`,
         },
         { label: "Python", value: pythonStatusLabel(status.python) },
+        ...(status.tool_use.length > 0
+            ? [{ label: "Tool use", value: boundedText(status.tool_use) }]
+            : []),
         {
             label: "Container",
             value: container === null

@@ -254,8 +254,14 @@ pub(crate) async fn apply_loaded(
         hide_thinking,
         python_policy,
         loop_mode,
+        tool_use_counts,
         ..
     } = state;
+    app.tool_use_counts = if tool_use_counts.is_empty() {
+        App::tool_use_counts_from_messages(&messages)
+    } else {
+        tool_use_counts
+    };
     app.current_session_dir = Some(dir);
     app.session_id = session_id.expect("checked session state always has a session ID");
     app.display_name = display_name;
