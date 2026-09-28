@@ -350,6 +350,10 @@ Files are evicted (oldest first) when the total file token budget exceeds 35% of
 latest_files → system_prompt → messages → active_file → [model turn]
 ```
 
+### Tool-call ids
+
+Models that pick their own `tool_call_id` sometimes reuse one many turns later. Strict providers such as OpenRouter reject a conversation with two calls under one id, so a reused id is sent as `commit_fix-2`, `commit_fix-3`, … on both the call and its result. The saved transcript keeps the original ids, and the renaming is deterministic.
+
 ### Large tool output
 
 Tool outputs > 20,000 chars are saved to `.lethetic/tool_responses/<id>.txt` and replaced in context with a truncation message and navigation hint. `read_file` is exempt — file content always goes into the cache regardless of size (up to 500k chars).

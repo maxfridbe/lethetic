@@ -135,6 +135,8 @@ struct PresentationState {
     confirmation: Option<ConfirmationView>,
     confirmation_binding: Option<String>,
     requested_panel_data: Option<PanelDataView>,
+    /// The panel data mirrors a terminal dialog, so it closes with it.
+    panel_from_app: bool,
     diagnostics: OperationalDiagnostics,
     last_activity: Option<ActivityKind>,
     sensitive_values: Vec<String>,
@@ -422,6 +424,7 @@ impl WfeRuntime {
             message: message.into(),
         });
         self.presentation.confirmation_binding = Some(binding);
+        self.presentation.panel_from_app = false;
         self.presentation.requested_panel_data = Some(PanelDataView::Confirmation {
             confirmation: self
                 .presentation
@@ -469,14 +472,17 @@ impl WfeRuntime {
 
     pub fn set_requested_panel_data(&mut self, data: Option<PanelDataView>) {
         self.presentation.requested_panel_data = data;
+        self.presentation.panel_from_app = false;
     }
 
     pub fn open_loop_modes(&mut self, app: &App) {
         self.presentation.requested_panel_data = Some(loop_modes_panel(app));
+        self.presentation.panel_from_app = false;
     }
 
     pub fn open_agent_modes(&mut self, app: &App) {
         self.presentation.requested_panel_data = Some(agent_modes_panel(app));
+        self.presentation.panel_from_app = false;
     }
 
     pub fn clear_requested_panel(&mut self) {
@@ -903,10 +909,19 @@ fn sync_transient_views(app: &App, state: &mut PresentationState) {
     sync_question(app, state);
     if state.approval_key.is_some() || state.question_key.is_some() {
         state.requested_panel_data = None;
-    } else if state.confirmation.is_none()
-        && let Some(panel) = panel_data_for_app(app)
-    {
-        state.requested_panel_data = Some(panel);
+    } else if state.confirmation.is_none() {
+        match panel_data_for_app(app) {
+            Some(panel) => {
+                state.requested_panel_data = Some(panel);
+                state.panel_from_app = true;
+            }
+            // The terminal closed the dialog this panel mirrored.
+            None if state.panel_from_app => {
+                state.requested_panel_data = None;
+                state.panel_from_app = false;
+            }
+            None => {}
+        }
     }
 }
 

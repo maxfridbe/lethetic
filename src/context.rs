@@ -938,6 +938,43 @@ pub(crate) fn sanitize_file_content(content: &str) -> String {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_reused_tool_call_id_is_made_unique_on_the_wire() {
+        let call = |id: &str| ToolCall {
+            id: id.to_string(),
+            provider_id: None,
+            function: FunctionCall {
+                name: "run_shell_command".to_string(),
+                arguments: serde_json::json!({"command": "git commit"}),
+            },
+        };
+        let mut context = ContextManager::new(100_000, None);
+        for turn in 0..3 {
+            context.add_message("user", &format!("commit {turn}"));
+            context.upsert_assistant_tool_call_with_provider("", vec![call("commit_fix")], None);
+            context.add_tool_message_with_status("commit_fix".to_string(), "run_shell_command", "ok", false);
+        }
+        context.add_message("user", "next");
+        let prepared = context.prepare_api_context();
+        let calls: Vec<&str> = prepared
+            .messages()
+            .iter()
+            .flat_map(|message| message.tool_calls.iter().map(|call| call.id.as_str()))
+            .collect();
+        let results: Vec<&str> = prepared
+            .messages()
+            .iter()
+            .filter_map(|message| message.tool_call_id.as_deref())
+            .collect();
+        assert_eq!(calls, ["commit_fix", "commit_fix-2", "commit_fix-3"]);
+        assert_eq!(results, calls, "each result answers its own call");
+        assert_eq!(
+            context.get_messages().iter().filter(|m| m.role == "tool").count(),
+            3,
+            "the stored transcript is unchanged"
+        );
+    }
+
     fn assert_tool_result_delimiters_are_lossless(mode: ContextMode) {
         let mut context = ContextManager::new(100_000, None);
         context.mode = mode;

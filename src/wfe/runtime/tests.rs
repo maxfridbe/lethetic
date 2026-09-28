@@ -1463,3 +1463,34 @@ fn operational_diagnostics_refresh_the_snapshot_without_staling_commands() {
         "Provider request failed."
     );
 }
+
+#[test]
+fn a_dialog_closed_in_the_terminal_closes_in_the_browser() {
+    let mut app = App::new(&Config::default());
+    app.show_session_manager = false;
+    let (frontend, mut runtime) = WfeRuntime::new(&app, Vec::new()).unwrap();
+    let panel = |frontend: &WfeFrontendHandle| frontend.mirror.latest_snapshot().state.overlay.active_panel;
+
+    for open in [
+        |app: &mut App| app.show_hotkeys = true,
+        |app: &mut App| app.show_history = true,
+        |app: &mut App| app.show_latest_files = true,
+        |app: &mut App| app.show_prompt_manager = true,
+    ] {
+        open(&mut app);
+        runtime.publish(&app).unwrap();
+        assert!(panel(&frontend).is_some(), "terminal dialog is mirrored");
+
+        app.show_hotkeys = false;
+        app.show_history = false;
+        app.show_latest_files = false;
+        app.show_prompt_manager = false;
+        runtime.publish(&app).unwrap();
+        assert_eq!(panel(&frontend), None, "closed with the terminal dialog");
+    }
+
+    // A panel the browser opened itself is not tied to a terminal flag.
+    runtime.open_loop_modes(&app);
+    runtime.publish(&app).unwrap();
+    assert_eq!(panel(&frontend), Some(PanelId::LoopDetection));
+}

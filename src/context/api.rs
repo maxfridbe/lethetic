@@ -271,6 +271,57 @@ fn trim_projected_conversation(
     }
 }
 
+/// Keeps tool-call ids unique across the whole conversation. Text-format and
+/// OpenAI-compatible models choose their own `tool_call_id`, and may reuse one
+/// ("commit_fix") many turns later; strict providers reject a conversation
+/// with two calls or results under one id. A reused id is sent as
+/// `commit_fix-2`, on the call and on the result that answers it. The stored
+/// transcript is unchanged, and the renaming is deterministic, so the same
+/// history always projects to the same request.
+#[derive(Default)]
+struct UniqueCallIds {
+    /// How many calls have used each original id so far.
+    uses: std::collections::HashMap<String, usize>,
+    /// Every id already sent.
+    sent: std::collections::HashSet<String>,
+    /// Wire ids of the latest assistant turn's calls, by original id.
+    pending: std::collections::HashMap<String, std::collections::VecDeque<String>>,
+}
+
+impl UniqueCallIds {
+    fn begin_turn(&mut self) {
+        self.pending.clear();
+    }
+
+    fn call(&mut self, id: &str) -> String {
+        let uses = self.uses.entry(id.to_string()).or_insert(0);
+        let wire = loop {
+            *uses += 1;
+            let candidate = if *uses == 1 {
+                id.to_string()
+            } else {
+                format!("{id}-{uses}")
+            };
+            if !self.sent.contains(&candidate) {
+                break candidate;
+            }
+        };
+        self.sent.insert(wire.clone());
+        self.pending
+            .entry(id.to_string())
+            .or_default()
+            .push_back(wire.clone());
+        wire
+    }
+
+    fn result(&mut self, id: String) -> String {
+        self.pending
+            .get_mut(&id)
+            .and_then(std::collections::VecDeque::pop_front)
+            .unwrap_or(id)
+    }
+}
+
 fn project_messages(ctx: &ContextManager) -> Projection {
     let root_system = ctx.system_prompt.as_ref().and_then(|system| {
         let mut clean = system.clone();
@@ -285,6 +336,7 @@ fn project_messages(ctx: &ContextManager) -> Projection {
 
     let mut history_system = Vec::new();
     let mut conversation = Vec::new();
+    let mut call_ids = UniqueCallIds::default();
     for message in &ctx.messages {
         match message.role.as_str() {
             "system" => {
@@ -299,18 +351,20 @@ fn project_messages(ctx: &ContextManager) -> Projection {
             {
                 // A reply that failed before producing anything (stream
                 // error, cancellation). Say so instead of sending a blank turn.
+                call_ids.begin_turn();
                 conversation.push(Message::assistant(
                     "[My previous reply was interrupted before it produced any output.]",
                 ));
             }
             "assistant" => {
+                call_ids.begin_turn();
                 let calls = message
                     .tool_calls
                     .as_deref()
                     .unwrap_or_default()
                     .iter()
                     .map(|call| ToolCall {
-                        id: call.id.clone(),
+                        id: call_ids.call(&call.id),
                         name: call.function.name.clone(),
                         arguments: call.function.arguments.clone(),
                     })
@@ -341,7 +395,7 @@ fn project_messages(ctx: &ContextManager) -> Projection {
                     (tool_call_id, result)
                 });
                 conversation.push(Message::tool_result_with_status(
-                    tool_call_id,
+                    call_ids.result(tool_call_id),
                     result,
                     message.tool_result_is_error,
                 ));
