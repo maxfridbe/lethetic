@@ -72,6 +72,102 @@ impl Default for RcSetupState {
     }
 }
 
+/// Offered after resuming a session that had remote control, when none is
+/// running now: start it again with the same settings, edit them, or skip.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RcResumeOffer {
+    pub target: String,
+    pub open: bool,
+    pub files: bool,
+}
+
+impl RcResumeOffer {
+    /// The offer for a resumed session: only when it had remote control, none
+    /// is running now, and launch flags did not fix the choice.
+    pub fn for_resumed_session(
+        app: &App,
+        target: Option<String>,
+        open: bool,
+        files: bool,
+    ) -> Option<Self> {
+        target
+            .filter(|_| app.remote_control_target.is_none() && !app.remote_control_locked)
+            .map(|target| Self {
+                target,
+                open,
+                files,
+            })
+    }
+}
+
+impl RcSetupState {
+    /// The setup dialog pre-filled with a session's saved settings.
+    pub fn from_saved(offer: &RcResumeOffer) -> Self {
+        let mut setup = Self::new();
+        let (host, port) = split_target(&offer.target);
+        match setup.choices.iter().position(|choice| choice.host == host) {
+            Some(index) => setup.selected = index,
+            None => {
+                setup.selected = setup.choices.len();
+                setup.custom_host = host;
+            }
+        }
+        if let Some(port) = port {
+            setup.port = port;
+        }
+        setup.open = offer.open;
+        setup.files = offer.files;
+        setup
+    }
+}
+
+/// `https://host:port` → (`host`, `port`); IPv6 hosts keep their brackets
+/// stripped, matching the address chooser.
+fn split_target(target: &str) -> (String, Option<String>) {
+    let rest = target
+        .strip_prefix("https://")
+        .unwrap_or(target)
+        .trim_end_matches('/');
+    let (host, port) = match rest.rsplit_once(':') {
+        Some((host, port)) if port.chars().all(|c| c.is_ascii_digit()) && !port.is_empty() => {
+            (host, Some(port.to_string()))
+        }
+        _ => (rest, None),
+    };
+    (
+        host.trim_start_matches('[').trim_end_matches(']').to_string(),
+        port,
+    )
+}
+
+pub(super) fn handle_rc_resume_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome {
+    let Some(offer) = app.rc_resume_offer.clone() else {
+        return AppEventOutcome::Continue;
+    };
+    app.should_redraw = true;
+    match key.code {
+        KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+            app.rc_resume_offer = None;
+            app.stop_reason = "Starting remote control…".to_string();
+            return AppEventOutcome::StartRemoteControl {
+                target: offer.target,
+                open: offer.open,
+                files: offer.files,
+            };
+        }
+        KeyCode::Char('e') | KeyCode::Char('E') => {
+            app.rc_resume_offer = None;
+            app.rc_setup = Some(RcSetupState::from_saved(&offer));
+        }
+        KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+            app.rc_resume_offer = None;
+            app.stop_reason = "Remote control not restarted".to_string();
+        }
+        _ => {}
+    }
+    AppEventOutcome::Continue
+}
+
 /// Shown after the listener starts; holds the private controller URL.
 pub struct RcInfoState {
     pub lines: Vec<String>,
@@ -192,5 +288,70 @@ mod tests {
         );
         setup.selected = 0;
         assert_eq!(setup.host(), "127.0.0.1");
+    }
+
+    #[test]
+    fn saved_settings_prefill_the_setup_dialog() {
+        let offer = RcResumeOffer {
+            target: "https://brainiac:9443".to_string(),
+            open: true,
+            files: true,
+        };
+        let setup = RcSetupState::from_saved(&offer);
+        assert_eq!(setup.target(), offer.target);
+        assert!(setup.open && setup.files);
+        assert_eq!(
+            split_target("https://[2001:db8::1]:11223"),
+            ("2001:db8::1".to_string(), Some("11223".to_string()))
+        );
+    }
+
+    #[test]
+    fn the_offer_appears_only_when_remote_control_is_off_and_unlocked() {
+        let mut app = App::new(&crate::config::Config::default());
+        let target = || Some("https://brainiac:11223".to_string());
+        assert!(RcResumeOffer::for_resumed_session(&app, None, false, false).is_none());
+        assert_eq!(
+            RcResumeOffer::for_resumed_session(&app, target(), true, false),
+            Some(RcResumeOffer {
+                target: "https://brainiac:11223".to_string(),
+                open: true,
+                files: false,
+            })
+        );
+        app.remote_control_target = Some("https://127.0.0.1:11223".to_string());
+        assert!(RcResumeOffer::for_resumed_session(&app, target(), false, false).is_none());
+        app.remote_control_target = None;
+        app.remote_control_locked = true;
+        assert!(RcResumeOffer::for_resumed_session(&app, target(), false, false).is_none());
+    }
+
+    #[test]
+    fn the_resume_offer_starts_edits_or_skips() {
+        let offer = RcResumeOffer {
+            target: "https://127.0.0.1:11223".to_string(),
+            open: false,
+            files: true,
+        };
+        let key = |code| event::KeyEvent::new(code, KeyModifiers::NONE);
+        let mut app = App::new(&crate::config::Config::default());
+
+        app.rc_resume_offer = Some(offer.clone());
+        let outcome = handle_rc_resume_key(&mut app, key(KeyCode::Enter));
+        assert!(matches!(
+            outcome,
+            AppEventOutcome::StartRemoteControl { ref target, open: false, files: true }
+                if target == "https://127.0.0.1:11223"
+        ));
+        assert!(app.rc_resume_offer.is_none());
+
+        app.rc_resume_offer = Some(offer.clone());
+        handle_rc_resume_key(&mut app, key(KeyCode::Char('e')));
+        assert_eq!(app.rc_setup.as_ref().unwrap().target(), offer.target);
+
+        app.rc_setup = None;
+        app.rc_resume_offer = Some(offer);
+        handle_rc_resume_key(&mut app, key(KeyCode::Esc));
+        assert!(app.rc_resume_offer.is_none() && app.rc_setup.is_none());
     }
 }

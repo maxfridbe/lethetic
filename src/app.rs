@@ -17,7 +17,7 @@ pub use compaction::CompactionPopupState;
 pub use input::handle_key;
 pub use lifecycle::SessionSummary;
 pub use model_catalog::ModelCatalogState;
-pub use remote_control::{RcInfoState, RcSetupStage, RcSetupState};
+pub use remote_control::{RcInfoState, RcResumeOffer, RcSetupStage, RcSetupState};
 pub use session_state::{
     SessionDirectoryBinding, SessionSettings, SessionState, SessionWorkspaceBinding,
     describe_python_policy, normalize_session_display_name,
@@ -189,6 +189,8 @@ pub struct App {
     pub model_catalog: Option<ModelCatalogState>,
     /// Palette remote-control setup dialog and the post-start URL popup.
     pub rc_setup: Option<RcSetupState>,
+    /// Offered after resuming a session whose remote control is not running.
+    pub rc_resume_offer: Option<RcResumeOffer>,
     pub rc_info: Option<RcInfoState>,
     /// Controller target while a listener runs (either origin).
     pub remote_control_target: Option<String>,
@@ -440,6 +442,7 @@ impl App {
             compaction_popup: None,
             model_catalog: None,
             rc_setup: None,
+            rc_resume_offer: None,
             rc_info: None,
             remote_control_target: None,
             remote_control_locked: false,

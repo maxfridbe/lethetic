@@ -255,6 +255,9 @@ pub(crate) async fn apply_loaded(
         python_policy,
         loop_mode,
         tool_use_counts,
+        remote_control,
+        remote_control_open,
+        remote_control_files,
         ..
     } = state;
     app.tool_use_counts = if tool_use_counts.is_empty() {
@@ -290,6 +293,15 @@ pub(crate) async fn apply_loaded(
             python_policy,
             loop_mode,
         },
+    );
+
+    // Remote control never restarts on its own: offer it when this session
+    // had it, none is running now, and launch flags did not fix the choice.
+    app.rc_resume_offer = lethetic::app::RcResumeOffer::for_resumed_session(
+        app,
+        remote_control,
+        remote_control_open,
+        remote_control_files,
     );
 
     if !theme_name.is_empty()

@@ -190,4 +190,54 @@ pub(super) fn render(f: &mut ratatui::Frame, app: &App) {
             area,
         );
     }
+
+    if let Some(offer) = &app.rc_resume_offer {
+        let mut lines = vec![
+            Line::from(Span::styled(
+                "This session had remote control running. Start it again?",
+                normal,
+            )),
+            Line::from(""),
+            Line::from(Span::styled(format!("Address:        {}", offer.target), normal)),
+            Line::from(Span::styled(
+                format!(
+                    "Authentication: {}",
+                    if offer.open {
+                        "OPEN (no token)"
+                    } else {
+                        "private token URL (a new token is issued)"
+                    }
+                ),
+                normal,
+            )),
+            Line::from(Span::styled(
+                format!("File sharing:   {}", if offer.files { "yes" } else { "no" }),
+                normal,
+            )),
+        ];
+        if offer.open {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "WARNING: every peer that can reach this address gets the same control as this terminal.",
+                Style::default().fg(theme.error_fg).add_modifier(Modifier::BOLD),
+            )));
+        }
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Enter/y start · e change settings first · Esc/n skip",
+            dim,
+        )));
+        let area = centered_rect(70, 40, f.area());
+        f.render_widget(Clear, area);
+        f.render_widget(
+            Paragraph::new(lines).wrap(Wrap { trim: false }).block(
+                UIBlock::default()
+                    .title(format!("{} Resume remote control?", icons::SERVER))
+                    .borders(Borders::ALL)
+                    .style(Style::default().bg(theme.terminal_bg))
+                    .border_style(Style::default().fg(theme.highlight_fg)),
+            ),
+            area,
+        );
+    }
 }

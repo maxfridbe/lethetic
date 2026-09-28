@@ -245,6 +245,12 @@ pub struct SessionState {
     /// resuming never starts a listener on its own).
     #[serde(default)]
     pub remote_control: Option<String>,
+    /// Remote control ran without a controller token (`--rc-open`).
+    #[serde(default)]
+    pub remote_control_open: bool,
+    /// Remote control shared the launch directory (`--rc-files`).
+    #[serde(default)]
+    pub remote_control_files: bool,
     /// Tool calls made in this session, by tool name.
     #[serde(default)]
     pub tool_use_counts: std::collections::BTreeMap<String, u64>,
@@ -310,6 +316,8 @@ impl Default for SessionState {
             python_policy: None,
             loop_mode: None,
             remote_control: None,
+            remote_control_open: false,
+            remote_control_files: false,
             tool_use_counts: Default::default(),
             needs_migration_save: false,
         }
@@ -713,6 +721,8 @@ impl App {
             )),
             loop_mode: Some(self.loop_detector.config.mode),
             remote_control: self.remote_control_target.clone(),
+            remote_control_open: self.remote_control_open,
+            remote_control_files: self.remote_control_files,
             tool_use_counts: self.tool_use_counts.clone(),
             needs_migration_save: false,
         };
@@ -754,6 +764,8 @@ mod settings_tests {
             model_name: "gpt-5.6-sol".into(),
             python_policy: Some(nonlocal),
             remote_control: Some("https://brainiac:11223".into()),
+            remote_control_open: true,
+            remote_control_files: true,
             ..Default::default()
         };
         let json = serde_json::to_string(&state).unwrap();
@@ -763,5 +775,14 @@ mod settings_tests {
             Some("https://brainiac:11223")
         );
         assert_eq!(back.python_policy, state.python_policy);
+        assert!(back.remote_control_open && back.remote_control_files);
+
+        // Sessions saved before these fields existed load with both off.
+        let mut legacy: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let object = legacy.as_object_mut().unwrap();
+        object.remove("remote_control_open");
+        object.remove("remote_control_files");
+        let old: SessionState = serde_json::from_value(legacy).unwrap();
+        assert!(!old.remote_control_open && !old.remote_control_files);
     }
 }

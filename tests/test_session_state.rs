@@ -45,6 +45,8 @@ fn sample_state() -> SessionState {
         python_policy: None,
         loop_mode: None,
         remote_control: None,
+        remote_control_open: false,
+        remote_control_files: false,
         tool_use_counts: Default::default(),
         needs_migration_save: false,
     }
