@@ -37,6 +37,7 @@ fn azure_config() -> Result<Config, String> {
         input_cost_per_1m: azure.input_cost_per_1m,
         output_cost_per_1m: azure.output_cost_per_1m,
         enable_image_processing_tool: false,
+        background_tasks: Default::default(),
         theme: None,
         model_servers: cfg.model_servers.clone(),
         thinking: azure.thinking,

@@ -824,7 +824,9 @@ pub(crate) async fn handle_app_event_outcome(
                 app.should_redraw = true;
                 return AppEventControl::ContinueRunLoop;
             }
-            app.add_to_history(prompt.clone());
+            if !prompt.starts_with(lethetic::background::NOTICE_PREFIX) {
+                app.add_to_history(prompt.clone());
+            }
             if app.is_asking_user {
                 app.is_asking_user = false;
                 app.add_segment(prompt.clone(), BlockType::User);

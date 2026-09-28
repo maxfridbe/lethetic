@@ -552,6 +552,9 @@ pub struct Config {
     pub pricing: Option<PricingConfig>,
     #[serde(default)]
     pub enable_image_processing_tool: bool,
+    /// `notify` (default), `poll`, or `off`; see [`crate::background::BackgroundMode`].
+    #[serde(default)]
+    pub background_tasks: crate::background::BackgroundMode,
     #[serde(default)]
     pub theme: Option<String>,
     #[serde(default)]

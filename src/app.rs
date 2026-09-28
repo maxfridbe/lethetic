@@ -191,6 +191,8 @@ pub struct App {
     pub remote_control_last_peer: Option<String>,
     /// Right-hand todo pane (F9) and its cached contents.
     pub show_todos: bool,
+    /// Right-hand background task pane (F8).
+    pub show_background_tasks: bool,
     /// Settings of a session resumed by the library path (`--session-id`),
     /// waiting for the run loop to apply them.
     pub pending_session_settings: Option<SessionSettings>,
@@ -431,6 +433,7 @@ impl App {
             remote_control_clients: 0,
             remote_control_last_peer: None,
             show_todos: false,
+            show_background_tasks: false,
             pending_session_settings: None,
             last_partial_checkpoint_save: None,
             tool_use_counts: Default::default(),

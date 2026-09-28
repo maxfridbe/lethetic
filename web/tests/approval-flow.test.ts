@@ -238,6 +238,7 @@ function completeSnapshot(): WebAppSnapshot {
       visible_block_count: 0,
       git_state: "clean",
       tool_use: "",
+      background_tasks: [],
     },
     debugger: {
       open: false,

@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { adjustedAnchorScrollTop } from "../src/app/chat-anchor.js";
 import { chatBlockAnchor, renderChatView } from "../src/app/chat-view.js";
+import { isBackgroundTaskList, newlyFinished, renderBackgroundTasks } from "../src/app/background-tasks.js";
 import { renderDebugger } from "../src/app/debugger.js";
 import { rebaseChatWindowStart } from "../src/app/helpers.js";
 import { handleGlobalKeyDown } from "../src/app/keyboard.js";
@@ -23,6 +24,7 @@ import {
 } from "../src/app/status.js";
 import type {
   AccountingTotalsView,
+  BackgroundTaskView,
   ProjectionLossView,
   RenderBlockView,
   UsageView,
@@ -35,6 +37,7 @@ import {
   type Mutable,
 } from "./support/dom-fakes.js";
 import {
+  all,
   attr,
   classAttr,
   find,
@@ -205,6 +208,7 @@ function snapshotFixture(): SnapshotFixture {
       visible_block_count: 17,
       git_state: "dirty",
       tool_use: "87 shell commands, 10 edits",
+      background_tasks: [],
     },
     debugger: {
       open: true,
@@ -678,4 +682,31 @@ test("CSS keeps four viewport rows, complete docks, and independent debugger scr
   assert.match(styles, /\.chat-scroll\s*\{[^}]*overflow-anchor: none;/su);
   assert.doesNotMatch(styles, /\.status-level span:nth-child/u);
   assert.doesNotMatch(styles, /\.footer-level span:nth-child/u);
+});
+
+test("background tasks render progress bars and report newly finished tasks", () => {
+  const running: BackgroundTaskView = {
+    id: "bg1", description: "Download model", state: "running", state_label: "running",
+    progress_percent: 45, progress_label: "45%", elapsed: "2m 10s", idle: "3s",
+    stalled: false, last_line: "downloading 45%",
+  };
+  const silent: BackgroundTaskView = { ...running, id: "bg2", progress_percent: null, progress_label: "" };
+  assert.ok(isBackgroundTaskList([running, silent]));
+  assert.equal(isBackgroundTaskList([{ ...running, progress_percent: 101 }]), false);
+  assert.equal(isBackgroundTaskList([{ ...running, id: "../x" }]), false);
+  assert.equal(isBackgroundTaskList([{ ...running, extra: 1 }]), false);
+
+  const before = snapshotFixture();
+  before.status.background_tasks = [running, silent];
+  const strip = renderBackgroundTasks(before);
+  const bars = all(strip, (vnode) => attr(vnode, "role") === "progressbar");
+  assert.equal(bars.length, 2);
+  assert.equal(attr(bars[0], "aria-valuenow"), "45");
+  assert.equal(attr(bars[1], "aria-valuenow"), undefined);
+  assert.equal(renderBackgroundTasks(snapshotFixture()), null);
+
+  const after = snapshotFixture();
+  after.status.background_tasks = [{ ...running, state: "done", state_label: "done" }, silent];
+  assert.deepEqual(newlyFinished(before, after).map((task) => task.id), ["bg1"]);
+  assert.deepEqual(newlyFinished(after, after), []);
 });

@@ -2,6 +2,7 @@
   "schema_version": 2,
   "application_assets": [
     "src/app.js",
+    "src/app/background-tasks.js",
     "src/app/chat-anchor.js",
     "src/app/chat-view.js",
     "src/app/debugger.js",
@@ -11,6 +12,7 @@
     "src/app/panels.js",
     "src/app/state.js",
     "src/app/status.js",
+    "src/background-protocol.js",
     "src/bootstrap.js",
     "src/chat-follow.js",
     "src/files/client.js",

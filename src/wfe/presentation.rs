@@ -813,6 +813,7 @@ fn project_status(app: &App, redactor: &Redactor) -> StatusView {
     };
 
     StatusView {
+        background_tasks: project_background_tasks(redactor),
         tool_use: app.tool_use_summary().unwrap_or_default(),
         stop_reason: stop_reason.text,
         stop_reason_loss,
@@ -845,6 +846,39 @@ fn project_status(app: &App, redactor: &Redactor) -> StatusView {
             .unwrap_or(u16::MAX),
         git_state,
     }
+}
+
+/// Running tasks and those finished in the last five minutes, at most 20.
+/// Progress and timing are volatile status, so they never advance revisions.
+fn project_background_tasks(redactor: &Redactor) -> Vec<BackgroundTaskView> {
+    use crate::background::{TaskState, format_duration, recent};
+    let tasks = recent(std::time::Duration::from_secs(300));
+    let skip = tasks.len().saturating_sub(20);
+    tasks
+        .into_iter()
+        .skip(skip)
+        .map(|task| BackgroundTaskView {
+            state: match task.state {
+                TaskState::Running => BackgroundTaskStateView::Running,
+                TaskState::Exited(Some(0)) => BackgroundTaskStateView::Done,
+                TaskState::Stopped => BackgroundTaskStateView::Stopped,
+                _ => BackgroundTaskStateView::Failed,
+            },
+            stalled: task.state.is_running() && task.idle >= std::time::Duration::from_secs(60),
+            state_label: redactor.redact_and_truncate(&task.state.label(), 128).0,
+            progress_percent: task
+                .progress
+                .map(|fraction| (fraction.clamp(0.0, 1.0) * 100.0).round() as u8),
+            progress_label: redactor
+                .redact_and_truncate(task.progress_label.as_deref().unwrap_or(""), 128)
+                .0,
+            elapsed: format_duration(task.elapsed),
+            idle: format_duration(task.idle),
+            description: redactor.redact_and_truncate(&task.description, 256).0,
+            last_line: redactor.redact_and_truncate(task.last_line.trim(), 512).0,
+            id: task.id,
+        })
+        .collect()
 }
 
 fn project_python_container(app: &App) -> Option<PythonContainerView> {

@@ -14,6 +14,7 @@ import {
   toolResultContentThunk,
 } from "../markdown.js";
 import { boundedText } from "../safety.js";
+import { renderBackgroundTasks } from "./background-tasks.js";
 import { renderDebugger } from "./debugger.js";
 import {
   renderApplicationStatus,
@@ -452,7 +453,10 @@ export function renderChatView(context: ChatViewContext): VNode {
         </div>
         {renderDebugger(context)}
       </div>
-      {renderApplicationStatus(state.snapshot)}
+      <div attrs={{ class: "status-stack" }}>
+        {renderBackgroundTasks(state.snapshot)}
+        {renderApplicationStatus(state.snapshot)}
+      </div>
       {renderTransportStatus(state)}
       <div
         attrs={{

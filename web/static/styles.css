@@ -1674,3 +1674,84 @@ progress {
   font-style: italic;
   opacity: 0.8;
 }
+
+/* Background tasks: one card per task above the status row. */
+.status-stack {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.background-tasks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  padding: 0.35rem max(0.75rem, env(safe-area-inset-left));
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.72rem;
+  max-height: 9rem;
+  overflow-y: auto;
+}
+
+.background-task {
+  display: grid;
+  gap: 0.15rem;
+  flex: 1 1 16rem;
+  min-width: 0;
+  max-width: 28rem;
+}
+
+.background-task-head {
+  display: flex;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.background-task-name,
+.background-task-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.background-task-detail {
+  color: var(--theme-system-fg);
+}
+
+.background-task-bar {
+  position: relative;
+  display: block;
+  height: 0.45rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-muted);
+}
+
+.background-task-fill {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  border-radius: inherit;
+  background: var(--theme-highlight-fg);
+  transition: width 0.4s ease;
+}
+
+.background-task.is-done .background-task-fill { background: var(--theme-success-fg); }
+.background-task.is-failed .background-task-fill { background: var(--theme-error-fg); }
+.background-task.is-stopped .background-task-fill { background: var(--theme-system-fg); }
+.background-task.is-stalled .background-task-fill { background: var(--theme-warning-fg); }
+
+.background-task-bar.is-indeterminate .background-task-fill {
+  animation: background-task-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes background-task-sweep {
+  from { left: -30%; }
+  to { left: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .background-task-bar.is-indeterminate .background-task-fill { animation: none; }
+}

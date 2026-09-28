@@ -5,6 +5,7 @@ import {
   WFE_PROTOCOL_SCHEMA_SHA256,
   WFE_PROTOCOL_VERSION,
 } from "./generated/contracts.js";
+import { isBackgroundTaskList } from "./background-protocol.js";
 import type * as Wire from "./generated/contracts.js";
 import {
   assertNever,
@@ -801,6 +802,7 @@ function isStatusView(value: unknown): value is Wire.StatusView {
       "visible_block_count",
       "git_state",
       "tool_use",
+      "background_tasks",
     ]) &&
     isString(value["stop_reason"]) &&
     isProjectionLossView(value["stop_reason_loss"]) &&
@@ -820,7 +822,8 @@ function isStatusView(value: unknown): value is Wire.StatusView {
     isFiniteInteger(value["visible_block_count"]) &&
     value["visible_block_count"] >= 0 &&
     isCatalogKey(value["git_state"], GIT_STATES) &&
-    isString(value["tool_use"])
+    isString(value["tool_use"]) &&
+    isBackgroundTaskList(value["background_tasks"])
   );
 }
 
@@ -1453,6 +1456,8 @@ export function commandResponseMatchesRequest(
           case "toggle-debugger":
           case "remote-control":
           case "toggle-todos":
+          case "toggle-background-tasks":
+          case "background-mode":
             return null;
           case "clear-context":
           case "delete-python-runtime":

@@ -139,6 +139,18 @@ pub fn dispatch_command(app: &mut App, command: CommandId) -> AppEventOutcome {
             app.show_palette = false;
             app.toggle_todos();
         }
+        CommandId::BackgroundMode => {
+            crate::background::set_mode(crate::background::mode().next());
+            app.stop_reason = format!(
+                "Background tasks: {}",
+                crate::background::mode().label()
+            );
+            app.should_redraw = true;
+        }
+        CommandId::ToggleBackgroundTasks => {
+            app.show_palette = false;
+            app.toggle_background_tasks();
+        }
         CommandId::Sessions => {
             app.show_palette = false;
             app.refresh_session_list();

@@ -18,6 +18,7 @@ pub mod read_folder;
 pub mod read_page; // kept for backwards-compat dispatch only
 pub mod replace_text;
 pub mod repo_overview;
+pub mod background_task;
 pub mod run_shell_command;
 pub mod search_text;
 pub mod summarize_content;
@@ -234,6 +235,7 @@ fn general_tools(config: &crate::config::Config) -> Vec<Tool> {
         read_folder::get_definition(),
         search_text::get_definition(),
         run_shell_command::get_definition(),
+        background_task::get_definition(),
         write_file::get_definition(active_parser),
         replace_text::get_definition(),
         edit::get_definition(),
@@ -252,6 +254,9 @@ fn general_tools(config: &crate::config::Config) -> Vec<Tool> {
         task::get_definition(),
     ];
 
+    if crate::background::mode() == crate::background::BackgroundMode::Off {
+        tools.retain(|tool| tool.function.name != "background_task");
+    }
     if config.enable_image_processing_tool {
         tools.push(process_image::get_definition());
         tools.push(process_pdf_image::get_definition());
@@ -350,8 +355,13 @@ pub fn get_tools_for_surface(config: &crate::config::Config, surface: ToolSurfac
         crate::config::ToolProfile::General => {
             let mut tools = general_tools(config);
             if surface == ToolSurface::Headless {
-                tools
-                    .retain(|tool| !matches!(tool.function.name.as_str(), "task" | "ask_the_user"));
+                // Headless runs have no run loop to push finishes back to.
+                tools.retain(|tool| {
+                    !matches!(
+                        tool.function.name.as_str(),
+                        "task" | "ask_the_user" | "background_task"
+                    )
+                });
             }
             tools
         }
@@ -439,6 +449,7 @@ pub fn get_ui_description(func_name: &str, arguments: &serde_json::Value) -> Str
         "read_folder" => read_folder::get_ui_description(arguments),
         "search_text" => search_text::get_ui_description(arguments),
         "run_shell_command" => run_shell_command::get_ui_description(arguments),
+        "background_task" => background_task::get_ui_description(arguments),
         "write_file" => write_file::get_ui_description(arguments),
         "replace_text" => replace_text::get_ui_description(arguments),
         "edit" => edit::get_ui_description(arguments),
@@ -875,6 +886,12 @@ fn execute_dispatch<'a>(
                     cwd.to_string(),
                 )
             }
+            "background_task" => {
+                return match background_task::execute(arguments, cwd, cancellation_token).await {
+                    Ok(output) => ToolExecution::success(output, cwd),
+                    Err(output) => ToolExecution::error(output, cwd),
+                };
+            }
             "todowrite" => {
                 let todos = &arguments["todos"];
                 return todowrite::execute_classified(todos, cwd, cancellation_token).await;
@@ -1085,6 +1102,7 @@ mod tests {
             input_cost_per_1m: None,
             output_cost_per_1m: None,
             enable_image_processing_tool: false,
+            background_tasks: Default::default(),
             theme: None,
             model_servers: Vec::new(),
             thinking: None,

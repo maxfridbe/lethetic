@@ -1055,6 +1055,37 @@ pub struct StatusView {
     pub git_state: GitStateView,
     /// "87 shell commands, 10 edits, …", empty before the first tool call.
     pub tool_use: String,
+    /// Running and recently finished background tasks, newest last.
+    pub background_tasks: Vec<BackgroundTaskView>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum BackgroundTaskStateView {
+    Running,
+    Done,
+    Failed,
+    Stopped,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct BackgroundTaskView {
+    pub id: String,
+    pub description: String,
+    pub state: BackgroundTaskStateView,
+    /// "running", "done", "failed (exit 2)", …
+    pub state_label: String,
+    /// Whole percent complete, when known.
+    pub progress_percent: Option<u8>,
+    /// "45%", "12.3 MB of 40 MB, 2.1 MB/s", or empty.
+    pub progress_label: String,
+    pub elapsed: String,
+    /// Time since the last output or watched-file growth.
+    pub idle: String,
+    /// Running with no activity for a minute or more.
+    pub stalled: bool,
+    pub last_line: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -1722,6 +1753,8 @@ pub fn typescript_declarations() -> String {
     declaration!(PythonContainerKindView);
     declaration!(PythonContainerView);
     declaration!(PythonIsolationView);
+    declaration!(BackgroundTaskStateView);
+    declaration!(BackgroundTaskView);
     declaration!(StatusView);
     declaration!(DiagnosticSeverity);
     declaration!(DiagnosticCode);

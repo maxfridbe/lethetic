@@ -50,6 +50,7 @@ import type { PendingHistoryRecall } from "./app/history-recall.js";
 import { FileClient } from "./files/client.js";
 import { FilesController } from "./files/state.js";
 import { MonacoDiffViewer, MonacoFileEditor } from "./files/editor.js";
+import { newlyFinished } from "./app/background-tasks.js";
 import { renderFilesPane } from "./files/view.js";
 import {
   CHAT_FOLLOW_SCHEDULER,
@@ -277,6 +278,14 @@ export class SpaApplication implements BrowserTransportEvents {
     const previous = this.#remote;
     const reduction = reduceServerMessage(this.#remote, message);
     this.#remote = reduction.state;
+    const nextView = this.#remote.view;
+    if (nextView !== null && previous.view !== null) {
+      const finished = newlyFinished(previous.view, nextView);
+      if (finished.length > 0) {
+        this.#showToast(finished.map((task) =>
+          `${task.id} ${task.state_label}: ${task.description}`).join(" · "));
+      }
+    }
     if (message.type === "hello" && reduction.effect !== "fatal") {
       this.#filesEnabled = message.hello.capabilities.read_only_files;
       this.#transport?.noteHello(this.#filesEnabled);
@@ -758,6 +767,8 @@ export class SpaApplication implements BrowserTransportEvents {
       case "python-permissive":
       case "remote-control":
       case "toggle-todos":
+      case "toggle-background-tasks":
+      case "background-mode":
         this.#send({ type: "invoke_command", command_id: command.id });
         return;
       default:

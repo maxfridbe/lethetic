@@ -881,6 +881,7 @@ const HOTKEYS: &[(&str, &[(&str, &str)])] = &[
         "Panes and view",
         &[
             ("F9", "Todo list pane (the model's remaining todos)"),
+            ("F8", "Background tasks pane (progress bars, last output)"),
             ("F12", "Debugger pane"),
             (
                 "F10",

@@ -82,6 +82,40 @@ pub fn spawn_streaming_shell(command: &str, cwd: &str) -> std::io::Result<tokio:
         .spawn()
 }
 
+/// Spawn a shell command that outlives the tool call that started it. Stdin
+/// is closed, and on Unix the command leads its own process group so
+/// [`terminate_process_group`] also stops whatever it spawned.
+pub fn spawn_background_shell(command: &str, cwd: &str) -> std::io::Result<tokio::process::Child> {
+    let mut shell = tokio::process::Command::new(SHELL.0);
+    shell
+        .arg(SHELL.1)
+        .arg(command)
+        .current_dir(cwd)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    shell.process_group(0);
+    shell.spawn()
+}
+
+/// Signals a whole process group started by [`spawn_background_shell`]:
+/// SIGTERM, or SIGKILL when `force` is set. Elsewhere this is a no-op and the
+/// caller kills the direct child.
+pub fn terminate_process_group(pid: u32, force: bool) {
+    #[cfg(unix)]
+    {
+        use rustix::process::{Pid, Signal, kill_process_group};
+        let signal = if force { Signal::KILL } else { Signal::TERM };
+        if let Some(pid) = i32::try_from(pid).ok().and_then(Pid::from_raw) {
+            let _ = kill_process_group(pid, signal);
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = (pid, force);
+}
+
 /// Spawn a long-lived server process (e.g. an LSP server) with piped
 /// stdin/stdout for JSON-RPC style communication. The child is killed when
 /// dropped.

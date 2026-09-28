@@ -14,6 +14,7 @@ pub(super) struct UiAreas {
     pub(super) remote_control: Rect,
     pub(super) debug: Rect,
     pub(super) todos: Rect,
+    pub(super) background_tasks: Rect,
     pub(super) inner_width: u16,
 }
 
@@ -28,7 +29,7 @@ pub(super) fn calculate_areas(app: &App, area: Rect) -> UiAreas {
     let main_layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(
-            if app.show_debug || app.show_todos {
+            if app.show_debug || app.show_todos || app.show_background_tasks {
                 [Constraint::Percentage(50), Constraint::Percentage(50)]
             } else {
                 [Constraint::Percentage(100), Constraint::Min(0)]
@@ -37,18 +38,29 @@ pub(super) fn calculate_areas(app: &App, area: Rect) -> UiAreas {
         )
         .split(area);
 
-    // Right column: todos on top, debugger below when both are open.
-    let right = match (app.show_todos, app.show_debug) {
-        (true, true) => {
-            let split = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-                .split(main_layout[1]);
-            (split[0], split[1])
+    // Right column, top to bottom: todos, background tasks, debugger. Open
+    // panes share the height 2:2:3.
+    let panes = [
+        (app.show_todos, 2),
+        (app.show_background_tasks, 2),
+        (app.show_debug, 3),
+    ];
+    let open: Vec<u16> = panes
+        .iter()
+        .filter(|(shown, _)| *shown)
+        .map(|(_, weight)| *weight)
+        .collect();
+    let split = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(open.iter().map(|weight| Constraint::Fill(*weight)))
+        .split(main_layout[1]);
+    let mut next = split.iter().copied();
+    let mut right = [Rect::default(); 3];
+    for (index, (shown, _)) in panes.iter().enumerate() {
+        if *shown {
+            right[index] = next.next().unwrap_or_default();
         }
-        (true, false) => (main_layout[1], Rect::default()),
-        _ => (Rect::default(), main_layout[1]),
-    };
+    }
     let inner_width = main_layout[0].width.saturating_sub(4);
     let prefix_len = 2;
     let input_height = (((app.input.len() + prefix_len) as u16 / inner_width.max(1)) + 3).min(10);
@@ -60,7 +72,10 @@ pub(super) fn calculate_areas(app: &App, area: Rect) -> UiAreas {
                 Constraint::Length(1),
                 Constraint::Length(input_height),
                 Constraint::Length(u16::from(app.remote_control_target.is_some())),
-                Constraint::Length(2 + u16::from(!app.tool_use_counts.is_empty())),
+                Constraint::Length(
+                    2 + u16::from(!app.tool_use_counts.is_empty())
+                        + u16::from(super::background_tasks::status_visible()),
+                ),
             ]
             .as_ref(),
         )
@@ -72,8 +87,9 @@ pub(super) fn calculate_areas(app: &App, area: Rect) -> UiAreas {
         input: left_layout[2],
         remote_control: left_layout[3],
         status: left_layout[4],
-        debug: right.1,
-        todos: right.0,
+        todos: right[0],
+        background_tasks: right[1],
+        debug: right[2],
         inner_width,
     }
 }

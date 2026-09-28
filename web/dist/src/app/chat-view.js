@@ -4,6 +4,7 @@ import { activitySpinner, uiIcon } from "../icons.js";
 import { jsonPreformattedThunk } from "../json.js";
 import { isMarkdownBlockKind, markdownContentThunk, toolResultContentThunk, } from "../markdown.js";
 import { boundedText } from "../safety.js";
+import { renderBackgroundTasks } from "./background-tasks.js";
 import { renderDebugger } from "./debugger.js";
 import { renderApplicationStatus, renderTransportStatus, } from "./status.js";
 import { CHAT_ROW_ESTIMATE, CHAT_WINDOW_SIZE, MAX_DRAFT_LENGTH, activityLabel, activitySpinnerKind, blockLabel, chatJsonSegmentAllocations, commandForId, inputValue, markdownBlockUsesJsonHighlighting, projectionLossMessages, sessionLabel, toolBlockUsesJsonHighlighting, toolResultUsesAutoRendering, } from "./helpers.js";
@@ -232,7 +233,9 @@ export function renderChatView(context) {
                 renderActivity(context),
                 renderComposer(context)),
             renderDebugger(context)),
-        renderApplicationStatus(state.snapshot),
+        h("div", { attrs: { class: "status-stack" } },
+            renderBackgroundTasks(state.snapshot),
+            renderApplicationStatus(state.snapshot)),
         renderTransportStatus(state),
         h("div", { attrs: {
                 class: "sr-only",

@@ -18,6 +18,7 @@ pub fn setup_mock_app() -> App {
         input_cost_per_1m: None,
         output_cost_per_1m: None,
         enable_image_processing_tool: false,
+        background_tasks: Default::default(),
         theme: None,
         model_servers: Vec::new(),
         thinking: None,

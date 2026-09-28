@@ -1,4 +1,5 @@
 import { COMMAND_ORDER, ICON_IDS, WFE_MAX_SERVER_MESSAGE_BYTES, WFE_PROTOCOL_SCHEMA_SHA256, WFE_PROTOCOL_VERSION, } from "./generated/contracts.js";
+import { isBackgroundTaskList } from "./background-protocol.js";
 import { assertNever, isBoolean, isFiniteInteger, isRecord, isString, } from "./safety.js";
 const MAX_WIRE_MESSAGE_BYTES = WFE_MAX_SERVER_MESSAGE_BYTES;
 const MAX_WIRE_ARRAY_LENGTH = 20_000;
@@ -614,6 +615,7 @@ function isStatusView(value) {
         "visible_block_count",
         "git_state",
         "tool_use",
+        "background_tasks",
     ]) &&
         isString(value["stop_reason"]) &&
         isProjectionLossView(value["stop_reason_loss"]) &&
@@ -633,7 +635,8 @@ function isStatusView(value) {
         isFiniteInteger(value["visible_block_count"]) &&
         value["visible_block_count"] >= 0 &&
         isCatalogKey(value["git_state"], GIT_STATES) &&
-        isString(value["tool_use"]));
+        isString(value["tool_use"]) &&
+        isBackgroundTaskList(value["background_tasks"]));
 }
 function isDiagnosticView(value) {
     return (isExactRecord(value, ["code", "severity", "message"]) &&
@@ -1117,6 +1120,8 @@ export function commandResponseMatchesRequest(response, request) {
                     case "toggle-debugger":
                     case "remote-control":
                     case "toggle-todos":
+                    case "toggle-background-tasks":
+                    case "background-mode":
                         return null;
                     case "clear-context":
                     case "delete-python-runtime":

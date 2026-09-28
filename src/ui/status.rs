@@ -248,6 +248,9 @@ pub(super) fn render_status(f: &mut ratatui::Frame, app: &App, area: Rect) {
             Span::styled(summary, Style::default().fg(app.theme.output_fg)),
         ]));
     }
+    if let Some(line) = super::background_tasks::status_line(app) {
+        status_text.push(line);
+    }
     f.render_widget(Paragraph::new(status_text).wrap(Wrap { trim: true }), area);
 }
 

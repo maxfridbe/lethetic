@@ -16,6 +16,8 @@ pub enum CommandId {
     Sessions,
     NameSession,
     LatestFiles,
+    ToggleBackgroundTasks,
+    BackgroundMode,
     Models,
     LspServers,
     AgentMode,
@@ -113,7 +115,7 @@ pub struct CommandContext {
 }
 
 impl CommandId {
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 24] = [
         Self::Hotkeys,
         Self::Themes,
         Self::InputHistory,
@@ -126,6 +128,8 @@ impl CommandId {
         Self::Sessions,
         Self::NameSession,
         Self::LatestFiles,
+        Self::ToggleBackgroundTasks,
+        Self::BackgroundMode,
         Self::Models,
         Self::LspServers,
         Self::AgentMode,
@@ -168,6 +172,9 @@ impl CommandId {
         let spec = self.spec();
         let label = match self {
             Self::LoopDetection => format!("Loop Detection: {}", context.loop_mode),
+            Self::BackgroundMode => {
+                format!("Background Tasks: {}", crate::background::mode().label())
+            }
             Self::AgentMode => format!("Agent Mode: {}", context.agent_mode),
             Self::RemoteControl => match &context.remote_control_target {
                 Some(target) => format!("Remote Control: stop ({target})"),
@@ -232,7 +239,7 @@ impl CommandId {
     }
 }
 
-pub const COMMAND_SPECS: [CommandSpec; 22] = [
+pub const COMMAND_SPECS: [CommandSpec; 24] = [
     CommandSpec {
         id: CommandId::Hotkeys,
         base_label: "Hotkeys",
@@ -313,6 +320,24 @@ pub const COMMAND_SPECS: [CommandSpec; 22] = [
         accelerator: None,
         requires_idle: false,
         description: "Show or hide the model's remaining todos on the right (F9).",
+    },
+    CommandSpec {
+        id: CommandId::ToggleBackgroundTasks,
+        base_label: "Toggle Background Tasks",
+        icon: IconId::Debug,
+        behavior: CommandBehavior::Execute,
+        accelerator: None,
+        requires_idle: false,
+        description: "Show or hide background tasks with progress bars on the right (F8).",
+    },
+    CommandSpec {
+        id: CommandId::BackgroundMode,
+        base_label: "Background Tasks",
+        icon: IconId::Command,
+        behavior: CommandBehavior::Execute,
+        accelerator: None,
+        requires_idle: false,
+        description: "Cycle background tasks: notify (finishes wake the model), poll only, or off (tool hidden).",
     },
     CommandSpec {
         id: CommandId::Sessions,

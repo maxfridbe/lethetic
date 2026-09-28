@@ -101,6 +101,14 @@ impl App {
         self.todos = snapshot;
     }
 
+    pub fn toggle_background_tasks(&mut self) {
+        self.show_background_tasks = !self.show_background_tasks;
+        for block in &mut self.blocks {
+            block.invalidate();
+        }
+        self.should_redraw = true;
+    }
+
     pub fn toggle_todos(&mut self) {
         self.show_todos = !self.show_todos;
         if self.show_todos {
@@ -325,6 +333,7 @@ pub fn tool_use_summary(counts: &std::collections::BTreeMap<String, u64>) -> Opt
             "fetch_url" | "web_fetch" | "read_page" | "web_search" => ("web fetch", "web fetches"),
             "task" => ("sub-agent", "sub-agents"),
             "python" => ("python cell", "python cells"),
+            "background_task" => ("background task call", "background task calls"),
             other => return format!("{count} {other}"),
         };
         format!("{count} {}", if count == 1 { singular } else { plural })

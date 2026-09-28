@@ -1,5 +1,6 @@
 pub mod accounting;
 pub mod app;
+pub mod background;
 pub mod client;
 pub mod commands;
 pub mod compact;

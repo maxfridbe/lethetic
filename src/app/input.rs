@@ -885,6 +885,10 @@ fn handle_global_key(app: &mut App, key: event::KeyEvent) -> bool {
             app.toggle_todos();
             return true;
         }
+        KeyCode::F(8) => {
+            app.toggle_background_tasks();
+            return true;
+        }
         KeyCode::F(1) => {
             app.show_hotkeys = true;
             app.should_redraw = true;

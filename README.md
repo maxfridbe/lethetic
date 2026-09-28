@@ -25,7 +25,7 @@ lethetic --rc
 lethetic --python-only isolated
 ```
 
-The debugger pane starts hidden (F12 shows it, F9 shows the model's todo list). Ctrl+P opens the command palette; type to fuzzy-filter it. Each directory remembers the model you last selected, and resuming a session restores its model, prompt, Agent Mode, theme and loop-detection mode.
+The debugger pane starts hidden (F12 shows it, F9 shows the model's todo list, F8 shows background tasks). Ctrl+P opens the command palette; type to fuzzy-filter it. Each directory remembers the model you last selected, and resuming a session restores its model, prompt, Agent Mode, theme and loop-detection mode.
 
 ### Optional browser controller
 
@@ -405,6 +405,7 @@ All other model-originated tool names are rejected at dispatch in Python-only mo
 |---|---|
 | `repo_overview` | Ecosystem detection, 2-level dir tree, README preview, entry points. |
 | `todowrite` | Write a structured todo list (status + priority) to `.lethetic/todos.json`. F9 shows it live in a right-hand pane. |
+| `background_task` | Run a long command in the background and keep working: `start` returns an id (`bg1`…); `status`, `wait`, `output`, `stop`, `list` follow it. Progress comes from percentages in the output, a `progress_pattern` regex, or a growing `watch_path` (with optional `expected_bytes`). Full output is logged to `.lethetic/background/`. Not offered to headless sub-agents. |
 | `task` | Spawn an autonomous sub-agent with all tools except `task` and `ask_the_user`. 5-minute timeout; sub-agent progress streamed to parent UI. |
 
 ### Document & Vision *(requires `enable_image_processing_tool: true`)*
@@ -433,6 +434,16 @@ Combined NGram + phrase-frequency watchdog (the default). Only model text/though
 - NGram window: 128 chars, threshold: 4 occurrences
 - Phrase frequency: tracks self-correction phrases (`"Actually,"`, `"Wait,"`, etc.)
 - On detection: auto-injects correction prompt; on persistent loop: hands control to user
+
+### Background tasks
+
+`background_task` starts a shell command in its own process group and returns at once. Each task records its elapsed time and when it last showed activity (output or watched-file growth), so a stalled task is visible; one idle for a minute is flagged "may be stalled".
+
+- **Where you see them.** A status line lists running and recently finished tasks with a small progress bar. **F8** opens a right-hand pane with a full bar, the last output line, and the command. The browser shows the same tasks as progress cards above the status row and toasts when one finishes.
+- **Who is told when one finishes.** Each task has a `notify` target. `model` (the default) starts a model turn with the finish notice once the agent is idle; while it is busy, running and unreviewed tasks travel with the latest message as a `<background_tasks>` block. `user` adds a note to the transcript only. `none` means the model polls with `status` or `wait`.
+- **Turning it off.** `background_tasks: notify | poll | off` in `config.yml` sets the default, and **Ctrl+P → Background Tasks** cycles it at runtime. `poll` keeps the tool but never wakes the model. `off` removes the tool.
+
+Running tasks are stopped (SIGTERM, then SIGKILL) when Lethetic exits.
 
 ### Plan tracking
 
@@ -481,6 +492,7 @@ These keys describe the terminal UI. Browser palette accelerators, editable-targ
 | **Esc Esc** (within 0.8 s) | Stop the active response or tool; a single Esc only arms it |
 | **F12** | Toggle debugger pane |
 | **F10** | Toggle mouse capture: off lets you select and copy text with the mouse; on (default) makes the wheel scroll the output. Shift+drag also selects in most terminals |
+| **F8** | Toggle the background tasks pane: progress bars, last output and activity for each task |
 | **F9** | Toggle the todo list pane: the model's remaining todos on the right, stacked above the debugger when both are open |
 | **Ctrl+O** | Hide or show thinking blocks (persisted per session) |
 | **Click 󰇻** | Copy a block's content to the clipboard via `wl-copy` |
@@ -499,6 +511,8 @@ These keys describe the terminal UI. Browser palette accelerators, editable-targ
 | Clear All Context | Clear display and context, start fresh after confirmation |
 | Toggle Debugger | Show/hide debug log pane |
 | Toggle Todo List | Show/hide the model's todo list pane (F9) |
+| Toggle Background Tasks | Show/hide the background tasks pane (F8) |
+| Background Tasks: notify / poll only / off | Cycle whether the model may start background tasks and whether their finishes wake it |
 | Sessions | Load, resume, compact, or delete sessions. Each entry shows its model, Agent Mode and remote control on a second line; resuming restores those settings (launch flags still win, and remote control is never restarted automatically). **C** compacts the selected session: pick any configured model, the log is summarised in parallel windows with a streaming merge, and the result is saved as a new resumable session that inherits the source's model, prompt, theme, history, and cost |
 | Name/Rename Session | Set display-only durable session metadata without changing its UUID or path |
 | Latest Files | View and manage file context cache |

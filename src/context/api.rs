@@ -45,6 +45,8 @@ struct FileSections {
     latest: Vec<String>,
     /// The model's current todo list, rendered for context.
     todos: Option<String>,
+    /// Background tasks still running or finished but not yet reviewed.
+    background: Option<String>,
 }
 
 impl FileSections {
@@ -228,6 +230,7 @@ pub(super) fn prepare(ctx: &ContextManager) -> PreparedApiContext {
     let file_byte_budget = file_tokens.saturating_mul(CHARS_PER_TOKEN);
     let mut files = prepare_files(ctx, file_byte_budget);
     files.todos = ctx.todo_summary.clone();
+    files.background = ctx.background_summary.clone();
     let messages = assemble_messages(ctx.mode, &projection, &files);
     let estimated_tokens = estimate_api_messages(&messages);
 
@@ -382,6 +385,9 @@ fn assemble_messages(
     }
     if let Some(todos) = &files.todos {
         working.push(todos.clone());
+    }
+    if let Some(background) = &files.background {
+        working.push(background.clone());
     }
 
     let mut system = Vec::new();

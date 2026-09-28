@@ -68,6 +68,8 @@ fn wfe_panel_for_command(command: lethetic::commands::CommandId) -> Option<Panel
         CommandId::LoopDetection
         | CommandId::RemoteControl
         | CommandId::ToggleTodos
+        | CommandId::ToggleBackgroundTasks
+        | CommandId::BackgroundMode
         | CommandId::ClearUi
         | CommandId::ClearContext
         | CommandId::ToggleDebugger

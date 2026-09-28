@@ -165,6 +165,7 @@ pub(crate) async fn run_actor(
 ) -> (ActorSurface, Result<(), Box<dyn Error>>) {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let mode = surface.mode();
+    lethetic::background::set_mode(config.background_tasks);
     let mut context = RuntimeContext::new(app, config, tx, mode);
     let mut signal_supervisor =
         SignalSupervisor::spawn(signals, mode, context.shutdown_cancellation.clone());
@@ -181,6 +182,8 @@ pub(crate) async fn run_actor(
     let mut last_wfe_publish: Option<std::time::Instant> = None;
     let mut last_tick = std::time::Instant::now();
     let mut last_save = std::time::Instant::now();
+    let mut last_background_revision = lethetic::background::revision();
+    let mut last_background_tick = std::time::Instant::now();
     let mut shutdown_announced = false;
     let mut shutdown_diagnostic_recorded = false;
     let background = spawn_background_tasks(&context);
@@ -272,6 +275,41 @@ pub(crate) async fn run_actor(
                 }));
             }
             last_save = std::time::Instant::now();
+        }
+
+        // Background tasks: redraw when one changes (and each second while any
+        // run, for elapsed times), announce notify=user finishes, and push
+        // notify=model finishes to the model once the agent is idle.
+        let background_revision = lethetic::background::revision();
+        if background_revision != last_background_revision
+            || (lethetic::background::running_count() > 0
+                && last_background_tick.elapsed() >= Duration::from_secs(1))
+        {
+            last_background_revision = background_revision;
+            last_background_tick = std::time::Instant::now();
+            context
+                .app
+                .context_manager
+                .set_background_summary(lethetic::background::context_summary());
+            context.app.should_redraw = true;
+            wfe_dirty = true;
+        }
+        if context.accepts_new_work() && context.app.is_fully_idle() {
+            for task in lethetic::background::take_user_announcements() {
+                context.app.add_segment(
+                    format!("\n⏺ {}\n", lethetic::background::status_line(&task)),
+                    lethetic::app::BlockType::Text,
+                );
+                context.app.should_redraw = true;
+            }
+            let finished = lethetic::background::take_model_notifications();
+            if !finished.is_empty() {
+                let notice = lethetic::background::finish_notice(&finished);
+                let _ = context
+                    .dispatch_app_event(lethetic::app::AppEventOutcome::SendPrompt(notice))
+                    .await;
+                context.app.should_redraw = true;
+            }
         }
 
         let mut idle_tick = false;
@@ -466,6 +504,7 @@ pub(crate) async fn run_actor(
             .record_error(format!("terminal input settlement failed: {error}"));
     }
     context.background_cancellation.cancel();
+    lethetic::background::stop_all();
     if let Err(error) = signal_supervisor.shutdown().await {
         context.lifecycle.record_error(error);
     }
