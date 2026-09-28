@@ -1104,6 +1104,7 @@ mod tests {
             enable_image_processing_tool: false,
             background_tasks: Default::default(),
             tool_calls: Default::default(),
+            provider_retries: None,
             theme: None,
             model_servers: Vec::new(),
             thinking: None,

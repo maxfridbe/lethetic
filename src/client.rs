@@ -858,7 +858,7 @@ fn trigger_llm_request_with_surface_and_prepared_start_impl(
                         return;
                     }
                     let _ = log_tx.send(StreamEvent::Error(
-                        "Provider stream ended without a terminal event".to_string(),
+                        "Provider stream ended without a terminal event: the model server closed the reply before finishing it".to_string(),
                     ));
                     return;
                 }

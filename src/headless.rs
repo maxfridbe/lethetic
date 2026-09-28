@@ -573,6 +573,7 @@ pub async fn run_agent_accounted_with_runtime(
         StreamParser::with_mode(crate::parser::ParserMode::from(config.active_parser()));
     let mut current_dir = cwd;
     let mut full_response = String::new();
+    let mut retry_attempts = 0_u32;
     let mut pending_structured: Option<(Vec<ToolCall>, Option<Vec<serde_json::Value>>)> = None;
     let mut requests = Vec::new();
 
@@ -694,6 +695,7 @@ pub async fn run_agent_accounted_with_runtime(
             Some(StreamEvent::Done {
                 provider_content, ..
             }) => {
+                retry_attempts = 0;
                 if print_output {
                     print!("\r{:60}\r", "");
                 }
@@ -850,6 +852,39 @@ pub async fn run_agent_accounted_with_runtime(
                 return Err(error);
             }
             Some(StreamEvent::Error(error)) => {
+                let allowed = crate::provider_retry::retries_for(config);
+                if pending_structured.is_none()
+                    && retry_attempts < allowed
+                    && crate::provider_retry::is_retryable(&error)
+                    && !run_cancellation.is_cancelled()
+                {
+                    retry_attempts += 1;
+                    let wait = crate::provider_retry::delay(retry_attempts);
+                    if print_output {
+                        println!(
+                            "\n⚠ Model request failed: {error}\n↻ Retrying in {}s (attempt {retry_attempts} of {allowed})",
+                            wait.as_secs()
+                        );
+                    }
+                    tokio::select! {
+                        () = tokio::time::sleep(wait) => {}
+                        () = run_cancellation.cancelled() => return Err(error),
+                    }
+                    full_response.clear();
+                    parser.reset();
+                    cancellation_token = run_cancellation.child_token();
+                    active_request_id = trigger_headless_request(
+                        client.clone(),
+                        config.clone(),
+                        &context,
+                        tx.clone(),
+                        progress_tx.clone(),
+                        cancellation_token.clone(),
+                        session_dir.clone(),
+                        request_hook.clone(),
+                    )?;
+                    continue;
+                }
                 mark_pending_python_audits(
                     &pending_structured,
                     tool_runtime,

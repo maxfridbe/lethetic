@@ -312,6 +312,12 @@ pub(crate) async fn run_actor(
             }
         }
 
+        if context.lifecycle.is_shutting_down() {
+            crate::stream_events::abandon_provider_retry(context.app, "Retry dropped: shutting down");
+        } else {
+            crate::stream_events::run_due_provider_retry(&mut context);
+        }
+
         let mut idle_tick = false;
         tokio::select! {
             biased;

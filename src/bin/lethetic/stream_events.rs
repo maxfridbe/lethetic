@@ -24,6 +24,92 @@ pub(crate) enum StreamControl {
     BreakBatch,
 }
 
+/// Schedules another attempt of the failed model request when the error is
+/// transient and retries remain. Returns false when the error must stand.
+fn schedule_provider_retry(context: &mut RuntimeContext<'_>, error: &str) -> bool {
+    let allowed = lethetic::provider_retry::retries_for(context.config);
+    if context.cancellation_pending
+        || context.app.is_executing_tool
+        || context.app.provider_retry_attempts >= allowed
+        || !lethetic::provider_retry::is_retryable(error)
+    {
+        return false;
+    }
+    context.app.provider_retry_attempts += 1;
+    let attempt = context.app.provider_retry_attempts;
+    let wait = lethetic::provider_retry::delay(attempt);
+    context.app.discard_partial_assistant_checkpoint();
+    context.full_response_content.clear();
+    context.app.parser.reset();
+    context.app.request_start_time = None;
+    context.app.is_processing = true;
+    context.app.provider_retry_at = Some(std::time::Instant::now() + wait);
+    context.app.add_segment(
+        format!(
+            "\n{} Model request failed: {error}\n↻ Retrying in {}s (attempt {attempt} of {allowed}). Esc Esc cancels.\n",
+            icons::WARNING,
+            wait.as_secs()
+        ),
+        BlockType::ProviderError,
+    );
+    context.app.stop_reason = format!(
+        "↻ Retrying model request in {}s (attempt {attempt} of {allowed})",
+        wait.as_secs()
+    );
+    context.app.log_debug(&format!("PROVIDER_RETRY_SCHEDULED|{attempt}|{error}"));
+    context.app.should_redraw = true;
+    context.app.save_session();
+    true
+}
+
+/// Sends a scheduled retry once its delay has passed.
+pub(crate) fn run_due_provider_retry(context: &mut RuntimeContext<'_>) {
+    let Some(due) = context.app.provider_retry_at else {
+        return;
+    };
+    if std::time::Instant::now() < due || context.app.active_request_id.is_some() {
+        return;
+    }
+    context.app.provider_retry_at = None;
+    context.app.is_processing = true;
+    context.app.tool_calls_processed_this_request = false;
+    context.app.tool_call_dispatched = false;
+    context.app.tool_call_pos = None;
+    context.full_response_content.clear();
+    context.cancellation_token = context.shutdown_cancellation.child_token();
+    context.app.request_start_time = Some(tokio::time::Instant::now());
+    context.app.parser.reset();
+    context.app.stop_reason = "Processing… (retry)".to_string();
+    if persist_before_side_effect(context.app, "retry the provider request", SideEffectKind::Provider)
+        && let Err(error) = trigger_persisted_provider_request(
+            context.app,
+            &context.client,
+            context.config,
+            &context.tx,
+            &context.cancellation_token,
+        )
+    {
+        record_provider_start_failure(context.app, "Provider retry", &error);
+    }
+    context.app.should_redraw = true;
+}
+
+/// Drops a scheduled retry: the user stopped, or Lethetic is shutting down.
+pub(crate) fn abandon_provider_retry(app: &mut App, reason: &str) -> bool {
+    if app.provider_retry_at.take().is_none() {
+        return false;
+    }
+    app.provider_retry_attempts = 0;
+    app.is_processing = false;
+    app.request_start_time = None;
+    app.settle_logical_turn();
+    app.stop_reason = reason.to_string();
+    app.add_segment(format!("\n{} [RETRY CANCELLED]\n", icons::WARNING), BlockType::Text);
+    app.should_redraw = true;
+    app.save_session();
+    true
+}
+
 fn append_tool_result_block(app: &mut App, content: String, title: String, is_error: bool) {
     let block = RenderBlock::tool_result(content, title, is_error);
     let success = block.success;
@@ -1165,6 +1251,7 @@ pub(crate) async fn handle_stream_event(
             provider_content,
         } => {
             context.app.finish_thought_timing();
+            context.app.provider_retry_attempts = 0;
             let response_ms = context
                 .app
                 .request_start_time
@@ -1369,6 +1456,10 @@ pub(crate) async fn handle_stream_event(
         }
         StreamEvent::Error(e) => {
             context.app.finish_thought_timing();
+            if schedule_provider_retry(context, &e) {
+                return StreamControl::Continue;
+            }
+            context.app.provider_retry_attempts = 0;
             if let Err(error) = context.app.commit_partial_assistant_checkpoint() {
                 context
                     .app

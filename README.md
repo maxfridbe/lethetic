@@ -91,6 +91,7 @@ context_size: 262144
 theme: Default
 tool_calls: single        # or sequential: several tool calls per model turn
 background_tasks: notify  # or poll / off
+provider_retries: 2       # automatic retries of a failed model request; 0 disables
 
 model_servers:
   - id: local-gemma
@@ -106,6 +107,7 @@ model_servers:
     url: http://brainiac-nvidia:7211/v1/responses
     model: Qwen3-27B-Q5
     parser: qwen3
+    provider_retries: 4       # this server restarts often; overrides the global count
 
   - id: local-claude-code-proxy
     name: Claude Code Proxy (Local)
@@ -446,6 +448,12 @@ Combined NGram + phrase-frequency watchdog (the default). Only model text/though
 - **Turning it off.** `background_tasks: notify | poll | off` in `config.yml` sets the default, and **Ctrl+P → Background Tasks** cycles it at runtime. `poll` keeps the tool but never wakes the model. `off` removes the tool.
 
 Running tasks are stopped (SIGTERM, then SIGKILL) when Lethetic exits.
+
+### Automatic retries
+
+When a model request fails for a transient reason, Lethetic discards any partial reply and sends the same request again after 3 s, then 6 s, 12 s, and so on up to 30 s. Transient means the connection failed or dropped, the server returned 5xx or 429, or the reply ended without finishing (for example when a local llama.cpp server crashes mid-reply). A 4xx rejection, an invalid tool call, or a request-policy error is reported at once. The transcript shows each failure and the countdown; Esc Esc during the wait cancels the retry.
+
+`provider_retries` sets the count (default 2, `0` disables); the same key on a model server overrides it for that connection. Sub-agents and `--command` runs retry the same way.
 
 ### Plan tracking
 

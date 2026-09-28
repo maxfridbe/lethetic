@@ -18,6 +18,7 @@ pub mod lsp;
 pub mod markdown;
 pub mod parser;
 pub mod platform;
+pub mod provider_retry;
 pub mod python;
 pub mod python_policy;
 pub mod python_setup;

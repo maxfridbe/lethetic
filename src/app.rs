@@ -87,6 +87,10 @@ pub struct App {
     /// Harness notes raised mid-batch, sent after the batch's last result so
     /// tool results stay contiguous.
     pub deferred_batch_notes: Vec<String>,
+    /// When a failed model request is due to be sent again.
+    pub provider_retry_at: Option<std::time::Instant>,
+    /// Consecutive failed attempts of the current model request.
+    pub provider_retry_attempts: u32,
     pub shell_approval_mode: ApprovalMode,
     pub show_approval_prompt: bool,
     pub python_approval_show_original: bool,
@@ -336,6 +340,8 @@ impl App {
             pending_tool_call: None,
             queued_tool_calls: std::collections::VecDeque::new(),
             deferred_batch_notes: Vec::new(),
+            provider_retry_at: None,
+            provider_retry_attempts: 0,
             shell_approval_mode: ApprovalMode::None,
             show_approval_prompt: false,
             python_approval_show_original: false,

@@ -859,3 +859,82 @@ async fn stopping_mid_batch_gives_unrun_calls_an_error_result() {
         ]
     );
 }
+
+const DROPPED: &str =
+    "The model server closed the reply before finishing it (it may have crashed or restarted)";
+
+fn processing_app(config: &Config) -> App {
+    let mut app = App::new(config);
+    app.add_logical_turn_user_segment("question".to_string());
+    app.is_processing = true;
+    app
+}
+
+#[tokio::test]
+async fn a_dropped_reply_is_retried_until_the_limit_then_reported() {
+    let mut config = Config {
+        context_size: 100_000,
+        provider_retries: Some(2),
+        ..Default::default()
+    };
+    let mut app = processing_app(&config);
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let mut context = RuntimeContext::new(&mut app, &mut config, tx, RuntimeMode::Interactive);
+    context.full_response_content = "partial answer".to_string();
+
+    for attempt in 1..=2 {
+        handle_stream_event(&mut context, StreamEvent::Error(DROPPED.to_string())).await;
+        assert_eq!(context.app.provider_retry_attempts, attempt);
+        assert!(context.app.provider_retry_at.is_some(), "retry {attempt} scheduled");
+        assert!(context.app.is_processing, "the turn stays open while retrying");
+        assert!(context.full_response_content.is_empty(), "partial reply discarded");
+        assert!(context.app.stop_reason.starts_with("↻ Retrying"));
+        context.app.provider_retry_at = None;
+    }
+
+    handle_stream_event(&mut context, StreamEvent::Error(DROPPED.to_string())).await;
+    assert!(context.app.provider_retry_at.is_none());
+    assert!(!context.app.is_processing);
+    assert!(context.app.stop_reason.starts_with("✗ Server error"));
+    assert_eq!(context.app.provider_retry_attempts, 0);
+}
+
+#[tokio::test]
+async fn rejections_and_disabled_retries_are_reported_at_once() {
+    for (retries, error) in [
+        (Some(3), "Server 401 Unauthorized: bad key"),
+        (Some(0), DROPPED),
+    ] {
+        let mut config = Config {
+            context_size: 100_000,
+            provider_retries: retries,
+            ..Default::default()
+        };
+        let mut app = processing_app(&config);
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut context =
+            RuntimeContext::new(&mut app, &mut config, tx, RuntimeMode::Interactive);
+        handle_stream_event(&mut context, StreamEvent::Error(error.to_string())).await;
+        assert!(context.app.provider_retry_at.is_none(), "{error}");
+        assert!(!context.app.is_processing, "{error}");
+    }
+}
+
+#[tokio::test]
+async fn stopping_during_the_retry_wait_cancels_it() {
+    let mut config = Config {
+        context_size: 100_000,
+        ..Default::default()
+    };
+    let mut app = processing_app(&config);
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let mut context = RuntimeContext::new(&mut app, &mut config, tx, RuntimeMode::Interactive);
+    handle_stream_event(&mut context, StreamEvent::Error(DROPPED.to_string())).await;
+    assert!(context.app.provider_retry_at.is_some());
+
+    let _ = context.dispatch_app_event(AppEventOutcome::Stop).await;
+    assert!(context.app.provider_retry_at.is_none());
+    assert!(!context.app.is_processing);
+    assert!(!context.cancellation_pending, "nothing in flight to contain");
+    assert_eq!(context.app.stop_reason, "Cancelled by user");
+}

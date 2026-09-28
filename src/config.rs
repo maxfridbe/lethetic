@@ -392,6 +392,9 @@ pub struct ModelServer {
     /// `model` instead of probing `/v1/models` (OpenRouter returns hundreds).
     #[serde(default = "default_discover_models")]
     pub discover_models: bool,
+    /// Overrides the global `provider_retries` for this connection.
+    #[serde(default)]
+    pub provider_retries: Option<u32>,
     /// Per-model list prices recorded by the model picker's catalog scan
     /// (see `saved_models.rs`); used when `pricing` does not cover a model.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -558,6 +561,9 @@ pub struct Config {
     /// `single` (default) or `sequential`; see [`crate::tool_call_mode`].
     #[serde(default)]
     pub tool_calls: crate::tool_call_mode::ToolCallMode,
+    /// Automatic retries of a failed model request; see [`crate::provider_retry`].
+    #[serde(default)]
+    pub provider_retries: Option<u32>,
     #[serde(default)]
     pub theme: Option<String>,
     #[serde(default)]
@@ -1088,6 +1094,7 @@ mod tests {
             context_mode: None,
             theme: None,
             discover_models: true,
+            provider_retries: None,
             model_pricing: Vec::new(),
             models: Vec::new(),
         }

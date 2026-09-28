@@ -923,6 +923,7 @@ pub(crate) async fn handle_app_event_outcome(
                 if shutdown_cancellation.is_cancelled() {
                     return AppEventControl::ContinueRunLoop;
                 }
+                app.provider_retry_attempts = 0;
                 app.add_logical_turn_user_segment(prompt.clone());
                 app.context_manager.set_cwd(app.current_dir.clone());
                 app.context_manager.add_message("user", &prompt);
@@ -1016,6 +1017,10 @@ pub(crate) async fn handle_app_event_outcome(
                             format!("✗ Pending interaction could not be cancelled safely: {error}");
                     }
                 }
+            } else if !app.is_executing_tool
+                && crate::stream_events::abandon_provider_retry(app, "Cancelled by user")
+            {
+                // A scheduled retry had no request in flight; nothing to contain.
             } else if app.is_processing || app.is_executing_tool {
                 cancellation_token.cancel();
                 *cancellation_pending = true;

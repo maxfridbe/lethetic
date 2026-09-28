@@ -256,7 +256,8 @@ impl StreamParser {
     fn finalize_pending(&mut self, require_usage: bool) -> Vec<StreamEvent> {
         let Some(pending) = self.pending_done.take() else {
             return vec![StreamEvent::Error(
-                "Provider terminal framing arrived before a finish reason".to_string(),
+                "The model server closed the reply before finishing it (it may have crashed or restarted)"
+                    .to_string(),
             )];
         };
         if pending.terminal_error.is_some() {

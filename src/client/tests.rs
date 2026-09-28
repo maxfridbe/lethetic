@@ -1469,7 +1469,7 @@ async fn premature_eof_emits_finished_then_error_only() {
                 sequence.push("finished");
             }
             StreamEvent::Error(error) => {
-                assert!(error.contains("before a finish reason"), "{error}");
+                assert!(error.contains("closed the reply before finishing"), "{error}");
                 sequence.push("error");
                 break;
             }

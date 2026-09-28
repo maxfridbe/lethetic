@@ -39,6 +39,7 @@ fn azure_config() -> Result<Config, String> {
         enable_image_processing_tool: false,
         background_tasks: Default::default(),
         tool_calls: Default::default(),
+        provider_retries: None,
         theme: None,
         model_servers: cfg.model_servers.clone(),
         thinking: azure.thinking,

@@ -307,6 +307,12 @@ impl App {
         self.save_session_checked()
     }
 
+    /// Drops the partial reply of a failed request that is about to be sent
+    /// again, so the retry starts from the same transcript.
+    pub fn discard_partial_assistant_checkpoint(&mut self) {
+        self.partial_assistant_checkpoint = None;
+    }
+
     pub fn commit_partial_assistant_checkpoint(&mut self) -> Result<bool, String> {
         let Some(checkpoint) = self.partial_assistant_checkpoint.take() else {
             return Ok(false);
