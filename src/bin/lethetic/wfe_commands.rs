@@ -70,6 +70,7 @@ fn wfe_panel_for_command(command: lethetic::commands::CommandId) -> Option<Panel
         | CommandId::ToggleTodos
         | CommandId::ToggleBackgroundTasks
         | CommandId::BackgroundMode
+        | CommandId::ToolCallMode
         | CommandId::ClearUi
         | CommandId::ClearContext
         | CommandId::ToggleDebugger

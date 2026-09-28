@@ -555,6 +555,9 @@ pub struct Config {
     /// `notify` (default), `poll`, or `off`; see [`crate::background::BackgroundMode`].
     #[serde(default)]
     pub background_tasks: crate::background::BackgroundMode,
+    /// `single` (default) or `sequential`; see [`crate::tool_call_mode`].
+    #[serde(default)]
+    pub tool_calls: crate::tool_call_mode::ToolCallMode,
     #[serde(default)]
     pub theme: Option<String>,
     #[serde(default)]

@@ -148,8 +148,12 @@ impl StreamParser {
         let terminal_error = match reason {
             "stop" if self.tool_calls.is_empty() => None,
             "stop" => Some("Provider returned tool calls with finish reason 'stop'".to_string()),
-            "tool_calls" if self.tool_calls.len() == 1 => {
-                let (_, (id, name, arguments)) = self.tool_calls.iter().next().unwrap();
+            "tool_calls" if self.tool_calls.is_empty() => {
+                Some("Provider ended for tool calls without returning any".to_string())
+            }
+            // Every call must be complete; how many a turn may carry is the
+            // host's decision, not the parser's.
+            "tool_calls" => self.tool_calls.values().find_map(|(id, name, arguments)| {
                 if id.is_empty() || name.is_empty() {
                     Some("Provider returned an incomplete tool-call identity".to_string())
                 } else if !serde_json::from_str::<serde_json::Value>(arguments)
@@ -159,8 +163,7 @@ impl StreamParser {
                 } else {
                     None
                 }
-            }
-            "tool_calls" => Some("Provider must return exactly one complete tool call".to_string()),
+            }),
             unsupported => Some(format!(
                 "Provider ended with non-complete finish reason '{unsupported}'"
             )),
@@ -268,25 +271,29 @@ impl StreamParser {
         }
         let mut events = Vec::new();
         if pending.stop_reason.as_deref() == Some("tool_calls") {
-            let Some((index, (id, name, arguments))) = self.tool_calls.drain().next() else {
+            let mut calls: Vec<_> = self.tool_calls.drain().collect();
+            if calls.is_empty() {
                 return vec![StreamEvent::Error(
                     "Provider terminal tool call disappeared".to_string(),
                 )];
-            };
-            let arguments = match serde_json::from_str::<serde_json::Value>(&arguments) {
-                Ok(arguments) if arguments.is_object() => arguments,
-                _ => {
-                    return vec![StreamEvent::Error(
-                        "Provider returned invalid tool-call arguments".to_string(),
-                    )];
-                }
-            };
-            events.push(StreamEvent::ToolCallComplete {
-                index,
-                id,
-                name,
-                arguments,
-            });
+            }
+            calls.sort_by_key(|(index, _)| *index);
+            for (index, (id, name, arguments)) in calls {
+                let arguments = match serde_json::from_str::<serde_json::Value>(&arguments) {
+                    Ok(arguments) if arguments.is_object() => arguments,
+                    _ => {
+                        return vec![StreamEvent::Error(
+                            "Provider returned invalid tool-call arguments".to_string(),
+                        )];
+                    }
+                };
+                events.push(StreamEvent::ToolCallComplete {
+                    index,
+                    id,
+                    name,
+                    arguments,
+                });
+            }
         } else {
             self.tool_calls.clear();
         }
@@ -563,14 +570,15 @@ mod tests {
                 .any(|event| matches!(event, StreamEvent::Error(_)))
         );
         let events = p.process_line("data: [DONE]");
-        assert!(events.iter().any(
-            |event| matches!(event, StreamEvent::Error(error) if error.contains("exactly one"))
-        ));
-        assert!(
-            !events
-                .iter()
-                .any(|event| matches!(event, StreamEvent::ToolCallComplete { .. }))
-        );
+        let names: Vec<&str> = events
+            .iter()
+            .filter_map(|event| match event {
+                StreamEvent::ToolCallComplete { name, .. } => Some(name.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(names, ["read_file", "run_shell_command"], "index order");
+        assert!(!events.iter().any(|event| matches!(event, StreamEvent::Error(_))));
     }
 
     #[test]

@@ -811,7 +811,7 @@ fn rejects_native_tools_without_tool_use_stop_reason() {
 }
 
 #[test]
-fn rejects_parallel_native_tool_calls() {
+fn passes_every_native_tool_call_to_the_host_in_block_order() {
     let mut parser = AnthropicStreamParser::default();
     for (index, id) in [(0, "toolu_1"), (1, "toolu_2")] {
         parser.process_data(
@@ -826,14 +826,50 @@ fn rejects_parallel_native_tool_calls() {
             &json!({"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":9}}).to_string(),
         );
     let events = parser.process_data(&json!({"type":"message_stop"}).to_string());
-    assert!(events.iter().any(|event| matches!(
-        event,
-        StreamEvent::Error(error) if error.contains("parallel tool calls")
-    )));
-    assert!(!events.iter().any(|event| matches!(
-        event,
-        StreamEvent::ToolCalls { .. } | StreamEvent::Done { .. }
-    )));
+    let ids: Vec<String> = events
+        .iter()
+        .find_map(|event| match event {
+            StreamEvent::ToolCalls { calls, .. } => {
+                Some(calls.iter().map(|call| call.id.clone()).collect())
+            }
+            _ => None,
+        })
+        .expect("tool calls event");
+    assert_eq!(ids, ["toolu_1", "toolu_2"]);
+    assert!(!events.iter().any(|event| matches!(event, StreamEvent::Error(_))));
+}
+
+#[test]
+fn batched_tool_results_share_one_user_turn() {
+    let assistant = Message::assistant_with_tools(
+        "",
+        vec![
+            crate::transport::ToolCall {
+                id: "toolu_1".to_string(),
+                name: "calculate".to_string(),
+                arguments: json!({"expression": "1+1"}),
+            },
+            crate::transport::ToolCall {
+                id: "toolu_2".to_string(),
+                name: "calculate".to_string(),
+                arguments: json!({"expression": "2+2"}),
+            },
+        ],
+        None,
+    );
+    let messages = vec![
+        Message::user("go"),
+        assistant,
+        Message::tool_result_with_status("toolu_1", "2", false),
+        Message::tool_result_with_status("toolu_2", "4", false),
+        Message::user("next"),
+    ];
+    let (_, conversation) = native_messages(&messages);
+    assert_eq!(conversation.len(), 4, "{conversation:#?}");
+    let results = conversation[2]["content"].as_array().unwrap();
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[1]["tool_use_id"], "toolu_2");
+    assert_eq!(conversation[3]["content"][0]["text"], "next");
 }
 
 #[test]

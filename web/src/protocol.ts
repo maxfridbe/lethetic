@@ -1458,6 +1458,7 @@ export function commandResponseMatchesRequest(
           case "toggle-todos":
           case "toggle-background-tasks":
           case "background-mode":
+          case "tool-call-mode":
             return null;
           case "clear-context":
           case "delete-python-runtime":

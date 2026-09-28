@@ -832,7 +832,7 @@ pub(crate) async fn handle_stream_event(
                             let msg = "⚠ EDIT ALREADY APPLIED: This exact `old_string` was successfully replaced in a prior call. \
                      The file already contains your updated version. \
                      Do not retry this edit — move on to the next issue.".to_string();
-                            context.app.context_manager.add_message("user", &msg);
+                            context.app.add_harness_note(msg.clone());
                             context.app.add_segment("\n⚠ [EDIT ALREADY APPLIED] old_string was replaced earlier this session — move on.\n".to_string(), BlockType::Text);
                             full_result = msg;
                         }
@@ -926,7 +926,7 @@ pub(crate) async fn handle_stream_event(
                             ),
                         };
                         let warn = format!("⚠ DUPLICATE TOOL CALL: {}", hint);
-                        context.app.context_manager.add_message("user", &warn);
+                        context.app.add_harness_note(warn);
                         context.app.add_segment(
                             format!("\n⚠ [DUPLICATE TOOL CALL x{}] {}\n", count, hint),
                             BlockType::Text,
@@ -934,6 +934,32 @@ pub(crate) async fn handle_stream_event(
                     }
                 }
 
+                // A multi-call batch runs its calls one at a time; the model is
+                // asked again only once every call has a result.
+                if !context.cancellation_pending && context.app.batch_in_progress() {
+                    let outcome = lethetic::app::start_next_queued_tool_call(
+                        context.app,
+                        &context.tx,
+                    );
+                    if let Some(AppEventOutcome::ToolApproved(..)) = outcome {
+                        dispatch_auto_approved_tool(
+                            context.app,
+                            &context.tx,
+                            &context.cancellation_token,
+                            &context.client,
+                            context.config,
+                        );
+                    }
+                    context.app.should_redraw = true;
+                    return StreamControl::Continue;
+                }
+                if context.cancellation_pending {
+                    context
+                        .app
+                        .abandon_queued_tool_calls("the user stopped the batch");
+                } else {
+                    context.app.flush_batch_notes();
+                }
                 if context.cancellation_pending {
                     context.app.tool_calls_processed_this_request = false;
                     context.app.tool_call_dispatched = false;
@@ -1139,6 +1165,10 @@ pub(crate) async fn handle_stream_event(
             provider_content,
         } => {
             context.app.finish_thought_timing();
+            let response_ms = context
+                .app
+                .request_start_time
+                .map(|started| started.elapsed().as_millis() as u64);
             if context.cancellation_pending {
                 context
                     .app
@@ -1154,11 +1184,19 @@ pub(crate) async fn handle_stream_event(
                         || context.app.parser.state == lethetic::parser::ParserState::ToolCall)
                     && !context.app.tool_calls_processed_this_request
                 {
-                    match parser::find_tool_call(&context.full_response_content, true) {
-                        Some(Ok((tool_call, position))) => {
+                    // Several text-format calls form one batch when the mode
+                    // allows it; otherwise only the first call is taken.
+                    let found = if lethetic::tool_call_mode::allows_batches(context.config) {
+                        parser::find_tool_calls(&context.full_response_content, true)
+                    } else {
+                        parser::find_tool_call(&context.full_response_content, true)
+                            .map(|found| found.map(|(call, position)| (vec![call], position)))
+                    };
+                    match found {
+                        Some(Ok((tool_calls, position))) => {
                             if let AppEventOutcome::ToolApproved(..) = handle_tool_call(
                                 context.app,
-                                vec![tool_call],
+                                tool_calls,
                                 position,
                                 context.tx.clone(),
                                 &mut context.cancellation_token,
@@ -1327,6 +1365,7 @@ pub(crate) async fn handle_stream_event(
                     );
                 }
             }
+            context.app.finish_response_timing(response_ms);
         }
         StreamEvent::Error(e) => {
             context.app.finish_thought_timing();

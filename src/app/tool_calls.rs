@@ -21,6 +21,56 @@ impl App {
         self.shell_approval_mode = ApprovalMode::None;
         self.approval_policy_fingerprint = None;
     }
+
+    /// True while later calls of a multi-call batch are still waiting.
+    pub fn batch_in_progress(&self) -> bool {
+        !self.queued_tool_calls.is_empty()
+    }
+
+    /// Records a harness note for the model. Mid-batch it waits until the
+    /// batch's last result so tool results stay contiguous.
+    pub fn add_harness_note(&mut self, note: String) {
+        if self.batch_in_progress() {
+            self.deferred_batch_notes.push(note);
+        } else {
+            self.context_manager.add_message("user", &note);
+        }
+    }
+
+    /// Sends notes held back during a batch, once it has finished.
+    pub fn flush_batch_notes(&mut self) {
+        if self.batch_in_progress() || self.deferred_batch_notes.is_empty() {
+            return;
+        }
+        let notes = std::mem::take(&mut self.deferred_batch_notes).join("\n\n");
+        self.context_manager.add_message("user", &notes);
+    }
+
+    /// Gives every unrun call of the batch an error result, so the provider
+    /// transcript stays complete when a batch is stopped or abandoned.
+    pub fn abandon_queued_tool_calls(&mut self, reason: &str) {
+        if self.queued_tool_calls.is_empty() {
+            return;
+        }
+        let queued: Vec<ToolCall> = self.queued_tool_calls.drain(..).collect();
+        for call in &queued {
+            self.context_manager.add_tool_message_with_status(
+                call.id.clone(),
+                &call.function.name,
+                &format!("ERROR: Not run: {reason}."),
+                true,
+            );
+        }
+        self.add_segment(
+            format!(
+                "\n{} {} queued tool call(s) not run: {reason}.\n",
+                icons::WARNING,
+                queued.len()
+            ),
+            BlockType::Text,
+        );
+        self.flush_batch_notes();
+    }
 }
 
 pub fn handle_tool_call(
@@ -61,18 +111,50 @@ pub fn handle_tool_call_with_provider(
     reset_non_native_stream(cancellation_token, is_native);
     app.tool_call_pos = Some(pos);
 
-    if calls.len() > 1 {
+    if calls.len() > 1 && !crate::tool_call_mode::allows_batches(&app.config) {
         reject_multiple_tool_calls(app, &calls, full_response_content, &tx);
         return AppEventOutcome::Continue;
     }
+    let calls = crate::tool_call_mode::with_unique_ids(calls);
 
-    let Some(tool_call) = calls.into_iter().next() else {
+    let Some(tool_call) = calls.first().cloned() else {
         app.is_processing = false;
         app.settle_logical_turn();
         app.stop_reason = "⚠ Model returned an empty tool-call event".to_string();
         return AppEventOutcome::Continue;
     };
-    register_pending_tool_call(app, &tool_call, full_response_content, provider_content);
+    app.context_manager.upsert_assistant_tool_call_with_provider(
+        full_response_content,
+        calls.clone(),
+        provider_content,
+    );
+    app.queued_tool_calls = calls.into_iter().skip(1).collect();
+    app.deferred_batch_notes.clear();
+    begin_tool_call(app, tool_call, &tx)
+}
+
+/// Starts the next queued call of a batch. Returns `None` when the batch is
+/// finished.
+pub fn start_next_queued_tool_call(
+    app: &mut App,
+    tx: &mpsc::UnboundedSender<StreamEvent>,
+) -> Option<AppEventOutcome> {
+    let next = app.queued_tool_calls.pop_front()?;
+    app.tool_call_dispatched = false;
+    app.is_processing = true;
+    Some(begin_tool_call(app, next, tx))
+}
+
+/// Admits, records and routes one call of the current batch.
+fn begin_tool_call(
+    app: &mut App,
+    tool_call: ToolCall,
+    tx: &mpsc::UnboundedSender<StreamEvent>,
+) -> AppEventOutcome {
+    let tx = tx.clone();
+    app.pending_tool_call = Some(tool_call.clone());
+    app.python_approval_show_original = false;
+    app.python_approval_scroll = 0;
     let description = tool_call_description(&tool_call);
 
     if tool_call.function.name == "python"
@@ -211,23 +293,6 @@ fn truncate_chars_with_ellipsis(value: &str, maximum_chars: usize, prefix_chars:
     } else {
         value.to_string()
     }
-}
-
-fn register_pending_tool_call(
-    app: &mut App,
-    tool_call: &ToolCall,
-    full_response_content: &str,
-    provider_content: Option<Vec<serde_json::Value>>,
-) {
-    app.pending_tool_call = Some(tool_call.clone());
-    app.python_approval_show_original = false;
-    app.python_approval_scroll = 0;
-    app.context_manager
-        .upsert_assistant_tool_call_with_provider(
-            full_response_content,
-            vec![tool_call.clone()],
-            provider_content,
-        );
 }
 
 fn tool_call_description(tool_call: &ToolCall) -> String {
@@ -445,7 +510,12 @@ mod tests {
                 arguments: serde_json::json!({"expression": "2 + 2"}),
             },
         };
-        register_pending_tool_call(&mut app, &tool_call, "", None);
+        app.context_manager.upsert_assistant_tool_call_with_provider(
+            "",
+            vec![tool_call.clone()],
+            None,
+        );
+        app.pending_tool_call = Some(tool_call.clone());
 
         handle_tool_call_save_failure(&mut app, &tool_call, "save-local-violet".to_string());
 

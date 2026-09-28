@@ -388,6 +388,8 @@ pub fn block_duration_label(block: &crate::app::RenderBlock) -> Option<String> {
         BlockType::Thought => Some(format!("engine thought for {duration}")),
         BlockType::ToolResult => Some(format!("tool call took {duration}")),
         BlockType::ToolError => Some(format!("tool call failed after {duration}")),
+        BlockType::Text => Some(format!("model turn took {duration}")),
+        BlockType::ToolCall => Some(format!("model turn took {duration} to make this call")),
         _ => None,
     }
 }

@@ -18,6 +18,7 @@ pub enum CommandId {
     LatestFiles,
     ToggleBackgroundTasks,
     BackgroundMode,
+    ToolCallMode,
     Models,
     LspServers,
     AgentMode,
@@ -105,6 +106,7 @@ pub struct CommandView {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CommandContext {
     pub loop_mode: String,
+    pub tool_call_mode: String,
     pub agent_mode: String,
     pub agent_mode_locked: bool,
     pub session_name: Option<String>,
@@ -115,7 +117,7 @@ pub struct CommandContext {
 }
 
 impl CommandId {
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 25] = [
         Self::Hotkeys,
         Self::Themes,
         Self::InputHistory,
@@ -130,6 +132,7 @@ impl CommandId {
         Self::LatestFiles,
         Self::ToggleBackgroundTasks,
         Self::BackgroundMode,
+        Self::ToolCallMode,
         Self::Models,
         Self::LspServers,
         Self::AgentMode,
@@ -172,6 +175,9 @@ impl CommandId {
         let spec = self.spec();
         let label = match self {
             Self::LoopDetection => format!("Loop Detection: {}", context.loop_mode),
+            Self::ToolCallMode => {
+                format!("Tool Calls: {}", context.tool_call_mode)
+            }
             Self::BackgroundMode => {
                 format!("Background Tasks: {}", crate::background::mode().label())
             }
@@ -239,7 +245,7 @@ impl CommandId {
     }
 }
 
-pub const COMMAND_SPECS: [CommandSpec; 24] = [
+pub const COMMAND_SPECS: [CommandSpec; 25] = [
     CommandSpec {
         id: CommandId::Hotkeys,
         base_label: "Hotkeys",
@@ -338,6 +344,15 @@ pub const COMMAND_SPECS: [CommandSpec; 24] = [
         accelerator: None,
         requires_idle: false,
         description: "Cycle background tasks: notify (finishes wake the model), poll only, or off (tool hidden).",
+    },
+    CommandSpec {
+        id: CommandId::ToolCallMode,
+        base_label: "Tool Calls",
+        icon: IconId::Command,
+        behavior: CommandBehavior::Execute,
+        accelerator: None,
+        requires_idle: true,
+        description: "Switch between one tool call per model turn and several run in order (Python-only mode stays at one).",
     },
     CommandSpec {
         id: CommandId::Sessions,

@@ -451,7 +451,11 @@ Every tool call except `todowrite` carries a required `todo_id` naming the todo 
 
 ### Timing
 
-Each thinking block shows how long the engine thought, and each tool result shows how long the call took (`⏱ engine thought for 1m 05s`, `⏱ tool call took 3.2s`), in the terminal and the browser.
+Each thinking block shows how long the engine thought, each model reply shows how long the whole turn took from request to finish, and each tool result shows how long the call took (`⏱ engine thought for 1m 05s`, `⏱ model turn took 8.4s`, `⏱ tool call took 3.2s`), in the terminal and the browser. When the model's turn ends in a tool call, its line sits under that call.
+
+### Several tool calls per turn
+
+`tool_calls: single | sequential` in `config.yml` sets how many tool calls one model turn may carry, and **Ctrl+P → Tool Calls** switches it at runtime. `single` (the default) asks providers for one call; a turn that still carries several is rejected with an explanation to the model. `sequential` asks providers to allow several and runs them one after another, each with its own approval, and asks the model again only when every call has a result. Harness warnings raised mid-batch wait until the batch ends. Stopping mid-batch gives each unrun call a "not run" result. Python-only mode always uses `single`.
 
 ### Duplicate tool call detection
 
@@ -512,6 +516,7 @@ These keys describe the terminal UI. Browser palette accelerators, editable-targ
 | Toggle Debugger | Show/hide debug log pane |
 | Toggle Todo List | Show/hide the model's todo list pane (F9) |
 | Toggle Background Tasks | Show/hide the background tasks pane (F8) |
+| Tool Calls: one per turn / several per turn | Switch between one tool call per model turn and several run in order |
 | Background Tasks: notify / poll only / off | Cycle whether the model may start background tasks and whether their finishes wake it |
 | Sessions | Load, resume, compact, or delete sessions. Each entry shows its model, Agent Mode and remote control on a second line; resuming restores those settings (launch flags still win, and remote control is never restarted automatically). **C** compacts the selected session: pick any configured model, the log is summarised in parallel windows with a streaming merge, and the result is saved as a new resumable session that inherits the source's model, prompt, theme, history, and cost |
 | Name/Rename Session | Set display-only durable session metadata without changing its UUID or path |

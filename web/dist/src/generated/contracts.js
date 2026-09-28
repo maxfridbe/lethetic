@@ -3,7 +3,7 @@
 export const WFE_MAX_COMMAND_MESSAGE_BYTES = 262144;
 export const WFE_MAX_SERVER_MESSAGE_BYTES = 4194304;
 export const WFE_PROTOCOL_VERSION = 6;
-export const WFE_PROTOCOL_SCHEMA_SHA256 = "14a2bc00d718694e9dd7a142c389b01d5a3d4f92a9df87d84d96789871c2b7f9";
+export const WFE_PROTOCOL_SCHEMA_SHA256 = "c860dc04390e14f59bfdea52125903676a7ab9093b32aa732c5a6ee74a099d8c";
 export const COMMAND_ORDER = [
     "hotkeys",
     "themes",
@@ -19,6 +19,7 @@ export const COMMAND_ORDER = [
     "latest-files",
     "toggle-background-tasks",
     "background-mode",
+    "tool-call-mode",
     "models",
     "lsp-servers",
     "agent-mode",

@@ -557,6 +557,22 @@ pub(crate) async fn handle_app_event_outcome(
                 files,
             });
         }
+        AppEventOutcome::CycleToolCallMode => {
+            if config.tool_profile == lethetic::config::ToolProfile::PythonOnly {
+                app.stop_reason = "Tool calls: Python-only mode always uses one per turn".to_string();
+            } else {
+                config.tool_calls = config.tool_calls.next();
+                app.config.tool_calls = config.tool_calls;
+                let refreshed = lethetic::system_prompt::SystemPromptManager::resolve_prompt(
+                    &app.system_prompt,
+                    &app.current_dir,
+                    config,
+                );
+                app.context_manager.update_system_prompt(refreshed);
+                app.stop_reason = format!("Tool calls: {}", config.tool_calls.label());
+            }
+            app.should_redraw = true;
+        }
         AppEventOutcome::StopRemoteControl => {
             *remote_control_request = Some(crate::context::RemoteControlRequest::Stop);
         }

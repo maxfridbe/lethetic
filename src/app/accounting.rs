@@ -136,6 +136,7 @@ impl App {
 
     /// Ends the logical turn and invalidates its opaque cancellation target.
     pub fn settle_logical_turn(&mut self) {
+        self.abandon_queued_tool_calls("the turn ended before it ran");
         self.active_logical_turn_id = None;
         self.active_cancellation_id = None;
     }

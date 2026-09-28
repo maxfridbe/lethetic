@@ -424,4 +424,29 @@ mod timing_tests {
                 .starts_with("tool call took")
         );
     }
+
+    #[test]
+    fn every_model_turn_records_how_long_it_took() {
+        let mut app = App::new(&Config::default());
+        app.show_session_manager = false;
+        app.add_segment("question".to_string(), BlockType::User);
+        app.add_segment("Here is the answer.".to_string(), BlockType::Text);
+        app.finish_response_timing(Some(4_200));
+        let text = app.blocks.iter().rfind(|b| b.block_type == BlockType::Text).unwrap();
+        assert_eq!(
+            crate::status_summary::block_duration_label(text).as_deref(),
+            Some("model turn took 4.2s")
+        );
+
+        // A turn that calls a tool puts the line under the call, once.
+        app.add_segment("next question".to_string(), BlockType::User);
+        app.add_segment("Let me check.".to_string(), BlockType::Text);
+        app.add_segment_with_title("call:run{}".to_string(), BlockType::ToolCall, "Run".into());
+        app.finish_response_timing(Some(900));
+        app.finish_response_timing(Some(5_000));
+        let call = app.blocks.iter().rfind(|b| b.block_type == BlockType::ToolCall).unwrap();
+        assert_eq!(call.duration_ms, Some(900));
+        let reply = app.blocks.iter().rfind(|b| b.block_type == BlockType::Text).unwrap();
+        assert_eq!(reply.duration_ms, None);
+    }
 }

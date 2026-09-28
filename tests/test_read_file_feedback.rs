@@ -21,6 +21,7 @@ fn test_read_file_feedback_logic() {
         output_cost_per_1m: None,
         enable_image_processing_tool: false,
         background_tasks: Default::default(),
+        tool_calls: Default::default(),
         theme: None,
         model_servers: Vec::new(),
         thinking: None,

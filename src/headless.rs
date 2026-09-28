@@ -48,11 +48,16 @@ fn find_legacy_text_tool_call(
     config: &Config,
     text: &str,
     is_final: bool,
-) -> Option<Result<(ToolCall, usize), (String, usize)>> {
+) -> Option<Result<(Vec<ToolCall>, usize), (String, usize)>> {
     if config.active_connection_kind().uses_native_tools() {
         None
+    } else if crate::tool_call_mode::allows_batches(config) {
+        parser::find_tool_calls(text, is_final).map(|found| {
+            found.map(|(calls, end)| (crate::tool_call_mode::with_unique_ids(calls), end))
+        })
     } else {
         parser::find_tool_call(text, is_final)
+            .map(|found| found.map(|(call, end)| (vec![call], end)))
     }
 }
 
@@ -133,7 +138,7 @@ async fn execute_tool_calls(
         )?;
     }
 
-    if calls.len() > 1 {
+    if calls.len() > 1 && !crate::tool_call_mode::allows_batches(config) {
         let reason = format!(
             "Provider returned {} tool calls in one turn; Headless mode requires exactly one and rejected the entire batch.",
             calls.len()
@@ -523,18 +528,22 @@ pub async fn run_agent_accounted_with_runtime(
         .unwrap_or_else(|| crate::system_prompt::DEFAULT_PROMPT_TEMPLATE.to_string());
     let tool_declarations =
         tools::get_prompt_templates_excluding(config, &["task", "ask_the_user"]);
-    let tool_call_format = if config.active_connection_kind().uses_native_tools() {
-        crate::system_prompt::TOOL_CALL_FORMAT_NATIVE
-    } else {
-        match config.active_parser() {
-            "qwen3" | "default" | "generic" => crate::system_prompt::TOOL_CALL_FORMAT_QWEN3,
-            _ => crate::system_prompt::TOOL_CALL_FORMAT_GEMMA4,
-        }
-    };
+    let tool_call_format = format!(
+        "{}\n{}",
+        if config.active_connection_kind().uses_native_tools() {
+            crate::system_prompt::TOOL_CALL_FORMAT_NATIVE
+        } else {
+            match config.active_parser() {
+                "qwen3" | "default" | "generic" => crate::system_prompt::TOOL_CALL_FORMAT_QWEN3,
+                _ => crate::system_prompt::TOOL_CALL_FORMAT_GEMMA4,
+            }
+        },
+        crate::system_prompt::tool_call_count_guidance(config)
+    );
     let mut resolved = template
         .replace("[TOOLS_DEFINITIONS]", &tool_declarations)
         .replace("[CWD]", &cwd)
-        .replace("[TOOL_CALL_FORMAT]", tool_call_format);
+        .replace("[TOOL_CALL_FORMAT]", &tool_call_format);
     if let Some(guidance) = crate::system_prompt::python_capability_guidance(config) {
         resolved.push_str("\n\n");
         resolved.push_str(&guidance);
@@ -727,9 +736,9 @@ pub async fn run_agent_accounted_with_runtime(
                 }
 
                 match find_legacy_text_tool_call(config, &full_response, true) {
-                    Some(Ok((call, _))) => {
+                    Some(Ok((calls, _))) => {
                         execute_tool_calls(
-                            vec![call],
+                            calls,
                             &full_response,
                             None,
                             false,

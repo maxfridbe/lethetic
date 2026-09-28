@@ -29,6 +29,7 @@ pub mod status_summary;
 pub mod system_prompt;
 pub mod theme;
 pub mod todo_store;
+pub mod tool_call_mode;
 pub mod tool_runtime;
 pub mod tools;
 pub mod transport;

@@ -903,6 +903,46 @@ pub fn find_tool_call(
         None
     }
 }
+/// Every text-format tool call in `text`, in order, with the end position of
+/// the last one. Stops at the first malformed call and reports it.
+pub fn find_tool_calls(
+    text: &str,
+    is_final: bool,
+) -> Option<Result<(Vec<ToolCall>, usize), (String, usize)>> {
+    let mut calls = Vec::new();
+    let mut offset = 0;
+    while let Some(found) = find_tool_call(&text[offset..], is_final) {
+        match found {
+            Ok((call, length)) => {
+                calls.push(call);
+                offset += length;
+            }
+            Err((error, length)) => return Some(Err((error, offset + length))),
+        }
+        if offset >= text.len() {
+            break;
+        }
+    }
+    (!calls.is_empty()).then_some(Ok((calls, offset)))
+}
+
+#[test]
+fn find_tool_calls_returns_every_call_in_order() {
+    let text = concat!(
+        "Checking both.\n",
+        "<tool_call>{\"name\": \"read_file\", \"arguments\": {\"path\": \"a.rs\"}}</tool_call>\n",
+        "<tool_call>{\"name\": \"read_file\", \"arguments\": {\"path\": \"b.rs\"}}</tool_call>",
+    );
+    let (calls, end) = find_tool_calls(text, true).unwrap().unwrap();
+    let paths: Vec<_> = calls
+        .iter()
+        .map(|call| call.function.arguments["path"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(paths, ["a.rs", "b.rs"]);
+    assert_eq!(end, text.len());
+    assert!(find_tool_calls("no calls here", true).is_none());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

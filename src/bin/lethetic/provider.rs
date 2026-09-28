@@ -246,6 +246,8 @@ fn settle_pending_interaction_with_result_checked(
     let messages_before = app.context_manager.get_messages().to_vec();
     let blocks_before = app.blocks.clone();
     let pending_before = app.pending_tool_call.clone();
+    let queued_before = app.queued_tool_calls.clone();
+    let notes_before = app.deferred_batch_notes.clone();
     let flags_before = (
         app.show_approval_prompt,
         app.is_asking_user,
@@ -281,10 +283,11 @@ fn settle_pending_interaction_with_result_checked(
     let pending_call_is_in_context =
         app.context_manager
             .get_messages()
-            .last()
+            .iter()
+            .rev()
+            .find(|message| message.role == "assistant")
             .is_some_and(|message| {
-                message.role == "assistant"
-                    && message
+                message
                         .tool_calls
                         .as_ref()
                         .is_some_and(|calls| calls.iter().any(|call| call.id == tool_call.id))
@@ -298,6 +301,7 @@ fn settle_pending_interaction_with_result_checked(
             .upsert_assistant_tool_call_with_provider("", vec![compact_call], None);
     }
     record_terminal_tool_error(app, tool_call, result);
+    app.abandon_queued_tool_calls("the user cancelled the batch");
     app.stop_reason = "Cancelled by user".to_string();
     app.should_redraw = true;
 
@@ -306,6 +310,8 @@ fn settle_pending_interaction_with_result_checked(
         app.context_manager.set_messages(messages_before);
         app.blocks = blocks_before;
         app.pending_tool_call = pending_before;
+        app.queued_tool_calls = queued_before;
+        app.deferred_batch_notes = notes_before;
         (
             app.show_approval_prompt,
             app.is_asking_user,

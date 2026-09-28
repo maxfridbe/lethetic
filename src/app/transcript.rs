@@ -510,6 +510,41 @@ impl App {
         }
     }
 
+    /// Records how long the model took to answer: from the request start to
+    /// its end. The line goes under the tool call it made, or else under its
+    /// last text block.
+    pub fn finish_response_timing(&mut self, elapsed_ms: Option<u64>) {
+        let Some(elapsed_ms) = elapsed_ms else {
+            return;
+        };
+        let region_start = self
+            .blocks
+            .iter()
+            .rposition(|block| {
+                matches!(
+                    block.block_type,
+                    BlockType::User | BlockType::ToolResult | BlockType::ToolError | BlockType::Divider
+                )
+            })
+            .map_or(0, |index| index + 1);
+        let region = region_start..self.blocks.len();
+        let target = region
+            .clone()
+            .find(|&index| self.blocks[index].block_type == BlockType::ToolCall)
+            .or_else(|| {
+                region
+                    .rev()
+                    .find(|&index| self.blocks[index].block_type == BlockType::Text)
+            });
+        if let Some(block) = target.map(|index| &mut self.blocks[index])
+            && block.duration_ms.is_none()
+        {
+            block.duration_ms = Some(elapsed_ms);
+            block.invalidate();
+            self.should_redraw = true;
+        }
+    }
+
     pub(super) fn add_block(&mut self, content: String, b_type: BlockType, title: Option<String>) {
         self.finish_thought_timing();
         self.block_started_at = Some(std::time::Instant::now());

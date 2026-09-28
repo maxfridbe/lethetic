@@ -63,8 +63,16 @@ pub const TOOL_CALL_FORMAT_QWEN3: &str = r#"# Tool call format
 Use standard JSON format for all tool call arguments. Do NOT wrap strings in any special markers."#;
 
 pub const TOOL_CALL_FORMAT_NATIVE: &str = r#"# Native tool use
-Use the provided API tools directly. Never print tool-call JSON or XML as text.
-For this connection, call at most one tool per assistant turn."#;
+Use the provided API tools directly. Never print tool-call JSON or XML as text."#;
+
+/// The tool-call-count rule appended to every tool-call format.
+pub fn tool_call_count_guidance(config: &crate::config::Config) -> &'static str {
+    if crate::tool_call_mode::allows_batches(config) {
+        "You may call several tools in one assistant turn when they do not depend on each other; they run in order and you see all results together."
+    } else {
+        "Call at most one tool per assistant turn."
+    }
+}
 
 const PYTHON_ONLY_GUIDANCE: &str = r#"# Python-only mode
 Exactly one model tool is available: `python`. `lethetic_todo` is a host-backed module imported inside Python, not a second model tool.
@@ -348,18 +356,22 @@ impl SystemPromptManager {
     pub fn resolve_prompt(template: &str, cwd: &str, config: &crate::config::Config) -> String {
         let tool_declarations = tools::get_all_prompt_templates(config);
         let active_parser = config.active_parser();
-        let tool_call_fmt = if config.active_connection_kind().uses_native_tools() {
-            TOOL_CALL_FORMAT_NATIVE
-        } else {
-            match active_parser {
-                "qwen3" | "default" | "generic" => TOOL_CALL_FORMAT_QWEN3,
-                _ => TOOL_CALL_FORMAT_GEMMA4,
-            }
-        };
+        let tool_call_fmt = format!(
+            "{}\n{}",
+            if config.active_connection_kind().uses_native_tools() {
+                TOOL_CALL_FORMAT_NATIVE
+            } else {
+                match active_parser {
+                    "qwen3" | "default" | "generic" => TOOL_CALL_FORMAT_QWEN3,
+                    _ => TOOL_CALL_FORMAT_GEMMA4,
+                }
+            },
+            tool_call_count_guidance(config)
+        );
         let resolved = template
             .replace("[TOOLS_DEFINITIONS]", &tool_declarations)
             .replace("[CWD]", cwd)
-            .replace("[TOOL_CALL_FORMAT]", tool_call_fmt);
+            .replace("[TOOL_CALL_FORMAT]", &tool_call_fmt);
         match python_capability_guidance(config) {
             Some(guidance) => format!("{resolved}\n\n{guidance}"),
             None if config.tool_profile == crate::config::ToolProfile::General => {

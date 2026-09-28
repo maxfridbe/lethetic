@@ -124,10 +124,28 @@ fn native_messages(messages: &[Message]) -> (Option<String>, Vec<Value>) {
                 if message.tool_result_is_error {
                     result["is_error"] = Value::Bool(true);
                 }
-                conversation.push(json!({
-                    "role": "user",
-                    "content": [result]
-                }));
+                // Results of one batch share a single user turn, as the
+                // Messages API requires after a multi-tool assistant turn.
+                let previous_is_results = conversation.last().is_some_and(|last: &Value| {
+                    last["role"] == "user"
+                        && last["content"].as_array().is_some_and(|blocks| {
+                            !blocks.is_empty()
+                                && blocks.iter().all(|block| block["type"] == "tool_result")
+                        })
+                });
+                if previous_is_results {
+                    if let Some(blocks) = conversation
+                        .last_mut()
+                        .and_then(|last| last["content"].as_array_mut())
+                    {
+                        blocks.push(result);
+                    }
+                } else {
+                    conversation.push(json!({
+                        "role": "user",
+                        "content": [result]
+                    }));
+                }
             }
         }
     }
@@ -171,7 +189,7 @@ pub fn build_request(
         );
         body["tool_choice"] = json!({
             "type": "auto",
-            "disable_parallel_tool_use": true
+            "disable_parallel_tool_use": !crate::tool_call_mode::allows_batches(config)
         });
     }
     match config.thinking {
@@ -857,11 +875,6 @@ impl AnthropicStreamParser {
         }
         if !self.started_blocks.is_empty() {
             self.record_error("claude-code-proxy sent message_stop with unfinished content blocks");
-        }
-        if self.tool_calls.len() > 1 {
-            self.record_error(
-                "claude-code-proxy returned parallel tool calls despite single-call policy",
-            );
         }
         if let Some(error) = self.pending_error.take() {
             self.tool_calls.clear();

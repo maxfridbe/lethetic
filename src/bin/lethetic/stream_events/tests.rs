@@ -725,3 +725,137 @@ fn provider_cancellation_waits_for_active_tool_containment() {
     assert!(!context.cancellation_pending);
     assert!(!context.app.is_processing);
 }
+
+fn calculate_calls(ids: &[&str]) -> Vec<lethetic::context::ToolCall> {
+    ids.iter()
+        .map(|id| lethetic::context::ToolCall {
+            id: id.to_string(),
+            provider_id: Some(format!("provider-{id}")),
+            function: lethetic::context::FunctionCall {
+                name: "calculate".to_string(),
+                arguments: serde_json::json!({"expression": "1 + 1", "description": id}),
+            },
+        })
+        .collect()
+}
+
+/// The call id a stored tool result answers.
+fn result_id(message: &lethetic::context::Message) -> String {
+    let marker = "tool_call_id:<|'|>";
+    let text = message.content.as_str();
+    let start = text.rfind(marker).map(|index| index + marker.len()).unwrap_or(0);
+    text[start..].split("<|'|>").next().unwrap_or("").to_string()
+}
+
+fn calculate_result(id: &str) -> StreamEvent {
+    StreamEvent::ToolResult {
+        id: Some(id.to_string()),
+        func_name: "calculate".to_string(),
+        result: "2".to_string(),
+        cwd: ".".to_string(),
+        is_error: false,
+        provenance: lethetic::tools::ToolOutputProvenance::OrdinaryHost,
+    }
+}
+
+#[tokio::test]
+async fn sequential_batch_runs_every_call_before_asking_the_model_again() {
+    let mut config = Config {
+        context_size: 100_000,
+        tool_calls: lethetic::tool_call_mode::ToolCallMode::Sequential,
+        ..Default::default()
+    };
+    let mut app = App::new(&config);
+    app.shell_approval_mode = lethetic::app::ApprovalMode::Always;
+    app.approval_policy_fingerprint = Some(app.config.python_policy_fingerprint());
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let mut context = RuntimeContext::new(&mut app, &mut config, tx, RuntimeMode::Interactive);
+    context.full_response_content = "Checking two things.".to_string();
+
+    handle_stream_event(
+        &mut context,
+        StreamEvent::ToolCalls {
+            calls: calculate_calls(&["first", "second"]),
+            provider_content: None,
+        },
+    )
+    .await;
+    assert_eq!(context.app.pending_tool_call.as_ref().unwrap().id, "first");
+    assert_eq!(context.app.queued_tool_calls.len(), 1);
+
+    handle_stream_event(&mut context, calculate_result("first")).await;
+    assert_eq!(
+        context.app.pending_tool_call.as_ref().map(|call| call.id.as_str()),
+        Some("second"),
+        "the second call starts instead of a new model request"
+    );
+    assert!(context.app.queued_tool_calls.is_empty());
+    assert!(context.app.active_request_id.is_none());
+
+    handle_stream_event(&mut context, calculate_result("second")).await;
+    let messages = context.app.context_manager.get_messages();
+    let assistant = messages
+        .iter()
+        .rposition(|message| message.role == "assistant")
+        .unwrap();
+    let ids: Vec<&str> = messages[assistant]
+        .tool_calls
+        .as_ref()
+        .unwrap()
+        .iter()
+        .map(|call| call.id.as_str())
+        .collect();
+    assert_eq!(ids, ["first", "second"]);
+    let results: Vec<String> = messages[assistant + 1..]
+        .iter()
+        .filter(|message| message.role == "tool")
+        .map(result_id)
+        .collect();
+    assert_eq!(results, ["first", "second"]);
+}
+
+#[tokio::test]
+async fn stopping_mid_batch_gives_unrun_calls_an_error_result() {
+    let mut config = Config {
+        context_size: 100_000,
+        tool_calls: lethetic::tool_call_mode::ToolCallMode::Sequential,
+        ..Default::default()
+    };
+    let mut app = App::new(&config);
+    app.shell_approval_mode = lethetic::app::ApprovalMode::Always;
+    app.approval_policy_fingerprint = Some(app.config.python_policy_fingerprint());
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let mut context = RuntimeContext::new(&mut app, &mut config, tx, RuntimeMode::Interactive);
+
+    handle_stream_event(
+        &mut context,
+        StreamEvent::ToolCalls {
+            calls: calculate_calls(&["one", "two", "three"]),
+            provider_content: None,
+        },
+    )
+    .await;
+    context.cancellation_pending = true;
+    handle_stream_event(&mut context, calculate_result("one")).await;
+
+    assert!(context.app.pending_tool_call.is_none());
+    assert!(context.app.queued_tool_calls.is_empty());
+    let unrun: Vec<(String, bool)> = context
+        .app
+        .context_manager
+        .get_messages()
+        .iter()
+        .filter(|message| message.role == "tool")
+        .map(|message| {
+            (result_id(message), message.tool_result_is_error)
+        })
+        .collect();
+    assert_eq!(
+        unrun,
+        [
+            ("one".to_string(), false),
+            ("two".to_string(), true),
+            ("three".to_string(), true)
+        ]
+    );
+}

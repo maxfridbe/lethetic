@@ -98,6 +98,9 @@ pub fn build_request(
     )
     .map_err(|error| format!("Invalid OpenAI-compatible request config: {error}"))?;
     body["stream"] = Value::Bool(stream);
+    if !tools.is_empty() && crate::tool_call_mode::allows_batches(config) {
+        body["parallel_tool_calls"] = Value::Bool(true);
+    }
     if !stream && let Some(object) = body.as_object_mut() {
         object.remove("stream_options");
     }

@@ -22,7 +22,9 @@ pub use session_state::{
     SessionDirectoryBinding, SessionSettings, SessionState, SessionWorkspaceBinding,
     describe_python_policy, normalize_session_display_name,
 };
-pub use tool_calls::{ApprovalMode, handle_tool_call, handle_tool_call_with_provider};
+pub use tool_calls::{
+    ApprovalMode, handle_tool_call, handle_tool_call_with_provider, start_next_queued_tool_call,
+};
 pub use transcript::{BlockType, RenderBlock};
 pub(crate) use transcript::{
     LegacyTextErrorKind, legacy_text_error_marker, migrate_legacy_error_blocks,
@@ -80,6 +82,11 @@ pub struct App {
     pub server_url: String,
     pub max_tokens: usize,
     pub pending_tool_call: Option<ToolCall>,
+    /// The rest of a multi-call batch, run one at a time after the pending call.
+    pub queued_tool_calls: std::collections::VecDeque<ToolCall>,
+    /// Harness notes raised mid-batch, sent after the batch's last result so
+    /// tool results stay contiguous.
+    pub deferred_batch_notes: Vec<String>,
     pub shell_approval_mode: ApprovalMode,
     pub show_approval_prompt: bool,
     pub python_approval_show_original: bool,
@@ -327,6 +334,8 @@ impl App {
             server_url: config.server_url.clone(),
             max_tokens: input_token_budget,
             pending_tool_call: None,
+            queued_tool_calls: std::collections::VecDeque::new(),
+            deferred_batch_notes: Vec::new(),
             shell_approval_mode: ApprovalMode::None,
             show_approval_prompt: false,
             python_approval_show_original: false,
