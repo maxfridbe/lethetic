@@ -4,6 +4,7 @@
 //! never joined to a host path for I/O.
 
 mod archive;
+mod git;
 #[cfg(target_os = "linux")]
 #[path = "linux.rs"]
 mod platform;
@@ -17,7 +18,8 @@ pub use policy::DisclosurePolicy;
 use crate::wfe::file_contracts::{
     FileEntryKind, FileExclusionCounts, FileListEntry, FilesApiError, FilesArchiveRequest,
     FilesDownloadRequest, FilesErrorCode, FilesListRequest, FilesListResponse, FilesReadRequest,
-    FilesReadResponse, WFE_FILES_DOWNLOAD_BYTES, WFE_FILES_LIST_ENTRIES, WFE_FILES_PATH_BYTES,
+    FilesReadResponse, GitDiffRequest, GitDiffResponse, GitStatusRequest, GitStatusResponse,
+    WFE_FILES_DOWNLOAD_BYTES, WFE_FILES_LIST_ENTRIES, WFE_FILES_PATH_BYTES,
     WFE_FILES_PATH_DEPTH, WFE_FILES_VIEW_BYTES,
 };
 use platform::{ObjectKind, PinnedRoot};
@@ -213,6 +215,30 @@ impl RootedFiles {
     ) -> Result<FileOperation<FileArchive>, FilesError> {
         self.run(true, cancellation, move |root, policy, context| {
             archive::archive_sync(root, policy, request, context)
+        })
+        .await
+    }
+
+    /// Lists changed files in the launch root's git work tree.
+    pub async fn git_status(
+        &self,
+        request: GitStatusRequest,
+        cancellation: CancellationToken,
+    ) -> Result<FileOperation<GitStatusResponse>, FilesError> {
+        self.run(false, cancellation, move |root, policy, context| {
+            git::status_sync(root, policy, request, context)
+        })
+        .await
+    }
+
+    /// Returns one changed file's `HEAD` and working-tree content.
+    pub async fn git_diff(
+        &self,
+        request: GitDiffRequest,
+        cancellation: CancellationToken,
+    ) -> Result<FileOperation<GitDiffResponse>, FilesError> {
+        self.run(false, cancellation, move |root, policy, context| {
+            git::diff_sync(root, policy, request, context)
         })
         .await
     }

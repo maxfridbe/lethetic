@@ -1,7 +1,9 @@
 import { exclusionLabel, fileFailure } from "./protocol.js";
-function initialState() {
-    return { open: false, directory: "", listing: null, listingBusy: false, listingError: null,
-        selectedPath: null, preview: null, previewBusy: false, previewError: null, downloadBusy: false };
+function initialState(diffLayout = "side-by-side") {
+    return { open: false, tab: "files", directory: "", listing: null, listingBusy: false, listingError: null,
+        selectedPath: null, preview: null, previewBusy: false, previewError: null, downloadBusy: false,
+        changes: null, changesBusy: false, changesError: null, collapsed: new Set(),
+        selectedChange: null, diff: null, diffBusy: false, diffError: null, diffLayout };
 }
 export class FilesController {
     changed;
@@ -11,6 +13,8 @@ export class FilesController {
     #list = null;
     #read = null;
     #download = null;
+    #status = null;
+    #diff = null;
     #epoch = 0;
     #urls = new Map();
     constructor(changed, notify) {
@@ -22,7 +26,7 @@ export class FilesController {
     reset() {
         this.#epoch += 1;
         this.#abort();
-        this.#state = initialState();
+        this.#state = initialState(this.#state.diffLayout);
         for (const [url, timer] of this.#urls) {
             globalThis.clearTimeout(timer);
             URL.revokeObjectURL(url);
@@ -31,7 +35,8 @@ export class FilesController {
     }
     suspend() {
         this.#abort();
-        this.#state = { ...this.#state, listingBusy: false, previewBusy: false, downloadBusy: false };
+        this.#state = { ...this.#state, listingBusy: false, previewBusy: false, downloadBusy: false,
+            changesBusy: false, diffBusy: false };
     }
     toggle() {
         if (this.#state.open) {
@@ -42,6 +47,92 @@ export class FilesController {
         this.#state = { ...this.#state, open: true };
         this.changed();
         void this.navigate("");
+    }
+    showTab(tab) {
+        if (!this.#state.open || this.#state.tab === tab)
+            return;
+        this.#state = { ...this.#state, tab };
+        this.changed();
+        if (tab === "changes" && this.#state.changes === null && !this.#state.changesBusy) {
+            void this.refreshChanges();
+        }
+    }
+    setDiffLayout(diffLayout) {
+        if (this.#state.diffLayout === diffLayout)
+            return;
+        this.#state = { ...this.#state, diffLayout };
+        this.changed();
+    }
+    toggleFolder(path) {
+        const collapsed = new Set(this.#state.collapsed);
+        if (!collapsed.delete(path))
+            collapsed.add(path);
+        this.#state = { ...this.#state, collapsed };
+        this.changed();
+    }
+    async refreshChanges() {
+        const client = this.#client;
+        if (client === null || !this.#state.open)
+            return;
+        this.#status?.abort();
+        const request = new AbortController();
+        this.#status = request;
+        const selected = this.#state.selectedChange;
+        this.#state = { ...this.#state, changesBusy: true, changesError: null };
+        this.changed();
+        try {
+            const changes = await client.gitStatus(request.signal);
+            if (this.#status !== request || request.signal.aborted)
+                return;
+            this.#state = { ...this.#state, changes, changesBusy: false };
+            const still = selected !== null && changes.files.some((file) => file.path === selected);
+            if (still) {
+                void this.selectChange(selected);
+            }
+            else {
+                this.#diff?.abort();
+                this.#diff = null;
+                this.#state = { ...this.#state, selectedChange: null, diff: null, diffBusy: false, diffError: null };
+            }
+        }
+        catch (error) {
+            if (this.#status !== request || request.signal.aborted)
+                return;
+            this.#state = { ...this.#state, changesBusy: false, changesError: fileFailure(error) };
+        }
+        finally {
+            if (this.#status === request) {
+                this.#status = null;
+                this.changed();
+            }
+        }
+    }
+    async selectChange(path) {
+        const client = this.#client;
+        if (client === null || !this.#state.open)
+            return;
+        this.#diff?.abort();
+        const request = new AbortController();
+        this.#diff = request;
+        this.#state = { ...this.#state, selectedChange: path, diff: null, diffBusy: true, diffError: null };
+        this.changed();
+        try {
+            const diff = await client.gitDiff(path, request.signal);
+            if (this.#diff !== request || request.signal.aborted)
+                return;
+            this.#state = { ...this.#state, diff, diffBusy: false };
+        }
+        catch (error) {
+            if (this.#diff !== request || request.signal.aborted)
+                return;
+            this.#state = { ...this.#state, diffBusy: false, diffError: fileFailure(error) };
+        }
+        finally {
+            if (this.#diff === request) {
+                this.#diff = null;
+                this.changed();
+            }
+        }
     }
     async navigate(path) {
         const client = this.#client;
@@ -176,6 +267,8 @@ export class FilesController {
         this.#list?.abort();
         this.#read?.abort();
         this.#download?.abort();
-        this.#list = this.#read = this.#download = null;
+        this.#status?.abort();
+        this.#diff?.abort();
+        this.#list = this.#read = this.#download = this.#status = this.#diff = null;
     }
 }

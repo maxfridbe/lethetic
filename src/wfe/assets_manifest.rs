@@ -925,6 +925,7 @@ tracked_assets!(
     "src/chat-follow.js",
     "src/files/client.js",
     "src/files/editor.js",
+    "src/files/git.js",
     "src/files/protocol.js",
     "src/files/state.js",
     "src/files/view.js",

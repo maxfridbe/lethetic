@@ -1757,6 +1757,12 @@ pub fn typescript_declarations() -> String {
     declaration!(super::file_contracts::FilesErrorCode);
     declaration!(super::file_contracts::FilesApiError);
     declaration!(super::file_contracts::FilesErrorResponse);
+    declaration!(super::file_contracts::GitChangeKind);
+    declaration!(super::file_contracts::GitChangedFile);
+    declaration!(super::file_contracts::GitStatusRequest);
+    declaration!(super::file_contracts::GitStatusResponse);
+    declaration!(super::file_contracts::GitDiffRequest);
+    declaration!(super::file_contracts::GitDiffResponse);
     declarations.push_str(&format!(
         "export const WFE_MAX_COMMAND_MESSAGE_BYTES = {MAX_COMMAND_MESSAGE_BYTES} as const;\n\n"
     ));

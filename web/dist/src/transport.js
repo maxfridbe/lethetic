@@ -1,7 +1,7 @@
 import { WFE_MAX_COMMAND_MESSAGE_BYTES } from "./generated/contracts.js";
 import { clientContractGate, commandResponseMatchesRequest, parseServerMessage, } from "./protocol.js";
 import { assertNever, newRequestId } from "./safety.js";
-import { FileServiceError, validFilePath } from "./files/protocol.js";
+import { FileServiceError, endpointAllowsRoot, validFilePath } from "./files/protocol.js";
 const MAX_IN_FLIGHT = 64;
 const MAX_OUTGOING_MESSAGE_BYTES = WFE_MAX_COMMAND_MESSAGE_BYTES;
 const MAX_SOCKET_BUFFERED_BYTES = 1024 * 1024;
@@ -327,8 +327,9 @@ export class BrowserTransport {
             !WEBSOCKET_PROTOCOL_PATTERN.test(proof) || globalThis.location.protocol !== "https:") {
             throw new FileServiceError("unavailable");
         }
-        if (!["/api/files/list", "/api/files/read", "/api/files/download", "/api/files/archive"].includes(endpoint) ||
-            !validFilePath(path, endpoint === "/api/files/list" || endpoint === "/api/files/archive")) {
+        if (!["/api/files/list", "/api/files/read", "/api/files/download", "/api/files/archive",
+            "/api/git/status", "/api/git/diff"].includes(endpoint) ||
+            !validFilePath(path, endpointAllowsRoot(endpoint))) {
             throw new FileServiceError("bad_request");
         }
         const body = JSON.stringify({ path });

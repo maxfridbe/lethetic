@@ -11,7 +11,7 @@ import {
   parseServerMessage,
 } from "./protocol.js";
 import { assertNever, newRequestId } from "./safety.js";
-import { FileServiceError, validFilePath } from "./files/protocol.js";
+import { FileServiceError, endpointAllowsRoot, validFilePath } from "./files/protocol.js";
 import type { FileEndpoint } from "./files/protocol.js";
 
 const MAX_IN_FLIGHT = 64;
@@ -467,8 +467,9 @@ export class BrowserTransport {
         !WEBSOCKET_PROTOCOL_PATTERN.test(proof) || globalThis.location.protocol !== "https:") {
       throw new FileServiceError("unavailable");
     }
-    if (!["/api/files/list", "/api/files/read", "/api/files/download", "/api/files/archive"].includes(endpoint) ||
-        !validFilePath(path, endpoint === "/api/files/list" || endpoint === "/api/files/archive")) {
+    if (!["/api/files/list", "/api/files/read", "/api/files/download", "/api/files/archive",
+      "/api/git/status", "/api/git/diff"].includes(endpoint) ||
+        !validFilePath(path, endpointAllowsRoot(endpoint))) {
       throw new FileServiceError("bad_request");
     }
     const body = JSON.stringify({ path });

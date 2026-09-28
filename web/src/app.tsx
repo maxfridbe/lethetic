@@ -49,7 +49,7 @@ import { historyRecallMatches } from "./app/history-recall.js";
 import type { PendingHistoryRecall } from "./app/history-recall.js";
 import { FileClient } from "./files/client.js";
 import { FilesController } from "./files/state.js";
-import { MonacoFileEditor } from "./files/editor.js";
+import { MonacoDiffViewer, MonacoFileEditor } from "./files/editor.js";
 import { renderFilesPane } from "./files/view.js";
 import {
   CHAT_FOLLOW_SCHEDULER,
@@ -151,6 +151,9 @@ export class SpaApplication implements BrowserTransportEvents {
   readonly #fileEditor = new MonacoFileEditor(
     () => this.#showToast("Monaco could not load. Downloads and Copy Path remain available."),
     () => this.#synchronizeChatPosition(this.#remote.view, null),
+  );
+  readonly #diffViewer = new MonacoDiffViewer(
+    () => this.#showToast("Monaco could not load the diff view."),
   );
   #promptRequestVersions = new Map<string, number>();
   #palette: PaletteState | null = null;
@@ -982,6 +985,10 @@ export class SpaApplication implements BrowserTransportEvents {
     const fileHost = this.#filesEnabled && this.#files.state.open
       ? globalThis.document.getElementById("files-monaco") : null;
     this.#fileEditor.sync(fileHost instanceof HTMLElement ? fileHost : null, this.#files.state.preview);
+    const diffHost = this.#filesEnabled && this.#files.state.open
+      ? globalThis.document.getElementById("files-diff-monaco") : null;
+    this.#diffViewer.sync(diffHost instanceof HTMLElement ? diffHost : null,
+      this.#files.state.diff, this.#files.state.diffLayout);
 
     const panel = this.#activePanel();
     const panelKey =
@@ -1128,6 +1135,11 @@ export class SpaApplication implements BrowserTransportEvents {
           refresh: () => { void this.#files.refresh(); },
           download: (archive) => { void this.#files.download(archive); },
           copyPath: () => { void this.#files.copyPath(); },
+          showTab: (tab) => this.#files.showTab(tab),
+          refreshChanges: () => { void this.#files.refreshChanges(); },
+          selectChange: (path) => { void this.#files.selectChange(path); },
+          toggleFolder: (path) => this.#files.toggleFolder(path),
+          setDiffLayout: (layout) => this.#files.setDiffLayout(layout),
         }) : null,
         overlay,
       },

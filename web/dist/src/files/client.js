@@ -1,4 +1,5 @@
-import { FILE_ARCHIVE_BYTES, FILE_DOWNLOAD_BYTES, FILE_JSON_BYTES, FileServiceError, parseFileError, parseFileList, parseFileRead, validFilePath, } from "./protocol.js";
+import { parseGitDiff, parseGitStatus } from "./git.js";
+import { FILE_ARCHIVE_BYTES, FILE_DOWNLOAD_BYTES, FILE_JSON_BYTES, FileServiceError, endpointAllowsRoot, parseFileError, parseFileList, parseFileRead, validFilePath, } from "./protocol.js";
 export async function boundedResponseBytes(response, maximum, signal) {
     const announced = response.headers.get("Content-Length");
     if (announced !== null && (!/^[0-9]+$/u.test(announced) || Number(announced) > maximum)) {
@@ -87,6 +88,22 @@ export class FileClient {
             return value;
         });
     }
+    async gitStatus(signal) {
+        return this.#request("/api/git/status", "", signal, async (response, signal) => {
+            const value = parseGitStatus(await jsonBody(response, FILE_JSON_BYTES, signal));
+            if (value === null)
+                throw new FileServiceError("unavailable");
+            return value;
+        });
+    }
+    async gitDiff(path, signal) {
+        return this.#request("/api/git/diff", path, signal, async (response, signal) => {
+            const value = parseGitDiff(await jsonBody(response, FILE_JSON_BYTES, signal), path);
+            if (value === null)
+                throw new FileServiceError("unavailable");
+            return value;
+        });
+    }
     async download(path, archive, signal) {
         return this.#request(archive ? "/api/files/archive" : "/api/files/download", path, signal, async (response, signal) => {
             const disposition = response.headers.get("Content-Disposition");
@@ -105,7 +122,7 @@ export class FileClient {
         });
     }
     async #request(endpoint, path, signal, consume) {
-        if (!validFilePath(path, endpoint === "/api/files/list" || endpoint === "/api/files/archive")) {
+        if (!validFilePath(path, endpointAllowsRoot(endpoint))) {
             throw new FileServiceError("bad_request");
         }
         if (this.#active >= 2)

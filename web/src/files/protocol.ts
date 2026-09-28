@@ -12,7 +12,12 @@ export const FILE_DOWNLOAD_BYTES = 32 * 1024 * 1024;
 export const FILE_ARCHIVE_BYTES = 64 * 1024 * 1024;
 export const FILE_JSON_BYTES = 16 * 1024 * 1024;
 export type FileEndpoint = "/api/files/list" | "/api/files/read" |
-  "/api/files/download" | "/api/files/archive";
+  "/api/files/download" | "/api/files/archive" | "/api/git/status" | "/api/git/diff";
+
+/** Endpoints whose path may be empty, selecting the launch root. */
+export function endpointAllowsRoot(endpoint: FileEndpoint): boolean {
+  return endpoint === "/api/files/list" || endpoint === "/api/files/archive" || endpoint === "/api/git/status";
+}
 
 const encoder = new TextEncoder();
 

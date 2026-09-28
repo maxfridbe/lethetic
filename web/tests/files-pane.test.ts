@@ -12,6 +12,7 @@ import {
   parseFileRead,
   validFilePath,
 } from "../src/files/protocol.js";
+import { changeRows, parseGitDiff, parseGitStatus } from "../src/files/git.js";
 import { FilesController } from "../src/files/state.js";
 import { renderFilesPane, type FilePaneActions } from "../src/files/view.js";
 import type {
@@ -43,7 +44,8 @@ const json = (value: unknown, options: { status?: number; headers?: Record<strin
   new Response(JSON.stringify(value), { ...options, headers: { "Content-Type": "application/json", ...options.headers } });
 const signal = (): AbortSignal => new AbortController().signal;
 const flush = async (): Promise<void> => { for (let i = 0; i < 6; i += 1) await Promise.resolve(); };
-const actions: FilePaneActions = { toggle() {}, navigate() {}, select() {}, refresh() {}, download() {}, copyPath() {} };
+const actions: FilePaneActions = { toggle() {}, navigate() {}, select() {}, refresh() {}, download() {}, copyPath() {},
+  showTab() {}, refreshChanges() {}, selectChange() {}, toggleFolder() {}, setDiffLayout() {} };
 
 test("file paths and exact response shapes are confined before display", () => {
   for (const path of ["/abs", "..", "a/../b", "a/./b", "a//b", "a/", "C:/x", "a/C:/x", "a\\b", "a\0b", "a\u0085b", "a/".repeat(65) + "x", "x".repeat(4097)]) {
@@ -201,4 +203,51 @@ test("file language detection uses only registered local filename and extension 
   assert.equal(fileLanguage("src/main.rs", languages), "rust");
   assert.equal(fileLanguage("build/Dockerfile", languages), "dockerfile");
   assert.equal(fileLanguage("unknown.binary", languages), "plaintext");
+});
+
+const changed = (path: string, added: number | null, removed: number | null, kind: "added" | "modified" | "deleted" | "untracked" = "modified") =>
+  ({ path, kind, added, removed });
+
+test("git responses are exact and bounded before display", () => {
+  const status = { repository: true, branch: "main", files: [changed("src/a.rs", 1, 2)], truncated: false, protected: 0 };
+  assert.deepEqual(parseGitStatus(status), status);
+  assert.equal(parseGitStatus({ ...status, extra: 1 }), null);
+  assert.equal(parseGitStatus({ ...status, files: [changed("../x", 1, 1)] }), null);
+  assert.equal(parseGitStatus({ ...status, files: [{ ...changed("a", 1, 1), kind: "renamed" }] }), null);
+  assert.equal(parseGitStatus({ ...status, files: [changed("a", 1, 1), changed("a", 2, 2)] }), null);
+  assert.ok(parseGitDiff({ path: "a", original: "x", modified: "y" }, "a"));
+  assert.equal(parseGitDiff({ path: "b", original: "x", modified: "y" }, "a"), null);
+});
+
+test("change tree sums line counts into every folder and honours collapsed folders", () => {
+  const files = [changed("src/deep/b.rs", 3, 1), changed("src/a.rs", 2, 0, "added"),
+    changed("README.md", 1, 1), changed("src/deep/logo.png", null, null)];
+  const rows = changeRows(files, new Set());
+  assert.deepEqual(rows.map((row) => `${"  ".repeat(row.depth)}${row.name} +${row.added} -${row.removed}`), [
+    "src +5 -1",
+    "  deep +3 -1",
+    "    b.rs +3 -1",
+    "    logo.png +null -null",
+    "  a.rs +2 -0",
+    "README.md +1 -1",
+  ]);
+  assert.equal(rows[0]?.files, 3);
+  const collapsed = changeRows(files, new Set(["src/deep"]));
+  assert.deepEqual(collapsed.map((row) => row.path), ["src", "src/deep", "src/a.rs", "README.md"]);
+  assert.equal(collapsed[1]?.added, 3);
+});
+
+test("changes tab renders counts beside every file and folder and a diff host", () => {
+  const controller = new FilesController(() => {}, () => {});
+  const state = { ...controller.state, open: true, tab: "changes" as const,
+    changes: { repository: true, branch: "main", files: [changed("src/a.rs", 4, 2)], truncated: false, protected: 1 } };
+  const pane = renderFilesPane(state, true, actions);
+  const entries = all(pane, (node) => classAttr(node).includes("changes-entry"));
+  assert.equal(entries.length, 2);
+  for (const entry of entries) {
+    assert.ok(find(entry, (node) => classAttr(node) === "changes-added"), "added count");
+    assert.ok(find(entry, (node) => classAttr(node) === "changes-removed"), "removed count");
+  }
+  assert.ok(find(pane, (node) => attr(node, "id") === "files-diff-monaco"));
+  assert.equal(find(pane, (node) => attr(node, "id") === "files-monaco"), null);
 });

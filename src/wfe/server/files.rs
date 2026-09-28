@@ -3,7 +3,7 @@
 use super::ServerState;
 use crate::wfe::file_contracts::{
     FilesArchiveRequest, FilesDownloadRequest, FilesErrorResponse, FilesListRequest,
-    FilesReadRequest, WFE_FILES_READ_CHUNK_BYTES, WFE_FILES_REQUEST_BYTES,
+    FilesReadRequest, GitDiffRequest, GitStatusRequest, WFE_FILES_READ_CHUNK_BYTES, WFE_FILES_REQUEST_BYTES,
 };
 use crate::wfe::files::{FileOperationGuard, FilesError};
 use axum::Router;
@@ -39,6 +39,36 @@ pub(super) fn register(router: Router<Arc<ServerState>>) -> Router<Arc<ServerSta
         .route("/api/files/read", post(read))
         .route("/api/files/download", post(download))
         .route("/api/files/archive", post(archive))
+        .route("/api/git/status", post(git_status))
+        .route("/api/git/diff", post(git_diff))
+}
+
+async fn git_status(State(state): State<Arc<ServerState>>, request: Request) -> Response {
+    let request = match authenticated_json::<GitStatusRequest>(&state, request).await {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let Some(files) = state.files.as_ref() else {
+        return super::plain_response(StatusCode::NOT_FOUND, "not found");
+    };
+    match files.git_status(request, state.cancellation.clone()).await {
+        Ok(operation) => json_operation_response(operation),
+        Err(error) => error_response(error),
+    }
+}
+
+async fn git_diff(State(state): State<Arc<ServerState>>, request: Request) -> Response {
+    let request = match authenticated_json::<GitDiffRequest>(&state, request).await {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let Some(files) = state.files.as_ref() else {
+        return super::plain_response(StatusCode::NOT_FOUND, "not found");
+    };
+    match files.git_diff(request, state.cancellation.clone()).await {
+        Ok(operation) => json_operation_response(operation),
+        Err(error) => error_response(error),
+    }
 }
 
 async fn list(State(state): State<Arc<ServerState>>, request: Request) -> Response {

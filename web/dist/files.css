@@ -191,3 +191,109 @@
   .files-actions { margin-left: 0; }
   .files-toolbar { gap: 0.2rem; }
 }
+
+/* Browse / Changes tabs and the git change tree. */
+.files-tabs {
+  display: inline-flex;
+  gap: 0.2rem;
+}
+
+.files-tabs button.is-active,
+.changes-layout button.is-active {
+  border-color: var(--theme-highlight-fg);
+  font-weight: 600;
+}
+
+.changes-summary {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.changes-entry {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr) auto;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+  gap: 0.3rem;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.changes-entry.is-selected {
+  background: var(--surface-raised);
+}
+
+.changes-entry.is-folder .changes-name {
+  opacity: 0.85;
+}
+
+.changes-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.changes-marker {
+  font-family: monospace;
+  font-weight: 700;
+  text-align: center;
+}
+
+.changes-entry.is-added .changes-marker,
+.changes-entry.is-untracked .changes-marker {
+  color: var(--theme-success-fg);
+}
+
+.changes-entry.is-deleted .changes-marker {
+  color: var(--theme-error-fg);
+}
+
+.changes-entry.is-modified .changes-marker {
+  color: var(--theme-warning-fg);
+}
+
+.changes-counts {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-self: center;
+  font-family: monospace;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.changes-counts.is-binary {
+  opacity: 0.6;
+}
+
+.changes-added {
+  color: var(--theme-success-fg);
+}
+
+.changes-removed {
+  color: var(--theme-error-fg);
+}
+
+.changes-path {
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.changes-layout {
+  display: inline-flex;
+  gap: 0.2rem;
+  margin-left: auto;
+}
+
+.changes-layout button {
+  padding: 0.15rem 0.4rem;
+  font-size: 0.75rem;
+}

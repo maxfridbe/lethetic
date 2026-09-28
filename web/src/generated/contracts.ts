@@ -200,13 +200,53 @@ export type FilesApiError = { code: FilesErrorCode, message: string, retryable: 
 
 export type FilesErrorResponse = { error: FilesApiError, };
 
+export type GitChangeKind = "added" | "modified" | "deleted" | "untracked";
+
+export type GitChangedFile = { 
+/**
+ * Launch-root-relative path.
+ */
+path: string, kind: GitChangeKind, 
+/**
+ * Added and removed line counts; `None` for binary files.
+ */
+added: number | null, removed: number | null, };
+
+export type GitStatusRequest = { 
+/**
+ * Empty selects the whole launch root.
+ */
+path: string, };
+
+export type GitStatusResponse = { 
+/**
+ * False when the launch root is not inside a git work tree.
+ */
+repository: boolean, branch: string | null, files: Array<GitChangedFile>, truncated: boolean, 
+/**
+ * Changed paths hidden by the disclosure policy.
+ */
+protected: number, };
+
+export type GitDiffRequest = { path: string, };
+
+export type GitDiffResponse = { path: string, 
+/**
+ * Content at `HEAD`; empty when the file is new.
+ */
+original: string, 
+/**
+ * Working-tree content; empty when the file was deleted.
+ */
+modified: string, };
+
 export const WFE_MAX_COMMAND_MESSAGE_BYTES = 262144 as const;
 
 export const WFE_MAX_SERVER_MESSAGE_BYTES = 4194304 as const;
 
 export const WFE_PROTOCOL_VERSION = 6 as const;
 
-export const WFE_PROTOCOL_SCHEMA_SHA256 = "f2706dd72fd1c0178b560c74f717b92e61e42eeb94f9937f5e89bd5a19d078ee" as const;
+export const WFE_PROTOCOL_SCHEMA_SHA256 = "dc20a867149a21a0ec8aed5bec04de3e8de21fbe993c60c7a18edc6230540457" as const;
 
 export const COMMAND_ORDER = [
   "hotkeys",

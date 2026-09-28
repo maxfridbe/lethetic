@@ -9,7 +9,7 @@ import { renderChatView } from "./app/chat-view.js";
 import { historyRecallMatches } from "./app/history-recall.js";
 import { FileClient } from "./files/client.js";
 import { FilesController } from "./files/state.js";
-import { MonacoFileEditor } from "./files/editor.js";
+import { MonacoDiffViewer, MonacoFileEditor } from "./files/editor.js";
 import { renderFilesPane } from "./files/view.js";
 import { CHAT_FOLLOW_SCHEDULER, CHAT_WINDOW_SIZE, MAX_DRAFT_LENGTH, MAX_PROMPT_BYTES, THEME_VARIABLES, approvalConfirmationKey, approvalHasHiddenContent, chatScrollMetrics, chatWindowStartForScroll, commandForId, confirmationMatches as retainedConfirmationMatches, confirmedCommand, isChatScrollKey, overlayFocusTransition, overlaySignature, panelData, panelInstanceKey, rebaseChatWindowStart, snapshotOverlaySignature, utf8Length, } from "./app/helpers.js";
 import { handleGlobalKeyDown, handlePaletteKeyDown, } from "./app/keyboard.js";
@@ -49,6 +49,7 @@ export class SpaApplication {
     #filesEnabled = false;
     #files = new FilesController(() => this.#render(), (message) => this.#showToast(message));
     #fileEditor = new MonacoFileEditor(() => this.#showToast("Monaco could not load. Downloads and Copy Path remain available."), () => this.#synchronizeChatPosition(this.#remote.view, null));
+    #diffViewer = new MonacoDiffViewer(() => this.#showToast("Monaco could not load the diff view."));
     #promptRequestVersions = new Map();
     #palette = null;
     #forcedPanel = null;
@@ -758,6 +759,9 @@ export class SpaApplication {
         const fileHost = this.#filesEnabled && this.#files.state.open
             ? globalThis.document.getElementById("files-monaco") : null;
         this.#fileEditor.sync(fileHost instanceof HTMLElement ? fileHost : null, this.#files.state.preview);
+        const diffHost = this.#filesEnabled && this.#files.state.open
+            ? globalThis.document.getElementById("files-diff-monaco") : null;
+        this.#diffViewer.sync(diffHost instanceof HTMLElement ? diffHost : null, this.#files.state.diff, this.#files.state.diffLayout);
         const panel = this.#activePanel();
         const panelKey = panel === null ? null : panelInstanceKey(panel, this.#remote.view);
         const focusKey = panelKey ??
@@ -868,6 +872,11 @@ export class SpaApplication {
                     refresh: () => { void this.#files.refresh(); },
                     download: (archive) => { void this.#files.download(archive); },
                     copyPath: () => { void this.#files.copyPath(); },
+                    showTab: (tab) => this.#files.showTab(tab),
+                    refreshChanges: () => { void this.#files.refreshChanges(); },
+                    selectChange: (path) => { void this.#files.selectChange(path); },
+                    toggleFolder: (path) => this.#files.toggleFolder(path),
+                    setDiffLayout: (layout) => this.#files.setDiffLayout(layout),
                 }) : null,
                 overlay,
             },

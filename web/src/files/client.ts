@@ -1,7 +1,10 @@
-import type { FileExclusionCounts, FilesListResponse, FilesReadResponse } from "../generated/contracts.js";
+import type {
+  FileExclusionCounts, FilesListResponse, FilesReadResponse, GitDiffResponse, GitStatusResponse,
+} from "../generated/contracts.js";
+import { parseGitDiff, parseGitStatus } from "./git.js";
 import {
   FILE_ARCHIVE_BYTES, FILE_DOWNLOAD_BYTES, FILE_JSON_BYTES,
-  FileServiceError, parseFileError, parseFileList, parseFileRead, validFilePath,
+  FileServiceError, endpointAllowsRoot, parseFileError, parseFileList, parseFileRead, validFilePath,
 } from "./protocol.js";
 import type { FileEndpoint } from "./protocol.js";
 
@@ -93,6 +96,22 @@ export class FileClient {
     });
   }
 
+  async gitStatus(signal: AbortSignal): Promise<GitStatusResponse> {
+    return this.#request("/api/git/status", "", signal, async (response, signal) => {
+      const value = parseGitStatus(await jsonBody(response, FILE_JSON_BYTES, signal));
+      if (value === null) throw new FileServiceError("unavailable");
+      return value;
+    });
+  }
+
+  async gitDiff(path: string, signal: AbortSignal): Promise<GitDiffResponse> {
+    return this.#request("/api/git/diff", path, signal, async (response, signal) => {
+      const value = parseGitDiff(await jsonBody(response, FILE_JSON_BYTES, signal), path);
+      if (value === null) throw new FileServiceError("unavailable");
+      return value;
+    });
+  }
+
   async download(path: string, archive: boolean, signal: AbortSignal): Promise<FileDownloadResult> {
     return this.#request(archive ? "/api/files/archive" : "/api/files/download", path, signal,
       async (response, signal) => {
@@ -114,7 +133,7 @@ export class FileClient {
 
   async #request<T>(endpoint: FileEndpoint, path: string, signal: AbortSignal,
     consume: (response: Response, signal: AbortSignal) => Promise<T>): Promise<T> {
-    if (!validFilePath(path, endpoint === "/api/files/list" || endpoint === "/api/files/archive")) {
+    if (!validFilePath(path, endpointAllowsRoot(endpoint))) {
       throw new FileServiceError("bad_request");
     }
     if (this.#active >= 2) throw new FileServiceError("busy");

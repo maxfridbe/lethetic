@@ -114,3 +114,61 @@ pub struct FilesApiError {
 pub struct FilesErrorResponse {
     pub error: FilesApiError,
 }
+
+/// Most changed files one git status response lists.
+pub const WFE_GIT_STATUS_FILES: usize = 1_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum GitChangeKind {
+    Added,
+    Modified,
+    Deleted,
+    Untracked,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct GitChangedFile {
+    /// Launch-root-relative path.
+    pub path: String,
+    pub kind: GitChangeKind,
+    /// Added and removed line counts; `None` for binary files.
+    pub added: Option<u32>,
+    pub removed: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct GitStatusRequest {
+    /// Empty selects the whole launch root.
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct GitStatusResponse {
+    /// False when the launch root is not inside a git work tree.
+    pub repository: bool,
+    pub branch: Option<String>,
+    pub files: Vec<GitChangedFile>,
+    pub truncated: bool,
+    /// Changed paths hidden by the disclosure policy.
+    pub protected: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct GitDiffRequest {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct GitDiffResponse {
+    pub path: String,
+    /// Content at `HEAD`; empty when the file is new.
+    pub original: String,
+    /// Working-tree content; empty when the file was deleted.
+    pub modified: String,
+}
