@@ -89,6 +89,8 @@ server_url: http://brainiac-nvidia:7210/v1/responses
 model: Gemma-4-26B-TurboQuant-262k
 context_size: 262144
 theme: Default
+tool_calls: single        # or sequential: several tool calls per model turn
+background_tasks: notify  # or poll / off
 
 model_servers:
   - id: local-gemma
@@ -456,6 +458,8 @@ Each thinking block shows how long the engine thought, each model reply shows ho
 ### Several tool calls per turn
 
 `tool_calls: single | sequential` in `config.yml` sets how many tool calls one model turn may carry, and **Ctrl+P → Tool Calls** switches it at runtime. `single` (the default) asks providers for one call; a turn that still carries several is rejected with an explanation to the model. `sequential` asks providers to allow several and runs them one after another, each with its own approval, and asks the model again only when every call has a result. Harness warnings raised mid-batch wait until the batch ends. Stopping mid-batch gives each unrun call a "not run" result. Python-only mode always uses `single`.
+
+The system prompt states the rule in one line of its tool-call format section: "Call at most one tool per assistant turn" in `single`, or, in `sequential`, that the model may call several independent tools in one turn, which run in order with all results returned together. Custom prompt templates get this line only if they keep the `[TOOL_CALL_FORMAT]` placeholder.
 
 ### Duplicate tool call detection
 
