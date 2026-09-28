@@ -52,32 +52,10 @@ impl Redactor {
                 .iter()
                 .map(|server| server.url.clone()),
         );
-        raw_values.push(app.cwd.clone());
-        raw_values.push(app.current_dir.clone());
-        if let Some(path) = &app.current_session_dir {
-            raw_values.push(path.clone());
-        }
-        if let Some(binding) = &app.session_directory_binding {
-            raw_values.push(binding.canonical_path.display().to_string());
-        }
-        if let Some(binding) = &app.managed_python_workspace {
-            raw_values.push(binding.canonical_path.display().to_string());
-        }
-        if let Some(binding) = &app.shared_python_workspace {
-            raw_values.push(binding.canonical_path.display().to_string());
-        }
+        // Filesystem paths are not secrets: the browser shows them as-is.
         if let Some(runtime_id) = &app.python_runtime_id {
             raw_values.push(runtime_id.clone());
         }
-        raw_values.push(app.tool_runtime.workspace_root().display().to_string());
-        raw_values.extend(
-            app.config
-                .python_runtime
-                .sandbox
-                .grants
-                .iter()
-                .map(|grant| grant.path.display().to_string()),
-        );
 
         let mut values = Vec::new();
         for value in raw_values {
@@ -205,9 +183,6 @@ fn scrub_sensitive_patterns(value: &str) -> String {
     static JWT: OnceLock<regex::Regex> = OnceLock::new();
     static URL: OnceLock<regex::Regex> = OnceLock::new();
     static PODMAN_CONTAINER_ID: OnceLock<regex::Regex> = OnceLock::new();
-    static WINDOWS_PATH: OnceLock<regex::Regex> = OnceLock::new();
-    static UNIX_PATH: OnceLock<regex::Regex> = OnceLock::new();
-    static TRACEBACK_FRAME: OnceLock<regex::Regex> = OnceLock::new();
 
     let secret = expression(
         &SECRET,
@@ -223,92 +198,13 @@ fn scrub_sensitive_patterns(value: &str) -> String {
         &PODMAN_CONTAINER_ID,
         r"\b(Podman container)\s+[0-9A-Fa-f]{12,128}\b",
     );
-    let windows_path = expression(&WINDOWS_PATH, r#"\b[A-Za-z]:[\\/][^\s\"'<>]+"#);
-    let unix_path = expression(
-        &UNIX_PATH,
-        r#"(^|[\s(\[{'\"=:])/(?:[^/\s\"'<>),;\]}]+/)*[^/\s\"'<>),;\]}]*"#,
-    );
-    let traceback_frame = expression(
-        &TRACEBACK_FRAME,
-        r#"^\s*File\s+\"(?P<path>/(?:[^/\"\r\n]+/)*[^/\"\r\n]+\.py)\",\s+line\s+\d+(?:,\s+in\s+[^\r\n]+)?\s*$"#,
-    );
 
     let value = bearer.replace_all(value, "Bearer [REDACTED]");
     let value = secret.replace_all(&value, "$1=[REDACTED]");
     let value = jwt.replace_all(&value, "[REDACTED-CREDENTIAL]");
     let value = url.replace_all(&value, "[REDACTED-URL]");
     let value = podman_container_id.replace_all(&value, "$1 [REDACTED-CONTAINER-ID]");
-    let value = windows_path.replace_all(&value, "[REDACTED-PATH]");
-    let value = scrub_unix_paths(&value, unix_path, traceback_frame);
     scrub_opaque_candidates(&value)
-}
-
-fn scrub_unix_paths(
-    value: &str,
-    unix_path: &regex::Regex,
-    traceback_frame: &regex::Regex,
-) -> String {
-    let mut scrubbed = String::with_capacity(value.len());
-    for line in value.split_inclusive('\n') {
-        let frame = line.trim_end_matches(['\r', '\n']);
-        let allowed_path = traceback_frame
-            .captures(frame)
-            .and_then(|captures| captures.name("path"))
-            .map(|path| path.as_str())
-            .filter(|path| is_public_stdlib_path(path));
-        let replaced = unix_path.replace_all(line, |captures: &regex::Captures<'_>| {
-            let complete = captures.get(0).map_or("", |matched| matched.as_str());
-            let prefix = captures.get(1).map_or("", |matched| matched.as_str());
-            let path = complete.strip_prefix(prefix).unwrap_or(complete);
-            if allowed_path == Some(path) {
-                complete.to_string()
-            } else {
-                format!("{prefix}[REDACTED-PATH]")
-            }
-        });
-        scrubbed.push_str(&replaced);
-    }
-    scrubbed
-}
-
-fn is_public_stdlib_path(path: &str) -> bool {
-    if !path.ends_with(".py") || path.contains("//") || path.contains('\\') {
-        return false;
-    }
-    let components = path.split('/').skip(1).collect::<Vec<_>>();
-    if components
-        .iter()
-        .any(|component| component.is_empty() || matches!(*component, "." | ".."))
-    {
-        return false;
-    }
-    let python_index = match components.as_slice() {
-        ["usr", "lib", ..] | ["usr", "lib64", ..] => 2,
-        ["usr", "local", "lib", ..] => 3,
-        _ => return false,
-    };
-    let Some(version) = components
-        .get(python_index)
-        .and_then(|component| component.strip_prefix("python"))
-    else {
-        return false;
-    };
-    let mut version_parts = version.split('.');
-    if !version_parts
-        .next()
-        .is_some_and(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
-        || !version_parts
-            .next()
-            .is_some_and(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
-        || version_parts.next().is_some()
-    {
-        return false;
-    }
-    let library_path = &components[python_index + 1..];
-    !library_path.is_empty()
-        && !library_path
-            .iter()
-            .any(|component| matches!(*component, "site-packages" | "dist-packages"))
 }
 
 fn scrub_opaque_candidates(value: &str) -> String {
@@ -346,6 +242,14 @@ fn scrub_opaque_candidates(value: &str) -> String {
 fn should_redact_opaque_candidate(candidate: &str) -> bool {
     if recognized_credential_prefix(candidate) {
         return candidate.len() >= 16;
+    }
+    // Paths are shown as-is: judge each segment on its own so a genuine
+    // high-entropy token inside a path is still caught.
+    if candidate.starts_with('/') || candidate.matches('/').count() >= 2 {
+        return candidate
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .any(should_redact_opaque_candidate);
     }
     if candidate.len() < 32
         || is_canonical_uuid(candidate)
@@ -497,7 +401,7 @@ mod tests {
         let scrubbed = scrub_sensitive_patterns(&notice);
         assert!(!scrubbed.contains(container_id));
         assert!(scrubbed.contains("Podman container [REDACTED-CONTAINER-ID]"));
-        assert!(scrubbed.contains("[REDACTED-PATH]"));
+        assert!(scrubbed.contains("/private/work"), "paths are not redacted");
         assert_eq!(scrub_sensitive_patterns(container_id), container_id);
     }
 
@@ -519,24 +423,13 @@ mod tests {
     }
 
     #[test]
-    fn only_normalized_public_stdlib_traceback_frames_keep_paths() {
-        let public = concat!(
-            "  File \"/usr/lib/python3.13/pathlib.py\", line 540, in __str__\n",
-            "  File \"/usr/lib64/python3.12/json/decoder.py\", line 10, in decode\n",
-            "  File \"/usr/local/lib/python3.11/asyncio/base_events.py\", line 1, in run\n"
-        );
-        assert_eq!(scrub_sensitive_patterns(public), public);
-
-        for private in [
+    fn filesystem_paths_are_shown_unchanged() {
+        for text in [
             "  File \"/home/example/.venv/lib/python3.13/site-packages/pkg/main.py\", line 1, in run",
-            "  File \"/usr/local/lib/python3.13/site-packages/pkg/main.py\", line 1, in run",
-            "  File \"/usr/lib/python3.13/../private.py\", line 1, in run",
-            "Read /usr/lib/python3.13/pathlib.py directly",
+            "wrote /var/home/user/Dev/test/src/main.rs",
+            "C:\\Users\\me\\project\\main.rs",
         ] {
-            let scrubbed = scrub_sensitive_patterns(private);
-            assert!(scrubbed.contains("[REDACTED-PATH]"), "{private}");
-            assert!(!scrubbed.contains("/usr/lib/python3.13/../private.py"));
-            assert!(!scrubbed.contains("/home/example"));
+            assert_eq!(scrub_sensitive_patterns(text), text);
         }
     }
 

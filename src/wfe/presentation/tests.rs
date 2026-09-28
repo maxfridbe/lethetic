@@ -1,6 +1,9 @@
 use super::*;
 use crate::config::Config;
 
+/// A credential-shaped value the browser projection must never show.
+const TEST_TOKEN: &str = "ghp_Pr1vAteT0kenAbCdEfGhIjKlMnOpQrStUv12";
+
 #[test]
 fn themes_have_unique_safe_ids_and_normalized_colors() {
     let themes = theme_catalog();
@@ -33,7 +36,7 @@ fn themes_have_unique_safe_ids_and_normalized_colors() {
 }
 
 #[test]
-fn snapshot_projection_redacts_known_secrets_endpoints_and_paths() {
+fn snapshot_projection_redacts_known_secrets_and_endpoints_but_shows_paths() {
     let config = Config {
         api_key: Some("api-secret-value".to_string()),
         server_url: "https://private.example.invalid/v1".to_string(),
@@ -74,10 +77,10 @@ fn snapshot_projection_redacts_known_secrets_endpoints_and_paths() {
     let json = serde_json::to_string(&snapshot).unwrap();
     assert!(!json.contains("api-secret-value"));
     assert!(!json.contains("private.example.invalid"));
-    assert!(!json.contains("/home/private/project"));
+    assert!(json.contains("/home/private/project"));
     assert!(!json.contains("private-turn-id"));
     assert!(!json.contains("controller-secret"));
-    assert!(!json.contains("/etc/private/config"));
+    assert!(json.contains("/etc/private/config"));
     assert!(!json.contains("unregistered.internal"));
     assert!(!json.contains("hunter2"));
     assert!(!json.contains(prompt_excerpt));
@@ -193,7 +196,7 @@ fn redacted_fenced_json_reports_redaction_without_fake_truncation() {
     app.blocks.push(RenderBlock {
         duration_ms: None,
         block_type: BlockType::Text,
-        content: "```json\n{\"path\":\"/etc/private/data\"}\n```".to_string(),
+        content: format!("```json\n{{\"token\":\"{TEST_TOKEN}\"}}\n```"),
         title: None,
         success: None,
         prompt_tokens: None,
@@ -209,8 +212,8 @@ fn redacted_fenced_json_reports_redaction_without_fake_truncation() {
     let block = snapshot.blocks.blocks.last().unwrap();
     assert!(block.content_loss.redacted);
     assert_eq!(block.content_loss.truncation, None);
-    assert!(block.content.contains("[REDACTED-PATH]"));
-    assert!(!block.content.contains("/etc/private/data"));
+    assert!(block.content.contains("[REDACTED-OPAQUE]"));
+    assert!(!block.content.contains(TEST_TOKEN));
 }
 
 #[test]
@@ -244,7 +247,7 @@ fn runtime_notice_never_projects_a_raw_podman_container_id() {
             .content
             .contains("Podman container [REDACTED-CONTAINER-ID]")
     );
-    assert!(block.content.contains("[REDACTED-PATH]"));
+    assert!(block.content.contains("/private/work"));
 }
 
 #[test]
@@ -281,7 +284,7 @@ fn rendered_runtime_notice_projects_only_the_validated_operational_name() {
     let block = snapshot.blocks.blocks.last().unwrap();
     assert!(block.content.contains(container_name));
     assert!(!block.content.contains(&container_id));
-    assert!(block.content.contains("[REDACTED-PATH]"));
+    assert!(block.content.contains("/private/work"));
 }
 
 #[test]
@@ -374,13 +377,13 @@ fn incomplete_python_source_uses_an_explicit_invalid_safe_projection() {
 }
 
 #[test]
-fn tool_blocks_are_structured_and_path_redacted() {
+fn tool_blocks_are_structured_and_secret_redacted() {
     let config = Config::default();
     let mut app = App::new(&config);
     app.blocks.push(RenderBlock {
         duration_ms: None,
         block_type: BlockType::ToolCall,
-        content: r#"call:python{"code":"open('/etc/private/data')","description":"Inspect data","tool_call_id":"private-provider-id"}"#.to_string(),
+        content: format!(r#"call:python{{"code":"open('/etc/private/data'); token = '{TEST_TOKEN}'","description":"Inspect data","tool_call_id":"private-provider-id"}}"#),
         title: Some("Python".to_string()),
         success: None,
         prompt_tokens: None,
@@ -401,7 +404,8 @@ fn tool_blocks_are_structured_and_path_redacted() {
     assert!(tool.payload_loss.redacted);
     assert_eq!(tool.payload_loss.truncation, None);
     assert!(serde_json::from_str::<serde_json::Value>(&tool.payload).is_ok());
-    assert!(!tool.payload.contains("/etc/private/data"));
+    assert!(tool.payload.contains("/etc/private/data"));
+    assert!(!tool.payload.contains(TEST_TOKEN));
     assert!(!tool.payload.contains("description"));
     assert!(!tool.payload.contains("private-provider-id"));
 }
@@ -417,7 +421,7 @@ fn redacted_tool_result_retains_complete_markdown_payload() {
         duration_ms: None,
         block_type: BlockType::ToolResult,
         content: format!(
-            "# Repository Overview: `{private_root}`\n\n## Directory Structure\n```text\nproject/\n└── src/\n```\n\nTail retained."
+            "# Repository Overview: `{private_root}` {TEST_TOKEN}\n\n## Directory Structure\n```text\nproject/\n└── src/\n```\n\nTail retained."
         ),
         title: Some("repo_overview: result".to_string()),
         success: Some(true),
@@ -442,11 +446,12 @@ fn redacted_tool_result_retains_complete_markdown_payload() {
     assert!(tool.payload.contains("# Repository Overview"));
     assert!(tool.payload.contains("```text"));
     assert!(tool.payload.contains("Tail retained."));
-    assert!(!tool.payload.contains(private_root));
+    assert!(tool.payload.contains(private_root));
+    assert!(!tool.payload.contains(TEST_TOKEN));
 }
 
 #[test]
-fn successful_scrubbed_python_result_preserves_harmless_text_and_public_traceback_frames() {
+fn successful_scrubbed_python_result_preserves_harmless_text_and_traceback_paths() {
     let config = Config::default();
     let mut app = App::new(&config);
     let private_root = "/home/example/private-workspace";
@@ -460,9 +465,9 @@ fn successful_scrubbed_python_result_preserves_harmless_text_and_public_tracebac
                 "harmless_keyword_assignment_identifier = True\n",
                 "  File \"/usr/lib/python3.13/pathlib.py\", line 540, in __str__\n",
                 "  File \"/home/example/.venv/lib/python3.13/site-packages/pkg/main.py\", line 1, in run\n",
-                "workspace={}\n"
+                "workspace={} token={}\n"
             ),
-            private_root
+            private_root, TEST_TOKEN
         ),
         title: Some("python: result".to_string()),
         success: Some(true),
@@ -489,8 +494,9 @@ fn successful_scrubbed_python_result_preserves_harmless_text_and_public_tracebac
             .contains("harmless_keyword_assignment_identifier = True")
     );
     assert!(tool.payload.contains("/usr/lib/python3.13/pathlib.py"));
-    assert!(!tool.payload.contains("/home/example"));
-    assert!(tool.payload.contains("[REDACTED-PATH]") || tool.payload.contains("[REDACTED]"));
+    assert!(tool.payload.contains("/home/example/.venv/lib/python3.13/site-packages/pkg/main.py"));
+    assert!(tool.payload.contains(private_root));
+    assert!(!tool.payload.contains(TEST_TOKEN));
     assert!(tool.payload_loss.redacted);
     assert_eq!(tool.payload_loss.truncation, None);
 }
@@ -690,7 +696,7 @@ fn panel_data_is_typed_bounded_and_redacted() {
             panel_data: Some(PanelDataView::InputHistory {
                 entries: vec![HistoryEntryView {
                     entry_id: "history-1".to_string(),
-                    label: "read /etc/private/data from https://internal.invalid".to_string(),
+                    label: format!("read /etc/private/data from https://internal.invalid with {TEST_TOKEN}"),
                 }],
                 has_more: false,
             }),
@@ -702,7 +708,8 @@ fn panel_data_is_typed_bounded_and_redacted() {
         panic!("expected history panel data");
     };
     assert_eq!(entries.len(), 1);
-    assert!(!entries[0].label.contains("/etc/private/data"));
+    assert!(entries[0].label.contains("/etc/private/data"));
+    assert!(!entries[0].label.contains(TEST_TOKEN));
     assert!(!entries[0].label.contains("internal.invalid"));
 }
 
@@ -768,7 +775,7 @@ fn redacted_approval_preview_keeps_bound_decisions() {
     let mut app = App::new(&config);
     app.show_session_manager = false;
     app.show_approval_prompt = true;
-    let original_path = "/etc/private/approval-secret";
+    let original_secret = TEST_TOKEN;
     let snapshot = project_app(
         &app,
         ProjectionContext {
@@ -778,7 +785,7 @@ fn redacted_approval_preview_keeps_bound_decisions() {
                 tool_call_id: "tool-call-1".to_string(),
                 tool_name: "python".to_string(),
                 description: "Review exact code".to_string(),
-                preview: format!("open('{original_path}')"),
+                preview: format!("open('/etc/private/data', token='{original_secret}')"),
                 preview_redacted: false,
                 preview_truncated: false,
                 can_view_original: true,
@@ -794,7 +801,7 @@ fn redacted_approval_preview_keeps_bound_decisions() {
     let approval = snapshot.pending_approval.unwrap();
     assert!(approval.preview_redacted, "redaction must be reported");
     assert!(!approval.preview_truncated);
-    assert!(!approval.preview.contains(original_path));
+    assert!(!approval.preview.contains(original_secret));
     assert!(!approval.can_view_original);
     assert_eq!(
         approval.allowed_decisions,
@@ -855,7 +862,7 @@ fn combined_approval_redaction_and_truncation_are_distinct() {
     let mut app = App::new(&config);
     app.show_session_manager = false;
     app.show_approval_prompt = true;
-    let original_path = "/etc/private/approval-secret";
+    let original_secret = TEST_TOKEN;
     let snapshot = project_app(
         &app,
         ProjectionContext {
@@ -866,7 +873,7 @@ fn combined_approval_redaction_and_truncation_are_distinct() {
                 tool_name: "write_file".to_string(),
                 description: "Review complete content".to_string(),
                 preview: format!(
-                    "path={original_path}\n{}",
+                    "token={original_secret}\n{}",
                     "safe text ".repeat(MAX_WEB_APPROVAL_PREVIEW_BYTES)
                 ),
                 preview_redacted: false,
@@ -884,7 +891,7 @@ fn combined_approval_redaction_and_truncation_are_distinct() {
     let approval = snapshot.pending_approval.unwrap();
     assert!(approval.preview_redacted);
     assert!(approval.preview_truncated);
-    assert!(!approval.preview.contains(original_path));
+    assert!(!approval.preview.contains(original_secret));
     assert!(!approval.can_view_original);
     assert!(
         approval

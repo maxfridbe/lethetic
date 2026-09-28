@@ -329,7 +329,7 @@ fn history_recall_returns_only_complete_lossless_bounded_originals() {
     app.input = "server draft".to_string();
     app.backbuffer = "server backbuffer".to_string();
     let long_original = "界".repeat(2_000);
-    let redacted = "read /etc/private/history-secret".to_string();
+    let redacted = "read ghp_HiStOrYT0kenAbCdEfGhIjKlMnOpQrStUv12".to_string();
     let oversized = "x".repeat(MAX_PROMPT_BYTES + 1);
     app.history = vec![oversized.clone(), redacted.clone(), long_original.clone()];
     let (_, runtime) = WfeRuntime::new(&app, Vec::new()).unwrap();
@@ -461,14 +461,14 @@ async fn hidden_approval_requires_acknowledgment_but_deny_remains_immediate() {
     let mut app = App::new(&Config::default());
     app.show_session_manager = false;
     app.show_approval_prompt = true;
-    let original_path = "/etc/private/approval-secret";
+    let original_secret = "ghp_ApPrOvAlT0kenAbCdEfGhIjKlMnOpQrStUv12";
     app.pending_tool_call = Some(crate::context::ToolCall {
         id: "tool-call-lossy".to_string(),
         provider_id: Some("provider-private".to_string()),
         function: crate::context::FunctionCall {
             name: "python".to_string(),
             arguments: serde_json::json!({
-                "code": format!("open('{original_path}')"),
+                "code": format!("open('{original_secret}')"),
                 "description": "Review exact code"
             }),
         },
@@ -483,7 +483,7 @@ async fn hidden_approval_requires_acknowledgment_but_deny_remains_immediate() {
         .unwrap();
     assert!(approval.preview_redacted);
     assert!(!approval.preview_truncated);
-    assert!(!approval.preview.contains(original_path));
+    assert!(!approval.preview.contains(original_secret));
     assert!(!approval.can_view_original);
     assert_eq!(
         approval.allowed_decisions,
@@ -568,7 +568,7 @@ async fn acknowledged_redacted_approval_is_admitted() {
         function: crate::context::FunctionCall {
             name: "python".to_string(),
             arguments: serde_json::json!({
-                "code": "open('/etc/private/approval-secret')",
+                "code": "open('ghp_ApPrOvAlT0kenAbCdEfGhIjKlMnOpQrStUv12')",
                 "description": "Review exact code"
             }),
         },
@@ -876,14 +876,14 @@ async fn lossy_question_is_visible_but_cannot_be_answered_remotely() {
     let mut app = App::new(&Config::default());
     app.show_session_manager = false;
     app.is_asking_user = true;
-    let original_path = "/etc/private/question-secret";
+    let original_secret = "ghp_QuEsTiOnT0kenAbCdEfGhIjKlMnOpQrStUv12";
     app.pending_tool_call = Some(crate::context::ToolCall {
         id: "question-call-lossy".to_string(),
         provider_id: Some("provider-private".to_string()),
         function: crate::context::FunctionCall {
             name: "ask_the_user".to_string(),
             arguments: serde_json::json!({
-                "question": format!("Should I read {original_path}?")
+                "question": format!("Should I read {original_secret}?")
             }),
         },
     });
@@ -900,7 +900,7 @@ async fn lossy_question_is_visible_but_cannot_be_answered_remotely() {
         question.questions[0].prompt,
         crate::wfe::presentation::QUESTION_PREVIEW_UNAVAILABLE
     );
-    assert!(!question.questions[0].prompt.contains(original_path));
+    assert!(!question.questions[0].prompt.contains(original_secret));
     assert!(!question.questions[0].allows_other);
 
     let response = frontend

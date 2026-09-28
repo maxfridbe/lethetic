@@ -74,7 +74,7 @@ function approval(overrides: Partial<PendingApprovalView> = {}): PendingApproval
     tool_call_id: "tool-call-1",
     tool_name: "write_file",
     description: "Review write",
-    preview: '{\n  "path": "[REDACTED-PATH]"\n}',
+    preview: '{\n  "path": "[REDACTED-OPAQUE]"\n}',
     preview_redacted: true,
     preview_truncated: false,
     can_view_original: false,
@@ -1042,7 +1042,7 @@ test("visible chat allocates exact JSON demand before large prose", () => {
     estimated_cost: null,
     duration_label: null,
   });
-  const tinyPayload = '{"path":"[REDACTED-PATH]"}';
+  const tinyPayload = '{"path":"[REDACTED-OPAQUE]"}';
   const tinyDemand = inspectJson(tinyPayload);
   assert.ok(tinyDemand.status === "valid");
   const redactedCall = toolBlock("call", tinyPayload, {
