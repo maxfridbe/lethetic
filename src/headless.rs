@@ -346,7 +346,23 @@ async fn execute_tool_calls(
     }
 
     context.set_cwd(current_dir.clone());
+    refresh_todo_summary(context, &[tool_runtime.workspace_root(), Path::new(current_dir)]);
     Ok(())
+}
+
+/// Gives the agent the shared todo list, as the interactive session has it:
+/// every tool call must name the item it serves.
+fn refresh_todo_summary(context: &mut ContextManager, roots: &[&Path]) {
+    for root in roots {
+        if let Ok(snapshot) =
+            crate::todo_store::TodoStore::open(root).and_then(|store| store.get())
+            && (!snapshot.todos.is_empty() || snapshot.revision > 0)
+        {
+            context.set_todo_summary(crate::app::render_todo_context(&snapshot));
+            return;
+        }
+    }
+    context.set_todo_summary(None);
 }
 
 #[derive(Debug, Clone)]
@@ -557,6 +573,7 @@ pub async fn run_agent_accounted_with_runtime(
         context.set_messages(initial_messages);
     }
     context.set_cwd(cwd.clone());
+    refresh_todo_summary(&mut context, &[tool_runtime.workspace_root(), Path::new(&cwd)]);
     if add_initial_user_message {
         context.add_message("user", &prompt);
         if let Some(hook) = &transcript_hook {
@@ -1240,4 +1257,25 @@ mod tests {
         let textual = Config::default();
         assert!(find_legacy_text_tool_call(&textual, marker, true).is_some());
     }
+
+    #[test]
+    fn sub_agents_receive_the_shared_todo_list() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = crate::todo_store::TodoStore::open(directory.path()).unwrap();
+        store
+            .replace_current(
+                crate::todo_store::TodoStore::parse_todos(&serde_json::json!([
+                    {"id": "beta", "content": "Beta task", "status": "pending", "priority": "high"}
+                ]))
+                .unwrap(),
+            )
+            .unwrap();
+        let mut context = ContextManager::new(100_000, None);
+        refresh_todo_summary(&mut context, &[directory.path()]);
+        context.add_message("user", "go");
+        let prepared = context.prepare_api_context();
+        let text = prepared.messages().last().unwrap().content.text();
+        assert!(text.contains("- beta: [pending] (high) Beta task"), "{text}");
+    }
+
 }

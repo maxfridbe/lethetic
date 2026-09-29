@@ -1,6 +1,7 @@
 mod accounting;
 mod commands;
 mod compaction;
+pub(crate) use compaction::render_todo_context;
 mod input;
 mod lifecycle;
 mod model_catalog;

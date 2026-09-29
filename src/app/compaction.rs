@@ -188,6 +188,12 @@ impl App {
         source_session_id: &str,
         summary: String,
     ) -> Result<String, String> {
+        // The summary rarely restates the plan; carry the todo list itself so
+        // the new session keeps working the same items under the same ids.
+        self.refresh_todos();
+        let plan = render_todo_context(&self.todos)
+            .map(|todos| format!("\n\n{todos}"))
+            .unwrap_or_default();
         let source_path = self.session_path_for_id(source_session_id)?;
         let source_label = std::path::Path::new(&source_path)
             .file_name()
@@ -207,7 +213,7 @@ impl App {
             .to_string();
 
         let context_user_content = format!(
-            "Context from compacted session ({}):\n\n{}",
+            "Context from compacted session ({}):\n\n{}{plan}",
             source_label, summary
         );
         let messages = vec![
@@ -248,6 +254,13 @@ impl App {
             model_name: original.model_name,
             system_prompt: original.system_prompt,
             hide_thinking: original.hide_thinking,
+            // Settings the session was using carry over like the model does.
+            python_policy: original.python_policy,
+            loop_mode: original.loop_mode,
+            remote_control: original.remote_control,
+            remote_control_open: original.remote_control_open,
+            remote_control_files: original.remote_control_files,
+            tool_use_counts: original.tool_use_counts,
             ..Default::default()
         };
         let written = state
@@ -274,11 +287,12 @@ pub(crate) fn render_todo_context(snapshot: &crate::todo_store::TodoSnapshot) ->
         return None;
     }
     let mut text = String::from(
-        "<todos>\nYour current plan. Keep it updated with todowrite as you finish or change steps.\n",
+        "<todos>\nYour current plan. Name the id of the item each tool call serves in its todo_id, and keep the list updated with todowrite (resend every item, keeping ids) as you finish or change steps.\n",
     );
     for todo in snapshot.todos.iter().take(MAX_ITEMS) {
+        let id = todo.id.as_deref().unwrap_or("no-id");
         text.push_str(&format!(
-            "- [{}] ({}) {}\n",
+            "- {id}: [{}] ({}) {}\n",
             todo.status.as_str(),
             todo.priority.as_str(),
             todo.content
@@ -423,6 +437,23 @@ mod timing_tests {
                 .unwrap()
                 .starts_with("tool call took")
         );
+    }
+
+    #[test]
+    fn the_plan_block_names_every_item_id() {
+        use crate::todo_store::{TodoItem, TodoPriority, TodoSnapshot, TodoStatus};
+        let snapshot = TodoSnapshot {
+            revision: 3,
+            todos: vec![TodoItem {
+                id: Some("fix_plane".to_string()),
+                content: "Fix normal binding".to_string(),
+                status: TodoStatus::InProgress,
+                priority: TodoPriority::High,
+            }],
+        };
+        let block = super::render_todo_context(&snapshot).unwrap();
+        assert!(block.contains("- fix_plane: [in_progress] (high) Fix normal binding"), "{block}");
+        assert!(block.contains("todo_id"));
     }
 
     #[test]

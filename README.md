@@ -461,7 +461,7 @@ When a model request fails for a transient reason, Lethetic discards any partial
 
 ### Plan tracking
 
-Every tool call except `todowrite` carries a required `todo_id` naming the todo item it serves. After each call the harness checks `.lethetic/todos.json` and appends a **HARNESS WARNING** to the tool result when the id is missing, unknown, or already completed/cancelled, so the model keeps its plan accurate. `todowrite` items need ids (missing ones are assigned `t1`, `t2`, …). The current list travels with the latest message as a `<todos>` block, and F9 shows it.
+Every tool call except `todowrite` carries a required `todo_id` naming the todo item it serves. After each call the harness checks `.lethetic/todos.json` and appends a **HARNESS WARNING** to the tool result when the id is missing, unknown, or already completed/cancelled, so the model keeps its plan accurate. `todowrite` items need ids (missing ones are assigned `t1`, `t2`, …). The current list travels with the latest message as a `<todos>` block that names each item's id, so the model can reference items even after compaction, and F9 shows it. Sub-agents see the same list.
 
 ### Timing
 
@@ -534,7 +534,7 @@ These keys describe the terminal UI. Browser palette accelerators, editable-targ
 | Toggle Background Tasks | Show/hide the background tasks pane (F8) |
 | Tool Calls: one per turn / several per turn | Switch between one tool call per model turn and several run in order |
 | Background Tasks: notify / poll only / off | Cycle whether the model may start background tasks and whether their finishes wake it |
-| Sessions | Load, resume, compact, or delete sessions. Each entry shows its model, Agent Mode and remote control on a second line; resuming restores those settings (launch flags still win). If the session had remote control and none is running, a prompt shows its address, access mode and file sharing and asks whether to start it again: **Enter/y** starts it (a new token is issued), **e** opens the setup with those settings filled in, **Esc/n** skips. **C** compacts the selected session: pick any configured model, the log is summarised in parallel windows with a streaming merge, and the result is saved as a new resumable session that inherits the source's model, prompt, theme, history, and cost |
+| Sessions | Load, resume, compact, or delete sessions. Each entry shows its model, Agent Mode and remote control on a second line; resuming restores those settings (launch flags still win). If the session had remote control and none is running, a prompt shows its address, access mode and file sharing and asks whether to start it again: **Enter/y** starts it (a new token is issued), **e** opens the setup with those settings filled in, **Esc/n** skips. **C** compacts the selected session: pick any configured model, the log is summarised in parallel windows with a streaming merge, and the result is saved as a new resumable session that inherits the source's model, prompt, theme, history, cost, Agent Mode, loop-detection mode, tool-use counts and remote-control settings, and opens with the current todo list |
 | Name/Rename Session | Set display-only durable session metadata without changing its UUID or path |
 | Latest Files | View and manage file context cache |
 | Models | Switch between configured model servers |
