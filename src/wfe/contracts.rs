@@ -190,6 +190,15 @@ pub enum WebCommand {
         session_id: String,
         mode_id: String,
     },
+    /// Turn a found skill on or off (saved in the user's skills settings).
+    SetSkillEnabled {
+        skill_id: String,
+        enabled: bool,
+    },
+    /// Install a catalog skill into the user skill folder.
+    InstallSkill {
+        entry_id: String,
+    },
     SetAgentMode {
         session_id: String,
         mode_id: String,
@@ -242,6 +251,8 @@ impl WebCommand {
             "wipe_sessions" | "quit" => &["confirmed", "confirmation_id"],
             "select_history_entry" => &["session_id", "entry_id"],
             "select_latest_file" => &["session_id", "file_id"],
+            "set_skill_enabled" => &["skill_id", "enabled"],
+            "install_skill" => &["entry_id"],
             "select_system_prompt" => &["session_id", "prompt_id"],
             "save_system_prompt" => &[
                 "session_id",
@@ -277,6 +288,8 @@ impl WebCommand {
             Self::SelectSystemPrompt { .. } => "select_system_prompt",
             Self::SaveSystemPrompt { .. } => "save_system_prompt",
             Self::SetLoopDetection { .. } => "set_loop_detection",
+            Self::SetSkillEnabled { .. } => "set_skill_enabled",
+            Self::InstallSkill { .. } => "install_skill",
             Self::SetAgentMode { .. } => "set_agent_mode",
             Self::RunLspAction { .. } => "run_lsp_action",
             Self::ClearContext { .. } => "clear_context",
@@ -409,6 +422,12 @@ impl WebCommand {
             } => {
                 validate_session_id(session_id)?;
                 validate_wire_id("file id", file_id, MAX_CHOICE_ID_BYTES)
+            }
+            Self::SetSkillEnabled { skill_id, .. } => {
+                validate_wire_id("skill id", skill_id, MAX_CHOICE_ID_BYTES)
+            }
+            Self::InstallSkill { entry_id } => {
+                validate_wire_id("skill catalog id", entry_id, MAX_CHOICE_ID_BYTES)
             }
             Self::SelectSystemPrompt {
                 session_id,
@@ -1143,6 +1162,7 @@ pub enum PanelId {
     ToolApproval,
     AskUser,
     Confirmation,
+    Skills,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -1259,6 +1279,35 @@ pub enum PanelDataView {
     Confirmation {
         confirmation: ConfirmationView,
     },
+    Skills {
+        skills: Vec<SkillChoiceView>,
+        catalog: Vec<SkillCatalogView>,
+        message: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct SkillChoiceView {
+    pub skill_id: String,
+    pub name: String,
+    pub description: String,
+    /// The folder it was found in, e.g. `.lethetic/skills`.
+    pub source: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct SkillCatalogView {
+    pub entry_id: String,
+    pub name: String,
+    pub summary: String,
+    /// The skill's folder in Anthropic's skills repository.
+    pub url: String,
+    pub proprietary: bool,
+    pub installed: bool,
+    pub installing: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -1762,6 +1811,8 @@ pub fn typescript_declarations() -> String {
     declaration!(DebuggerView);
     declaration!(HistoryEntryView);
     declaration!(FileChoiceView);
+    declaration!(SkillChoiceView);
+    declaration!(SkillCatalogView);
     declaration!(SystemPromptChoiceView);
     declaration!(ModeChoiceView);
     declaration!(LspServerStateView);

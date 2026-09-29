@@ -569,6 +569,7 @@ export class SpaApplication {
             case "toggle-background-tasks":
             case "background-mode":
             case "tool-call-mode":
+            case "skills":
                 this.#send({ type: "invoke_command", command_id: command.id });
                 return;
             default:

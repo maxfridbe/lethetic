@@ -575,6 +575,89 @@ function nameSessionPanel(
   );
 }
 
+function skillsPanel(
+  context: PanelViewContext,
+  snapshot: WebAppSnapshot,
+): VNode {
+  const data = panelData(snapshot, "skills");
+  if (data === null) {
+    return emptyPanel("Skills are not available.");
+  }
+  const live = context.state.live;
+  return (
+    <div attrs={{ class: "skills-panel" }}>
+      {data.message === null ? null : (
+        <p attrs={{ class: "bounded-notice", role: "status" }}>{data.message}</p>
+      )}
+      <h3>Found skills</h3>
+      {data.skills.length === 0 ? (
+        <p>None yet. Install one below, or add a folder with SKILL.md to .lethetic/skills/.</p>
+      ) : (
+        <ul attrs={{ class: "choice-list" }}>
+          {data.skills.map((skill, index) => (
+            <li key={skill.skill_id}>
+              <button
+                attrs={{
+                  type: "button",
+                  class: `choice-row${skill.enabled ? " is-current" : ""}`,
+                  "aria-pressed": skill.enabled ? "true" : "false",
+                  title: skill.description,
+                  "data-autofocus": index === 0 ? "true" : "false",
+                }}
+                props={{ disabled: !live }}
+                on={{
+                  click: () =>
+                    context.actions.send({
+                      type: "set_skill_enabled",
+                      skill_id: skill.skill_id,
+                      enabled: !skill.enabled,
+                    }),
+                }}
+              >
+                <span>
+                  <strong>{skill.name}</strong> · {skill.source}
+                  <br />
+                  <small>{skill.description}</small>
+                </span>
+                <span>{skill.enabled ? [uiIcon("check"), "On"] : "Off"}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <h3>Catalog · Anthropic skills repository</h3>
+      <ul attrs={{ class: "choice-list" }}>
+        {data.catalog.map((entry) => (
+          <li key={entry.entry_id} attrs={{ class: "skill-catalog-row" }}>
+            <span>
+              <a attrs={{ href: entry.url, target: "_blank", rel: "noopener noreferrer" }}>
+                <strong>{entry.name}</strong>
+              </a>
+              {" · "}
+              {entry.summary}
+              {entry.proprietary ? <small> (proprietary license)</small> : null}
+            </span>
+            <button
+              attrs={{ type: "button", class: "choice-row" }}
+              props={{ disabled: !live || entry.installed || entry.installing }}
+              on={{
+                click: () =>
+                  context.actions.send({ type: "install_skill", entry_id: entry.entry_id }),
+              }}
+            >
+              {entry.installed
+                ? [uiIcon("check"), "Installed"]
+                : entry.installing
+                  ? "Installing…"
+                  : [uiIcon("download"), "Install"]}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function latestFilesPanel(
   context: PanelViewContext,
   snapshot: WebAppSnapshot,
@@ -1033,6 +1116,7 @@ const PANEL_RENDERERS = {
   tool_approval: approvalPanel,
   ask_user: questionPanel,
   confirmation: confirmationPanel,
+  skills: skillsPanel,
 } as const satisfies Readonly<
   Record<PanelViewContext["state"]["panel"], PanelRenderer>
 >;

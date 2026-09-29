@@ -58,6 +58,7 @@ fn wfe_panel_for_command(command: lethetic::commands::CommandId) -> Option<Panel
         CommandId::Sessions => Some(PanelId::Sessions),
         CommandId::NameSession => Some(PanelId::NameSession),
         CommandId::LatestFiles => Some(PanelId::LatestFiles),
+        CommandId::Skills => Some(PanelId::Skills),
         CommandId::Models => Some(PanelId::Models),
         CommandId::LspServers => Some(PanelId::LspServers),
         CommandId::AgentMode
@@ -478,6 +479,68 @@ pub(crate) fn execute_wfe_command<'a>(
                             })
                         }
                         Err(error) => Err(error),
+                    }
+                }
+            }
+            WebCommand::SetSkillEnabled { skill_id, enabled } => {
+                match lethetic::wfe::runtime::skill_choice_map(context.app).remove(&skill_id) {
+                    Some(name) => match lethetic::skills::set_enabled(&name, enabled) {
+                        Ok(()) => {
+                            if let Some(panel) = context.app.skills_panel.as_mut() {
+                                panel.message = Some(format!(
+                                    "{name} {}",
+                                    if enabled { "enabled" } else { "disabled" }
+                                ));
+                                panel.refresh();
+                            }
+                            context.app.should_redraw = true;
+                            Ok(CommandOutcome::Applied)
+                        }
+                        Err(error) => {
+                            context.app.log_debug(&format!("SKILL_SETTINGS_SAVE_ERROR: {error}"));
+                            Err(wfe_failure(
+                                CommandErrorCode::SaveFailed,
+                                "Could not save the skill choice",
+                                true,
+                            ))
+                        }
+                    },
+                    None => Err(wfe_failure(
+                        CommandErrorCode::NotFound,
+                        "Skill is no longer available",
+                        true,
+                    )),
+                }
+            }
+            WebCommand::InstallSkill { entry_id } => {
+                let name = lethetic::wfe::runtime::skill_catalog_map().remove(&entry_id);
+                let busy = context
+                    .app
+                    .skills_panel
+                    .as_ref()
+                    .and_then(|panel| panel.installing.clone());
+                match (name, busy) {
+                    (None, _) => Err(wfe_failure(
+                        CommandErrorCode::NotFound,
+                        "Catalog skill is not available",
+                        true,
+                    )),
+                    (Some(_), Some(_)) => Err(wfe_failure(
+                        CommandErrorCode::Busy,
+                        "Another skill is still installing",
+                        true,
+                    )),
+                    (Some(name), None) => {
+                        let panel = context
+                            .app
+                            .skills_panel
+                            .get_or_insert_with(lethetic::app::SkillsPanel::open);
+                        panel.installing = Some(name.clone());
+                        panel.message = Some(format!("Installing {name}…"));
+                        let _ = context
+                            .dispatch_app_event(AppEventOutcome::InstallSkill { name })
+                            .await;
+                        Ok(CommandOutcome::Applied)
                     }
                 }
             }

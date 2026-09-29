@@ -463,6 +463,7 @@ impl WfeRuntime {
         app.show_latest_files = false;
         app.show_model_switcher = false;
         app.show_lsp_manager = false;
+        app.skills_panel = None;
         if !app.python_setup_is_busy() {
             app.python_setup = None;
         }
@@ -779,6 +780,8 @@ fn active_session_id(command: &WebCommand) -> Option<&str> {
         | WebCommand::ClearContext { session_id, .. }
         | WebCommand::DeletePythonRuntime { session_id, .. } => Some(session_id),
         WebCommand::InvokeCommand { .. }
+        | WebCommand::SetSkillEnabled { .. }
+        | WebCommand::InstallSkill { .. }
         | WebCommand::SelectTheme { .. }
         | WebCommand::SelectModel { .. }
         | WebCommand::NewSession
@@ -1030,6 +1033,37 @@ fn project_with_state(app: &App, state: &PresentationState) -> WebAppSnapshot {
 }
 
 fn panel_data_for_app(app: &App) -> Option<PanelDataView> {
+    if let Some(panel) = &app.skills_panel {
+        let mut skills = Vec::new();
+        let mut catalog = Vec::new();
+        for row in &panel.rows {
+            match row {
+                crate::app::SkillRow::Installed(skill) => skills.push(SkillChoiceView {
+                    skill_id: opaque_choice_id("skill", &[&skill.name]),
+                    name: skill.name.clone(),
+                    description: skill.description.clone(),
+                    source: skill.source.label().to_string(),
+                    enabled: skill.enabled,
+                }),
+                crate::app::SkillRow::Catalog { entry, installed } => {
+                    catalog.push(SkillCatalogView {
+                        entry_id: opaque_choice_id("skill-catalog", &[entry.name]),
+                        name: entry.name.to_string(),
+                        summary: entry.summary.to_string(),
+                        url: entry.url(),
+                        proprietary: entry.proprietary,
+                        installed: *installed,
+                        installing: panel.installing.as_deref() == Some(entry.name),
+                    });
+                }
+            }
+        }
+        return Some(PanelDataView::Skills {
+            skills,
+            catalog,
+            message: panel.message.clone(),
+        });
+    }
     if app.show_hotkeys {
         return Some(PanelDataView::Hotkeys {
             shortcuts: vec![
@@ -1231,6 +1265,34 @@ pub fn history_entry_map(app: &App) -> HashMap<String, String> {
             (
                 opaque_choice_id("history", &[&index.to_string(), value]),
                 value.clone(),
+            )
+        })
+        .collect()
+}
+
+/// Browser skill ids → skill names, for the open Skills menu.
+pub fn skill_choice_map(app: &App) -> HashMap<String, String> {
+    app.skills_panel
+        .iter()
+        .flat_map(|panel| &panel.rows)
+        .filter_map(|row| match row {
+            crate::app::SkillRow::Installed(skill) => Some((
+                opaque_choice_id("skill", &[&skill.name]),
+                skill.name.clone(),
+            )),
+            crate::app::SkillRow::Catalog { .. } => None,
+        })
+        .collect()
+}
+
+/// Browser catalog ids → catalog skill names.
+pub fn skill_catalog_map() -> HashMap<String, String> {
+    crate::skills::catalog::ENTRIES
+        .iter()
+        .map(|entry| {
+            (
+                opaque_choice_id("skill-catalog", &[entry.name]),
+                entry.name.to_string(),
             )
         })
         .collect()

@@ -940,6 +940,7 @@ tracked_assets!(
     "src/protocol.js",
     "src/reducer-fixtures.js",
     "src/safety.js",
+    "src/skills-protocol.js",
     "src/transport.js",
     "styles.css",
 );

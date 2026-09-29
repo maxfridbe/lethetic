@@ -61,6 +61,8 @@ export const WEB_COMMAND_FIXTURE = {
   wipe_sessions: true,
   select_history_entry: true,
   select_latest_file: true,
+  set_skill_enabled: true,
+  install_skill: true,
   select_system_prompt: true,
   save_system_prompt: true,
   set_loop_detection: true,
@@ -103,6 +105,8 @@ export function fixtureCommandType(command: WebCommand): WebCommand["type"] {
     case "wipe_sessions":
     case "select_history_entry":
     case "select_latest_file":
+    case "set_skill_enabled":
+    case "install_skill":
     case "select_system_prompt":
     case "save_system_prompt":
     case "set_loop_detection":

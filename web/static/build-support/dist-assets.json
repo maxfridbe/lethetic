@@ -30,6 +30,7 @@
     "src/protocol.js",
     "src/reducer-fixtures.js",
     "src/safety.js",
+    "src/skills-protocol.js",
     "src/transport.js"
   ],
   "static_assets": [

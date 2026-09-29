@@ -1011,6 +1011,8 @@ fn project_overlay(
         Some(PanelId::LspServers)
     } else if app.python_setup.is_some() {
         Some(PanelId::AgentMode)
+    } else if app.skills_panel.is_some() {
+        Some(PanelId::Skills)
     } else if app.show_palette {
         Some(PanelId::CommandPalette)
     } else {
@@ -1037,6 +1039,7 @@ fn panel_for_data(data: &PanelDataView) -> PanelId {
         PanelDataView::AgentModes { .. } => PanelId::AgentMode,
         PanelDataView::NameSession { .. } => PanelId::NameSession,
         PanelDataView::Confirmation { .. } => PanelId::Confirmation,
+        PanelDataView::Skills { .. } => PanelId::Skills,
     }
 }
 
@@ -1122,6 +1125,35 @@ fn sanitize_panel_data(
                     .as_deref()
                     .map(|reason| redactor.redact_and_truncate(reason, 256).0);
             }
+        }
+        PanelDataView::Skills {
+            skills,
+            catalog,
+            message,
+        } => {
+            skills.truncate(200);
+            for skill in skills {
+                if !is_wire_id(&skill.skill_id, MAX_CHOICE_ID_BYTES) {
+                    return None;
+                }
+                skill.name = redactor.redact_and_truncate(&skill.name, 64).0;
+                skill.description = redactor.redact_and_truncate(&skill.description, 1024).0;
+                skill.source = redactor.redact_and_truncate(&skill.source, 64).0;
+            }
+            catalog.truncate(64);
+            for entry in catalog {
+                // Catalog links are fixed repository URLs, never user text.
+                if !is_wire_id(&entry.entry_id, MAX_CHOICE_ID_BYTES)
+                    || !entry
+                        .url
+                        .starts_with("https://github.com/anthropics/skills/tree/")
+                {
+                    return None;
+                }
+            }
+            *message = message
+                .as_deref()
+                .map(|text| redactor.redact_and_truncate(text, 512).0);
         }
         PanelDataView::NameSession { current_name } => {
             *current_name = current_name

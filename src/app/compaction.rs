@@ -348,6 +348,7 @@ pub fn tool_use_summary(counts: &std::collections::BTreeMap<String, u64>) -> Opt
             "task" => ("sub-agent", "sub-agents"),
             "python" => ("python cell", "python cells"),
             "background_task" => ("background task call", "background task calls"),
+            "skill" => ("skill load", "skill loads"),
             other => return format!("{count} {other}"),
         };
         format!("{count} {}", if count == 1 { singular } else { plural })

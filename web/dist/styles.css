@@ -1755,3 +1755,20 @@ progress {
 @media (prefers-reduced-motion: reduce) {
   .background-task-bar.is-indeterminate .background-task-fill { animation: none; }
 }
+
+.skill-catalog-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.skill-catalog-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.skill-catalog-row .choice-row {
+  flex: 0 0 auto;
+  width: auto;
+}

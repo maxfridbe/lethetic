@@ -300,6 +300,52 @@ function nameSessionPanel(context, snapshot) {
                 uiIcon("save"),
                 "Save name"))));
 }
+function skillsPanel(context, snapshot) {
+    const data = panelData(snapshot, "skills");
+    if (data === null) {
+        return emptyPanel("Skills are not available.");
+    }
+    const live = context.state.live;
+    return (h("div", { attrs: { class: "skills-panel" } },
+        data.message === null ? null : (h("p", { attrs: { class: "bounded-notice", role: "status" } }, data.message)),
+        h("h3", null, "Found skills"),
+        data.skills.length === 0 ? (h("p", null, "None yet. Install one below, or add a folder with SKILL.md to .lethetic/skills/.")) : (h("ul", { attrs: { class: "choice-list" } }, data.skills.map((skill, index) => (h("li", { key: skill.skill_id },
+            h("button", { attrs: {
+                    type: "button",
+                    class: `choice-row${skill.enabled ? " is-current" : ""}`,
+                    "aria-pressed": skill.enabled ? "true" : "false",
+                    title: skill.description,
+                    "data-autofocus": index === 0 ? "true" : "false",
+                }, props: { disabled: !live }, on: {
+                    click: () => context.actions.send({
+                        type: "set_skill_enabled",
+                        skill_id: skill.skill_id,
+                        enabled: !skill.enabled,
+                    }),
+                } },
+                h("span", null,
+                    h("strong", null, skill.name),
+                    " \u00B7 ",
+                    skill.source,
+                    h("br", null),
+                    h("small", null, skill.description)),
+                h("span", null, skill.enabled ? [uiIcon("check"), "On"] : "Off"))))))),
+        h("h3", null, "Catalog \u00B7 Anthropic skills repository"),
+        h("ul", { attrs: { class: "choice-list" } }, data.catalog.map((entry) => (h("li", { key: entry.entry_id, attrs: { class: "skill-catalog-row" } },
+            h("span", null,
+                h("a", { attrs: { href: entry.url, target: "_blank", rel: "noopener noreferrer" } },
+                    h("strong", null, entry.name)),
+                " · ",
+                entry.summary,
+                entry.proprietary ? h("small", null, " (proprietary license)") : null),
+            h("button", { attrs: { type: "button", class: "choice-row" }, props: { disabled: !live || entry.installed || entry.installing }, on: {
+                    click: () => context.actions.send({ type: "install_skill", entry_id: entry.entry_id }),
+                } }, entry.installed
+                ? [uiIcon("check"), "Installed"]
+                : entry.installing
+                    ? "Installing…"
+                    : [uiIcon("download"), "Install"])))))));
+}
 function latestFilesPanel(context, snapshot) {
     const data = panelData(snapshot, "latest_files");
     if (data === null) {
@@ -531,6 +577,7 @@ const PANEL_RENDERERS = {
     tool_approval: approvalPanel,
     ask_user: questionPanel,
     confirmation: confirmationPanel,
+    skills: skillsPanel,
 };
 function panelBody(context) {
     const { snapshot, panel } = context.state;

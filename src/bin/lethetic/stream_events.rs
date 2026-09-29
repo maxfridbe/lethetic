@@ -405,6 +405,9 @@ pub(crate) async fn handle_stream_event(
         StreamEvent::CompactionChunk(text) => {
             crate::compaction::append_chunk(context.app, &text);
         }
+        StreamEvent::SkillInstallFinished { name, result } => {
+            context.app.finish_skill_install(&name, result);
+        }
         StreamEvent::CompactionFinished {
             source_session_id,
             result,

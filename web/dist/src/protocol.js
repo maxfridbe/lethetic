@@ -1,5 +1,6 @@
 import { COMMAND_ORDER, ICON_IDS, WFE_MAX_SERVER_MESSAGE_BYTES, WFE_PROTOCOL_SCHEMA_SHA256, WFE_PROTOCOL_VERSION, } from "./generated/contracts.js";
 import { isBackgroundTaskList } from "./background-protocol.js";
+import { isSkillCatalogView, isSkillChoiceView } from "./skills-protocol.js";
 import { assertNever, isBoolean, isFiniteInteger, isRecord, isString, } from "./safety.js";
 const MAX_WIRE_MESSAGE_BYTES = WFE_MAX_SERVER_MESSAGE_BYTES;
 const MAX_WIRE_ARRAY_LENGTH = 20_000;
@@ -77,6 +78,7 @@ const PANEL_IDS = {
     tool_approval: true,
     ask_user: true,
     confirmation: true,
+    skills: true,
 };
 const BLOCK_KINDS = {
     text: true,
@@ -211,6 +213,7 @@ const PANEL_DATA_TYPES = {
     agent_modes: true,
     name_session: true,
     confirmation: true,
+    skills: true,
 };
 const STATE_CHANGE_TYPES = {
     session: true,
@@ -748,6 +751,11 @@ function isPanelDataView(value) {
         case "confirmation":
             return (isExactRecord(value, ["type", "confirmation"]) &&
                 isConfirmationView(value["confirmation"]));
+        case "skills":
+            return (isExactRecord(value, ["type", "skills", "catalog", "message"]) &&
+                isArrayOf(value["skills"], isSkillChoiceView) &&
+                isArrayOf(value["catalog"], isSkillCatalogView) &&
+                isNullable(value["message"], isString));
     }
 }
 function isOverlayView(value) {
@@ -775,6 +783,8 @@ function expectedPanelForData(data) {
             return "name_session";
         case "confirmation":
             return "confirmation";
+        case "skills":
+            return "skills";
         default:
             return assertNever(data, "panel data");
     }
@@ -1124,6 +1134,8 @@ export function commandResponseMatchesRequest(response, request) {
                     case "background-mode":
                     case "tool-call-mode":
                         return null;
+                    case "skills":
+                        return "skills";
                     case "clear-context":
                     case "delete-python-runtime":
                     case "quit":
@@ -1179,6 +1191,8 @@ export function commandResponseMatchesRequest(response, request) {
         case "select_theme":
         case "select_model":
         case "select_latest_file":
+        case "set_skill_enabled":
+        case "install_skill":
         case "select_system_prompt":
         case "save_system_prompt":
         case "set_loop_detection":

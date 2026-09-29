@@ -19,6 +19,7 @@ pub enum CommandId {
     ToggleBackgroundTasks,
     BackgroundMode,
     ToolCallMode,
+    Skills,
     Models,
     LspServers,
     AgentMode,
@@ -117,7 +118,7 @@ pub struct CommandContext {
 }
 
 impl CommandId {
-    pub const ALL: [Self; 25] = [
+    pub const ALL: [Self; 26] = [
         Self::Hotkeys,
         Self::Themes,
         Self::InputHistory,
@@ -133,6 +134,7 @@ impl CommandId {
         Self::ToggleBackgroundTasks,
         Self::BackgroundMode,
         Self::ToolCallMode,
+        Self::Skills,
         Self::Models,
         Self::LspServers,
         Self::AgentMode,
@@ -245,7 +247,7 @@ impl CommandId {
     }
 }
 
-pub const COMMAND_SPECS: [CommandSpec; 25] = [
+pub const COMMAND_SPECS: [CommandSpec; 26] = [
     CommandSpec {
         id: CommandId::Hotkeys,
         base_label: "Hotkeys",
@@ -353,6 +355,15 @@ pub const COMMAND_SPECS: [CommandSpec; 25] = [
         accelerator: None,
         requires_idle: true,
         description: "Switch between one tool call per model turn and several run in order (Python-only mode stays at one).",
+    },
+    CommandSpec {
+        id: CommandId::Skills,
+        base_label: "Skills",
+        icon: IconId::Command,
+        behavior: CommandBehavior::Execute,
+        accelerator: None,
+        requires_idle: false,
+        description: "Turn skills on or off, or install skills from Anthropic's skills repository.",
     },
     CommandSpec {
         id: CommandId::Sessions,

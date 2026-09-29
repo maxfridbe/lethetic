@@ -557,6 +557,21 @@ pub(crate) async fn handle_app_event_outcome(
                 files,
             });
         }
+        AppEventOutcome::InstallSkill { name } => {
+            let client = client.clone();
+            let tx = tx.clone();
+            let cancel = background_cancellation.child_token();
+            auxiliary_tasks.push(tokio::spawn(async move {
+                let root = lethetic::skills::user_skill_root();
+                let install = lethetic::skills::catalog::install(&client, &name, &root);
+                let result = tokio::select! {
+                    result = install => result.map(|path| path.display().to_string()),
+                    () = cancel.cancelled() => return,
+                };
+                let _ = tx.send(StreamEvent::SkillInstallFinished { name, result });
+            }));
+            app.should_redraw = true;
+        }
         AppEventOutcome::CycleToolCallMode => {
             if config.tool_profile == lethetic::config::ToolProfile::PythonOnly {
                 app.stop_reason = "Tool calls: Python-only mode always uses one per turn".to_string();

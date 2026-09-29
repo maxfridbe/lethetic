@@ -6,6 +6,7 @@ import {
   WFE_PROTOCOL_VERSION,
 } from "./generated/contracts.js";
 import { isBackgroundTaskList } from "./background-protocol.js";
+import { isSkillCatalogView, isSkillChoiceView } from "./skills-protocol.js";
 import type * as Wire from "./generated/contracts.js";
 import {
   assertNever,
@@ -121,6 +122,7 @@ const PANEL_IDS = {
   tool_approval: true,
   ask_user: true,
   confirmation: true,
+  skills: true,
 } as const satisfies Readonly<Record<Wire.PanelId, true>>;
 const BLOCK_KINDS = {
   text: true,
@@ -255,6 +257,7 @@ const PANEL_DATA_TYPES = {
   agent_modes: true,
   name_session: true,
   confirmation: true,
+  skills: true,
 } as const satisfies Readonly<Record<Wire.PanelDataView["type"], true>>;
 const STATE_CHANGE_TYPES = {
   session: true,
@@ -989,6 +992,13 @@ function isPanelDataView(value: unknown): value is Wire.PanelDataView {
         isExactRecord(value, ["type", "confirmation"]) &&
         isConfirmationView(value["confirmation"])
       );
+    case "skills":
+      return (
+        isExactRecord(value, ["type", "skills", "catalog", "message"]) &&
+        isArrayOf(value["skills"], isSkillChoiceView) &&
+        isArrayOf(value["catalog"], isSkillCatalogView) &&
+        isNullable(value["message"], isString)
+      );
   }
 }
 
@@ -1023,6 +1033,8 @@ function expectedPanelForData(data: Wire.PanelDataView): Wire.PanelId {
       return "name_session";
     case "confirmation":
       return "confirmation";
+    case "skills":
+      return "skills";
     default:
       return assertNever(data, "panel data");
   }
@@ -1460,6 +1472,8 @@ export function commandResponseMatchesRequest(
           case "background-mode":
           case "tool-call-mode":
             return null;
+          case "skills":
+            return "skills";
           case "clear-context":
           case "delete-python-runtime":
           case "quit":
@@ -1529,6 +1543,8 @@ export function commandResponseMatchesRequest(
     case "select_theme":
     case "select_model":
     case "select_latest_file":
+    case "set_skill_enabled":
+    case "install_skill":
     case "select_system_prompt":
     case "save_system_prompt":
     case "set_loop_detection":

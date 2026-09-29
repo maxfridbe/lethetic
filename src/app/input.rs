@@ -21,14 +21,16 @@ enum InputLayer {
     RcSetup,
     RcInfo,
     RcResume,
+    Skills,
     LspManager,
     ThemeMenu,
     Approval,
 }
 
 // Later-rendered overlays receive input first so visual and keyboard z-order agree.
-const INPUT_LAYER_PRECEDENCE: [InputLayer; 18] = [
+const INPUT_LAYER_PRECEDENCE: [InputLayer; 19] = [
     InputLayer::RcResume,
+    InputLayer::Skills,
     InputLayer::RcInfo,
     InputLayer::RcSetup,
     InputLayer::ModelCatalog,
@@ -66,6 +68,7 @@ impl InputLayer {
             Self::RcSetup => app.rc_setup.is_some(),
             Self::RcInfo => app.rc_info.is_some(),
             Self::RcResume => app.rc_resume_offer.is_some(),
+            Self::Skills => app.skills_panel.is_some(),
             Self::LspManager => app.show_lsp_manager,
             Self::ThemeMenu => app.show_theme_menu,
             Self::Approval => app.show_approval_prompt,
@@ -100,6 +103,7 @@ fn dispatch_input_layer(app: &mut App, key: event::KeyEvent, layer: InputLayer) 
         InputLayer::RcSetup => super::remote_control::handle_rc_setup_key(app, key),
         InputLayer::RcInfo => super::remote_control::handle_rc_info_key(app, key),
         InputLayer::RcResume => super::remote_control::handle_rc_resume_key(app, key),
+        InputLayer::Skills => super::skills_panel::handle_skills_key(app, key),
         InputLayer::LspManager => handle_lsp_manager_key(app, key),
         InputLayer::ThemeMenu => handle_theme_menu_key(app, key),
         InputLayer::Approval => handle_approval_key(app, key),

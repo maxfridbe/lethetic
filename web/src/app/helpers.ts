@@ -68,6 +68,7 @@ export const PANEL_TITLES = {
   tool_approval: "Tool approval",
   ask_user: "Question",
   confirmation: "Confirmation",
+  skills: "Skills",
 } as const satisfies Readonly<Record<PanelId, string>>;
 
 export const THEME_VARIABLES = {

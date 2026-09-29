@@ -10,6 +10,7 @@ mod python_session;
 mod remote_control;
 mod session_state;
 mod setup_input;
+mod skills_panel;
 mod tool_calls;
 mod transcript;
 
@@ -19,6 +20,7 @@ pub use input::handle_key;
 pub use lifecycle::SessionSummary;
 pub use model_catalog::ModelCatalogState;
 pub use remote_control::{RcInfoState, RcResumeOffer, RcSetupStage, RcSetupState};
+pub use skills_panel::{SkillRow, SkillsPanel};
 pub use session_state::{
     SessionDirectoryBinding, SessionSettings, SessionState, SessionWorkspaceBinding,
     describe_python_policy, normalize_session_display_name,
@@ -192,6 +194,8 @@ pub struct App {
     pub rc_setup: Option<RcSetupState>,
     /// Offered after resuming a session whose remote control is not running.
     pub rc_resume_offer: Option<RcResumeOffer>,
+    /// The Skills menu, when open.
+    pub skills_panel: Option<SkillsPanel>,
     pub rc_info: Option<RcInfoState>,
     /// Controller target while a listener runs (either origin).
     pub remote_control_target: Option<String>,
@@ -444,6 +448,7 @@ impl App {
             model_catalog: None,
             rc_setup: None,
             rc_resume_offer: None,
+            skills_panel: None,
             rc_info: None,
             remote_control_target: None,
             remote_control_locked: false,

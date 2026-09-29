@@ -34,6 +34,7 @@ export const PANEL_TITLES = {
     tool_approval: "Tool approval",
     ask_user: "Question",
     confirmation: "Confirmation",
+    skills: "Skills",
 };
 export const THEME_VARIABLES = {
     output_fg: "--theme-output-fg",

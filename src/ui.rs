@@ -2,6 +2,7 @@ mod block;
 mod chat;
 mod layout;
 mod model_catalog;
+mod skills;
 mod overlays;
 mod python_setup;
 mod remote_control;
@@ -30,6 +31,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     background_tasks::render(f, app, areas.background_tasks);
     if overlays::render_primary(f, app) {
         model_catalog::render(f, app);
+        skills::render(f, app);
         remote_control::render(f, app);
         crate::compact::render_compaction_popup(f, app);
         return;
@@ -39,6 +41,7 @@ pub fn ui(f: &mut ratatui::Frame, app: &mut App) {
     }
     overlays::render_secondary(f, app);
     model_catalog::render(f, app);
+    skills::render(f, app);
     remote_control::render(f, app);
     crate::compact::render_compaction_popup(f, app);
 }

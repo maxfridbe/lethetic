@@ -11,6 +11,10 @@ pub enum AppEventOutcome {
     ToolApproved(bool, bool),
     /// Switch between one and several tool calls per turn.
     CycleToolCallMode,
+    /// Download a catalog skill into the user skill folder.
+    InstallSkill {
+        name: String,
+    },
     Stop,
     NewSession,
     ResumeSession(String),
@@ -141,6 +145,10 @@ pub fn dispatch_command(app: &mut App, command: CommandId) -> AppEventOutcome {
         CommandId::ToggleTodos => {
             app.show_palette = false;
             app.toggle_todos();
+        }
+        CommandId::Skills => {
+            app.show_palette = false;
+            app.skills_panel = Some(super::SkillsPanel::open());
         }
         CommandId::ToolCallMode => {
             app.show_palette = false;

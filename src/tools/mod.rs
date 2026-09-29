@@ -19,6 +19,7 @@ pub mod read_page; // kept for backwards-compat dispatch only
 pub mod replace_text;
 pub mod repo_overview;
 pub mod background_task;
+pub mod skill;
 pub mod run_shell_command;
 pub mod search_text;
 pub mod summarize_content;
@@ -254,6 +255,9 @@ fn general_tools(config: &crate::config::Config) -> Vec<Tool> {
         task::get_definition(),
     ];
 
+    if let Some(skill_tool) = skill::get_definition(&crate::skills::enabled_here()) {
+        tools.push(skill_tool);
+    }
     if crate::background::mode() == crate::background::BackgroundMode::Off {
         tools.retain(|tool| tool.function.name != "background_task");
     }
@@ -450,6 +454,7 @@ pub fn get_ui_description(func_name: &str, arguments: &serde_json::Value) -> Str
         "search_text" => search_text::get_ui_description(arguments),
         "run_shell_command" => run_shell_command::get_ui_description(arguments),
         "background_task" => background_task::get_ui_description(arguments),
+        "skill" => skill::get_ui_description(arguments),
         "write_file" => write_file::get_ui_description(arguments),
         "replace_text" => replace_text::get_ui_description(arguments),
         "edit" => edit::get_ui_description(arguments),
@@ -885,6 +890,12 @@ fn execute_dispatch<'a>(
                     .await,
                     cwd.to_string(),
                 )
+            }
+            "skill" => {
+                return match skill::execute(arguments) {
+                    Ok(output) => ToolExecution::success(output, cwd),
+                    Err(output) => ToolExecution::error(output, cwd),
+                };
             }
             "background_task" => {
                 return match background_task::execute(arguments, cwd, cancellation_token).await {

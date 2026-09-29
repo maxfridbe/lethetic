@@ -414,6 +414,7 @@ All other model-originated tool names are rejected at dispatch in Python-only mo
 | `repo_overview` | Ecosystem detection, 2-level dir tree, README preview, entry points. |
 | `todowrite` | Write a structured todo list (status + priority) to `.lethetic/todos.json`. F9 shows it live in a right-hand pane. |
 | `background_task` | Run a long command in the background and keep working: `start` returns an id (`bg1`…); `status`, `wait`, `output`, `stop`, `list` follow it. Progress comes from percentages in the output, a `progress_pattern` regex, or a growing `watch_path` (with optional `expected_bytes`). Full output is logged to `.lethetic/background/`. Not offered to headless sub-agents. |
+| `skill` | Load an enabled skill's instructions by name (offered only when a skill is enabled). |
 | `task` | Spawn an autonomous sub-agent with all tools except `task` and `ask_the_user`. 5-minute timeout; sub-agent progress streamed to parent UI. |
 
 ### Document & Vision *(requires `enable_image_processing_tool: true`)*
@@ -452,6 +453,19 @@ Combined NGram + phrase-frequency watchdog (the default). Only model text/though
 - **Turning it off.** `background_tasks: notify | poll | off` in `config.yml` sets the default, and **Ctrl+P → Background Tasks** cycles it at runtime. `poll` keeps the tool but never wakes the model. `off` removes the tool.
 
 Running tasks are stopped (SIGTERM, then SIGKILL) when Lethetic exits.
+
+### Skills
+
+A skill is a folder with a `SKILL.md` whose frontmatter gives a `name` and a `description`, in the Agent Skills format that Claude Code uses, so its skills work unchanged. Lethetic looks in this order, and the first skill with a given name wins:
+
+1. `.lethetic/skills/` in the project
+2. `~/.config/lethetic/skills/`
+3. `.claude/skills/` in the project
+4. `~/.claude/skills/`
+
+Skills in Lethetic's folders start enabled. Skills found in Claude's folders start disabled, because another tool put them there. **Ctrl+P → Skills** (terminal and browser) turns any skill on or off; choices are saved in `~/.config/lethetic/skills.yml`.
+
+Only enabled skills reach the model: the `skill` tool lists their names and descriptions, and calling it returns the skill's instructions, its folder, and its file list. The menu also lists a small catalog from [Anthropic's skills repository](https://github.com/anthropics/skills) (`skill-creator`, `mcp-builder`, `webapp-testing`, `frontend-design`, `doc-coauthoring`, `pdf`, `docx`, `xlsx`, `pptx`). Each entry links to its folder; installing downloads it into `~/.config/lethetic/skills/`, enabled. The `pdf`, `docx`, `xlsx` and `pptx` skills carry Anthropic's proprietary license; read it before relying on them.
 
 ### Automatic retries
 
@@ -532,6 +546,7 @@ These keys describe the terminal UI. Browser palette accelerators, editable-targ
 | Toggle Debugger | Show/hide debug log pane |
 | Toggle Todo List | Show/hide the model's todo list pane (F9) |
 | Toggle Background Tasks | Show/hide the background tasks pane (F8) |
+| Skills | Turn found skills on or off, or install catalog skills from Anthropic's skills repository |
 | Tool Calls: one per turn / several per turn | Switch between one tool call per model turn and several run in order |
 | Background Tasks: notify / poll only / off | Cycle whether the model may start background tasks and whether their finishes wake it |
 | Sessions | Load, resume, compact, or delete sessions. Each entry shows its model, Agent Mode and remote control on a second line; resuming restores those settings (launch flags still win). If the session had remote control and none is running, a prompt shows its address, access mode and file sharing and asks whether to start it again: **Enter/y** starts it (a new token is issued), **e** opens the setup with those settings filled in, **Esc/n** skips. **C** compacts the selected session: pick any configured model, the log is summarised in parallel windows with a streaming merge, and the result is saved as a new resumable session that inherits the source's model, prompt, theme, history, cost, Agent Mode, loop-detection mode, tool-use counts and remote-control settings, and opens with the current todo list |

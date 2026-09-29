@@ -1494,3 +1494,50 @@ fn a_dialog_closed_in_the_terminal_closes_in_the_browser() {
     runtime.publish(&app).unwrap();
     assert_eq!(panel(&frontend), Some(PanelId::LoopDetection));
 }
+
+#[test]
+fn the_skills_menu_is_mirrored_with_resolvable_ids() {
+    let mut app = App::new(&Config::default());
+    app.show_session_manager = false;
+    let skill = crate::skills::Skill {
+        name: "greeting".to_string(),
+        description: "How to greet".to_string(),
+        dir: std::path::PathBuf::from("/tmp/greeting"),
+        source: crate::skills::SkillSource::LetheticProject,
+        enabled: true,
+    };
+    app.skills_panel = Some(crate::app::SkillsPanel {
+        rows: vec![
+            crate::app::SkillRow::Installed(skill),
+            crate::app::SkillRow::Catalog {
+                entry: &crate::skills::catalog::ENTRIES[0],
+                installed: false,
+            },
+        ],
+        selected: 0,
+        installing: None,
+        message: None,
+    });
+    let (frontend, mut runtime) = WfeRuntime::new(&app, Vec::new()).unwrap();
+    runtime.publish(&app).unwrap();
+    let overlay = frontend.mirror.latest_snapshot().state.overlay.clone();
+    assert_eq!(overlay.active_panel, Some(PanelId::Skills));
+    let Some(PanelDataView::Skills { skills, catalog, .. }) = overlay.data else {
+        panic!("skills panel data");
+    };
+    assert_eq!(skills[0].name, "greeting");
+    assert!(skills[0].enabled);
+    assert_eq!(
+        skill_choice_map(&app).get(&skills[0].skill_id).map(String::as_str),
+        Some("greeting")
+    );
+    assert_eq!(
+        skill_catalog_map().get(&catalog[0].entry_id).map(String::as_str),
+        Some(crate::skills::catalog::ENTRIES[0].name)
+    );
+    assert!(catalog[0].url.starts_with("https://github.com/anthropics/skills/tree/"));
+
+    app.skills_panel = None;
+    runtime.publish(&app).unwrap();
+    assert_eq!(frontend.mirror.latest_snapshot().state.overlay.active_panel, None);
+}

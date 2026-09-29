@@ -6,6 +6,7 @@ import { adjustedAnchorScrollTop } from "../src/app/chat-anchor.js";
 import { chatBlockAnchor, renderChatView } from "../src/app/chat-view.js";
 import { isBackgroundTaskList, newlyFinished, renderBackgroundTasks } from "../src/app/background-tasks.js";
 import { renderDebugger } from "../src/app/debugger.js";
+import { isSkillCatalogView, isSkillChoiceView } from "../src/skills-protocol.js";
 import { rebaseChatWindowStart } from "../src/app/helpers.js";
 import { handleGlobalKeyDown } from "../src/app/keyboard.js";
 import { renderPanel } from "../src/app/panels.js";
@@ -709,4 +710,19 @@ test("background tasks render progress bars and report newly finished tasks", ()
   after.status.background_tasks = [{ ...running, state: "done", state_label: "done" }, silent];
   assert.deepEqual(newlyFinished(before, after).map((task) => task.id), ["bg1"]);
   assert.deepEqual(newlyFinished(after, after), []);
+});
+
+test("skills panel data is exact and catalog links stay in Anthropic's repository", () => {
+  const entry = {
+    entry_id: "skill-catalog-1", name: "pdf", summary: "PDFs",
+    url: "https://github.com/anthropics/skills/tree/main/skills/pdf",
+    proprietary: true, installed: false, installing: false,
+  };
+  assert.ok(isSkillCatalogView(entry));
+  assert.equal(isSkillCatalogView({ ...entry, url: "https://evil.example/skills/pdf" }), false);
+  assert.equal(isSkillCatalogView({ ...entry, url: "javascript:alert(1)" }), false);
+  assert.equal(isSkillCatalogView({ ...entry, extra: 1 }), false);
+  const skill = { skill_id: "skill-1", name: "pdf", description: "PDFs", source: ".lethetic/skills", enabled: true };
+  assert.ok(isSkillChoiceView(skill));
+  assert.equal(isSkillChoiceView({ ...skill, enabled: "yes" }), false);
 });

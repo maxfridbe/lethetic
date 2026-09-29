@@ -133,6 +133,11 @@ pub enum StreamEvent {
     /// Streamed progress text for the session compaction popup.
     CompactionChunk(String),
     /// Terminal compaction result; the run loop turns a summary into a new session.
+    /// A catalog skill install finished (the installed path, or why not).
+    SkillInstallFinished {
+        name: String,
+        result: Result<String, String>,
+    },
     CompactionFinished {
         source_session_id: String,
         result: Result<String, String>,
