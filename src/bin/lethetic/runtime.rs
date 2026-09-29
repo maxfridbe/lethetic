@@ -186,6 +186,7 @@ pub(crate) async fn run_actor(
     let mut last_background_tick = std::time::Instant::now();
     let mut last_times_label = String::new();
     let mut last_times_check = std::time::Instant::now();
+    let mut last_times_save = std::time::Instant::now();
     let mut shutdown_announced = false;
     let mut shutdown_diagnostic_recorded = false;
     let background = spawn_background_tasks(&context);
@@ -325,6 +326,14 @@ pub(crate) async fn run_actor(
                 last_times_label = label;
                 context.app.should_redraw = true;
                 wfe_dirty = true;
+                // Keep the saved totals current without saving every second.
+                if last_times_save.elapsed() >= Duration::from_secs(60)
+                    && context.app.current_session_dir.is_some()
+                    && !context.app.context_manager.get_messages().is_empty()
+                {
+                    last_times_save = std::time::Instant::now();
+                    context.app.needs_save = true;
+                }
             }
         }
         if context.lifecycle.is_shutting_down() {

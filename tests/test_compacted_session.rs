@@ -50,7 +50,12 @@ async fn compaction_keeps_the_plan_and_session_settings() {
     app.tool_use_counts.insert("run_shell_command".to_string(), 12);
     app.remote_control_target = Some("https://127.0.0.1:11223".to_string());
     app.remote_control_files = true;
+    app.session_times.engine_ms = 60_000;
     app.save_session_checked().unwrap();
+    // Time keeps accruing after the last save; compaction must see it.
+    app.session_times.engine_ms = 33 * 60_000;
+    app.session_times.tool_ms = 2 * 60_000;
+    app.session_times.idle_ms = 3 * 3_600_000;
     let source_id = app.session_id.clone();
 
     let compacted_id = app
@@ -76,4 +81,9 @@ async fn compaction_keeps_the_plan_and_session_settings() {
     );
     assert!(state.remote_control_files);
     assert!(state.python_policy.is_some(), "Agent Mode carries over");
+    assert_eq!(
+        state.session_times,
+        app.session_times,
+        "times carry over, up to date rather than from the last save"
+    );
 }

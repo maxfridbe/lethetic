@@ -261,6 +261,13 @@ impl App {
             remote_control_open: original.remote_control_open,
             remote_control_files: original.remote_control_files,
             tool_use_counts: original.tool_use_counts,
+            // Compaction does not reset where the time went. The session in
+            // use has newer totals in memory than its last save.
+            session_times: if source_session_id == self.session_id {
+                self.session_times
+            } else {
+                original.session_times
+            },
             ..Default::default()
         };
         let written = state
