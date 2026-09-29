@@ -502,7 +502,7 @@ If the model responds with a short text describing what it's about to do (withou
 
 ### TUI stop-reason status area
 
-The status area shows memory use and the size of the working directory's `.lethetic` state (refreshed every ~20 s), a **Tool use** line counting this session's calls (e.g. `87 shell commands, 10 edits, 5 line reads, 4 file writes`), connection/model identity, the active General or Python execution profile (backend, network, workspace access, grant count, and policy source), and why the engine stopped:
+The status area grows to as many rows as its items need at the current width, and shows memory use and the size of the working directory's `.lethetic` state (refreshed every ~20 s), a **Tool use** line counting this session's calls (e.g. `87 shell commands, 10 edits, 5 line reads, 4 file writes`), where this session's time went (`EngTime: 33m | ToolTime: 2m | IdleTime: 3h 05m`: model working, tools running, and waiting for you, saved with the session), connection/model identity, the active General or Python execution profile (backend, network, workspace access, grant count, and policy source), and why the engine stopped:
 - `Response complete (N tokens)` / `Response complete (N tokens, context X% full)`
 - `→ Tool dispatched: <tool>` / `→ Loop #N detected — auto-correcting`
 - `⚠ Context saturated` / `⚠ Persistent loop terminated` / `⚠ Minimal response`

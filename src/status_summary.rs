@@ -380,6 +380,48 @@ pub fn format_duration_ms(ms: u64) -> String {
     }
 }
 
+/// Time a session spent with the model working, tools running, and Lethetic
+/// waiting for the user (including approval prompts and questions).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SessionTimes {
+    #[serde(default)]
+    pub engine_ms: u64,
+    #[serde(default)]
+    pub tool_ms: u64,
+    #[serde(default)]
+    pub idle_ms: u64,
+}
+
+/// Compact duration for the status line: `45s`, `33m`, `3h 05m`.
+pub fn format_compact_duration(ms: u64) -> String {
+    let seconds = ms / 1000;
+    match seconds {
+        0..60 => format!("{seconds}s"),
+        60..3600 => format!("{}m", seconds / 60),
+        _ => format!("{}h {:02}m", seconds / 3600, (seconds % 3600) / 60),
+    }
+}
+
+impl crate::app::App {
+    /// Adds the time since the last call to the bucket the app is in now.
+    /// The run loop calls this every pass.
+    pub fn accrue_session_time(&mut self) {
+        let now = std::time::Instant::now();
+        let Some(last) = self.session_times_tick.replace(now) else {
+            return;
+        };
+        let elapsed = u64::try_from(now.duration_since(last).as_millis()).unwrap_or(u64::MAX);
+        let bucket = if self.is_executing_tool {
+            &mut self.session_times.tool_ms
+        } else if self.is_processing || self.active_request_id.is_some() {
+            &mut self.session_times.engine_ms
+        } else {
+            &mut self.session_times.idle_ms
+        };
+        *bucket = bucket.saturating_add(elapsed);
+    }
+}
+
 /// The line shown under a timed block, if it has a duration.
 pub fn block_duration_label(block: &crate::app::RenderBlock) -> Option<String> {
     use crate::app::BlockType;

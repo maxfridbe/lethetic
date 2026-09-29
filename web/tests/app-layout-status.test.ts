@@ -210,6 +210,9 @@ function snapshotFixture(): SnapshotFixture {
       git_state: "dirty",
       tool_use: "87 shell commands, 10 edits",
       background_tasks: [],
+      engine_time: "33m",
+      tool_time: "2m",
+      idle_time: "3h 00m",
     },
     debugger: {
       open: true,

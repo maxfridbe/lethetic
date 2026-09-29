@@ -258,8 +258,10 @@ pub(crate) async fn apply_loaded(
         remote_control,
         remote_control_open,
         remote_control_files,
+        session_times,
         ..
     } = state;
+    app.session_times = session_times;
     app.tool_use_counts = if tool_use_counts.is_empty() {
         App::tool_use_counts_from_messages(&messages)
     } else {

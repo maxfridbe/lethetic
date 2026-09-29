@@ -802,6 +802,7 @@ impl App {
         self.logical_turn_usage = None;
         self.accounting = crate::accounting::SessionAccounting::default();
         self.tool_use_counts.clear();
+        self.session_times = Default::default();
         self.reset_session_view_state();
         self.needs_save = true;
         self.save_session_checked()?;

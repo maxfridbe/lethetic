@@ -239,6 +239,9 @@ function completeSnapshot(): WebAppSnapshot {
       git_state: "clean",
       tool_use: "",
       background_tasks: [],
+      engine_time: "33m",
+      tool_time: "2m",
+      idle_time: "3h 00m",
     },
     debugger: {
       open: false,

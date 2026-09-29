@@ -13,11 +13,6 @@ const STATUS_WINDOW: Duration = Duration::from_secs(300);
 /// A running task with no output or file growth for this long looks stalled.
 const STALLED_AFTER: Duration = Duration::from_secs(60);
 
-/// True when the status line has background tasks to show.
-pub(super) fn status_visible() -> bool {
-    !background::recent(STATUS_WINDOW).is_empty()
-}
-
 fn state_style(app: &App, task: &TaskSnapshot) -> Style {
     let theme = &app.theme;
     match &task.state {

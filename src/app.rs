@@ -94,6 +94,10 @@ pub struct App {
     pub provider_retry_at: Option<std::time::Instant>,
     /// Consecutive failed attempts of the current model request.
     pub provider_retry_attempts: u32,
+    /// Where this session's time went: model, tools, waiting for the user.
+    pub session_times: crate::status_summary::SessionTimes,
+    /// When time was last added to `session_times`.
+    pub(crate) session_times_tick: Option<std::time::Instant>,
     pub shell_approval_mode: ApprovalMode,
     pub show_approval_prompt: bool,
     pub python_approval_show_original: bool,
@@ -349,6 +353,8 @@ impl App {
             deferred_batch_notes: Vec::new(),
             provider_retry_at: None,
             provider_retry_attempts: 0,
+            session_times: Default::default(),
+            session_times_tick: None,
             shell_approval_mode: ApprovalMode::None,
             show_approval_prompt: false,
             python_approval_show_original: false,

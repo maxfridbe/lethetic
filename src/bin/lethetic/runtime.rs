@@ -184,6 +184,8 @@ pub(crate) async fn run_actor(
     let mut last_save = std::time::Instant::now();
     let mut last_background_revision = lethetic::background::revision();
     let mut last_background_tick = std::time::Instant::now();
+    let mut last_times_label = String::new();
+    let mut last_times_check = std::time::Instant::now();
     let mut shutdown_announced = false;
     let mut shutdown_diagnostic_recorded = false;
     let background = spawn_background_tasks(&context);
@@ -312,6 +314,19 @@ pub(crate) async fn run_actor(
             }
         }
 
+        context.app.accrue_session_time();
+        if last_times_check.elapsed() >= Duration::from_secs(1) {
+            last_times_check = std::time::Instant::now();
+            let times = context.app.session_times;
+            let label = [times.engine_ms, times.tool_ms, times.idle_ms]
+                .map(lethetic::status_summary::format_compact_duration)
+                .join("/");
+            if label != last_times_label {
+                last_times_label = label;
+                context.app.should_redraw = true;
+                wfe_dirty = true;
+            }
+        }
         if context.lifecycle.is_shutting_down() {
             crate::stream_events::abandon_provider_retry(context.app, "Retry dropped: shutting down");
         } else {

@@ -47,6 +47,7 @@ fn sample_state() -> SessionState {
         remote_control: None,
         remote_control_open: false,
         remote_control_files: false,
+        session_times: Default::default(),
         tool_use_counts: Default::default(),
         needs_migration_save: false,
     }

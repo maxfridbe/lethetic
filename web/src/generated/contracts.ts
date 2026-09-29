@@ -137,7 +137,19 @@ tool_use: string,
 /**
  * Running and recently finished background tasks, newest last.
  */
-background_tasks: Array<BackgroundTaskView>, };
+background_tasks: Array<BackgroundTaskView>, 
+/**
+ * Session time with the model working, e.g. `33m`.
+ */
+engine_time: string, 
+/**
+ * Session time running tools.
+ */
+tool_time: string, 
+/**
+ * Session time waiting for the user.
+ */
+idle_time: string, };
 
 export type DiagnosticSeverity = "info" | "warning" | "error";
 
@@ -286,7 +298,7 @@ export const WFE_MAX_SERVER_MESSAGE_BYTES = 4194304 as const;
 
 export const WFE_PROTOCOL_VERSION = 6 as const;
 
-export const WFE_PROTOCOL_SCHEMA_SHA256 = "199d1a6650ea429ec61fb8ad91233544a48b1d05900a208975537541ce16fa91" as const;
+export const WFE_PROTOCOL_SCHEMA_SHA256 = "c6be78c3442ea6b04ab6f8dc69798b52b5abecfec685c7172085b3b977e8481a" as const;
 
 export const COMMAND_ORDER = [
   "hotkeys",

@@ -806,6 +806,9 @@ function isStatusView(value: unknown): value is Wire.StatusView {
       "git_state",
       "tool_use",
       "background_tasks",
+      "engine_time",
+      "tool_time",
+      "idle_time",
     ]) &&
     isString(value["stop_reason"]) &&
     isProjectionLossView(value["stop_reason_loss"]) &&
@@ -826,7 +829,10 @@ function isStatusView(value: unknown): value is Wire.StatusView {
     value["visible_block_count"] >= 0 &&
     isCatalogKey(value["git_state"], GIT_STATES) &&
     isString(value["tool_use"]) &&
-    isBackgroundTaskList(value["background_tasks"])
+    isBackgroundTaskList(value["background_tasks"]) &&
+    isString(value["engine_time"]) &&
+    isString(value["tool_time"]) &&
+    isString(value["idle_time"])
   );
 }
 

@@ -110,6 +110,9 @@ export function applicationStatusFields(
     ...(status.tool_use.length > 0
       ? [{ label: "Tool use", value: boundedText(status.tool_use) }]
       : []),
+    { label: "EngTime", value: boundedText(status.engine_time, 32) },
+    { label: "ToolTime", value: boundedText(status.tool_time, 32) },
+    { label: "IdleTime", value: boundedText(status.idle_time, 32) },
     {
       label: "Container",
       value:

@@ -1076,6 +1076,12 @@ pub struct StatusView {
     pub tool_use: String,
     /// Running and recently finished background tasks, newest last.
     pub background_tasks: Vec<BackgroundTaskView>,
+    /// Session time with the model working, e.g. `33m`.
+    pub engine_time: String,
+    /// Session time running tools.
+    pub tool_time: String,
+    /// Session time waiting for the user.
+    pub idle_time: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

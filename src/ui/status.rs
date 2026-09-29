@@ -78,6 +78,63 @@ pub(super) fn render_processing(f: &mut ratatui::Frame, app: &App, area: Rect) {
 }
 
 pub(super) fn render_status(f: &mut ratatui::Frame, app: &App, area: Rect) {
+    let rows = status_rows(app, area.width);
+    f.render_widget(Paragraph::new(rows).wrap(Wrap { trim: true }), area);
+}
+
+/// Rows the status area needs at `width`, so nothing is cut off.
+pub(super) fn status_height(app: &App, width: u16) -> u16 {
+    let width = usize::from(width.max(1));
+    status_rows(app, width as u16)
+        .iter()
+        .map(|row| row.width().div_ceil(width).max(1))
+        .sum::<usize>()
+        .try_into()
+        .unwrap_or(u16::MAX)
+}
+
+/// Packs each logical status line into rows no wider than `width`. Items
+/// (a `| Label: value` pair) are never split; a new row starts instead.
+fn status_rows(app: &App, width: u16) -> Vec<Line<'static>> {
+    let width = usize::from(width.max(1));
+    let mut rows = Vec::new();
+    for line in status_lines(app) {
+        let mut items: Vec<Vec<Span<'static>>> = Vec::new();
+        for span in line.spans {
+            let starts_item = span.content.starts_with("| ") || span.content.starts_with(" · ");
+            match items.last_mut() {
+                Some(item) if !starts_item => item.push(span),
+                _ => items.push(vec![span]),
+            }
+        }
+        let mut row: Vec<Span<'static>> = Vec::new();
+        let mut row_width = 0;
+        for mut item in items {
+            let item_width: usize = item.iter().map(Span::width).sum();
+            if row_width > 0 && row_width + item_width > width {
+                rows.push(Line::from(std::mem::take(&mut row)));
+                row_width = 0;
+                // A continuation row does not start with a separator.
+                if let Some(first) = item.first_mut() {
+                    let trimmed = first
+                        .content
+                        .trim_start_matches("| ")
+                        .trim_start_matches(" · ")
+                        .to_string();
+                    first.content = trimmed.into();
+                }
+            }
+            row_width += item.iter().map(Span::width).sum::<usize>();
+            row.extend(item);
+        }
+        if !row.is_empty() {
+            rows.push(Line::from(row));
+        }
+    }
+    rows
+}
+
+fn status_lines(app: &App) -> Vec<Line<'static>> {
     let summary = StatusSummary::from_app(app);
     let git_color = match summary.git_state {
         CoarseGitState::Clean => app.theme.success_fg,
@@ -238,20 +295,43 @@ pub(super) fn render_status(f: &mut ratatui::Frame, app: &App, area: Rect) {
         Style::default().fg(app.theme.thought_fg),
     ));
 
+    let times = app.session_times;
+    let mut line2_spans = line2_spans;
+    for (label, ms) in [
+        ("| ⏱ EngTime: ", times.engine_ms),
+        ("| ToolTime: ", times.tool_ms),
+        ("| IdleTime: ", times.idle_ms),
+    ] {
+        line2_spans.push(Span::styled(label, Style::default().fg(app.theme.system_fg)));
+        line2_spans.push(Span::styled(
+            format!("{} ", crate::status_summary::format_compact_duration(ms)),
+            Style::default().fg(app.theme.thought_fg),
+        ));
+    }
+
     let mut status_text = vec![Line::from(spans), Line::from(line2_spans)];
     if let Some(summary) = app.tool_use_summary() {
-        status_text.push(Line::from(vec![
-            Span::styled(
-                format!("{} Tool use: ", icons::COMMAND),
-                Style::default().fg(app.theme.system_fg),
-            ),
-            Span::styled(summary, Style::default().fg(app.theme.output_fg)),
-        ]));
+        // One item per tool kind, so a long list wraps between items.
+        let mut tool_spans = vec![Span::styled(
+            format!("{} Tool use: ", icons::COMMAND),
+            Style::default().fg(app.theme.system_fg),
+        )];
+        for (index, part) in summary.split(", ").enumerate() {
+            tool_spans.push(Span::styled(
+                if index == 0 {
+                    part.to_string()
+                } else {
+                    format!(" · {part}")
+                },
+                Style::default().fg(app.theme.output_fg),
+            ));
+        }
+        status_text.push(Line::from(tool_spans));
     }
     if let Some(line) = super::background_tasks::status_line(app) {
         status_text.push(line);
     }
-    f.render_widget(Paragraph::new(status_text).wrap(Wrap { trim: true }), area);
+    status_text
 }
 
 pub(super) fn render_debug(f: &mut ratatui::Frame, app: &App, area: Rect) {
@@ -372,5 +452,71 @@ mod remote_control_line_tests {
         assert!(text.contains("auth: OPEN (no token)"));
         assert!(text.contains("files: off"));
         assert!(text.contains("2 browsers (latest 100.64.0.7)"));
+    }
+}
+
+#[cfg(test)]
+mod status_layout_tests {
+    use super::*;
+
+    #[test]
+    fn status_rows_fit_the_width_and_the_area_grows_to_hold_them() {
+        let mut app = App::new(&crate::config::Config::default());
+        app.tool_use_counts.insert("run_shell_command".to_string(), 87);
+        app.tool_use_counts.insert("edit".to_string(), 10);
+        app.session_times = crate::status_summary::SessionTimes {
+            engine_ms: 33 * 60_000,
+            tool_ms: 2 * 60_000,
+            idle_ms: 3 * 3_600_000,
+        };
+        let wide = status_height(&app, 1000);
+        let narrow = status_height(&app, 60);
+        assert!(narrow > wide, "narrow {narrow} vs wide {wide}");
+        let rows = status_rows(&app, 60);
+        let text: String = rows
+            .iter()
+            .map(|row| row.spans.iter().map(|span| span.content.as_ref()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("EngTime: 33m"), "{text}");
+        assert!(text.contains("ToolTime: 2m"));
+        assert!(text.contains("IdleTime: 3h 00m"));
+        for row in &rows {
+            // Only a single item longer than the width may overflow.
+            assert!(row.width() <= 60 || row.spans.len() <= 2, "{row:?}");
+        }
+        assert!(
+            !rows.iter().any(|row| row
+                .spans
+                .first()
+                .is_some_and(|span| span.content.starts_with("| "))),
+            "continuation rows drop the separator"
+        );
+    }
+
+    #[test]
+    fn session_time_goes_to_the_bucket_the_app_is_in() {
+        let mut app = App::new(&crate::config::Config::default());
+        let back = |app: &mut App| {
+            app.session_times_tick =
+                Some(std::time::Instant::now() - std::time::Duration::from_secs(2));
+        };
+        back(&mut app);
+        app.accrue_session_time();
+        assert!(app.session_times.idle_ms >= 2000);
+        app.is_processing = true;
+        back(&mut app);
+        app.accrue_session_time();
+        assert!(app.session_times.engine_ms >= 2000);
+        app.is_executing_tool = true;
+        back(&mut app);
+        app.accrue_session_time();
+        assert!(app.session_times.tool_ms >= 2000);
+        assert_eq!(crate::status_summary::format_compact_duration(45_000), "45s");
+        assert_eq!(crate::status_summary::format_compact_duration(33 * 60_000 + 5_000), "33m");
+        assert_eq!(
+            crate::status_summary::format_compact_duration(3 * 3_600_000 + 300_000),
+            "3h 05m"
+        );
     }
 }

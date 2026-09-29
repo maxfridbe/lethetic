@@ -814,6 +814,9 @@ fn project_status(app: &App, redactor: &Redactor) -> StatusView {
 
     StatusView {
         background_tasks: project_background_tasks(redactor),
+        engine_time: crate::status_summary::format_compact_duration(app.session_times.engine_ms),
+        tool_time: crate::status_summary::format_compact_duration(app.session_times.tool_ms),
+        idle_time: crate::status_summary::format_compact_duration(app.session_times.idle_ms),
         tool_use: app.tool_use_summary().unwrap_or_default(),
         stop_reason: stop_reason.text,
         stop_reason_loss,

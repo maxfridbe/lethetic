@@ -251,6 +251,9 @@ pub struct SessionState {
     /// Remote control shared the launch directory (`--rc-files`).
     #[serde(default)]
     pub remote_control_files: bool,
+    /// Model, tool and idle time spent in this session.
+    #[serde(default)]
+    pub session_times: crate::status_summary::SessionTimes,
     /// Tool calls made in this session, by tool name.
     #[serde(default)]
     pub tool_use_counts: std::collections::BTreeMap<String, u64>,
@@ -318,6 +321,7 @@ impl Default for SessionState {
             remote_control: None,
             remote_control_open: false,
             remote_control_files: false,
+            session_times: Default::default(),
             tool_use_counts: Default::default(),
             needs_migration_save: false,
         }
@@ -723,6 +727,7 @@ impl App {
             remote_control: self.remote_control_target.clone(),
             remote_control_open: self.remote_control_open,
             remote_control_files: self.remote_control_files,
+            session_times: self.session_times,
             tool_use_counts: self.tool_use_counts.clone(),
             needs_migration_save: false,
         };

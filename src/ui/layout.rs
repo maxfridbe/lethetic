@@ -72,10 +72,7 @@ pub(super) fn calculate_areas(app: &App, area: Rect) -> UiAreas {
                 Constraint::Length(1),
                 Constraint::Length(input_height),
                 Constraint::Length(u16::from(app.remote_control_target.is_some())),
-                Constraint::Length(
-                    2 + u16::from(!app.tool_use_counts.is_empty())
-                        + u16::from(super::background_tasks::status_visible()),
-                ),
+                Constraint::Length(super::status::status_height(app, main_layout[0].width)),
             ]
             .as_ref(),
         )
