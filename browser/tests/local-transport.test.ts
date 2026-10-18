@@ -87,7 +87,7 @@ await test("Files are session-scoped, reopen with their session and preserve old
   assert.equal(textFile(saved!.workspace!.files[0]!), 'first session'); transport.dispose();
 });
 
-await test("connection edits and Python toggles preserve the resumed session, history and files", () => {
+await test("connection, prompt edits and Python toggles preserve the resumed session, history and files", async () => {
   const values = new Map<string,string>();
   const storage = {getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value);}} as Storage;
   const connection = {name:"Saved",provider:"openai" as const,endpoint:"https://example.com/v1/chat/completions",model:"test"};
@@ -99,8 +99,15 @@ await test("connection edits and Python toggles preserve the resumed session, hi
   const transport = new LocalTransport({socketOpened(){},authenticationEpochChanged(){},transportStatus(){},protocolFault(){},serverMessage(){},commandResponse(){}},
     {connections:[connection],storage,files});
   transport.start(); files.save("keep.csv","42");
+  transport.send({type:"save_system_prompt", name:"Browser prompt", content:"Be practical", session_id:id, confirmed_overwrite:false, confirmation_id:null},0);
+  await Promise.resolve();
+  assert.equal(new SessionStore(storage).list()[0]?.system, "Be practical");
+  assert.deepEqual(new SessionStore(storage).list()[0]?.messages, messages);
+  assert.ok(!transport.promptDetails.instructions.includes("Because you are in Python mode"));
   transport.setConnections([{...connection,apiKey:"replacement"}],0);
   transport.setPythonMode(true);
+  assert.ok(transport.promptDetails.instructions.includes("Because you are in Python mode"));
+  assert.equal(JSON.parse(transport.promptDetails.tools)[0].name, "python");
   assert.equal(transport.state.session.session_id,id);
   assert.equal(transport.state.session.display_name,"Work");
   assert.equal(files.list()[0]?.content,"42");

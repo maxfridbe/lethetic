@@ -1,13 +1,14 @@
 import { fileSize } from "./size.js";
 import { jsx as h } from "../../lib/snabbdom/build/index.js";
 import type { VNode } from "../../lib/snabbdom/build/index.js";
-import type { DiffLayout, FilePaneState, FilePaneTab } from "./state.js";
-import { uiIcon } from "../icons.js";
+import type { DiffLayout, FileDock, FilePaneState, FilePaneTab } from "./state.js";
+import { uiIcon, fileTypeIcon } from "../icons.js";
 import { exclusionLabel } from "./protocol.js";
 import { CHANGE_LETTERS, changeRows, type ChangeRow } from "./git.js";
 
 export interface FilePaneActions {
   readonly toggle: () => void;
+  readonly setDock: (dock: FileDock) => void;
   readonly navigate: (path: string) => void;
   readonly select: (path: string) => void;
   readonly refresh: () => void;
@@ -51,7 +52,7 @@ function changeRow(row: ChangeRow, state: FilePaneState, live: boolean, actions:
     props={{ disabled: !live && !row.folder }}
     on={{ click: () => row.folder ? actions.toggleFolder(row.path) : actions.selectChange(row.path) }}>
     <span attrs={{ class: "changes-marker", "aria-hidden": "true" }}>
-      {row.folder ? uiIcon(collapsed ? "collapse" : "expand") : uiIcon("file")}
+      {row.folder ? uiIcon(collapsed ? "collapse" : "expand") : fileTypeIcon(row.path)}
       {row.folder ? null : CHANGE_LETTERS[row.kind ?? "modified"]}
     </span>
     <span attrs={{ class: "changes-name" }}>{row.folder ? `${row.name}/` : row.name}</span>
@@ -123,7 +124,7 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
   const path = state.selectedPath ?? state.directory;
   const selectedSize = state.preview?.size ?? state.listing?.entries.find(entry => entry.path === state.selectedPath)?.size ?? null;
   const exclusions = state.listing === null ? null : exclusionLabel(state.listing.exclusions);
-  return <section key="files-pane" attrs={{ class: `files-pane${state.open ? " is-open" : ""}`, "aria-label": extensions.scope ?? "Read-only launch-directory files" }}>
+  return <section key="files-pane" attrs={{ class: `files-pane${state.open ? " is-open" : ""}`, "data-dock": state.dock, "aria-label": extensions.scope ?? "Read-only launch-directory files" }}>
     <header attrs={{ class: "files-toolbar" }}>
       <button attrs={{ type: "button", id: "files-toggle", "aria-expanded": state.open ? "true" : "false", "aria-controls": "files-body" }}
         props={{ disabled: !live && !state.open }} on={{ click: actions.toggle }}>
@@ -137,6 +138,12 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
             props={{ disabled: !live }} on={{ click: () => actions.showTab(tab) }}>
             {uiIcon(tab === "files" ? "folder" : "code")}{tab === "files" ? "Browse" : "Changes"}</button>)}
         </span>}
+      <span attrs={{ class: "files-dock-controls", role: "group", "aria-label": "Files dock position" }}>
+        {(["top", "left"] as const).map(dock => <button key={dock}
+          attrs={{ type: "button", "data-files-dock": dock, "aria-pressed": String(state.dock === dock),
+            title: dock === "left" ? "Dock Files on the left, with code below the file list. Narrow screens use the top layout." : "Dock Files above the conversation" }}
+          on={{ click: () => actions.setDock(dock) }}>{uiIcon(dock === "left" ? "columns" : "list")}{dock === "left" ? "Left" : "Top"}</button>)}
+      </span>
       {!state.open || state.tab !== "changes" ? null : <div attrs={{ class: "files-actions" }}>
         <button attrs={{ type: "button" }} props={{ disabled: !live || state.changesBusy }}
           on={{ click: actions.refreshChanges }}>{uiIcon("refresh")}Refresh</button>
@@ -164,7 +171,7 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
               title: entry.path, "aria-pressed": state.selectedPath === entry.path ? "true" : "false" }}
             props={{ disabled: !live }}
             on={{ click: () => entry.kind === "directory" ? actions.navigate(entry.path) : actions.select(entry.path) }}>
-            <span attrs={{ "aria-hidden": "true" }}>{uiIcon(entry.kind === "directory" ? "folder" : "file")}</span>
+            <span attrs={{ "aria-hidden": "true" }}>{entry.kind === "directory" ? uiIcon("folder") : fileTypeIcon(entry.name)}</span>
             <span>{entry.name}</span>
             <small attrs={{ title: entry.kind === "directory" ? "Folder" : `${entry.size ?? "Unknown"} bytes` }}>{entry.kind === "directory" ? "Folder" : fileSize(entry.size)}</small>
           </button>)}

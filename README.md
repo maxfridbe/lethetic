@@ -7,7 +7,7 @@ your own model connections, **Pyodide Python**, the existing **Files browser**, 
 **saved sessions** that reopen after refresh. No native server is needed.
 [Download the standalone site and embedding SDK](https://github.com/maxfridbe/lethetic/releases/latest).
 
-<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-desktop.png" alt="Lethetic browser edition with session files, Python code and pinned usage stats" width="760"></a>
+<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-desktop.png" alt="Lethetic browser edition with Files docked left, a Python viewer below, and chat on the right" width="760"></a>
 <a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-mobile.png" alt="Lethetic browser edition on a phone" width="260"></a>
 
 Desktop and phone screenshots with a demo conversation. Click either to try it.
@@ -30,7 +30,10 @@ In **Connections**, use **Fetch models** to browse and filter the available mode
 or enter a model ID manually. The active connection and key status are explicit;
 use **Duplicate with key** to copy a connection and **Use connection** to switch.
 The standalone edition runs a Rust/WASM conversation runtime locally, with optional
-**Pyodide Python tools** in a persistent Web Worker. It needs no native Lethetic process.
+**Pyodide Python tools** in a persistent Web Worker.
+The **System prompt** dialog shows your editable instructions, the exact runtime
+additions, and tool definitions. Python mode encourages tested, reusable `.py`
+programs saved to session Files for preview and download. It needs no native Lethetic process.
 API keys survive refresh in this tab; they are excluded from saved chats.
 Chats and files are saved unencrypted on your device.
 Use **Save to Files** beneath code blocks, then browse folders, edit, preview,
@@ -39,6 +42,8 @@ context and usage stats; refresh keeps the current session. Pyodide files under
 `/home/pyodide` sync with **Files** after each call, including CSVs and images.
 File edits flow back into Python, and each session restores its own workspace.
 Preview HTML, Markdown, SVG, text, and images such as PNGs directly in Files.
+Dock **Files** at the top or on the left; the left sidebar stacks the file list
+above the code viewer. File-type icons make files easier to recognize.
 File sizes use readable units with exact bytes in tooltips. Pin individual stats
 from **Stats** to a bottom bar that wraps onto up to three lines.
 Copy any turn with its bottom-right **Copy contents** button. Download a session

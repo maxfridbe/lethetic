@@ -1,6 +1,6 @@
 import { fileSize } from "./size.js";
 import { jsx as h } from "../../lib/snabbdom/build/index.js";
-import { uiIcon } from "../icons.js";
+import { uiIcon, fileTypeIcon } from "../icons.js";
 import { exclusionLabel } from "./protocol.js";
 import { CHANGE_LETTERS, changeRows } from "./git.js";
 /** `+added −removed` counts, or `binary` when git reported no line numbers. */
@@ -24,7 +24,7 @@ function changeRow(row, state, live, actions) {
             "aria-pressed": selected ? "true" : "false",
             ...(row.folder ? { "aria-expanded": collapsed ? "false" : "true" } : {}) }, style: { paddingLeft: `${0.5 + row.depth * 0.9}rem` }, props: { disabled: !live && !row.folder }, on: { click: () => row.folder ? actions.toggleFolder(row.path) : actions.selectChange(row.path) } },
         h("span", { attrs: { class: "changes-marker", "aria-hidden": "true" } },
-            row.folder ? uiIcon(collapsed ? "collapse" : "expand") : uiIcon("file"),
+            row.folder ? uiIcon(collapsed ? "collapse" : "expand") : fileTypeIcon(row.path),
             row.folder ? null : CHANGE_LETTERS[row.kind ?? "modified"]),
         h("span", { attrs: { class: "changes-name" } }, row.folder ? `${row.name}/` : row.name),
         lineCounts(row.added, row.removed));
@@ -80,7 +80,7 @@ export function renderFilesPane(state, live, actions, extensions = {}) {
     const path = state.selectedPath ?? state.directory;
     const selectedSize = state.preview?.size ?? state.listing?.entries.find(entry => entry.path === state.selectedPath)?.size ?? null;
     const exclusions = state.listing === null ? null : exclusionLabel(state.listing.exclusions);
-    return h("section", { key: "files-pane", attrs: { class: `files-pane${state.open ? " is-open" : ""}`, "aria-label": extensions.scope ?? "Read-only launch-directory files" } },
+    return h("section", { key: "files-pane", attrs: { class: `files-pane${state.open ? " is-open" : ""}`, "data-dock": state.dock, "aria-label": extensions.scope ?? "Read-only launch-directory files" } },
         h("header", { attrs: { class: "files-toolbar" } },
             h("button", { attrs: { type: "button", id: "files-toggle", "aria-expanded": state.open ? "true" : "false", "aria-controls": "files-body" }, props: { disabled: !live && !state.open }, on: { click: actions.toggle } },
                 uiIcon(state.open ? "expand" : "collapse"),
@@ -90,6 +90,10 @@ export function renderFilesPane(state, live, actions, extensions = {}) {
                         "aria-selected": state.tab === tab ? "true" : "false" }, props: { disabled: !live }, on: { click: () => actions.showTab(tab) } },
                     uiIcon(tab === "files" ? "folder" : "code"),
                     tab === "files" ? "Browse" : "Changes"))),
+            h("span", { attrs: { class: "files-dock-controls", role: "group", "aria-label": "Files dock position" } }, ["top", "left"].map(dock => h("button", { key: dock, attrs: { type: "button", "data-files-dock": dock, "aria-pressed": String(state.dock === dock),
+                    title: dock === "left" ? "Dock Files on the left, with code below the file list. Narrow screens use the top layout." : "Dock Files above the conversation" }, on: { click: () => actions.setDock(dock) } },
+                uiIcon(dock === "left" ? "columns" : "list"),
+                dock === "left" ? "Left" : "Top"))),
             !state.open || state.tab !== "changes" ? null : h("div", { attrs: { class: "files-actions" } },
                 h("button", { attrs: { type: "button" }, props: { disabled: !live || state.changesBusy }, on: { click: actions.refreshChanges } },
                     uiIcon("refresh"),
@@ -114,7 +118,7 @@ export function renderFilesPane(state, live, actions, extensions = {}) {
                     state.listingError === null ? null : h("p", { attrs: { class: "files-notice", role: "status" } }, state.listingError),
                     state.listing?.entries.map((entry) => h("button", { key: entry.path, attrs: { type: "button", class: `files-entry${state.selectedPath === entry.path ? " is-selected" : ""}`,
                             title: entry.path, "aria-pressed": state.selectedPath === entry.path ? "true" : "false" }, props: { disabled: !live }, on: { click: () => entry.kind === "directory" ? actions.navigate(entry.path) : actions.select(entry.path) } },
-                        h("span", { attrs: { "aria-hidden": "true" } }, uiIcon(entry.kind === "directory" ? "folder" : "file")),
+                        h("span", { attrs: { "aria-hidden": "true" } }, entry.kind === "directory" ? uiIcon("folder") : fileTypeIcon(entry.name)),
                         h("span", null, entry.name),
                         h("small", { attrs: { title: entry.kind === "directory" ? "Folder" : `${entry.size ?? "Unknown"} bytes` } }, entry.kind === "directory" ? "Folder" : fileSize(entry.size)))),
                     state.listing?.entries.length === 0 ? h("p", null, "No eligible files in this folder.") : null),

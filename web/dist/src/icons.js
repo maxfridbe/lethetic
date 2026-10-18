@@ -20,3 +20,22 @@ export function activitySpinner(kind) {
 export function uiIcon(icon) {
     return (h("span", { attrs: { class: "ui-icon", "aria-hidden": "true" } }, BUTTON_ICONS[icon]));
 }
+/** Nerd Font file-type glyphs, using only the filename extension. */
+export function fileTypeIcon(path) {
+    const extension = path.split("/").at(-1)?.split(".").at(-1)?.toLowerCase() ?? "";
+    const types = {
+        py: ["\ue73c", "Python"], pyw: ["\ue73c", "Python"], ipynb: ["\ue73c", "Notebook"],
+        js: ["\ue74e", "JavaScript"], mjs: ["\ue74e", "JavaScript"], jsx: ["\ue74e", "JavaScript"],
+        ts: ["\ue628", "TypeScript"], tsx: ["\ue628", "TypeScript"], rs: ["\ue7a8", "Rust"],
+        md: ["\ue73e", "Markdown"], markdown: ["\ue73e", "Markdown"],
+        json: ["\ue60b", "JSON"], html: ["\uf13b", "HTML"], htm: ["\uf13b", "HTML"], css: ["\uf13c", "CSS"],
+        csv: ["\uf1c3", "Spreadsheet"], tsv: ["\uf1c3", "Spreadsheet"], xlsx: ["\uf1c3", "Spreadsheet"],
+        png: ["\uf1c5", "Image"], jpg: ["\uf1c5", "Image"], jpeg: ["\uf1c5", "Image"],
+        gif: ["\uf1c5", "Image"], webp: ["\uf1c5", "Image"], svg: ["\uf1c5", "SVG"],
+        pdf: ["\uf1c1", "PDF"], zip: ["\uf1c6", "Archive"], gz: ["\uf1c6", "Archive"], tar: ["\uf1c6", "Archive"],
+        txt: ["\uf15c", "Text"], log: ["\uf15c", "Log"],
+        yml: ["\uf013", "Configuration"], yaml: ["\uf013", "Configuration"], toml: ["\uf013", "Configuration"],
+    };
+    const [glyph, label] = types[extension] ?? [BUTTON_ICONS.file, "File"];
+    return h("span", { attrs: { class: "ui-icon file-type-icon", "aria-hidden": "true", title: label } }, glyph);
+}

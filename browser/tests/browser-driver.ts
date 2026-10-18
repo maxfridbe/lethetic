@@ -230,13 +230,26 @@ try {
   await until("document.querySelector('.files-path small')?.textContent.includes('B')");
   await until("!!document.querySelector('#files-monaco[data-editor-ready=true]')");
   await until("!document.querySelector('.toast')");
+  await evaluate("document.querySelector('[data-files-dock=left]').click()");
+  await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+  check(await evaluate("(()=>{const files=document.querySelector('.files-pane').getBoundingClientRect(), list=document.querySelector('.files-browser').getBoundingClientRect(), editor=document.querySelector('.files-preview').getBoundingClientRect(), chat=document.querySelector('#chat-scroll').getBoundingClientRect();return files.right<=chat.left+1 && list.bottom<=editor.top+1 && editor.width>200})()"), "left dock did not stack files above the viewer beside chat");
+  check(await evaluate("!!document.querySelector('.files-entry .file-type-icon[title=Python]')"), "Python file icon missing");
+  const leftImage=await rpc("Page.captureScreenshot",{format:"png"});
+  await writeFile(config.screenshot.replace('.png','-files-left.png'),Buffer.from(String(leftImage['data']),'base64'));
+  await evaluate("document.querySelector('[data-files-dock=top]').click()");
+  await evaluate("new Promise(resolve=>requestAnimationFrame(resolve))");
+  check(await evaluate("document.querySelector('.files-pane').getBoundingClientRect().bottom<=document.querySelector('#chat-scroll').getBoundingClientRect().top+1"), "top dock did not restore above chat");
   const filesImage = await rpc("Page.captureScreenshot", { format: "png" });
   await writeFile(config.screenshot.replace('.png','-files.png'), Buffer.from(String(filesImage["data"]), "base64"));
+  await evaluate("document.querySelector('[data-files-dock=left]').click()");
   await evaluate("document.querySelector('#files-toggle').click()");
   const image = await rpc("Page.captureScreenshot", { format: "png" });
   await writeFile(config.screenshot, Buffer.from(String(image["data"]), "base64"));
   await rpc("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   check(await evaluate("document.documentElement.scrollWidth <= innerWidth"), "mobile layout overflows");
+  await evaluate("document.querySelector('#files-toggle').click()");
+  check(await evaluate("document.querySelector('.files-pane').getBoundingClientRect().bottom<=document.querySelector('#chat-scroll').getBoundingClientRect().top+1 && document.documentElement.scrollWidth<=innerWidth"), "left dock did not fall back to top on mobile");
+  await evaluate("document.querySelector('#files-toggle').click()");
   check(await evaluate("(()=>{const bar=document.querySelector('.browser-usage-summary');return bar.clientHeight>40 && bar.clientHeight<=parseFloat(getComputedStyle(bar).lineHeight)*3+8})()"), "pinned stats did not wrap within three lines");
   const viewportResult = await evaluate(`(async () => {
     const {fitViewport}=await import('./src/viewport.js');
@@ -265,6 +278,7 @@ try {
   await rpc("Page.reload");
   await until("!!document.querySelector('[data-field=name]')");
   check(await evaluate("document.querySelectorAll('[data-pinned-stat]').length===14"), "pins did not survive reload");
+  check(await evaluate("document.querySelector('.files-pane').dataset.dock==='left'"), "Files dock did not survive reload");
   await evaluate("document.querySelector('[data-browser-action=connections]').click()");
   check(await evaluate("document.querySelector('[data-field=name]').value==='Browser test' && document.querySelector('[data-field=key]').value==='secret-never-persisted'"), "reload did not preserve connection metadata and tab key");
   await evaluate("document.querySelector('[data-field=key]').value='updated-tab-key'; document.querySelector('[data-field=connection-form]').requestSubmit()");
@@ -312,7 +326,21 @@ try {
   await evaluate("document.querySelector('[data-browser-action=connections]').click()");
   check(await evaluate("document.querySelector('[data-field=python]').checked && document.querySelector('[data-field=key]').value==='updated-tab-key'"), "Python or updated credentials did not survive reload");
   check(await evaluate("location.hash") === originalHash, "Python session changed on refresh");
+  await evaluate("document.querySelector('dialog[open]').close(); document.querySelector('[aria-label=\"Open command palette\"]').click(); document.querySelector('#palette-command-system-prompt').click()");
+  await until("!!document.querySelector('#prompt-injected')");
+  check(await evaluate("document.querySelector('#prompt-injected').readOnly && document.querySelector('#prompt-injected').value.includes('Because you are in Python mode') && JSON.parse(document.querySelector('#prompt-tools').value)[0].name==='python'"), "Python prompt additions are missing");
+  await evaluate("globalThis.testPromptSuffix=document.querySelector('#prompt-injected').value; const input=document.querySelector('#prompt-content'); input.value='Solve the task carefully.'; input.dispatchEvent(new Event('input',{bubbles:true})); document.querySelector('form.prompt-editor').requestSubmit()");
+  await until("document.querySelector('#prompt-content')?.value==='Solve the task carefully.'");
+  check(await evaluate("location.hash") === originalHash, "prompt edit switched sessions");
+  check(await evaluate("document.querySelector('.app-shell').textContent.includes('Context restored')"), "prompt edit cleared history");
+  const promptImage=await rpc("Page.captureScreenshot",{format:"png"});
+  await writeFile(config.screenshot.replace('.png','-prompt.png'),Buffer.from(String(promptImage['data']),'base64'));
+  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); document.querySelector('[data-browser-action=connections]').click()");
   await evaluate("document.querySelector('[data-field=python]').click(); document.querySelector('dialog[open]').close()");
+  await evaluate("document.querySelector('[aria-label=\"Open command palette\"]').click(); document.querySelector('#palette-command-system-prompt').click()");
+  await until("!!document.querySelector('#prompt-injected')");
+  check(await evaluate("!document.querySelector('#prompt-injected').value.includes('Because you are in Python mode') && document.querySelector('#prompt-content').value==='Solve the task carefully.' && document.querySelector('#prompt-tools').value==='[]'"), "chat prompt retained Python instructions or lost edits");
+  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
   await evaluate("location.hash='#/latest'");
   await until(`location.hash===${JSON.stringify(originalHash)}`);
   await evaluate("location.hash='#/new'");
@@ -364,8 +392,19 @@ try {
   check(await evaluate(`(async () => {
     const {mountLethetic}=await import('./src/embed.js');
     const container=document.createElement('div');document.body.replaceChildren(container);
-    const view=mountLethetic(container,{compact:true,python:true,pyodideIndexURL:location.origin+'/pyodide/',
+    const view=mountLethetic(container,{compact:true,python:true,systemPrompt:'Test editable prompt',pyodideIndexURL:location.origin+'/pyodide/',
       connections:[{name:'Embed',provider:'openai',endpoint:location.origin+'/v1/chat/completions',model:'test'}]});
+    const {injectedInstructions}=await import('./src/prompts.js');
+    const originalFetch=globalThis.fetch; let sentPrompt=false;
+    globalThis.fetch=(url,options)=>{
+      if(String(url).endsWith('/v1/chat/completions')) {
+        const request=JSON.parse(options.body);
+        if(request.messages[0].content!=='Test editable prompt'+String.fromCharCode(10,10)+injectedInstructions(true))throw Error('Displayed Python instructions differ from sent system prompt');
+        if(request.tools[0].function.name!=='python')throw Error('Python definition not sent');
+        sentPrompt=true;
+      }
+      return originalFetch(url,options);
+    };
     const prompt=container.querySelector('#composer-input'); prompt.value='calculate';
     prompt.dispatchEvent(new Event('input',{bubbles:true})); container.querySelector('form.composer').requestSubmit();
     for(let i=0;i<200;i++) {
@@ -373,11 +412,11 @@ try {
         const captured=!!container.querySelector('[data-browser-action=save-code]');
         const counted=container.querySelector('.browser-status').textContent.includes('2,528');
         view.destroy(); const cleaned=!document.querySelector('dialog') && !container.childNodes.length;
-        container.remove();return captured && cleaned && counted;
+        globalThis.fetch=originalFetch; container.remove();return captured && cleaned && counted && sentPrompt;
       }
       await new Promise(resolve=>setTimeout(resolve,25));
     }
-    view.destroy();container.remove();return false;
+    globalThis.fetch=originalFetch; view.destroy();container.remove();return false;
   })()`), "embedded UI Python/model tool loop failed");
   process.stdout.write("Embedded shared UI and Python tool loop passed.\n");
   const workspaceResult = await evaluate(`(async () => {
@@ -453,6 +492,11 @@ try {
       const python=globalThis.testPython;
       const run=code=>python.execute({code},new AbortController().signal);
       try {
+        const {PYODIDE_CHECK,PYTHON_PROGRAM_EXAMPLE}=await import('./src/prompts.js');
+        const probe=await run(PYODIDE_CHECK);
+        if(!probe.includes("'pyodide_available': True") || !probe.includes("'running_in_pyodide': True"))throw Error('Prompt Pyodide detection failed: '+probe);
+        const program=await run(PYTHON_PROGRAM_EXAMPLE);
+        if(program.trim()!=='42' || !python.snapshotWorkspace().files.some(file=>file.path==='solution.py'))throw Error('Prompt example did not create a downloadable program: '+program);
         const value=await run('print(x + 2)');
         const error=await run('from pathlib import Path\\nPath("saved.bin").write_bytes(bytes([0,255]))\\nraise ValueError("expected-test-error")');
         const controller=new AbortController();

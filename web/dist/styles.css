@@ -1775,3 +1775,9 @@ progress {
 
 .chat-block-actions { display: flex; justify-content: flex-end; margin-top: .4rem; }
 .chat-block-actions button { min-height: 28px; padding: .15rem .35rem; font-size: .8rem; }
+
+.prompt-injected { display: grid; gap: .5rem; min-width: 0; }
+.prompt-editor .prompt-injected textarea { min-height: 12rem; height: 14rem; color: var(--theme-output-fg); width: 100%; box-sizing: border-box; white-space: pre-wrap; }
+.prompt-injected p { margin: 0; color: var(--theme-system-fg); }
+
+.system-prompt-panel.has-runtime #prompt-content { min-height: 8rem; height: 9rem; }

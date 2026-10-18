@@ -179,7 +179,7 @@ function systemPromptPanel(context, snapshot) {
         utf8Length(trimmedName) > MAX_SYSTEM_PROMPT_NAME_BYTES ||
         editorContent.length === 0 ||
         utf8Length(editorContent) > MAX_SYSTEM_PROMPT_BYTES;
-    return (h("div", { attrs: { class: "system-prompt-panel" } },
+    return (h("div", { attrs: { class: `system-prompt-panel${context.state.systemPromptDetails ? " has-runtime" : ""}` } },
         h("section", { attrs: { class: "prompt-choices" } },
             h("h3", null, "Saved prompts"),
             h("ul", { attrs: { class: "choice-list compact" } }, data.prompts.map((prompt, index) => (h("li", { key: prompt.prompt_id },
@@ -212,10 +212,11 @@ function systemPromptPanel(context, snapshot) {
                 }, on: {
                     input: (event) => context.actions.updateEditorName(inputValue(event)),
                 } }),
-            h("label", { attrs: { for: "prompt-content" } }, "Prompt content"),
+            h("label", { attrs: { for: "prompt-content" } }, context.state.systemPromptDetails ? "Your editable prompt" : "Prompt content"),
+            context.state.systemPromptDetails ? h("p", null, "Your prompt is sent first, followed by the runtime instructions below. Save applies changes to the next turn in this session.") : null,
             h("textarea", { attrs: {
                     id: "prompt-content",
-                    rows: "18",
+                    rows: context.state.systemPromptDetails ? "6" : "18",
                     maxlength: String(MAX_DRAFT_LENGTH),
                 }, props: {
                     value: editorContent,
@@ -230,7 +231,15 @@ function systemPromptPanel(context, snapshot) {
                     "New"),
                 h("button", { attrs: { type: "submit", class: "primary-button" }, props: { disabled: saveDisabled } },
                     uiIcon("save"),
-                    "Save")))));
+                    "Save")),
+            context.state.systemPromptDetails ? h("section", { attrs: { class: "prompt-injected", "aria-label": "Runtime prompt additions" } },
+                h("label", { attrs: { for: "prompt-injected" } }, "Runtime instructions (read-only)"),
+                h("p", null, "Appended after your prompt for the current mode. These are the exact instructions the browser will send."),
+                h("textarea", { attrs: { id: "prompt-injected", rows: "14", spellcheck: "false" }, props: { readOnly: true, value: context.state.systemPromptDetails.instructions } }),
+                h("details", null,
+                    h("summary", null, "Tool definitions sent separately"),
+                    h("p", null, "These descriptions and input schemas accompany the system prompt. An empty list means no tools are enabled."),
+                    h("textarea", { attrs: { id: "prompt-tools", rows: "10", "aria-label": "Tool definitions", spellcheck: "false" }, props: { readOnly: true, value: context.state.systemPromptDetails.tools } }))) : null)));
 }
 function sessionsPanel(context, snapshot) {
     const { live } = context.state;

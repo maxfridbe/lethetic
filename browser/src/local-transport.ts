@@ -3,6 +3,7 @@ import type { CommandOutcome, ICommandRequest, PanelId, WebAppSnapshot, WebComma
 import type { ApplicationTransport, BrowserTransportEvents } from "../../web/src/transport.js";
 import { createRuntime, DEFAULT_PROMPT } from "./sdk.js";
 import type { Connection, LetheticRuntime, RuntimeEvent, Tool } from "./sdk.js";
+import { effectiveSystemPrompt, injectedInstructions, toolDefinitions } from "./prompts.js";
 import { createPythonTool } from "./python.js";
 import type { PythonTool } from "./python.js";
 import { emptyWorkspace, parseWorkspace } from "./workspace.js";
@@ -60,6 +61,11 @@ export class LocalTransport implements ApplicationTransport {
       try { this.#legacyWorkspace = options.files.snapshotWorkspace(); } catch { /* Leave damaged legacy data untouched. */ }
       options.files.bindWorkspace(() => structuredClone(this.#workspace), (workspace) => this.#editWorkspace(workspace));
     }
+  }
+
+  get promptDetails(): { instructions: string; tools: string } {
+    return { instructions: injectedInstructions(this.pythonEnabled),
+      tools: JSON.stringify(toolDefinitions(this.pythonEnabled, this.options.tools), null, 2) };
   }
 
   get busy(): boolean { return this.#operation !== null; }
@@ -214,7 +220,9 @@ export class LocalTransport implements ApplicationTransport {
         this.setPythonMode(command.mode_id === "python"); break;
       case "select_system_prompt": this.#openSystemPrompt(); break;
       case "save_system_prompt":
-        this.#requireIdle(); this.reset(); this.#system = command.content; this.#openSystemPrompt(); break;
+        this.#requireIdle(); this.#saveSession(true);
+        this.#runtime?.dispose(); this.#runtime = null;
+        this.#system = command.content; this.#openSystemPrompt(); break;
       case "clear_context": case "delete_python_runtime":
         this.#requireIdle();
         if (!command.confirmed || this.state.overlay.data?.type !== "confirmation" ||
@@ -298,7 +306,7 @@ export class LocalTransport implements ApplicationTransport {
             onWorkspace: (workspace) => this.#checkpointWorkspace(workspace) });
           tools.push(this.#python);
         }
-        const runtime = await createRuntime({ connection, tools, systemPrompt: this.#system, onEvent: (event) => this.#event(event) });
+        const runtime = await createRuntime({ connection, tools, systemPrompt: effectiveSystemPrompt(this.#system, this.pythonEnabled), onEvent: (event) => this.#event(event) });
         if (this.#closed) { runtime.dispose(); return; }
         try { runtime.restore(this.#savedMessages); } catch (error) { runtime.dispose(); throw error; }
         this.#runtime = runtime;

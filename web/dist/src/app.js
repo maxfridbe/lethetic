@@ -908,6 +908,7 @@ export class SpaApplication {
                 toast: this.#toast,
                 filesPane: this.#filesEnabled ? renderFilesPane(this.#files.state, live, {
                     toggle: () => this.#files.toggle(),
+                    setDock: (dock) => this.#files.setDock(dock),
                     navigate: (path) => { void this.#files.navigate(path); },
                     select: (path) => { void this.#files.select(path); },
                     refresh: () => { void this.#files.refresh(); },
@@ -955,6 +956,7 @@ export class SpaApplication {
             state: {
                 panel,
                 sessionsNotice: this.extensions.sessionsNotice?.() ?? null,
+                systemPromptDetails: this.extensions.systemPromptDetails?.() ?? null,
                 ...(this.extensions.sessionActions ? { sessionActions: this.extensions.sessionActions } : {}),
                 snapshot,
                 live,

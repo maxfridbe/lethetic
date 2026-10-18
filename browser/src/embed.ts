@@ -60,6 +60,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   const application = new SpaApplication(mount, {
     status: () => renderBrowserStatus(transport, pinnedStats, () => transport?.publish()),
     promptPlaceholder: "Message your model…",
+    systemPromptDetails: () => transport?.promptDetails ?? null,
     sessionsNotice: () => [transport?.persistenceStatus, exportStatus].filter(Boolean).join(" "),
     sessionActions: (id) => h("button", { attrs: { type: "button", "data-session-export": id, title: "Download this session, its files and debug information as .tar.gz" },
       props: { disabled: exporting }, on: { click: () => {

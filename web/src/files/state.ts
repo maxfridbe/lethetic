@@ -2,12 +2,16 @@ import type { FilesListResponse, FilesReadResponse, GitDiffResponse, GitStatusRe
 import type { FileClient } from "./client.js";
 import { exclusionLabel, fileFailure } from "./protocol.js";
 
+export type FileDock = "top" | "left";
+const DOCK_KEY = "lethetic.files-dock.v1";
+
 export type FilePaneTab = "files" | "changes";
 /** Side by side, or inline with removed lines stacked above added ones. */
 export type DiffLayout = "side-by-side" | "inline";
 
 export interface FilePaneState {
   readonly open: boolean;
+  readonly dock: FileDock;
   readonly tab: FilePaneTab;
   readonly directory: string;
   readonly listing: FilesListResponse | null;
@@ -29,8 +33,8 @@ export interface FilePaneState {
   readonly diffLayout: DiffLayout;
 }
 
-function initialState(diffLayout: DiffLayout = "side-by-side"): FilePaneState {
-  return { open: false, tab: "files", directory: "", listing: null, listingBusy: false, listingError: null,
+function initialState(diffLayout: DiffLayout = "side-by-side", dock: FileDock = "top"): FilePaneState {
+  return { open: false, dock, tab: "files", directory: "", listing: null, listingBusy: false, listingError: null,
     selectedPath: null, preview: null, previewBusy: false, previewError: null, downloadBusy: false,
     changes: null, changesBusy: false, changesError: null, collapsed: new Set(),
     selectedChange: null, diff: null, diffBusy: false, diffError: null, diffLayout };
@@ -47,14 +51,28 @@ export class FilesController {
   #epoch = 0;
   readonly #urls = new Map<string, number>();
 
-  constructor(readonly changed: () => void, readonly notify: (message: string) => void) {}
+  #preferences: Pick<Storage, "getItem" | "setItem"> | null = null;
+  constructor(readonly changed: () => void, readonly notify: (message: string) => void,
+    preferences?: Pick<Storage, "getItem" | "setItem">) {
+    try {
+      this.#preferences = preferences ?? globalThis.localStorage ?? null;
+      if (this.#preferences?.getItem(DOCK_KEY) === "left") this.#state = { ...this.#state, dock: "left" };
+    } catch { /* Docking remains available when storage is blocked. */ }
+  }
+
+  setDock(dock: FileDock): void {
+    if (this.#state.dock === dock) return;
+    this.#state = { ...this.#state, dock };
+    try { this.#preferences?.setItem(DOCK_KEY, dock); } catch { /* Keep the preference for this view. */ }
+    this.changed();
+  }
   get state(): FilePaneState { return this.#state; }
   attach(client: FileClient): void { this.#client = client; }
 
   reset(): void {
     this.#epoch += 1;
     this.#abort();
-    this.#state = initialState(this.#state.diffLayout);
+    this.#state = initialState(this.#state.diffLayout, this.#state.dock);
     for (const [url, timer] of this.#urls) {
       globalThis.clearTimeout(timer);
       URL.revokeObjectURL(url);

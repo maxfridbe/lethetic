@@ -3,6 +3,15 @@ import type { Workspace } from "./workspace.js";
 export type { Workspace } from "./workspace.js";
 import type { Tool } from "./sdk.js";
 
+export const PYTHON_TOOL_DEFINITION = {
+    name: "python",
+    description: "Run Python in a persistent Pyodide browser worker. Use print() for output. " +
+      "Python execution, virtual file reads/writes, and browser-supported networking are already authorized; do not ask for per-call approval. Variables persist while the worker runs. Write session files under /home/pyodide (the initial working directory); files there sync with Files after each call and restore after reload or stop. Create CSV, HTML, SVG or PNG outputs for the user to preview or download in Files. Other directories are temporary. No shell or native files are available. " +
+      "Packages bundled with Pyodide are loaded from imports. Stopping resets variables and discards unfinished file changes. Workspace limits: 100 files, 256 folders, 1 MiB per file, 2 MiB total; no symlinks.",
+    parameters: { type: "object", properties: { code: { type: "string", description: "Python source" } },
+      required: ["code"], additionalProperties: false },
+};
+
 export const PYODIDE_INDEX_URL = "https://cdn.jsdelivr.net/pyodide/v0.29.3/full/";
 
 export interface PythonTool extends Tool {
@@ -44,12 +53,7 @@ export function createPythonTool(options: {
     terminate();
   };
   return {
-    name: "python",
-    description: "Run Python in a persistent Pyodide browser worker. Use print() for output. " +
-      "Python execution, virtual file reads/writes, and browser-supported networking are already authorized; do not ask for per-call approval. Variables persist while the worker runs. Write session files under /home/pyodide (the initial working directory); files there sync with Files after each call and restore after reload or stop. Create CSV, HTML, SVG or PNG outputs for the user to preview or download in Files. Other directories are temporary. No shell or native files are available. " +
-      "Packages bundled with Pyodide are loaded from imports. Stopping resets variables and discards unfinished file changes. Workspace limits: 100 files, 256 folders, 1 MiB per file, 2 MiB total; no symlinks.",
-    parameters: { type: "object", properties: { code: { type: "string", description: "Python source" } },
-      required: ["code"], additionalProperties: false },
+    ...PYTHON_TOOL_DEFINITION,
     reset,
     snapshotWorkspace: () => structuredClone(checkpoint),
     setWorkspace(workspace): void {

@@ -346,7 +346,7 @@ function systemPromptPanel(
     editorContent.length === 0 ||
     utf8Length(editorContent) > MAX_SYSTEM_PROMPT_BYTES;
   return (
-    <div attrs={{ class: "system-prompt-panel" }}>
+    <div attrs={{ class: `system-prompt-panel${context.state.systemPromptDetails ? " has-runtime" : ""}` }}>
       <section attrs={{ class: "prompt-choices" }}>
         <h3>Saved prompts</h3>
         <ul attrs={{ class: "choice-list compact" }}>
@@ -401,11 +401,12 @@ function systemPromptPanel(
               context.actions.updateEditorName(inputValue(event)),
           }}
         />
-        <label attrs={{ for: "prompt-content" }}>Prompt content</label>
+        <label attrs={{ for: "prompt-content" }}>{context.state.systemPromptDetails ? "Your editable prompt" : "Prompt content"}</label>
+        {context.state.systemPromptDetails ? <p>Your prompt is sent first, followed by the runtime instructions below. Save applies changes to the next turn in this session.</p> : null}
         <textarea
           attrs={{
             id: "prompt-content",
-            rows: "18",
+            rows: context.state.systemPromptDetails ? "6" : "18",
             maxlength: String(MAX_DRAFT_LENGTH),
           }}
           props={{
@@ -435,6 +436,18 @@ function systemPromptPanel(
             Save
           </button>
         </div>
+        {context.state.systemPromptDetails ? <section attrs={{ class: "prompt-injected", "aria-label": "Runtime prompt additions" }}>
+          <label attrs={{ for: "prompt-injected" }}>Runtime instructions (read-only)</label>
+          <p>Appended after your prompt for the current mode. These are the exact instructions the browser will send.</p>
+          <textarea attrs={{ id: "prompt-injected", rows: "14", spellcheck: "false" }}
+            props={{ readOnly: true, value: context.state.systemPromptDetails.instructions }}></textarea>
+          <details>
+            <summary>Tool definitions sent separately</summary>
+            <p>These descriptions and input schemas accompany the system prompt. An empty list means no tools are enabled.</p>
+            <textarea attrs={{ id: "prompt-tools", rows: "10", "aria-label": "Tool definitions", spellcheck: "false" }}
+              props={{ readOnly: true, value: context.state.systemPromptDetails.tools }}></textarea>
+          </details>
+        </section> : null}
       </form>
     </div>
   );

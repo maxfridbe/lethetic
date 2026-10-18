@@ -82,6 +82,7 @@ export interface ChatViewContext {
 
 export interface PanelViewState {
   readonly sessionsNotice?: string | null;
+  readonly systemPromptDetails?: { instructions: string; tools: string } | null;
   readonly sessionActions?: (id: string) => VNode | null;
   readonly panel: PanelId;
   readonly snapshot: WebAppSnapshot | null;

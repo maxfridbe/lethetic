@@ -1,6 +1,7 @@
 import { exclusionLabel, fileFailure } from "./protocol.js";
-function initialState(diffLayout = "side-by-side") {
-    return { open: false, tab: "files", directory: "", listing: null, listingBusy: false, listingError: null,
+const DOCK_KEY = "lethetic.files-dock.v1";
+function initialState(diffLayout = "side-by-side", dock = "top") {
+    return { open: false, dock, tab: "files", directory: "", listing: null, listingBusy: false, listingError: null,
         selectedPath: null, preview: null, previewBusy: false, previewError: null, downloadBusy: false,
         changes: null, changesBusy: false, changesError: null, collapsed: new Set(),
         selectedChange: null, diff: null, diffBusy: false, diffError: null, diffLayout };
@@ -17,16 +18,33 @@ export class FilesController {
     #diff = null;
     #epoch = 0;
     #urls = new Map();
-    constructor(changed, notify) {
+    #preferences = null;
+    constructor(changed, notify, preferences) {
         this.changed = changed;
         this.notify = notify;
+        try {
+            this.#preferences = preferences ?? globalThis.localStorage ?? null;
+            if (this.#preferences?.getItem(DOCK_KEY) === "left")
+                this.#state = { ...this.#state, dock: "left" };
+        }
+        catch { /* Docking remains available when storage is blocked. */ }
+    }
+    setDock(dock) {
+        if (this.#state.dock === dock)
+            return;
+        this.#state = { ...this.#state, dock };
+        try {
+            this.#preferences?.setItem(DOCK_KEY, dock);
+        }
+        catch { /* Keep the preference for this view. */ }
+        this.changed();
     }
     get state() { return this.#state; }
     attach(client) { this.#client = client; }
     reset() {
         this.#epoch += 1;
         this.#abort();
-        this.#state = initialState(this.#state.diffLayout);
+        this.#state = initialState(this.#state.diffLayout, this.#state.dock);
         for (const [url, timer] of this.#urls) {
             globalThis.clearTimeout(timer);
             URL.revokeObjectURL(url);

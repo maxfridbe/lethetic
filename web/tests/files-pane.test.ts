@@ -45,7 +45,7 @@ const json = (value: unknown, options: { status?: number; headers?: Record<strin
   new Response(JSON.stringify(value), { ...options, headers: { "Content-Type": "application/json", ...options.headers } });
 const signal = (): AbortSignal => new AbortController().signal;
 const flush = async (): Promise<void> => { for (let i = 0; i < 6; i += 1) await Promise.resolve(); };
-const actions: FilePaneActions = { toggle() {}, navigate() {}, select() {}, refresh() {}, download() {}, copyPath() {},
+const actions: FilePaneActions = { toggle() {}, setDock() {}, navigate() {}, select() {}, refresh() {}, download() {}, copyPath() {},
   showTab() {}, refreshChanges() {}, selectChange() {}, toggleFolder() {}, setDiffLayout() {} };
 
 test("file paths and exact response shapes are confined before display", () => {
@@ -260,4 +260,20 @@ test("file sizes preserve exact large counts and use readable binary units", () 
     assert.equal(fileSize(bytes!), label);
   }
   assert.equal(fileSize(null), "Unknown size");
+});
+
+
+test("Files dock preference survives closing, session resets and a new view", () => {
+  let saved: string | null = null;
+  const storage = { getItem: () => saved, setItem: (_key: string, value: string) => { saved = value; } };
+  const controller = new FilesController(() => {}, () => {}, storage);
+  assert.equal(controller.state.dock, "top");
+  controller.setDock("left"); controller.reset();
+  assert.equal(controller.state.dock, "left");
+  const restored = new FilesController(() => {}, () => {}, storage);
+  assert.equal(restored.state.dock, "left");
+  restored.setDock("top");
+  assert.equal(new FilesController(() => {}, () => {}, storage).state.dock, "top");
+  const blocked = new FilesController(() => {}, () => {}, { getItem: () => { throw Error("blocked"); }, setItem: () => { throw Error("blocked"); } });
+  blocked.setDock("left"); assert.equal(blocked.state.dock, "left");
 });

@@ -205,6 +205,7 @@ export class SpaApplication implements BrowserTransportEvents {
     status?: () => VNode;
     promptPlaceholder?: string;
     sessionsNotice?: () => string;
+    systemPromptDetails?: () => { instructions: string; tools: string } | null;
     sessionActions?: (id: string) => VNode | null;
     files?: FilePaneExtensions;
     blockActions?: (block: RenderBlockView) => VNode | null;
@@ -1184,6 +1185,7 @@ export class SpaApplication implements BrowserTransportEvents {
         toast: this.#toast,
         filesPane: this.#filesEnabled ? renderFilesPane(this.#files.state, live, {
           toggle: () => this.#files.toggle(),
+          setDock: (dock) => this.#files.setDock(dock),
           navigate: (path) => { void this.#files.navigate(path); },
           select: (path) => { void this.#files.select(path); },
           refresh: () => { void this.#files.refresh(); },
@@ -1233,6 +1235,7 @@ export class SpaApplication implements BrowserTransportEvents {
       state: {
         panel,
         sessionsNotice: this.extensions.sessionsNotice?.() ?? null,
+        systemPromptDetails: this.extensions.systemPromptDetails?.() ?? null,
         ...(this.extensions.sessionActions ? { sessionActions: this.extensions.sessionActions } : {}),
         snapshot,
         live,
