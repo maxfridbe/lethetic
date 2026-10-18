@@ -239,6 +239,7 @@ export class SpaApplication implements BrowserTransportEvents {
   }
 
   refreshFiles(): void { void this.#files.refresh(); }
+  resetFiles(): void { this.#files.reset(); }
 
   readonly #onPageHide = (): void => {
     this.#files.reset();

@@ -7,11 +7,15 @@ import { WFE_PROTOCOL_VERSION } from "../../web/src/generated/contracts.js";
 import { parseMetrics } from "./metrics.js";
 import type { MetricsSnapshot } from "./metrics.js";
 
+import { parseWorkspace } from "./workspace.js";
+import type { Workspace } from "./workspace.js";
+
 export interface SavedSession {
   id: string; name: string | null; label: string; updatedAt: string;
   blocks: RenderBlockView[]; messages: unknown[]; inputs: string[];
   system: string; connection: Omit<Connection, "apiKey"> | null; python: boolean; theme: string;
   metrics?: MetricsSnapshot;
+  workspace?: Workspace;
 }
 const KEY = "lethetic.sessions.v1";
 export const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
@@ -66,6 +70,7 @@ function parseSession(value: unknown): SavedSession {
   }
   return { id: item.id, name: item.name, label: item.label, updatedAt: item.updatedAt, blocks: item.blocks,
     messages: item.messages, inputs: item.inputs, system: item.system, python: item.python, theme: item.theme, connection,
+    ...(item.workspace !== undefined ? { workspace: parseWorkspace(item.workspace) } : {}),
     ...(item.metrics ? { metrics: parseMetrics(item.metrics) } : {}) };
 }
 

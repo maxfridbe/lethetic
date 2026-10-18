@@ -5,6 +5,8 @@ import { createRuntime, DEFAULT_PROMPT } from "./sdk.js";
 import type { Connection, LetheticRuntime, RuntimeEvent, Tool } from "./sdk.js";
 import { createPythonTool } from "./python.js";
 import type { PythonTool } from "./python.js";
+import { emptyWorkspace, parseWorkspace } from "./workspace.js";
+import type { Workspace } from "./workspace.js";
 import { block, initialState, NO_LOSS } from "./local-state.js";
 import { BrowserMetrics } from "./metrics.js";
 import { SessionStore } from "./sessions.js";
@@ -22,6 +24,7 @@ export interface LocalOptions {
   initialSession?: string;
   onSessionChanged?: (id: string) => void;
   files?: BrowserFiles;
+  onFilesChanged?: () => void;
 }
 
 /** Drives the existing remote-mode UI using the same typed commands and snapshots. */
@@ -43,12 +46,19 @@ export class LocalTransport implements ApplicationTransport {
   #requestCount = 0;
   readonly #sessions: SessionStore;
   #savedMessages: unknown[] = [];
+  #workspace = emptyWorkspace();
+  #legacyWorkspace = emptyWorkspace();
   persistenceStatus = "Sessions stay in this tab; storage is not enabled.";
 
   constructor(readonly events: BrowserTransportEvents, readonly options: LocalOptions) {
     this.pythonEnabled = options.python ?? false;
     this.#system = options.systemPrompt ?? DEFAULT_PROMPT;
     this.#sessions = new SessionStore(options.storage);
+    if (options.files) {
+      // Retain the old global record; import a copy only for pre-workspace sessions.
+      try { this.#legacyWorkspace = options.files.snapshotWorkspace(); } catch { /* Leave damaged legacy data untouched. */ }
+      options.files.bindWorkspace(() => structuredClone(this.#workspace), (workspace) => this.#editWorkspace(workspace));
+    }
   }
 
   get busy(): boolean { return this.#operation !== null; }
@@ -87,7 +97,7 @@ export class LocalTransport implements ApplicationTransport {
     const before = this.connection;
     const after = connections[selected];
     const changed = before?.endpoint !== after?.endpoint || before?.model !== after?.model || before?.provider !== after?.provider;
-    if (changed) this.#saveSession();
+    if (changed) this.#saveSession(true);
     this.options.connections = connections;
     this.selected = selected;
     if (changed) this.#newSession();
@@ -99,7 +109,7 @@ export class LocalTransport implements ApplicationTransport {
   setPythonMode(enabled: boolean): void {
     this.#requireIdle();
     if (enabled === this.pythonEnabled) return;
-    this.#saveSession(); this.pythonEnabled = enabled; this.#newSession(); this.#saveSession(); this.publish();
+    this.#saveSession(true); this.pythonEnabled = enabled; this.#newSession(); this.#saveSession(); this.publish();
   }
 
   reset(): void {
@@ -222,7 +232,7 @@ export class LocalTransport implements ApplicationTransport {
             confirmation.confirmation.action !== command.type || confirmation.confirmation.session_id !== target) {
           this.state.overlay = { active_panel: "confirmation", data: { type: "confirmation", confirmation: {
             confirmation_id: crypto.randomUUID(), action: command.type, session_id: target,
-            title: "Delete saved sessions?", message: target ? "Delete this session from this device?" : "Delete every saved chat on this device? Local files are kept." } } };
+            title: "Delete saved sessions?", message: target ? "Delete this session and its workspace files from this device?" : "Delete every saved chat and its workspace files from this device?" } } };
           throw new Error("Review the confirmation dialog.");
         }
         if (target) this.#sessions.remove(target); else this.#sessions.clear();
@@ -230,7 +240,7 @@ export class LocalTransport implements ApplicationTransport {
         this.state.overlay = { active_panel: "sessions", data: null };
         return target ? { type: "session_deleted", session_id: target } : { type: "sessions_wiped" };
       }
-      case "new_session": this.#requireIdle(); this.#saveSession(); this.#newSession();
+      case "new_session": this.#requireIdle(); this.#saveSession(true); this.#newSession();
         return { type: "session_created", session_id: this.state.session.session_id };
       case "invoke_command": return this.#invoke(command.command_id);
       default: throw new Error("This command requires the native runtime.");
@@ -279,7 +289,9 @@ export class LocalTransport implements ApplicationTransport {
         if (!connection) throw new Error("No connection selected.");
         const tools = [...(this.options.tools ?? [])];
         if (this.pythonEnabled) {
-          this.#python = createPythonTool({ indexURL: this.options.pyodideIndexURL }); tools.push(this.#python);
+          this.#python ??= createPythonTool({ indexURL: this.options.pyodideIndexURL, workspace: this.#workspace,
+            onWorkspace: (workspace) => this.#checkpointWorkspace(workspace) });
+          tools.push(this.#python);
         }
         const runtime = await createRuntime({ connection, tools, systemPrompt: this.#system, onEvent: (event) => this.#event(event) });
         if (this.#closed) { runtime.dispose(); return; }
@@ -303,7 +315,7 @@ export class LocalTransport implements ApplicationTransport {
   }
 
   #newSession(): void {
-    this.reset(); this.#history = [];
+    this.reset(); this.#history = []; this.#workspace = emptyWorkspace();
     this.state.session = { session_id: crypto.randomUUID(), display_name: null, fallback_label: "New chat" };
     this.options.onSessionChanged?.(this.state.session.session_id);
   }
@@ -313,11 +325,12 @@ export class LocalTransport implements ApplicationTransport {
     const saved = this.#sessions.list();
     const session = route === "latest" ? saved[0] : saved.find((item) => item.id === route);
     if (route !== "latest" && route !== "new" && !session) throw new Error("Session not found on this device. Open Sessions or #/new.");
-    if (this.state.blocks.blocks.some((item) => item.kind === "user")) this.#saveSession();
+    if (this.state.blocks.blocks.some((item) => item.kind === "user")) this.#saveSession(true);
     if (session && route !== "new") {
       this.reset();
       this.state.session = { session_id: session.id, display_name: session.name, fallback_label: session.label };
       this.state.blocks.blocks = session.blocks; this.#savedMessages = session.messages; this.#history = session.inputs;
+      this.#workspace = structuredClone(session.workspace ?? this.#legacyWorkspace);
       this.#system = session.system; this.pythonEnabled = session.python;
       if (session.metrics) this.metrics.restore(session.metrics);
       for (const theme of this.state.themes) theme.selected = theme.theme_id === session.theme;
@@ -332,7 +345,7 @@ export class LocalTransport implements ApplicationTransport {
     this.#saveSession();
   }
 
-  #saveSession(): void {
+  #saveSession(mustSave = false): void {
     if (this.busy) return;
     try {
       const connection = this.connection;
@@ -341,14 +354,41 @@ export class LocalTransport implements ApplicationTransport {
       this.state.session.fallback_label = label;
       this.#sessions.save({ id: this.state.session.session_id, name: this.state.session.display_name, label,
         updatedAt: new Date().toISOString(), blocks: this.state.blocks.blocks, messages: this.#savedMessages,
-        inputs: this.#history, system: this.#system, python: this.pythonEnabled,
+        inputs: this.#history, system: this.#system, python: this.pythonEnabled, workspace: this.#workspace,
         metrics: this.metrics.snapshot(),
         theme: this.state.themes.find((theme) => theme.selected)?.theme_id ?? "dracula",
         connection: connection ? { name: connection.name, provider: connection.provider, endpoint: connection.endpoint, model: connection.model } : null });
-      if (this.options.storage) this.persistenceStatus = "Chats and files are saved unencrypted on this device. API keys are not saved. Python variables reset on reload or session switch.";
+      if (this.options.storage) this.persistenceStatus = "Chats and files are saved unencrypted on this device. API keys are not saved. Session files sync with Python at /home/pyodide. Python variables reset on reload or session switch.";
       this.state.sessions = { sessions: this.#sessions.list().map((item) => ({ session_id: item.id,
         display_name: item.name, fallback_label: item.label, selected: item.id === this.state.session.session_id })), has_more: false };
-    } catch (error) { this.persistenceStatus = `Session not saved: ${error instanceof Error ? error.message : String(error)}`; }
+    } catch (error) {
+      this.persistenceStatus = `Session not saved: ${error instanceof Error ? error.message : String(error)}`;
+      if (mustSave) throw error;
+    }
+  }
+
+  #editWorkspace(value: Workspace): void {
+    this.#requireIdle();
+    const previous = this.#workspace; this.#workspace = parseWorkspace(value);
+    try { this.#saveSession(true); }
+    catch (error) { this.#workspace = previous; this.publish(); throw error; }
+    this.#python?.setWorkspace(this.#workspace);
+    this.options.onFilesChanged?.(); this.publish();
+  }
+
+  #checkpointWorkspace(workspace: Workspace): void {
+    if (this.#closed) return;
+    this.#workspace = parseWorkspace(workspace);
+    // Save files after each completed Python call, even while the model turn continues.
+    // Keep the last complete model history; restoring files must not replay partial turns.
+    try {
+      const saved = this.#sessions.list().find((session) => session.id === this.state.session.session_id);
+      if (!saved) throw new Error("No saved session for this workspace.");
+      this.#sessions.save({ ...saved, workspace: this.#workspace, updatedAt: new Date().toISOString() });
+    } catch (error) {
+      this.persistenceStatus = `Workspace not saved: ${error instanceof Error ? error.message : String(error)}`;
+      throw error;
+    } finally { this.options.onFilesChanged?.(); this.publish(); }
   }
 
   #event(event: RuntimeEvent): void {
@@ -361,7 +401,8 @@ export class LocalTransport implements ApplicationTransport {
       case "assistant": this.state.blocks.blocks.push(block("markdown", event.text, "Lethetic")); break;
       case "tool_start": case "tool_end": {
         const content = event.type === "tool_start" ? JSON.stringify(event.call.arguments, null, 2) : event.output;
-        const item = block(event.type === "tool_start" ? "tool_call" : "tool_result", content, event.call.name);
+        // Shared tool blocks keep their text only in tool.payload.
+        const item = block(event.type === "tool_start" ? "tool_call" : "tool_result", "", event.call.name);
         item.tool = { kind: event.type === "tool_start" ? "call" : "result", tool_name: event.call.name, payload: content, payload_loss: NO_LOSS };
         this.state.blocks.blocks.push(item); this.state.activity.kind = "executing_tool";
         this.state.status.stop_reason = event.type === "tool_start" ? `Running ${event.call.name}` : "Tool complete";

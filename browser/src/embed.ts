@@ -6,7 +6,7 @@ import { LocalTransport } from "./local-transport.js";
 import { createConnectionsDialog } from "./connections-dialog.js";
 import { codeSnippets } from "./code-snippets.js";
 import { renderBrowserStatus } from "./status-view.js";
-import { copyCode, createFilePreview, downloadCode, snippetName } from "./file-actions.js";
+import { canPreviewFile, copyCode, createFilePreview, downloadCode, snippetName } from "./file-actions.js";
 import { sessionRoute } from "./sessions.js";
 import { BrowserFiles } from "./files.js";
 import { createFileEditor } from "./file-editor.js";
@@ -42,17 +42,20 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
     status: () => renderBrowserStatus(transport),
     promptPlaceholder: "Message your model…",
     sessionsNotice: () => transport?.persistenceStatus ?? "",
-    files: { local: true, scope: options.storage ? "Local files · saved on this device" : "Local files · this tab only", rootLabel: "Local files",
+    files: { local: true, scope: options.storage ? "Session files · synced with Python" : "Session files · this tab only", rootLabel: "Session files",
       actions: (state) => h("span.browser-file-actions", [
-        h("button", { attrs: { type: "button", "data-file-action": "new" }, on: { click: () => editor?.open(state.directory ? state.directory + "/untitled.txt" : "untitled.txt", "") } }, "New file"),
-        h("button", { attrs: { type: "button", "data-file-action": "edit" }, props: { disabled: !state.preview }, on: { click: () => { if (state.preview) editor?.open(state.preview.path, state.preview.content, true); } } }, "Edit"),
-        h("button", { attrs: { type: "button", "data-file-action": "preview" }, props: { disabled: !state.preview }, on: { click: () => { if (state.preview) preview.open(state.preview.content, "", state.preview.path); } } }, "Preview"),
+        h("button", { attrs: { type: "button", "data-file-action": "new" }, props: { disabled: transport?.busy }, on: { click: () => editor?.open(state.directory ? state.directory + "/untitled.txt" : "untitled.txt", "") } }, "New file"),
+        h("button", { attrs: { type: "button", "data-file-action": "edit" }, props: { disabled: !state.preview || transport?.busy }, on: { click: () => { if (state.preview) editor?.open(state.preview.path, state.preview.content, true); } } }, "Edit"),
+        h("button", { attrs: { type: "button", "data-file-action": "preview" }, props: { disabled: !canPreviewFile(state.selectedPath ? files.get(state.selectedPath) : undefined) }, on: { click: () => {
+          try { const file = state.selectedPath ? files.get(state.selectedPath) : undefined; if (file) preview.openFile(file); }
+          catch (error) { fileStatus = String(error); transport?.publish(); }
+        } } }, "Preview"),
         h("button", { attrs: { type: "button", "data-file-action": "copy" }, props: { disabled: !state.preview }, on: { click: () => {
           if (state.preview) void copyCode(state.preview.content).then(() => { fileStatus = "Contents copied."; transport?.publish(); }).catch((error: unknown) => { fileStatus = String(error); transport?.publish(); });
         } } }, "Copy contents"),
-        h("button", { attrs: { type: "button", "data-file-action": "delete" }, props: { disabled: !state.preview }, on: { click: () => {
-          if (state.preview && confirm(`Delete ${state.preview.path} from this device?`)) {
-            try { files.remove(state.preview.path); application.refreshFiles(); } catch (error) { fileStatus = String(error); transport?.publish(); }
+        h("button", { attrs: { type: "button", "data-file-action": "delete" }, props: { disabled: !state.selectedPath || transport?.busy }, on: { click: () => {
+          if (state.selectedPath && confirm(`Delete ${state.selectedPath} from this session?`)) {
+            try { files.remove(state.selectedPath); application.refreshFiles(); } catch (error) { fileStatus = String(error); transport?.publish(); }
           }
         } } }, "Delete"),
         h("span", { attrs: { role: "status" } }, fileStatus),
@@ -82,7 +85,9 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   let initialSession = "latest";
   if (options.sessionRouting) { try { initialSession = sessionRoute(location.hash); } catch (error) { routeError = String(error); initialSession = "new"; } }
   transport = new LocalTransport(application, { ...options, connections, initialSession, files,
+    onFilesChanged: () => application.refreshFiles(),
     onSessionChanged: (id) => {
+      application.resetFiles(); preview.clear(); if (editor?.dialog.open) editor.dialog.close(); fileStatus = "";
       if (!options.sessionRouting) return;
       const hash = `#/sessions/${id}`;
       if (hash !== location.hash) {

@@ -1,5 +1,11 @@
-// Kept separate from the application: only Python source and a runtime URL cross the boundary.
+// Only source, a runtime URL and this session's workspace cross the worker boundary.
+import { captureWorkspace, restoreWorkspace } from "./python-filesystem.js";
+import type { PythonFS } from "./python-filesystem.js";
+import { parseWorkspace } from "./workspace.js";
+import type { Workspace } from "./workspace.js";
+interface PythonRequest { id: number; code: string; indexURL: string; workspace: Workspace }
 interface Pyodide {
+  FS: PythonFS;
   runPythonAsync(code: string): Promise<unknown>;
   loadPackagesFromImports(code: string): Promise<void>;
   setStdout(options: { batched: (text: string) => void }): void;
@@ -8,18 +14,23 @@ interface Pyodide {
 }
 interface PyodideModule { loadPyodide(options: { indexURL: string }): Promise<Pyodide> }
 const scope = globalThis as unknown as {
-  onmessage: ((event: MessageEvent<{ id: number; code: string; indexURL: string }>) => void) | null;
+  onmessage: ((event: MessageEvent<PythonRequest>) => void) | null;
   postMessage(data: unknown): void;
 };
 let python: Promise<Pyodide> | null = null;
 let busy = false;
+let installedWorkspace = "";
 
 scope.onmessage = (event): void => { void execute(event.data); };
 
-async function execute({ id, code, indexURL }: { id: number; code: string; indexURL: string }): Promise<void> {
+async function execute({ id, code, indexURL, workspace }: PythonRequest): Promise<void> {
   if (busy) { scope.postMessage({ id, output: "Python is already running." }); return; }
   busy = true;
   let output = "";
+  let runtime: Pyodide | undefined;
+  let restored = false;
+  let snapshot: Workspace | undefined;
+  let workspaceError: string | undefined;
   let truncated = false;
   const append = (text: string): void => {
     const line = text + "\n";
@@ -32,7 +43,13 @@ async function execute({ id, code, indexURL }: { id: number; code: string; index
       const module: PyodideModule = await import(new URL("pyodide.mjs", indexURL).href);
       return module.loadPyodide({ indexURL });
     })().catch((error: unknown) => { python = null; throw error; });
-    const runtime = await python;
+    runtime = await python;
+    const incoming = parseWorkspace(workspace);
+    const serialized = JSON.stringify(incoming);
+    if (serialized !== installedWorkspace) {
+      restoreWorkspace(runtime.FS, incoming); installedWorkspace = serialized;
+    }
+    restored = true;
     runtime.setStdout({ batched: append });
     runtime.setStderr({ batched: append });
     runtime.setStdin({ stdin: () => undefined });
@@ -45,8 +62,12 @@ async function execute({ id, code, indexURL }: { id: number; code: string; index
     }
   } catch (error) { append(String(error)); }
   finally {
+    if (runtime && restored) {
+      try { snapshot = captureWorkspace(runtime.FS); installedWorkspace = JSON.stringify(snapshot); }
+      catch (error) { workspaceError = String(error); }
+    } else workspaceError = "Python workspace could not be restored; no files were changed in the saved session.";
     busy = false;
-    scope.postMessage({ id, output: (output || "Python completed without output.\n") +
+    scope.postMessage({ id, workspace: snapshot, workspaceError, output: (output || "Python completed without output.\n") +
       (truncated ? "\n[Output truncated at 64 KiB]\n" : "") });
   }
 }

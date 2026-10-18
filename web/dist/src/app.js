@@ -116,6 +116,7 @@ export class SpaApplication {
         await this.#files.select(path);
     }
     refreshFiles() { void this.#files.refresh(); }
+    resetFiles() { this.#files.reset(); }
     #onPageHide = () => {
         this.#files.reset();
         this.#fileEditor.dispose();

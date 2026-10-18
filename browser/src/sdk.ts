@@ -5,6 +5,7 @@ export type { ProviderUsage } from "./usage.js";
 import type { Connection } from "./connection.js";
 export type { Connection } from "./connection.js";
 export { createPythonTool } from "./python.js";
+export type { PythonTool, Workspace } from "./python.js";
 
 export interface ToolCall { id: string; name: string; arguments: Record<string, unknown> }
 export interface Tool {

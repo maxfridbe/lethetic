@@ -56,18 +56,32 @@ code block or Python tool call, or **New file** in Files. Enter a relative path 
 as `reports/analysis.py`. Folders are derived from these paths. Select a file to
 view its source in Monaco, **Edit**, **Preview**, **Download File**, **Copy contents**,
 or **Delete** it. Code blocks also have direct Preview, Download, and Copy buttons.
-Saving is explicit; file contents are not automatically sent to the model.
+Saving from the editor is explicit. The Files browser represents the current
+session's Python workspace at `/home/pyodide`. Files created, changed, or deleted
+by Python appear automatically after each completed call. Edits in Files are applied
+before Python's next call. File edits are disabled during a model turn. Contents
+are available to Python; they are not automatically appended to the model prompt.
 
-Previews render static HTML, SVG and Markdown; JSON is formatted and other code is
-shown as text. They use an opaque sandbox and a restrictive content policy:
+Previews render static HTML, SVG, Markdown and images (PNG, JPEG, GIF, WebP, AVIF,
+BMP and ICO); JSON is formatted and other text is shown as source. Other binary
+files can be downloaded without changing their bytes; Edit and Copy apply to text. They use an opaque sandbox and a restrictive content policy:
 scripts, forms, external resources and navigation are disabled. Download the file
 to use it elsewhere. This is a static preview, not a JavaScript app runner.
 
-Files are **unencrypted** in localStorage under `lethetic.files.v1`: up to 100 files,
-1 MiB per file and 4 MiB total. No passphrase or encrypted-library UI is involved.
-Older encrypted records are left untouched and are not automatically migrated.
-A failed save preserves the previous record. Browser storage is device/origin
-specific; clearing site data deletes it. Download files you want to keep elsewhere.
+Files are **unencrypted**, saved with each session under `lethetic.sessions.v1`.
+Each workspace supports 100 files, 256 folders, 1 MiB per file and 2 MiB of file
+bytes total. Binary contents use base64 in the stored record. Sessions, including
+encoded files and chat history, share the existing 4 MiB storage limit.
+A quota failure preserves the previous saved record and reports that saving failed;
+files still in memory can be downloaded. Oversized workspaces and symbolic links
+are reported to the model without replacing the last complete file checkpoint.
+Empty directories are preserved; runtime packages and files outside `/home/pyodide`
+are not included. Clearing site data deletes local sessions and files.
+
+When an older session has no workspace, its first opening imports a copy of the
+legacy `lethetic.files.v1` files, within the workspace limits. The original record
+is left untouched. New sessions start with empty workspaces. Older encrypted
+records are also left untouched; no encrypted library or passphrase UI is involved.
 
 ## Saved sessions and URL routing
 
@@ -75,7 +89,8 @@ specific; clearing site data deletes it. Download files you want to keep elsewhe
 chats. Completed turns automatically save their transcript, model context, usage
 stats, system prompt, Python mode, theme and connection metadata in
 `lethetic.sessions.v1`. API keys are excluded. Reopening a chat restores its context
-without rerunning tools. Python variables and virtual files are not restored.
+without rerunning tools. Its files and empty directories are restored before the
+next Python call. Python variables are recreated, so save durable results to files.
 
 The hosted page supports these routes without requiring server-side rewrites:
 
@@ -87,7 +102,8 @@ Session links identify local records; they do not share conversation contents wi
 another device. Missing sessions show an error and never silently replace an
 existing chat. Storage holds up to 50 sessions / 4 MiB. Save failures appear in
 Sessions and Stats; delete old sessions to free space. Old chats are never silently
-evicted. Refreshing during a running turn restores the last saved state. Sessions
+evicted. Refreshing during a running turn restores the last complete model context and
+the file checkpoint from the last completed Python call. Sessions
 and files are stored plainly on this device, with no encryption for now.
 
 ## Endpoint requirements
@@ -155,7 +171,7 @@ at `/lethetic/`, custom subpaths, and domain roots. Pages deployment requires th
 Pushing an ordinary commit deploys Pages. Pushing a `v*` tag additionally attaches
 `lethetic-browser.zip` and `lethetic-browser.zip.sha256` to the GitHub release,
 alongside the existing native release workflow. A `browser-v*` tag (for example,
-`browser-v0.3.0`) publishes an independent embedding release with those same assets.
+`browser-v0.4.0`) publishes an independent embedding release with those same assets.
 A commit does not create a version tag automatically. The ZIP contains both standalone and embedding modes; it does
 not contain API keys or downloaded Pyodide packages. Build outputs live under
 `target/` and are not committed. `manifest.json` contains per-file SHA-256 hashes.
@@ -263,8 +279,21 @@ The browser tool uses [Pyodide 0.29.3](https://pyodide.org/en/0.29.3/usage/quick
 loaded lazily from `https://cdn.jsdelivr.net/pyodide/v0.29.3/full/`. It runs in a
 dedicated module Web Worker with persistent globals and a virtual filesystem.
 Use it for calculations, CSV/JSON processing, NumPy/pandas analysis, and Matplotlib
-plots in its virtual filesystem. That filesystem is separate from the saved Files
-browser; this edition returns text and does not automatically export Python files.
+plots in the session workspace. The tool description tells the model to create
+files under `/home/pyodide`, its initial working directory, and explains persistence
+and limits. Use relative paths there, or absolute paths under that directory:
+
+```python
+from pathlib import Path
+Path("reports").mkdir(exist_ok=True)
+Path("reports/result.csv").write_text("value\n42\n")
+# A plot saved with plt.savefig("reports/plot.png") appears in Files too.
+```
+
+The UI saves a file checkpoint after each completed Python call, including a call
+that returns a Python exception. Files created by an interrupted call are discarded
+when the worker is terminated; the last completed checkpoint remains available.
+Reloading, switching sessions, and cancelling never replay code to restore files.
 Stdout, stderr, and the final expression are returned to the model, capped at 64 KiB.
 Python exceptions are returned as tool output. Standard input receives EOF.
 Packages bundled with Pyodide are loaded from imports; arbitrary native pip packages
@@ -274,13 +303,21 @@ access. Self-host a complete compatible distribution and pass `indexURL` to
 
 Cancellation and the 120-second Python timeout terminate the worker, so even an
 infinite loop can be stopped without SharedArrayBuffer, COOP, or COEP headers.
-The next execution creates a fresh worker. Variables and files are lost on stop,
-timeout, reset, or page reload. The entire SDK turn also has its own timeout.
+The next execution creates a fresh worker and restores its last file checkpoint.
+Variables reset on stop, timeout, reset, reload, and session switches. Files outside
+the workspace are temporary. The entire SDK turn also has its own timeout.
+
+Headless hosts can pass `workspace` and `onWorkspace` to `createPythonTool` to
+restore and persist the same versioned snapshot. `python.snapshotWorkspace()`
+returns a copy of the last completed checkpoint; `python.setWorkspace(snapshot)`
+replaces the workspace for the next call while idle. `python.reset()` resets the
+worker and globals while retaining that checkpoint. Storage is the host's choice
+in the headless SDK; the complete UI handles it through its session store.
 
 Python code can access browser networking and JavaScript worker APIs. A worker is
 an execution isolation mechanism, not a security boundary for hostile code. It
-receives source and a runtime asset URL, never model API keys or conversation
-history. Enable Python only when you intend to run model-generated code. Embedded
+receives source, a runtime asset URL, and the active session's files, never model API
+keys or conversation history. Enable Python only when you intend to run model-generated code. Embedded
 hosts should apply their own approval policy if they require per-call consent.
 
 For CSP, allow your own scripts, `'wasm-unsafe-eval'`, the Pyodide module origin,

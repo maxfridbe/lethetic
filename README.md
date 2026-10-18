@@ -26,7 +26,10 @@ The standalone edition runs a Rust/WASM conversation runtime locally, with optio
 API keys stay in memory. Chats and files are saved unencrypted on your device.
 Use **Save to Files** beneath code blocks, then browse folders, edit, preview,
 download, or copy contents in **Files**. **Sessions** reopens earlier chats with
-context and usage stats; refresh keeps the current session.
+context and usage stats; refresh keeps the current session. Pyodide files under
+`/home/pyodide` sync with **Files** after each call, including CSVs and images.
+File edits flow back into Python, and each session restores its own workspace.
+Preview HTML, Markdown, SVG, text, and images such as PNGs directly in Files.
 [Start a new session](https://maxfridbe.github.io/lethetic/#/new) or
 [open the latest](https://maxfridbe.github.io/lethetic/#/latest).
 

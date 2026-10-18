@@ -266,6 +266,68 @@ try {
     view.destroy();container.remove();return false;
   })()`), "embedded UI Python/model tool loop failed");
   process.stdout.write("Embedded shared UI and Python tool loop passed.\n");
+  const workspaceResult = await evaluate(`(async () => {
+    const {mountLethetic}=await import('./src/embed.js');
+    localStorage.removeItem('lethetic.sessions.v1'); localStorage.removeItem('lethetic.files.v1');
+    const root=document.createElement('div'); root.style.height='900px'; document.body.replaceChildren(root);
+    const options={storage:localStorage,python:true,
+      pyodideIndexURL:${config.pyodide ? 'undefined' : "location.origin+'/pyodide/'"},
+      connections:[{name:'Workspace test',provider:'openai',endpoint:location.origin+'/v1/chat/completions',model:'test'}]};
+    let view=mountLethetic(root,options);
+    const wait=async predicate=>{for(let i=0;i<${config.pyodide ? 2400 : 200};i++){if(predicate())return;await new Promise(r=>setTimeout(r,50));}throw Error('Workspace UI condition timed out: '+predicate.toString()+'; '+root.textContent.slice(-2500))};
+    const send=async (prompt,answer)=>{
+      const input=root.querySelector('#composer-input');input.value=prompt;input.dispatchEvent(new Event('input',{bubbles:true}));
+      root.querySelector('form.composer').requestSubmit();
+      await wait(()=>root.textContent.includes('Python says: '+answer));
+      await wait(()=>!!root.querySelector('.activity-idle'));
+    };
+    const records=()=>JSON.parse(localStorage.getItem('lethetic.sessions.v1')).sessions;
+    try {
+      root.querySelector('#files-toggle').click();
+      await send('create files','files created');
+      const first=records()[0].id;
+      if(!records()[0].workspace.files.some(file=>file.path==='outputs/chart.png'))throw Error('Python files were not persisted');
+      await wait(()=>!!root.querySelector('.files-entry[title=outputs]'));
+      root.querySelector('.files-entry[title=outputs]').click();
+      await wait(()=>!!root.querySelector('.files-entry[title="outputs/chart.png"]'));
+      if(!root.querySelector('.files-entry[title="outputs/empty"]'))throw Error('Empty directory not visible');
+      root.querySelector('.files-entry[title="outputs/chart.png"]').click();
+      await wait(()=>!root.querySelector('[data-file-action=preview]').disabled);
+      root.querySelector('[data-file-action=preview]').click();
+      if(!document.querySelector('[data-field=preview-frame]').srcdoc.includes('data:image/png;base64,'))throw Error('PNG preview unavailable');
+      document.querySelector('dialog[open]').close();
+      root.querySelector('.files-entry[title="outputs/data.csv"]').click();
+      await wait(()=>!root.querySelector('[data-file-action=edit]').disabled);
+      root.querySelector('[data-file-action=edit]').click();
+      document.querySelector('[data-field=file-content]').value='edited in Files';
+      document.querySelector('[data-field=file-form]').requestSubmit();
+      if(document.querySelector('dialog[open]'))throw Error('File editor stayed open: '+document.querySelector('dialog[open]').textContent);
+      await send('read file','read: edited in Files');
+      view.destroy(); view=mountLethetic(root,options);
+      await send('restore files','restored: edited in Files');
+      root.querySelector('[data-browser-action=sessions]').click();
+      await wait(()=>!!root.querySelector('.sessions-panel .primary-button'));
+      root.querySelector('.sessions-panel .primary-button').click();
+      await wait(()=>!root.querySelector('.sessions-panel'));
+      if(records()[0].workspace.files.length)throw Error('New session inherited old files');
+      await send('list files','workspace empty: true');
+      root.querySelector('[data-browser-action=sessions]').click();
+      await wait(()=>!!root.querySelector('.sessions-panel'));
+      [...root.querySelectorAll('.choice-row')].find(button=>button.textContent.includes('create files')).click();
+      await wait(()=>!root.querySelector('.sessions-panel'));
+      if(records()[0].id!==first)throw Error('Wrong session resumed');
+      await send('delete file','file deleted');
+      if(records()[0].workspace.files.some(file=>file.path==='outputs/data.csv'))throw Error('Python deletion did not sync');
+      root.querySelector('#files-toggle').click();
+      await wait(()=>!!root.querySelector('.files-entry[title=outputs]'));
+      root.querySelector('.files-entry[title=outputs]').click();
+      await wait(()=>!!root.querySelector('.files-entry[title="outputs/chart.png"]'));
+      if(root.querySelector('.files-entry[title="outputs/data.csv"]'))throw Error('Deleted file remains visible');
+      return true;
+    } finally {view.destroy();root.remove();}
+  })()`);
+  check(workspaceResult, 'session workspace UI failed');
+  process.stdout.write('Python workspace creation, Files editing, image preview, reopen, isolation and deletion passed.\n');
   if (config.pyodide) {
     await evaluate(`(async () => {
       const {createPythonTool}=await import('./src/sdk.js');
@@ -278,16 +340,17 @@ try {
       const run=code=>python.execute({code},new AbortController().signal);
       try {
         const value=await run('print(x + 2)');
-        const error=await run('raise ValueError("expected-test-error")');
+        const error=await run('from pathlib import Path\\nPath("saved.bin").write_bytes(bytes([0,255]))\\nraise ValueError("expected-test-error")');
         const controller=new AbortController();
-        const loop=python.execute({code:'while True: pass'},controller.signal);
+        const loop=python.execute({code:'from pathlib import Path\\nPath("saved.bin").write_bytes(b"unfinished")\\nwhile True: pass'},controller.signal);
         setTimeout(()=>controller.abort(),100);
         let stopped=false;try{await loop}catch{stopped=true}
         const restarted=await run('print("x" in globals())');
-        return {value,error:error.includes('expected-test-error'),stopped,restarted};
+        const restoredFile=await run('from pathlib import Path\\nprint(Path("saved.bin").read_bytes().hex())');
+        return {value,error:error.includes('expected-test-error'),stopped,restarted,restoredFile};
       } finally {python.reset()}
     })()`);
-    check(JSON.stringify(actual) === JSON.stringify({ value: "42\n", error: true, stopped: true, restarted: "False\n" }), `real Pyodide failed: ${JSON.stringify(actual)}`);
+    check(JSON.stringify(actual) === JSON.stringify({ value: "42\n", error: true, stopped: true, restarted: "False\n", restoredFile: "00ff\n" }), `real Pyodide failed: ${JSON.stringify(actual)}`);
   }
   process.stdout.write(`Browser acceptance passed${config.pyodide ? " (including real Pyodide)" : ""}.\n`);
 } finally {

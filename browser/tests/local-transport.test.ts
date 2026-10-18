@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { BrowserFiles } from "../src/files.js";
+import { SessionStore } from "../src/sessions.js";
+import { textFile } from "../src/workspace.js";
 import { LocalTransport } from "../src/local-transport.js";
 import { commandResponseMatchesRequest, parseServerMessage } from "../../web/src/protocol.js";
 import type { ICommandResponse, WebCommand } from "../../web/src/generated/contracts.js";
@@ -57,4 +60,29 @@ await test("local transport emits valid remote UI contracts and applies shared c
   assert.equal(transport.state.sessions.sessions.length, 1);
   assert.notEqual(transport.state.session.session_id, pythonSession);
   transport.dispose(); assert.equal(transport.send({ type: "request_snapshot" }, 0), null);
+});
+
+await test("Files are session-scoped, reopen with their session and preserve old files on quota failure", async () => {
+  const values = new Map<string,string>(); let quota = false;
+  const storage = { getItem:(key:string)=>values.get(key)??null, setItem:(key:string,value:string)=>{if(quota)throw Error('quota');values.set(key,value);} } as Storage;
+  const make = () => {
+    const files = new BrowserFiles(storage);
+    const transport = new LocalTransport({socketOpened(){},authenticationEpochChanged(){},transportStatus(){},protocolFault(){},serverMessage(){},commandResponse(){}},
+      {connections:[],storage,files});
+    transport.start(); return {files,transport};
+  };
+  let {files,transport}=make(); const first=transport.state.session.session_id;
+  files.save('input.csv','first session');
+  transport.openSession('new'); const second=transport.state.session.session_id;
+  assert.deepEqual(files.list(),[]); files.save('input.csv','second session');
+  transport.openSession(first); assert.equal(files.list()[0]?.content,'first session');
+  quota=true; assert.throws(()=>files.save('input.csv','lost'),/quota/);
+  assert.equal(files.list()[0]?.content,'first session'); quota=false;
+  transport.dispose(); ({files,transport}=make());
+  assert.equal(transport.state.session.session_id,first); assert.equal(files.list()[0]?.content,'first session');
+  transport.openSession(second); assert.equal(files.list()[0]?.content,'second session');
+  files.remove('input.csv'); transport.dispose(); ({files,transport}=make());
+  assert.deepEqual(files.list(),[]);
+  const saved = new SessionStore(storage).list().find(session=>session.id===first);
+  assert.equal(textFile(saved!.workspace!.files[0]!), 'first session'); transport.dispose();
 });

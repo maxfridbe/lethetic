@@ -1,5 +1,7 @@
 import { parse } from "../../web/lib/marked/marked.esm.js";
 import { createDialog, field } from "./dialog.js";
+import { textFile } from "./workspace.js";
+import type { WorkspaceFile } from "./workspace.js";
 import type { CodeSnippet } from "./code-snippets.js";
 
 export function snippetName(snippet: CodeSnippet): string {
@@ -20,7 +22,7 @@ export async function copyCode(code: string): Promise<void> {
 
 /** Static HTML/SVG/Markdown only, inside an opaque sandbox with no scripts or network. */
 export function previewDocument(code: string, language: string, name: string): string {
-  if (code.length > 1_048_576) throw new Error("Preview is limited to 1 MiB of text.");
+  if (code.length > 2_097_152) throw new Error("Preview is limited to 2 MiB of encoded content.");
   const extension = name.split(".").at(-1)?.toLowerCase() ?? "";
   const kind = language.toLowerCase();
   let html: string;
@@ -44,7 +46,22 @@ export function previewDocument(code: string, language: string, name: string): s
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'"><style>body{font:16px system-ui;color:#222;background:white;padding:20px;overflow-wrap:anywhere}pre{white-space:pre-wrap}img,svg{max-width:100%}table{border-collapse:collapse}td,th{border:1px solid #aaa;padding:6px}</style></head><body>${template.innerHTML}</body></html>`;
 }
 
-export function createFilePreview(): { dialog: HTMLDialogElement; open(code: string, language: string, name: string): void; clear(): void; destroy(): void } {
+function imageType(path: string): string | undefined {
+  const types: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", avif: "image/avif", bmp: "image/bmp", ico: "image/x-icon" };
+  return types[path.split(".").at(-1)?.toLowerCase() ?? ""];
+}
+export function canPreviewFile(file: WorkspaceFile | undefined): boolean {
+  return !!file && (imageType(file.path) !== undefined || textFile(file) !== null);
+}
+function workspacePreview(file: WorkspaceFile): string {
+  const mime = imageType(file.path);
+  if (mime) return previewDocument(`<img alt="Session file" src="data:${mime};base64,${file.data}">`, "html", "preview.html");
+  const content = textFile(file);
+  if (content === null) throw new Error("This binary file can be downloaded, but has no browser preview.");
+  return previewDocument(content, "", file.path);
+}
+
+export function createFilePreview(): { dialog: HTMLDialogElement; open(code: string, language: string, name: string): void; openFile(file: WorkspaceFile): void; clear(): void; destroy(): void } {
   const dialog = createDialog("File preview", `<p>Static preview. Scripts, forms, navigation and network requests are disabled.</p><iframe data-field="preview-frame" title="File preview" sandbox="" referrerpolicy="no-referrer"></iframe>`);
   dialog.classList.add("browser-preview");
   const frame = field<HTMLIFrameElement>(dialog, "preview-frame");
@@ -53,6 +70,9 @@ export function createFilePreview(): { dialog: HTMLDialogElement; open(code: str
   dialog.addEventListener("close", () => { if (!dialog.open) frame.removeAttribute("srcdoc"); });
   return { dialog, open(code, language, name): void {
     frame.srcdoc = previewDocument(code, language, name);
+    if (!dialog.open) dialog.showModal();
+  }, openFile(file): void {
+    frame.srcdoc = workspacePreview(file);
     if (!dialog.open) dialog.showModal();
   }, clear, destroy(): void { clear(); dialog.remove(); } };
 }

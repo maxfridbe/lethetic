@@ -4,7 +4,7 @@ import type { BrowserFiles } from "./files.js";
 export function createFileEditor(files: BrowserFiles, saved: (path: string) => void): {
   dialog: HTMLDialogElement; open(path: string, content: string, existing?: boolean): void; destroy(): void;
 } {
-  const dialog = createDialog("Save local file", `<p>${files.storage ? "Files are saved unencrypted on this device." : "Files stay in this tab until it closes or reloads."} Nothing is uploaded.</p>
+  const dialog = createDialog("Save local file", `<p>${files.storage ? "Files are saved unencrypted with this session and sync with Python." : "Files stay in this tab until it closes or reloads."} Saved files are available to this session’s Python tool.</p>
     <form data-field="file-form"><label>Path<input data-field="file-path" placeholder="reports/analysis.py" required maxlength="4096"></label>
     <label>Contents<textarea data-field="file-content" rows="16" spellcheck="false"></textarea></label>
     <button type="submit" class="primary-button">Save file</button><p data-field="file-status" role="status"></p></form>`);

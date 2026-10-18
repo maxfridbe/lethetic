@@ -1,10 +1,15 @@
+import { emptyWorkspace, parseWorkspace } from "./workspace.js";
+import type { Workspace } from "./workspace.js";
+export type { Workspace } from "./workspace.js";
 import type { Tool } from "./sdk.js";
 
 export const PYODIDE_INDEX_URL = "https://cdn.jsdelivr.net/pyodide/v0.29.3/full/";
 
 export interface PythonTool extends Tool {
-  /** Terminate the worker and discard Python globals and its virtual filesystem. */
+  /** Terminate Python; the last completed workspace checkpoint survives. */
   reset(): void;
+  snapshotWorkspace(): Workspace;
+  setWorkspace(workspace: Workspace): void;
 }
 
 /** A persistent Python tool in a dedicated worker. Stop/timeout resets the worker.
@@ -15,6 +20,8 @@ export function createPythonTool(options: {
   indexURL?: string;
   timeoutMs?: number;
   workerFactory?: () => Worker;
+  workspace?: Workspace;
+  onWorkspace?: (workspace: Workspace) => void;
 } = {}): PythonTool {
   const indexURL = new URL(options.indexURL ?? PYODIDE_INDEX_URL);
   if (!indexURL.pathname.endsWith("/")) throw new Error("Pyodide indexURL must end in /.");
@@ -26,22 +33,28 @@ export function createPythonTool(options: {
   if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 3_600_000) {
     throw new Error("Python timeout must be between 1 ms and one hour.");
   }
+  let checkpoint = parseWorkspace(options.workspace ?? emptyWorkspace());
   let worker: Worker | null = null;
   let pending: ((reason: Error) => void) | null = null;
   let sequence = 0;
   const terminate = (): void => { worker?.terminate(); worker = null; };
   const reset = (): void => {
-    pending?.(new Error("Python worker was reset; variables and files were cleared."));
+    pending?.(new Error("Python worker was reset; variables were cleared; last completed files are kept."));
     terminate();
   };
   return {
     name: "python",
     description: "Run Python in a persistent Pyodide browser worker. Use print() for output. " +
-      "Variables and virtual files persist within this chat. No shell or native files are available. " +
-      "Packages bundled with Pyodide are loaded from imports. Stopping clears the Python session.",
+      "Variables persist while the worker runs. Write session files under /home/pyodide (the initial working directory); files there sync with Files after each call and restore after reload or stop. Create CSV, HTML, SVG or PNG outputs for the user to preview or download in Files. Other directories are temporary. No shell or native files are available. " +
+      "Packages bundled with Pyodide are loaded from imports. Stopping resets variables and discards unfinished file changes. Workspace limits: 100 files, 256 folders, 1 MiB per file, 2 MiB total; no symlinks.",
     parameters: { type: "object", properties: { code: { type: "string", description: "Python source" } },
       required: ["code"], additionalProperties: false },
     reset,
+    snapshotWorkspace: () => structuredClone(checkpoint),
+    setWorkspace(workspace): void {
+      if (pending) throw new Error("Stop Python before editing its workspace.");
+      checkpoint = parseWorkspace(workspace);
+    },
     execute(arguments_, signal): Promise<string> {
       if (typeof arguments_["code"] !== "string" || !arguments_["code"].trim()) {
         return Promise.reject(new Error("Python requires nonempty code."));
@@ -65,17 +78,24 @@ export function createPythonTool(options: {
         const abort = (): void => fail(new DOMException("Python stopped; session reset.", "AbortError"));
         const error = (): void => fail(new Error("Python worker could not load. Check Pyodide access and CSP."));
         const message = (event: MessageEvent<unknown>): void => {
-          const data = event.data as { id?: unknown; output?: unknown } | null;
+          const data = event.data as { id?: unknown; output?: unknown; workspace?: unknown; workspaceError?: unknown } | null;
           if (!data || data.id !== id || typeof data.output !== "string") return;
+          let warning = typeof data.workspaceError === "string" ? data.workspaceError : "";
+          if (data.workspace !== undefined) {
+            try {
+              checkpoint = parseWorkspace(data.workspace);
+              options.onWorkspace?.(structuredClone(checkpoint));
+            } catch (error) { warning = String(error); }
+          } else if (!warning) warning = "Python did not return a workspace checkpoint.";
           cleanup();
-          resolve(data.output);
+          resolve(data.output + (warning ? `\n[Workspace not saved: ${warning}]\n` : ""));
         };
         const timer = setTimeout(() => fail(new Error("Python timed out; session reset.")), timeoutMs);
         pending = fail;
         signal.addEventListener("abort", abort, { once: true });
         activeWorker.addEventListener("message", message);
         activeWorker.addEventListener("error", error);
-        try { activeWorker.postMessage({ id, code: arguments_["code"], indexURL: indexURL.href }); }
+        try { activeWorker.postMessage({ id, code: arguments_["code"], indexURL: indexURL.href, workspace: checkpoint }); }
         catch { fail(new Error("Could not start Python execution.")); }
       });
     },

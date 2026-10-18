@@ -22,15 +22,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/pyodide/pyodide.mjs":
-            body = b'''export async function loadPyodide() {
-              let stdout;
-              return {setStdout(o){stdout=o.batched},setStderr(){},setStdin(){},
-                async loadPackagesFromImports(){},async runPythonAsync(code){
-                  if(code.includes("while True")){while(true){}}
-                  if(code.includes("raise"))throw new Error("fixture Python error");
-                  stdout("42"); return undefined;
-                }};
-            }'''
+            body = (ROOT / "browser/tests/fixtures/pyodide.mjs").read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "text/javascript")
             self.send_header("Content-Length", str(len(body)))
@@ -55,9 +47,17 @@ class Handler(SimpleHTTPRequestHandler):
         if messages[-1]["role"] == "user" and messages[-1]["content"] == "remember earlier":
             content = "Context restored" if any(m.get("content") == "hello" for m in messages[:-1]) else "Missing context"
         if data.get("tools") and messages[-1]["role"] == "user":
+            snippets = {
+                "create files": "# create-session-files\nfrom pathlib import Path\nimport base64\nPath('outputs/empty').mkdir(parents=True, exist_ok=True)\nPath('outputs/data.csv').write_text('value\\n42\\n')\nPath('outputs/chart.png').write_bytes(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='))\nprint('files created')",
+                "read file": "# read-session-file\nfrom pathlib import Path\nprint('read: ' + Path('outputs/data.csv').read_text())",
+                "restore files": "# restore-session-file\nfrom pathlib import Path\nprint('restored: ' + Path('outputs/data.csv').read_text())",
+                "delete file": "# delete-session-file\nfrom pathlib import Path\nPath('outputs/data.csv').unlink()\nprint('file deleted')",
+                "list files": "# list-session-files\nfrom pathlib import Path\nprint('workspace empty: ' + str(not list(Path('.').iterdir())).lower())",
+            }
+            code = snippets.get(messages[-1]["content"], "print(6 * 7)")
             message = {"role": "assistant", "content": None, "tool_calls": [{
                 "id": "python-1", "type": "function",
-                "function": {"name": "python", "arguments": json.dumps({"code": "print(6 * 7)"})},
+                "function": {"name": "python", "arguments": json.dumps({"code": code})},
             }]}
             reason = "tool_calls"
         else:
