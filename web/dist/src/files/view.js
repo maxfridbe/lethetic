@@ -58,34 +58,35 @@ function renderChangesBody(state, live, actions) {
                 h("div", { key: "monaco-diff-host", attrs: { id: "files-diff-monaco", class: "files-monaco", "aria-label": "Read-only Monaco diff" } }),
                 state.diff !== null ? null : h("p", { attrs: { class: "files-preview-message", role: "status" } }, state.diffBusy ? "Loading diff…" : state.diffError ?? "Compares HEAD with the working tree. Protected paths are never shown."))));
 }
-function breadcrumbs(directory, live, actions) {
+function breadcrumbs(directory, live, actions, rootLabel = "Launch root") {
     const parts = directory === "" ? [] : directory.split("/");
     return h("nav", { attrs: { class: "files-breadcrumbs", "aria-label": "File directory" } },
-        h("button", { attrs: { type: "button", title: "Fixed process launch directory" }, props: { disabled: !live }, on: { click: () => actions.navigate("") } }, "Launch root"),
+        h("button", { attrs: { type: "button", title: "Fixed process launch directory" }, props: { disabled: !live }, on: { click: () => actions.navigate("") } }, rootLabel),
         parts.map((part, index) => h("span", { key: String(index) },
             h("span", { attrs: { "aria-hidden": "true" } }, " / "),
             h("button", { attrs: { type: "button" }, props: { disabled: !live }, on: { click: () => actions.navigate(parts.slice(0, index + 1).join("/")) } }, part))));
 }
-export function renderFilesPane(state, live, actions) {
+export function renderFilesPane(state, live, actions, extensions = {}) {
     const path = state.selectedPath ?? state.directory;
     const exclusions = state.listing === null ? null : exclusionLabel(state.listing.exclusions);
-    return h("section", { key: "files-pane", attrs: { class: `files-pane${state.open ? " is-open" : ""}`, "aria-label": "Read-only launch-directory files" } },
+    return h("section", { key: "files-pane", attrs: { class: `files-pane${state.open ? " is-open" : ""}`, "aria-label": extensions.scope ?? "Read-only launch-directory files" } },
         h("header", { attrs: { class: "files-toolbar" } },
             h("button", { attrs: { type: "button", id: "files-toggle", "aria-expanded": state.open ? "true" : "false", "aria-controls": "files-body" }, props: { disabled: !live && !state.open }, on: { click: actions.toggle } }, state.open ? "▾ Files" : "▸ Files"),
-            !state.open ? h("span", { attrs: { class: "files-scope" } }, "Read-only \u00B7 fixed launch root")
-                : h("span", { attrs: { class: "files-tabs", role: "tablist", "aria-label": "Files view" } }, ["files", "changes"].map((tab) => h("button", { key: tab, attrs: { type: "button", role: "tab", class: state.tab === tab ? "is-active" : "",
+            !state.open ? h("span", { attrs: { class: "files-scope" } }, extensions.scope ?? "Read-only · fixed launch root")
+                : h("span", { attrs: { class: "files-tabs", role: "tablist", "aria-label": "Files view" } }, (extensions.local ? ["files"] : ["files", "changes"]).map((tab) => h("button", { key: tab, attrs: { type: "button", role: "tab", class: state.tab === tab ? "is-active" : "",
                         "aria-selected": state.tab === tab ? "true" : "false" }, props: { disabled: !live }, on: { click: () => actions.showTab(tab) } }, tab === "files" ? "Browse" : "Changes"))),
             !state.open || state.tab !== "changes" ? null : h("div", { attrs: { class: "files-actions" } },
                 h("button", { attrs: { type: "button" }, props: { disabled: !live || state.changesBusy }, on: { click: actions.refreshChanges } }, "Refresh")),
             !state.open || state.tab !== "files" ? null : h("div", { attrs: { class: "files-actions" } },
                 h("button", { attrs: { type: "button" }, props: { disabled: !live || state.listingBusy || state.previewBusy }, on: { click: actions.refresh } }, "Refresh"),
                 h("button", { attrs: { type: "button", title: "Download the selected file (up to 32 MiB)" }, props: { disabled: !live || state.selectedPath === null || state.downloadBusy }, on: { click: () => actions.download(false) } }, "Download File"),
-                h("button", { attrs: { type: "button", title: "Download the current folder as ZIP; exclusions and fixed limits apply" }, props: { disabled: !live || state.downloadBusy || state.listingBusy }, on: { click: () => actions.download(true) } }, "Download Folder"),
-                h("button", { attrs: { type: "button", title: "Copy a launch-root-relative path; does not change the prompt" }, props: { disabled: path === "" }, on: { click: actions.copyPath } }, "Copy Path"))),
+                extensions.local ? null : h("button", { attrs: { type: "button", title: "Download the current folder as ZIP; exclusions and fixed limits apply" }, props: { disabled: !live || state.downloadBusy || state.listingBusy }, on: { click: () => actions.download(true) } }, "Download Folder"),
+                h("button", { attrs: { type: "button", title: "Copy a launch-root-relative path; does not change the prompt" }, props: { disabled: path === "" }, on: { click: actions.copyPath } }, "Copy Path"),
+                extensions.actions?.(state) ?? null)),
         state.open && state.tab === "changes" ? renderChangesBody(state, live, actions) : null,
         !state.open || state.tab !== "files" ? null : h("div", { attrs: { id: "files-body", class: "files-body" } },
             h("div", { attrs: { class: "files-browser" } },
-                breadcrumbs(state.directory, live, actions),
+                breadcrumbs(state.directory, live, actions, extensions.rootLabel),
                 h("div", { attrs: { class: "files-list", "aria-label": "Directory entries", "aria-busy": state.listingBusy ? "true" : "false" } },
                     state.listingBusy ? h("p", { attrs: { role: "status" } }, "Loading directory\u2026") : null,
                     state.listingError === null ? null : h("p", { attrs: { class: "files-notice", role: "status" } }, state.listingError),

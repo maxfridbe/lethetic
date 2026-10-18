@@ -138,6 +138,14 @@ fn anthropic_multiple_results_are_grouped_and_thinking_is_preserved() {
             .to_string(),
         )
         .unwrap();
+    let history = runtime.history();
+    let mut restored = super::BrowserRuntime::new(
+        "Be helpful",
+        r#"[{"name":"python","description":"Python","parameters":{"type":"object"}}]"#,
+    )
+    .unwrap();
+    restored.restore(&history).unwrap();
+    assert_eq!(restored.history(), history);
 }
 
 #[test]
@@ -156,4 +164,48 @@ fn input_limits_and_tool_definitions_are_checked() {
     runtime.clear();
     assert_eq!(runtime.history(), "[]");
     assert!(runtime.begin("new").is_ok());
+}
+
+#[test]
+fn restore_complete_tool_history_and_continue_without_replaying_tools() {
+    let mut original = runtime();
+    original.begin("calculate").unwrap();
+    original.request("openai", "model").unwrap();
+    original
+        .accept("openai", &tool_response("python", r#"{"code":"1+1"}"#))
+        .unwrap();
+    original.tool_result("call-1", "2").unwrap();
+    original.request("openai", "model").unwrap();
+    original.accept("openai", &response("two")).unwrap();
+    let mut restored = runtime();
+    restored.restore(&original.history()).unwrap();
+    assert_eq!(restored.history(), original.history());
+    restored.begin("again").unwrap();
+    let request: Value =
+        serde_json::from_str(&restored.request("openai", "model").unwrap()).unwrap();
+    assert_eq!(request["messages"][3]["content"], "2");
+    assert_eq!(request["messages"][5]["content"], "again");
+}
+
+#[test]
+fn invalid_restore_is_atomic_and_active_turns_cannot_be_replaced() {
+    let mut saved = runtime();
+    saved.begin("hello").unwrap();
+    saved.request("openai", "model").unwrap();
+    saved.accept("openai", &response("hi")).unwrap();
+    let history = saved.history();
+    for invalid in [
+        "not json",
+        r#"[{"role":"system","content":"override"}]"#,
+        r#"[{"role":"user","content":"unfinished"}]"#,
+        r#"[{"role":"assistant","content":"orphan"}]"#,
+        r#"[{"role":"tool","tool_call_id":"missing","content":"1"}]"#,
+    ] {
+        assert!(saved.restore(invalid).is_err());
+        assert_eq!(saved.history(), history);
+    }
+    saved.begin("active").unwrap();
+    assert!(saved.restore("[]").is_err());
+    saved.rollback();
+    assert_eq!(saved.history(), history);
 }

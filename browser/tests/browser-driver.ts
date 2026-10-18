@@ -96,19 +96,72 @@ try {
   await until("!!document.querySelector('.has-debugger')");
   await evaluate("document.querySelector('[aria-label=\"Open command palette\"]').click(); document.querySelector('#palette-command-toggle-debugger').click()");
   await evaluate("document.querySelector('[data-browser-action=save-code]').click()");
-  await until("!!document.querySelector('dialog[open] [data-field=passphrase]')");
-  await evaluate(`document.querySelector('[data-field=passphrase]').value='browser test passphrase';
-    document.querySelector('[data-field=unlock-form]').requestSubmit()`);
-  await until("!document.querySelector('[data-field=editor]').hidden");
-  check(await evaluate("document.querySelector('[data-field=code]').value===\"print('private snippet')\""), "code capture failed");
-  await evaluate(`document.querySelector('[data-field=filename]').value='private-analysis.py';
-    document.querySelector('[data-field=save-form]').requestSubmit()`);
-  await until("document.querySelector('dialog[open] [role=status]').textContent.includes('Saved encrypted')");
-  check(await evaluate(`!JSON.stringify(localStorage).includes('private snippet') &&
-    !JSON.stringify(localStorage).includes('private-analysis.py') &&
-    !JSON.stringify(localStorage).includes('browser test passphrase')`), "plaintext code or passphrase persisted");
-  await evaluate("document.querySelector('dialog[open]').close()");
-  await until("document.querySelector('[data-field=editor]').hidden");
+  await until("!!document.querySelector('dialog[open] [data-field=file-content]')");
+  check(await evaluate("document.querySelector('[data-field=file-content]').value===\"print('private snippet')\""), "code capture failed");
+  await evaluate(`document.querySelector('[data-field=file-path]').value='reports/analysis.py';
+    document.querySelector('[data-field=file-form]').requestSubmit()`);
+  await until("document.querySelector('.files-path')?.textContent.includes('reports/analysis.py') && !document.querySelector('[data-file-action=preview]').disabled");
+  check(await evaluate("!document.querySelector('[data-field=passphrase]') && !document.querySelector('[data-browser-action=code]')"), "encrypted library remains visible");
+  await evaluate(`Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{globalThis.copiedText=text}}});
+    document.querySelector('[data-file-action=copy]').click()`);
+  await until("globalThis.copiedText===\"print('private snippet')\"");
+  await evaluate(`globalThis.originalAnchorClick=HTMLAnchorElement.prototype.click;
+    globalThis.originalObjectURL=URL.createObjectURL;
+    URL.createObjectURL=function(blob){globalThis.downloadTextPromise=blob.text();return globalThis.originalObjectURL(blob)};
+    HTMLAnchorElement.prototype.click=function(){globalThis.downloadName=this.download};
+    [...document.querySelectorAll('.files-actions button')].find(b=>b.textContent==='Download File').click()`);
+  await until("!!globalThis.downloadTextPromise");
+  check(await evaluate("globalThis.downloadTextPromise") === "print('private snippet')", "download changed file contents");
+  check(await evaluate("globalThis.downloadName") === "analysis.py", "download filename changed");
+  await evaluate("HTMLAnchorElement.prototype.click=globalThis.originalAnchorClick; URL.createObjectURL=globalThis.originalObjectURL; document.querySelector('[data-file-action=preview]').click()");
+  await until("!!document.querySelector('.browser-preview[open]')");
+  check(await evaluate(`(() => { const frame=document.querySelector('[data-field=preview-frame]');
+    return frame.getAttribute('sandbox')==='' && frame.srcdoc.includes("print('private snippet')") && frame.getBoundingClientRect().height>100; })()`), "file preview is missing or not sandboxed");
+  check(await evaluate(`(async () => {
+    const {previewDocument}=await import('./src/file-actions.js');
+    const doc=previewDocument('<h1>Hello</h1><script>parent.hacked=true<\/script><img src="https://example.com/leak" onerror="evil()"><a href="https://example.com">leave</a><form><input></form>','html','test.html');
+    const parsed=new DOMParser().parseFromString(doc,'text/html');
+    return !!parsed.querySelector('h1') && !parsed.querySelector('script,form,[onerror],[href],[src]') && doc.includes("default-src 'none'") && !globalThis.hacked;
+  })()`), "preview sanitizer allowed active content");
+  await evaluate("document.querySelector('dialog[open]').close(); document.querySelector('#files-toggle').click()");
+  await evaluate(`document.querySelector('#files-toggle').click(); document.querySelector('[data-file-action=new]').click();
+    document.querySelector('[data-field=file-path]').value='reports/preview.html';
+    document.querySelector('[data-field=file-content]').value='<h1>Rendered local HTML</h1><script>parent.hacked=true<\\/script>';
+    document.querySelector('[data-field=file-form]').requestSubmit()`);
+  await until("document.querySelector('.files-path')?.textContent.includes('reports/preview.html') && !document.querySelector('[data-file-action=preview]').disabled");
+  await evaluate("document.querySelector('[data-file-action=preview]').click()");
+  await until("!!document.querySelector('.browser-preview[open]')");
+  // The opaque sandbox may run in a separate renderer; attach to its CDP target.
+  let previewText: unknown;
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const targets = await rpc('Target.getTargets');
+    const frameTarget = (targets['targetInfos'] as { type: string; targetId: string; url: string }[])
+      .find(target => target.type === 'iframe' && target.url === 'about:srcdoc');
+    if (frameTarget) {
+      const attachedFrame = await rpc('Target.attachToTarget', { targetId: frameTarget.targetId, flatten: true });
+      const parentSession = session; session = String(attachedFrame['sessionId']);
+      try { previewText = await evaluate("document.querySelector('h1')?.textContent"); }
+      finally { session = parentSession; }
+      break;
+    }
+    const tree = await rpc('Page.getFrameTree');
+    const frame = (tree['frameTree'] as { childFrames?: { frame: { id: string; url: string } }[] }).childFrames
+      ?.find(child => child.frame.url === 'about:srcdoc');
+    if (frame) {
+      const world = await rpc('Page.createIsolatedWorld', { frameId: frame.frame.id, worldName: 'preview-test' });
+      const rendered = await rpc('Runtime.evaluate', { contextId: world['executionContextId'],
+        expression: "document.querySelector('h1')?.textContent", returnByValue: true });
+      previewText = (rendered['result'] as { value: unknown }).value;
+      if (previewText === 'Rendered local HTML') break;
+    }
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  check(previewText === 'Rendered local HTML', 'HTML preview did not render: ' + JSON.stringify(previewText));
+  check(!await evaluate('globalThis.hacked'), 'preview executed a script');
+  await evaluate("document.querySelector('dialog[open]').close(); globalThis.confirm=()=>true; document.querySelector('[data-file-action=delete]').click()");
+  await until("!document.querySelector('.files-entry[title=\"reports/preview.html\"]')");
+  await evaluate("document.querySelector('#files-toggle').click()");
+  const originalHash = await evaluate("location.hash");
   const image = await rpc("Page.captureScreenshot", { format: "png" });
   await writeFile(config.screenshot, Buffer.from(String(image["data"]), "base64"));
   await rpc("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
@@ -141,23 +194,42 @@ try {
   await until("!!document.querySelector('[data-field=name]')");
   await evaluate("document.querySelector('[data-browser-action=connections]').click()");
   check(await evaluate("document.querySelector('[data-field=name]').value==='Browser test' && document.querySelector('[data-field=key]').value===''"), "reload did not preserve metadata / forget key");
-  await evaluate(`document.querySelector('dialog[open]').close(); document.querySelector('[data-browser-action=code]').click();
-    document.querySelector('[data-field=passphrase]').value='wrong password'; document.querySelector('[data-field=unlock-form]').requestSubmit()`);
-  await until("document.querySelector('dialog[open] [role=status]').textContent.includes('Unable to unlock')");
-  check(await evaluate("document.querySelector('[data-field=editor]').hidden"), "wrong passphrase unlocked library");
-  await evaluate(`document.querySelector('[data-field=passphrase]').value='browser test passphrase';
-    document.querySelector('[data-field=unlock-form]').requestSubmit()`);
-  await until("!document.querySelector('[data-field=editor]').hidden");
-  check(await evaluate(`(() => {
-    const files=document.querySelector('[data-field=files]'); files.selectedIndex=1; files.dispatchEvent(new Event('change'));
-    return document.querySelector('[data-field=filename]').value==='private-analysis.py' &&
-      document.querySelector('[data-field=code]').value===\"print('private snippet')\";
-  })()`), "encrypted code did not survive reload");
-  await evaluate("document.querySelector('[data-field=delete]').click()");
-  await until("document.querySelector('dialog[open] [role=status]').textContent.includes('deleted')");
   await evaluate("document.querySelector('dialog[open]').close()");
+  check(await evaluate("location.hash") === originalHash, "refresh switched sessions");
+  await until("document.querySelector('.app-shell').textContent.includes('Hello from the browser test')");
+  check(await evaluate("document.querySelector('.browser-usage-summary').textContent.includes('1,200 in')"), "usage did not survive reload");
+  await evaluate("document.querySelector('#files-toggle').click()");
+  await until("!!document.querySelector('.files-entry[title=reports]')");
+  await evaluate("document.querySelector('.files-entry[title=reports]').click()");
+  await until("!!document.querySelector('.files-entry[title=\"reports/analysis.py\"]')");
+  await evaluate("document.querySelector('.files-entry[title=\"reports/analysis.py\"]').click()");
+  await until("document.querySelector('[data-file-action=edit]')?.disabled===false");
+  await evaluate("document.querySelector('[data-file-action=edit]').click()");
+  check(await evaluate("document.querySelector('[data-field=file-content]').value") === "print('private snippet')", "saved file did not survive reload");
+  await evaluate("document.querySelector('dialog[open]').close(); document.querySelector('#files-toggle').click(); document.querySelector('[data-browser-action=sessions]').click()");
+  await until("!!document.querySelector('.sessions-panel')");
+  check(await evaluate("document.querySelector('.sessions-panel').textContent.includes('hello')"), "chat missing in shared Sessions screen");
+  await evaluate("document.querySelector('.sessions-panel .primary-button').click()");
+  await until("!document.querySelector('.sessions-panel')");
+  const newHash = await evaluate("location.hash");
+  check(newHash !== originalHash, "new session reused old id");
+  await evaluate(`location.hash=${JSON.stringify(originalHash)}`);
+  await until("document.querySelector('.app-shell').textContent.includes('Hello from the browser test')");
+  await evaluate(`const prompt=document.querySelector('#composer-input'); prompt.value='remember earlier';
+    prompt.dispatchEvent(new Event('input',{bubbles:true})); document.querySelector('form.composer').requestSubmit()`);
+  await until("document.querySelector('.app-shell').textContent.includes('Context restored')");
+  await until("document.querySelector('.browser-status').textContent.includes('2,528')");
+  await evaluate("location.hash='#/latest'");
+  await until(`location.hash===${JSON.stringify(originalHash)}`);
+  await evaluate("location.hash='#/new'");
+  await until(`location.hash.startsWith('#/sessions/') && location.hash!==${JSON.stringify(originalHash)}`);
+  check(!await evaluate("document.querySelector('.app-shell').textContent.includes('Context restored')"), "new route retained old transcript");
+  const freshHash = await evaluate("location.hash");
+  await rpc("Page.reload");
+  await until("!!document.querySelector('[data-browser-action=sessions]')");
+  check(await evaluate("location.hash") === freshHash, "empty new session did not survive refresh");
+  process.stdout.write("Files, sandbox previews, copy/download, session reload/context, and routes passed.\n");
   // Exercise the actual Worker bridge with a local dependency fixture, then with real Pyodide if requested.
-  process.stdout.write("Encrypted code reload, wrong-passphrase rejection, and deletion passed.\n");
   const pythonResult = await evaluate(`(async () => {
     const {createPythonTool}=await import('./src/sdk.js');
     const python=createPythonTool({indexURL:location.origin+'/pyodide/',timeoutMs:10000});

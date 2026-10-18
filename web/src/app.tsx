@@ -53,6 +53,7 @@ import { FilesController } from "./files/state.js";
 import { MonacoDiffViewer, MonacoFileEditor } from "./files/editor.js";
 import { newlyFinished } from "./app/background-tasks.js";
 import { renderFilesPane } from "./files/view.js";
+import type { FilePaneExtensions } from "./files/view.js";
 import {
   CHAT_FOLLOW_SCHEDULER,
   CHAT_WINDOW_SIZE,
@@ -203,6 +204,8 @@ export class SpaApplication implements BrowserTransportEvents {
     headerActions?: () => VNode | null;
     status?: () => VNode;
     promptPlaceholder?: string;
+    sessionsNotice?: () => string;
+    files?: FilePaneExtensions;
     blockActions?: (block: RenderBlockView) => VNode | null;
     externalDialogOpen?: () => boolean;
   } = {}) {
@@ -228,6 +231,14 @@ export class SpaApplication implements BrowserTransportEvents {
     this.#transport = transport;
     this.#files.attach(new FileClient((endpoint, path, signal) => transport.requestFile(endpoint, path, signal)));
   }
+
+  async openFile(path: string): Promise<void> {
+    if (!this.#files.state.open) this.#files.toggle();
+    await this.#files.navigate(path.split("/").slice(0, -1).join("/"));
+    await this.#files.select(path);
+  }
+
+  refreshFiles(): void { void this.#files.refresh(); }
 
   readonly #onPageHide = (): void => {
     this.#files.reset();
@@ -1179,7 +1190,7 @@ export class SpaApplication implements BrowserTransportEvents {
           selectChange: (path) => { void this.#files.selectChange(path); },
           toggleFolder: (path) => this.#files.toggleFolder(path),
           setDiffLayout: (layout) => this.#files.setDiffLayout(layout),
-        }) : null,
+        }, this.extensions.files) : null,
         overlay,
       },
       actions: {
@@ -1212,6 +1223,7 @@ export class SpaApplication implements BrowserTransportEvents {
     return {
       state: {
         panel,
+        sessionsNotice: this.extensions.sessionsNotice?.() ?? null,
         snapshot,
         live,
         palette: this.#palette,

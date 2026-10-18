@@ -18,6 +18,13 @@ export interface FilePaneActions {
   readonly setDiffLayout: (layout: DiffLayout) => void;
 }
 
+export interface FilePaneExtensions {
+  scope?: string;
+  rootLabel?: string;
+  local?: boolean;
+  actions?: (state: FilePaneState) => VNode;
+}
+
 /** `+added −removed` counts, or `binary` when git reported no line numbers. */
 function lineCounts(added: number | null, removed: number | null): VNode {
   if (added === null && removed === null) {
@@ -95,11 +102,11 @@ function renderChangesBody(state: FilePaneState, live: boolean, actions: FilePan
   </div>;
 }
 
-function breadcrumbs(directory: string, live: boolean, actions: FilePaneActions): VNode {
+function breadcrumbs(directory: string, live: boolean, actions: FilePaneActions, rootLabel = "Launch root"): VNode {
   const parts = directory === "" ? [] : directory.split("/");
   return <nav attrs={{ class: "files-breadcrumbs", "aria-label": "File directory" }}>
     <button attrs={{ type: "button", title: "Fixed process launch directory" }} props={{ disabled: !live }}
-      on={{ click: () => actions.navigate("") }}>Launch root</button>
+      on={{ click: () => actions.navigate("") }}>{rootLabel}</button>
     {parts.map((part, index) => <span key={String(index)}>
       <span attrs={{ "aria-hidden": "true" }}> / </span>
       <button attrs={{ type: "button" }} props={{ disabled: !live }}
@@ -108,18 +115,18 @@ function breadcrumbs(directory: string, live: boolean, actions: FilePaneActions)
   </nav>;
 }
 
-export function renderFilesPane(state: FilePaneState, live: boolean, actions: FilePaneActions): VNode {
+export function renderFilesPane(state: FilePaneState, live: boolean, actions: FilePaneActions, extensions: FilePaneExtensions = {}): VNode {
   const path = state.selectedPath ?? state.directory;
   const exclusions = state.listing === null ? null : exclusionLabel(state.listing.exclusions);
-  return <section key="files-pane" attrs={{ class: `files-pane${state.open ? " is-open" : ""}`, "aria-label": "Read-only launch-directory files" }}>
+  return <section key="files-pane" attrs={{ class: `files-pane${state.open ? " is-open" : ""}`, "aria-label": extensions.scope ?? "Read-only launch-directory files" }}>
     <header attrs={{ class: "files-toolbar" }}>
       <button attrs={{ type: "button", id: "files-toggle", "aria-expanded": state.open ? "true" : "false", "aria-controls": "files-body" }}
         props={{ disabled: !live && !state.open }} on={{ click: actions.toggle }}>
         {state.open ? "▾ Files" : "▸ Files"}
       </button>
-      {!state.open ? <span attrs={{ class: "files-scope" }}>Read-only · fixed launch root</span>
+      {!state.open ? <span attrs={{ class: "files-scope" }}>{extensions.scope ?? "Read-only · fixed launch root"}</span>
         : <span attrs={{ class: "files-tabs", role: "tablist", "aria-label": "Files view" }}>
-          {(["files", "changes"] as const).map((tab) => <button key={tab}
+          {(extensions.local ? ["files"] as const : ["files", "changes"] as const).map((tab) => <button key={tab}
             attrs={{ type: "button", role: "tab", class: state.tab === tab ? "is-active" : "",
               "aria-selected": state.tab === tab ? "true" : "false" }}
             props={{ disabled: !live }} on={{ click: () => actions.showTab(tab) }}>
@@ -135,17 +142,18 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
         <button attrs={{ type: "button", title: "Download the selected file (up to 32 MiB)" }}
           props={{ disabled: !live || state.selectedPath === null || state.downloadBusy }}
           on={{ click: () => actions.download(false) }}>Download File</button>
-        <button attrs={{ type: "button", title: "Download the current folder as ZIP; exclusions and fixed limits apply" }}
+        {extensions.local ? null : <button attrs={{ type: "button", title: "Download the current folder as ZIP; exclusions and fixed limits apply" }}
           props={{ disabled: !live || state.downloadBusy || state.listingBusy }}
-          on={{ click: () => actions.download(true) }}>Download Folder</button>
+          on={{ click: () => actions.download(true) }}>Download Folder</button>}
         <button attrs={{ type: "button", title: "Copy a launch-root-relative path; does not change the prompt" }}
           props={{ disabled: path === "" }} on={{ click: actions.copyPath }}>Copy Path</button>
+        {extensions.actions?.(state) ?? null}
       </div>}
     </header>
     {state.open && state.tab === "changes" ? renderChangesBody(state, live, actions) : null}
     {!state.open || state.tab !== "files" ? null : <div attrs={{ id: "files-body", class: "files-body" }}>
       <div attrs={{ class: "files-browser" }}>
-        {breadcrumbs(state.directory, live, actions)}
+        {breadcrumbs(state.directory, live, actions, extensions.rootLabel)}
         <div attrs={{ class: "files-list", "aria-label": "Directory entries", "aria-busy": state.listingBusy ? "true" : "false" }}>
           {state.listingBusy ? <p attrs={{ role: "status" }}>Loading directory…</p> : null}
           {state.listingError === null ? null : <p attrs={{ class: "files-notice", role: "status" }}>{state.listingError}</p>}

@@ -52,6 +52,8 @@ class Handler(SimpleHTTPRequestHandler):
             content = "Python says: " + messages[-1]["content"].strip()
         else:
             content = "Connected" if "single word Connected" in messages[-1]["content"] else "Hello from the browser test\n\n```python\nprint('private snippet')\n```"
+        if messages[-1]["role"] == "user" and messages[-1]["content"] == "remember earlier":
+            content = "Context restored" if any(m.get("content") == "hello" for m in messages[:-1]) else "Missing context"
         if data.get("tools") and messages[-1]["role"] == "user":
             message = {"role": "assistant", "content": None, "tool_calls": [{
                 "id": "python-1", "type": "function",

@@ -150,3 +150,24 @@ await test("pre-aborted requests and timeout do not leave a partial conversation
   assert.equal(runtime.history().length, 0);
   runtime.dispose();
 });
+
+await test("restoring actual WASM history continues context without reexecuting tools", async () => {
+  let executions = 0;
+  const tools: Tool[] = [{ name: "lookup", description: "Lookup", parameters: { type: "object" },
+    execute: () => { executions++; return "saved result"; } }];
+  let requests = 0;
+  const original = await createRuntime({ connection, wasm, tools,
+    fetch: async () => ++requests === 1 ? call("lookup") : answer("finished") });
+  await original.send("original question");
+  const history = original.history(); original.dispose();
+  const restored = await createRuntime({ connection, wasm, tools, fetch: async (_url, init) => {
+    const messages = JSON.parse(String(init?.body)).messages;
+    assert.equal(messages[1].content, "original question");
+    assert.equal(messages[3].content, "saved result");
+    assert.equal(messages[5].content, "continue");
+    return answer("continued");
+  } });
+  restored.restore(history); assert.equal(executions, 1);
+  assert.equal(await restored.send("continue"), "continued");
+  assert.equal(executions, 1); restored.dispose();
+});

@@ -30,6 +30,7 @@ export function renderBrowserStatus(transport: LocalTransport | null): VNode {
       h("span", { attrs: { class: "browser-usage-summary" } }, brief), h("span", "Stats"),
     ]),
     h("div.browser-status-body", [
+      h("p", transport?.persistenceStatus ?? ""),
       h("dl", entries.map(([label, value]) => h("div", [h("dt", label ?? ""), h("dd", value ?? "")]))),
       h("p", "Tokens are reported by the endpoint. Partial totals exclude requests with missing usage. Model time includes network, queueing and generation; it is not decoding speed. Context limits and pricing are not supplied by this runtime."),
     ]),

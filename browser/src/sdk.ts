@@ -44,6 +44,7 @@ interface WasmRuntime {
   rollback(): void;
   clear(): void;
   history(): string;
+  restore(history: string): void;
   free(): void;
 }
 interface WasmModule {
@@ -166,6 +167,12 @@ export class LetheticRuntime {
   history(): unknown[] {
     if (this.#disposed) throw new Error("This runtime was disposed.");
     return JSON.parse(this.#wasm.history()) as unknown[];
+  }
+
+  /** Restore completed turns without replaying host tools. */
+  restore(history: unknown[]): void {
+    if (this.busy || this.#disposed) throw new Error("Stop the turn before restoring history.");
+    this.#wasm.restore(JSON.stringify(history));
   }
 
   dispose(): void {

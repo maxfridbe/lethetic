@@ -3,8 +3,8 @@
 **[Try it in your browser](https://maxfridbe.github.io/lethetic/) · [Embed it in your app](integration.md#embed-the-complete-ui) · [Run it locally](integration.md#build-and-test)**
 
 The browser edition uses the same UI as remote mode, with a local **WASM runtime**,
-your own model connections, **Pyodide Python**, and a **passphrase-encrypted code
-library** saved on your device. No native server is needed.
+your own model connections, **Pyodide Python**, the existing **Files browser**, and
+**saved sessions** that reopen after refresh. No native server is needed.
 [Download the standalone site and embedding SDK](https://github.com/maxfridbe/lethetic/releases/latest).
 
 > "...so many various filters and enhancements, so many possible patterns, that it was as much an art as a craft. We didn't have the trained personnel that we needed, and as good as the lethetic intelligence engines were, they still lacked the ability to make intuitive leaps. LIs could give you statistical probabilities; they couldn't give you hunches—although the last I'd heard, they were working on adding that function too."
@@ -23,8 +23,12 @@ Open **[Lethetic in your browser](https://maxfridbe.github.io/lethetic/)** to co
 an OpenAI-compatible Chat Completions endpoint or an Anthropic Messages endpoint.
 The standalone edition runs a Rust/WASM conversation runtime locally, with optional
 **Pyodide Python tools** in a persistent Web Worker. It needs no native Lethetic process.
-API keys stay in memory. Connection metadata is saved locally; code and filenames
-can be saved encrypted with a passphrase through **Code library** or **Save code encrypted**.
+API keys stay in memory. Chats and files are saved unencrypted on your device.
+Use **Save to Files** beneath code blocks, then browse folders, edit, preview,
+download, or copy contents in **Files**. **Sessions** reopens earlier chats with
+context and usage stats; refresh keeps the current session.
+[Start a new session](https://maxfridbe.github.io/lethetic/#/new) or
+[open the latest](https://maxfridbe.github.io/lethetic/#/latest).
 
 The endpoint must permit browser requests through CORS and use HTTPS when the page
 uses HTTPS. This edition supports chat and registered browser/host tools; native

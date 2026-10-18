@@ -447,6 +447,7 @@ function sessionsPanel(
   const { live } = context.state;
   return (
     <div attrs={{ class: "sessions-panel" }}>
+      {context.state.sessionsNotice ? <p attrs={{ class: "browser-session-notice" }}>{context.state.sessionsNotice}</p> : null}
       <div attrs={{ class: "panel-toolbar" }}>
         <button
           attrs={{

@@ -109,6 +109,13 @@ export class SpaApplication {
         this.#transport = transport;
         this.#files.attach(new FileClient((endpoint, path, signal) => transport.requestFile(endpoint, path, signal)));
     }
+    async openFile(path) {
+        if (!this.#files.state.open)
+            this.#files.toggle();
+        await this.#files.navigate(path.split("/").slice(0, -1).join("/"));
+        await this.#files.select(path);
+    }
+    refreshFiles() { void this.#files.refresh(); }
     #onPageHide = () => {
         this.#files.reset();
         this.#fileEditor.dispose();
@@ -909,7 +916,7 @@ export class SpaApplication {
                     selectChange: (path) => { void this.#files.selectChange(path); },
                     toggleFolder: (path) => this.#files.toggleFolder(path),
                     setDiffLayout: (layout) => this.#files.setDiffLayout(layout),
-                }) : null,
+                }, this.extensions.files) : null,
                 overlay,
             },
             actions: {
@@ -937,6 +944,7 @@ export class SpaApplication {
         return {
             state: {
                 panel,
+                sessionsNotice: this.extensions.sessionsNotice?.() ?? null,
                 snapshot,
                 live,
                 palette: this.#palette,

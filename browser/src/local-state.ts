@@ -21,13 +21,14 @@ const COMMANDS: [CommandId, string, CommandView["behavior"], string | null][] = 
   ["agent-mode", "Agent mode", "open_panel", null], ["agent-general", "Chat mode", "execute", null],
   ["python-permissive", "Python mode (Pyodide)", "execute", null],
   ["delete-python-runtime", "Reset Python session", "confirm", null],
+  ["sessions", "Sessions", "open_panel", null],
 ];
 
 export function initialState(): WebAppSnapshot {
   const session_id = crypto.randomUUID();
   return {
     session: { session_id, display_name: null, fallback_label: "Browser session" },
-    blocks: { blocks: [block("markdown", "Connect a model using **Connections**. Use **Code library** to save code encrypted on this device.", "Lethetic")], omitted_before: 0, truncated: false },
+    blocks: { blocks: [block("markdown", "Connect a model using **Connections**. Save code in **Files** and reopen chats in **Sessions**.", "Lethetic")], omitted_before: 0, truncated: false },
     activity: { kind: "idle", fully_idle: true, cancellable: false, cancel_id: null, progress_percent: null },
     pending_approval: null, pending_question: null,
     commands: COMMAND_ORDER.map((id) => {

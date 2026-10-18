@@ -227,6 +227,7 @@ function systemPromptPanel(context, snapshot) {
 function sessionsPanel(context, snapshot) {
     const { live } = context.state;
     return (h("div", { attrs: { class: "sessions-panel" } },
+        context.state.sessionsNotice ? h("p", { attrs: { class: "browser-session-notice" } }, context.state.sessionsNotice) : null,
         h("div", { attrs: { class: "panel-toolbar" } },
             h("button", { attrs: {
                     type: "button",

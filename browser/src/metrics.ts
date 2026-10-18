@@ -1,6 +1,27 @@
 import type { RuntimeEvent } from "./sdk.js";
 import type { ProviderUsage } from "./usage.js";
 
+export interface MetricsSnapshot {
+  turn: { requests: number; responses: number; sums: ProviderUsage; reports: Record<keyof ProviderUsage, number> };
+  session: MetricsSnapshot["turn"];
+  modelMs: number; toolMs: number; elapsedMs: number;
+}
+
+export function parseMetrics(value: unknown): MetricsSnapshot {
+  if (!value || typeof value !== "object") throw new Error("Invalid saved usage.");
+  const item = value as MetricsSnapshot;
+  for (const group of [item.turn, item.session]) {
+    if (!group || !Number.isSafeInteger(group.requests) || group.requests < 0 ||
+        !Number.isSafeInteger(group.responses) || group.responses < 0 || group.responses > group.requests) throw new Error("Invalid saved usage.");
+    for (const key of ["input", "output", "total", "cached", "cacheWrite", "reasoning"] as const) {
+      const sum = group.sums?.[key]; const reports = group.reports?.[key];
+      if ((sum !== null && (!Number.isSafeInteger(sum) || sum < 0)) || !Number.isSafeInteger(reports) || reports < 0 || reports > group.responses) throw new Error("Invalid saved usage.");
+    }
+  }
+  for (const time of [item.modelMs, item.toolMs, item.elapsedMs]) if (!Number.isFinite(time) || time < 0) throw new Error("Invalid saved timing.");
+  return structuredClone(item);
+}
+
 export class UsageTotals {
   requests = 0;
   responses = 0;
@@ -53,5 +74,17 @@ export class BrowserMetrics {
   reset(): void {
     this.finish(); this.turn = new UsageTotals(); this.session = new UsageTotals();
     this.elapsedMs = 0; this.modelMs = 0; this.toolMs = 0;
+  }
+  snapshot(): MetricsSnapshot {
+    return { turn: structuredClone(this.turn), session: structuredClone(this.session), modelMs: this.modelMs,
+      toolMs: this.toolMs, elapsedMs: this.elapsed };
+  }
+  restore(value: MetricsSnapshot): void {
+    const saved = parseMetrics(value); this.reset();
+    for (const key of ["turn", "session"] as const) {
+      this[key].requests = saved[key].requests; this[key].responses = saved[key].responses;
+      Object.assign(this[key].sums, saved[key].sums); Object.assign(this[key].reports, saved[key].reports);
+    }
+    this.modelMs = saved.modelMs; this.toolMs = saved.toolMs; this.elapsedMs = saved.elapsedMs;
   }
 }

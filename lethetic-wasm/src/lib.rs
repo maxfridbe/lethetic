@@ -175,6 +175,63 @@ impl BrowserRuntime {
     pub fn history(&self) -> String {
         Value::Array(self.messages.clone()).to_string()
     }
+
+    /// Restore complete turns without executing tools or accepting system messages.
+    /// Invalid or incomplete histories leave the current conversation unchanged.
+    pub fn restore(&mut self, history: &str) -> Result<(), String> {
+        if self.checkpoint.is_some() {
+            return Err("stop the active turn before restoring history".into());
+        }
+        bounded(history)?;
+        let messages: Vec<Value> = serde_json::from_str(history).map_err(|e| e.to_string())?;
+        if messages.len() > MAX_MESSAGES {
+            return Err("saved conversation exceeds the message limit".into());
+        }
+        let definitions = serde_json::to_string(&self.tools).map_err(|e| e.to_string())?;
+        let mut candidate = Self::new(&self.system, &definitions)?;
+        for message in messages {
+            match message["role"].as_str() {
+                Some("user") => {
+                    candidate.begin(message["content"].as_str().ok_or("invalid user message")?)?
+                }
+                Some("assistant") => {
+                    let is_anthropic = message.get("anthropic_content").is_some();
+                    let has_calls = message["tool_calls"]
+                        .as_array()
+                        .is_some_and(|calls| !calls.is_empty());
+                    let (provider, response) = if is_anthropic {
+                        (
+                            "anthropic",
+                            json!({"role":"assistant", "content":message["anthropic_content"],
+                            "stop_reason":if has_calls { "tool_use" } else { "end_turn" }}),
+                        )
+                    } else {
+                        (
+                            "openai",
+                            json!({"choices":[{"message":message,
+                            "finish_reason":if has_calls { "tool_calls" } else { "stop" }}]}),
+                        )
+                    };
+                    candidate.request(provider, "restore")?;
+                    candidate.accept(provider, &response.to_string())?;
+                }
+                Some("tool") => candidate.tool_result(
+                    message["tool_call_id"]
+                        .as_str()
+                        .ok_or("invalid tool result id")?,
+                    message["content"]
+                        .as_str()
+                        .ok_or("invalid tool result content")?,
+                )?,
+                _ => return Err("unsupported saved message role".into()),
+            }
+        }
+        if candidate.checkpoint.is_some() {
+            return Err("saved conversation contains an incomplete turn".into());
+        }
+        self.messages = candidate.messages;
+        Ok(())
+    }
 }
 
 fn bounded(value: &str) -> Result<(), String> {

@@ -7,6 +7,9 @@ import { createPythonTool } from "./python.js";
 import type { PythonTool } from "./python.js";
 import { block, initialState, NO_LOSS } from "./local-state.js";
 import { BrowserMetrics } from "./metrics.js";
+import { SessionStore } from "./sessions.js";
+import type { BrowserFiles } from "./files.js";
+import type { FileEndpoint } from "../../web/src/files/protocol.js";
 
 export interface LocalOptions {
   connections: Connection[];
@@ -15,6 +18,10 @@ export interface LocalOptions {
   systemPrompt?: string;
   pyodideIndexURL?: string;
   onConnectionChanged?: (index: number) => void;
+  storage?: Storage;
+  initialSession?: string;
+  onSessionChanged?: (id: string) => void;
+  files?: BrowserFiles;
 }
 
 /** Drives the existing remote-mode UI using the same typed commands and snapshots. */
@@ -34,10 +41,14 @@ export class LocalTransport implements ApplicationTransport {
   #history: string[] = [];
   #system: string;
   #requestCount = 0;
+  readonly #sessions: SessionStore;
+  #savedMessages: unknown[] = [];
+  persistenceStatus = "Sessions stay in this tab; storage is not enabled.";
 
   constructor(readonly events: BrowserTransportEvents, readonly options: LocalOptions) {
     this.pythonEnabled = options.python ?? false;
     this.#system = options.systemPrompt ?? DEFAULT_PROMPT;
+    this.#sessions = new SessionStore(options.storage);
   }
 
   get busy(): boolean { return this.#operation !== null; }
@@ -48,7 +59,9 @@ export class LocalTransport implements ApplicationTransport {
     this.events.serverMessage({ type: "hello", hello: { protocol_version: WFE_PROTOCOL_VERSION,
       minimum_protocol_version: WFE_PROTOCOL_VERSION, server_name: "lethetic", sequence: 0, revision: 0,
       schema_sha256: WFE_PROTOCOL_SCHEMA_SHA256, capabilities: { state_patches: true, request_replay: true,
-        session_names: true, exact_tool_approval: true, read_only_files: false } } });
+        session_names: true, exact_tool_approval: true, read_only_files: !!this.options.files } } });
+    try { this.openSession(this.options.initialSession ?? "latest"); }
+    catch (error) { this.persistenceStatus = error instanceof Error ? error.message : String(error); }
     this.publish();
   }
 
@@ -71,10 +84,22 @@ export class LocalTransport implements ApplicationTransport {
 
   setConnections(connections: Connection[], selected: number): void {
     this.#requireIdle();
+    const before = this.connection;
+    const after = connections[selected];
+    const changed = before?.endpoint !== after?.endpoint || before?.model !== after?.model || before?.provider !== after?.provider;
+    if (changed) this.#saveSession();
     this.options.connections = connections;
     this.selected = selected;
-    this.reset();
+    if (changed) this.#newSession();
+    else { this.#savedMessages = this.#runtime?.history() ?? this.#savedMessages; this.#runtime?.dispose(); this.#runtime = null; }
+    this.#saveSession();
     this.publish();
+  }
+
+  setPythonMode(enabled: boolean): void {
+    this.#requireIdle();
+    if (enabled === this.pythonEnabled) return;
+    this.#saveSession(); this.pythonEnabled = enabled; this.#newSession(); this.#saveSession(); this.publish();
   }
 
   reset(): void {
@@ -82,6 +107,7 @@ export class LocalTransport implements ApplicationTransport {
     this.#runtime?.dispose(); this.#runtime = null;
     this.#python?.reset(); this.#python = null;
     this.metrics.reset(); this.#requestCount = 0;
+    this.#savedMessages = [];
     this.state.blocks = { blocks: [], omitted_before: 0, truncated: false };
     this.state.status.stop_reason = "Ready";
     this.state.overlay = { active_panel: null, data: null };
@@ -96,6 +122,7 @@ export class LocalTransport implements ApplicationTransport {
       this.pendingCount--;
       try {
         const outcome = this.#execute(command);
+        if (!this.busy) this.#saveSession();
         this.publish();
         this.events.commandResponse({ id: request.id, result: { status: "ok", revision: this.#revision, outcome } }, request);
       } catch (error) {
@@ -114,7 +141,10 @@ export class LocalTransport implements ApplicationTransport {
     this.events.transportStatus({ phase: "live", label: "Browser · WASM", attempt: 0, retryInMilliseconds: null });
   }
   markStale(): void { /* The next synchronous snapshot restores state. */ }
-  async requestFile(): Promise<Response> { throw new Error("Native files are unavailable in browser mode."); }
+  async requestFile(endpoint: FileEndpoint, path: string, signal: AbortSignal): Promise<Response> {
+    if (!this.options.files) throw new Error("Files are unavailable.");
+    return this.options.files.request(endpoint, path, signal);
+  }
   closePermanently(): void { this.dispose(); }
   dispose(): void {
     if (this.#ticker !== null) clearInterval(this.#ticker);
@@ -124,7 +154,8 @@ export class LocalTransport implements ApplicationTransport {
   #requireIdle(): void { if (this.busy) throw new Error("Stop the current turn first."); }
 
   #execute(command: WebCommand): CommandOutcome {
-    if ("session_id" in command && command.session_id !== this.state.session.session_id) throw new Error("Session changed.");
+    if ("session_id" in command && command.type !== "resume_session" && command.type !== "delete_session" &&
+        command.session_id !== this.state.session.session_id) throw new Error("Session changed.");
     switch (command.type) {
       case "send_prompt":
         this.#requireIdle();
@@ -150,7 +181,7 @@ export class LocalTransport implements ApplicationTransport {
         this.#requireIdle();
         const selected = Number(command.model_id);
         if (!Number.isInteger(selected) || !this.options.connections[selected]) throw new Error("Unknown connection.");
-        this.selected = selected; this.reset(); this.options.onConnectionChanged?.(selected); break;
+        this.setConnections(this.options.connections, selected); this.options.onConnectionChanged?.(selected); break;
       }
       case "rename_session":
         this.state.session.display_name = command.name;
@@ -165,7 +196,7 @@ export class LocalTransport implements ApplicationTransport {
       case "set_agent_mode":
         this.#requireIdle();
         if (!["general", "python"].includes(command.mode_id)) throw new Error("Unknown agent mode.");
-        this.pythonEnabled = command.mode_id === "python"; this.reset(); break;
+        this.setPythonMode(command.mode_id === "python"); break;
       case "select_system_prompt": this.#openSystemPrompt(); break;
       case "save_system_prompt":
         this.#requireIdle(); this.reset(); this.#system = command.content; this.#openSystemPrompt(); break;
@@ -176,12 +207,30 @@ export class LocalTransport implements ApplicationTransport {
             command.type !== this.state.overlay.data.confirmation.action) {
           this.state.overlay = { active_panel: "confirmation", data: { type: "confirmation", confirmation: {
             confirmation_id: crypto.randomUUID(), action: command.type, session_id: this.state.session.session_id,
-            title: "Start fresh?", message: "This clears the current chat and Python variables. Encrypted saved code is kept." } } };
+            title: "Start fresh?", message: "This clears the current chat and Python variables. Local files are kept." } } };
           throw new Error("Review the confirmation dialog.");
         }
         this.reset(); break;
-      case "new_session": this.#requireIdle(); this.reset(); this.#history = [];
-        this.state.session.session_id = crypto.randomUUID();
+      case "resume_session": this.openSession(command.session_id);
+        return { type: "session_loaded", session_id: this.state.session.session_id };
+      case "delete_session": case "wipe_sessions": {
+        this.#requireIdle();
+        const target = command.type === "delete_session" ? command.session_id : null;
+        const confirmation = this.state.overlay.data;
+        if (!command.confirmed || confirmation?.type !== "confirmation" ||
+            command.confirmation_id !== confirmation.confirmation.confirmation_id ||
+            confirmation.confirmation.action !== command.type || confirmation.confirmation.session_id !== target) {
+          this.state.overlay = { active_panel: "confirmation", data: { type: "confirmation", confirmation: {
+            confirmation_id: crypto.randomUUID(), action: command.type, session_id: target,
+            title: "Delete saved sessions?", message: target ? "Delete this session from this device?" : "Delete every saved chat on this device? Local files are kept." } } };
+          throw new Error("Review the confirmation dialog.");
+        }
+        if (target) this.#sessions.remove(target); else this.#sessions.clear();
+        if (!target || target === this.state.session.session_id) this.#newSession();
+        this.state.overlay = { active_panel: "sessions", data: null };
+        return target ? { type: "session_deleted", session_id: target } : { type: "sessions_wiped" };
+      }
+      case "new_session": this.#requireIdle(); this.#saveSession(); this.#newSession();
         return { type: "session_created", session_id: this.state.session.session_id };
       case "invoke_command": return this.#invoke(command.command_id);
       default: throw new Error("This command requires the native runtime.");
@@ -191,6 +240,7 @@ export class LocalTransport implements ApplicationTransport {
 
   #invoke(id: string): CommandOutcome {
     const panels: Record<string, PanelId> = { hotkeys: "hotkeys", themes: "themes", models: "models",
+      sessions: "sessions",
       "input-history": "input_history", "name-session": "name_session", "agent-mode": "agent_mode", "system-prompt": "system_prompt" };
     const panel = panels[id];
     if (panel) {
@@ -211,7 +261,7 @@ export class LocalTransport implements ApplicationTransport {
     if (id === "toggle-debugger") this.state.debugger.open = !this.state.debugger.open;
     else if (id === "clear-ui") this.state.blocks = { blocks: [], omitted_before: 0, truncated: false };
     else if (id === "agent-general" || id === "python-permissive") {
-      this.#requireIdle(); this.pythonEnabled = id === "python-permissive"; this.reset();
+      this.setPythonMode(id === "python-permissive");
     } else throw new Error("Unsupported browser command.");
     return { type: "applied" };
   }
@@ -233,6 +283,7 @@ export class LocalTransport implements ApplicationTransport {
         }
         const runtime = await createRuntime({ connection, tools, systemPrompt: this.#system, onEvent: (event) => this.#event(event) });
         if (this.#closed) { runtime.dispose(); return; }
+        try { runtime.restore(this.#savedMessages); } catch (error) { runtime.dispose(); throw error; }
         this.#runtime = runtime;
       }
       await this.#runtime.send(prompt, signal);
@@ -246,8 +297,58 @@ export class LocalTransport implements ApplicationTransport {
       this.#ticker = null; this.metrics.finish();
       this.#operation = null;
       this.state.activity = { kind: "idle", fully_idle: true, cancellable: false, cancel_id: null, progress_percent: null };
+      if (!this.#closed) this.#saveSession();
       this.publish();
     }
+  }
+
+  #newSession(): void {
+    this.reset(); this.#history = [];
+    this.state.session = { session_id: crypto.randomUUID(), display_name: null, fallback_label: "New chat" };
+    this.options.onSessionChanged?.(this.state.session.session_id);
+  }
+
+  openSession(route: string): void {
+    this.#requireIdle();
+    const saved = this.#sessions.list();
+    const session = route === "latest" ? saved[0] : saved.find((item) => item.id === route);
+    if (route !== "latest" && route !== "new" && !session) throw new Error("Session not found on this device. Open Sessions or #/new.");
+    if (this.state.blocks.blocks.some((item) => item.kind === "user")) this.#saveSession();
+    if (session && route !== "new") {
+      this.reset();
+      this.state.session = { session_id: session.id, display_name: session.name, fallback_label: session.label };
+      this.state.blocks.blocks = session.blocks; this.#savedMessages = session.messages; this.#history = session.inputs;
+      this.#system = session.system; this.pythonEnabled = session.python;
+      if (session.metrics) this.metrics.restore(session.metrics);
+      for (const theme of this.state.themes) theme.selected = theme.theme_id === session.theme;
+      if (session.connection) {
+        let index = this.options.connections.findIndex((item) => item.endpoint === session.connection?.endpoint &&
+          item.model === session.connection?.model && item.provider === session.connection?.provider);
+        if (index < 0) { index = this.options.connections.length; this.options.connections.push(session.connection); }
+        this.selected = index;
+      }
+      this.options.onSessionChanged?.(session.id);
+    } else this.#newSession();
+    this.#saveSession();
+  }
+
+  #saveSession(): void {
+    if (this.busy) return;
+    try {
+      const connection = this.connection;
+      this.#savedMessages = this.#runtime?.history() ?? this.#savedMessages;
+      const label = this.#history[0]?.slice(0, 100) || "New chat";
+      this.state.session.fallback_label = label;
+      this.#sessions.save({ id: this.state.session.session_id, name: this.state.session.display_name, label,
+        updatedAt: new Date().toISOString(), blocks: this.state.blocks.blocks, messages: this.#savedMessages,
+        inputs: this.#history, system: this.#system, python: this.pythonEnabled,
+        metrics: this.metrics.snapshot(),
+        theme: this.state.themes.find((theme) => theme.selected)?.theme_id ?? "dracula",
+        connection: connection ? { name: connection.name, provider: connection.provider, endpoint: connection.endpoint, model: connection.model } : null });
+      if (this.options.storage) this.persistenceStatus = "Chats and files are saved unencrypted on this device. API keys are not saved. Python variables reset on reload or session switch.";
+      this.state.sessions = { sessions: this.#sessions.list().map((item) => ({ session_id: item.id,
+        display_name: item.name, fallback_label: item.label, selected: item.id === this.state.session.session_id })), has_more: false };
+    } catch (error) { this.persistenceStatus = `Session not saved: ${error instanceof Error ? error.message : String(error)}`; }
   }
 
   #event(event: RuntimeEvent): void {

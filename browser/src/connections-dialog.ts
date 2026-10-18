@@ -79,7 +79,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
   input("python").addEventListener("change", () => {
     try {
       if (transport.busy) throw new Error("Stop the current turn first.");
-      transport.pythonEnabled = input("python").checked; transport.reset(); transport.publish();
+      transport.setPythonMode(input("python").checked);
     } catch (error) { input("python").checked = transport.pythonEnabled; status(errorMessage(error)); }
   });
   field(dialog, "test").addEventListener("click", () => {

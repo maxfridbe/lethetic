@@ -39,9 +39,9 @@ Open https://maxfridbe.github.io/lethetic/ and save a connection:
 5. Enable **Python tools** to let the model execute Python with Pyodide.
 
 Connection names, protocols, endpoint URLs, and model IDs are saved in localStorage.
-API keys and chats stay in memory. Re-enter keys after reloading.
-Changing connections or Python mode, or choosing **New chat / clear context** in the command palette, clears the conversation
-and Python session. Editing connection fields takes effect when you save them.
+API keys stay in memory. Re-enter keys after reloading. Chats are saved locally.
+Changing connections or Python mode starts a new session, keeping the previous one
+in **Sessions**. Clearing context resets the current conversation and Python runtime. Editing connection fields takes effect when you save them.
 
 Responses appear when each model request completes; this edition currently uses
 non-streaming Chat Completions and Messages. Responses API endpoints, native
@@ -49,27 +49,46 @@ filesystem tools, shells, LSP, native skills, and Podman are not part of the bro
 runtime. The existing `lethetic --rc` browser controller remains available for those
 native capabilities through the same UI backed by its authenticated native connection.
 
-## Save code encrypted on this device
+## Files, previews, and downloads
 
-Open **Code library**, or choose **Save code encrypted** beneath a fenced code
-block or Python tool call. Create a library with a passphrase of at least 12
-characters, enter a filename, and choose **Save encrypted**. Reopen the library
-with the same passphrase to edit, delete, or download a saved file. Capturing a
-snippet opens the editor; saving is explicit. Downloaded files are plaintext.
+Use the existing **Files** directory browser. Choose **Save to Files** beneath a
+code block or Python tool call, or **New file** in Files. Enter a relative path such
+as `reports/analysis.py`. Folders are derived from these paths. Select a file to
+view its source in Monaco, **Edit**, **Preview**, **Download File**, **Copy contents**,
+or **Delete** it. Code blocks also have direct Preview, Download, and Copy buttons.
+Saving is explicit; file contents are not automatically sent to the model.
 
-The library stores one versioned record under `lethetic.code-vault.v1` in
-localStorage. Code, filenames, languages, and timestamps are encrypted together
-with AES-256-GCM, a fresh random 96-bit nonce on every save, and authenticated format
-metadata. Web Crypto derives a non-extractable key from the passphrase using
-PBKDF2-SHA-256 with 600,000 iterations and a random 128-bit salt. The passphrase and
-key are never persisted. Closing the dialog, leaving the page, or reloading locks
-the library and clears its editor. There is no passphrase recovery.
+Previews render static HTML, SVG and Markdown; JSON is formatted and other code is
+shown as text. They use an opaque sandbox and a restrictive content policy:
+scripts, forms, external resources and navigation are disabled. Download the file
+to use it elsewhere. This is a static preview, not a JavaScript app runner.
 
-This protects saved code at rest; code is visible to this page while unlocked and
-to model/tool execution when you submit it. The library supports up to 100 files
-and 1 MiB of plaintext. Writes detect changes from another tab and ask you to reopen
-the library instead of silently overwriting them. Storage quota failures preserve
-the previous saved record. Clearing site data removes the library.
+Files are **unencrypted** in localStorage under `lethetic.files.v1`: up to 100 files,
+1 MiB per file and 4 MiB total. No passphrase or encrypted-library UI is involved.
+Older encrypted records are left untouched and are not automatically migrated.
+A failed save preserves the previous record. Browser storage is device/origin
+specific; clearing site data deletes it. Download files you want to keep elsewhere.
+
+## Saved sessions and URL routing
+
+**Sessions** uses the existing session screen to resume, name, create, or delete
+chats. Completed turns automatically save their transcript, model context, usage
+stats, system prompt, Python mode, theme and connection metadata in
+`lethetic.sessions.v1`. API keys are excluded. Reopening a chat restores its context
+without rerunning tools. Python variables and virtual files are not restored.
+
+The hosted page supports these routes without requiring server-side rewrites:
+
+- `#/sessions/<uuid>` opens that saved session; refresh keeps the same session.
+- `#/latest`, or no fragment, opens the most recently saved session, or creates one.
+- `#/new` creates a new session and replaces the fragment with its UUID.
+
+Session links identify local records; they do not share conversation contents with
+another device. Missing sessions show an error and never silently replace an
+existing chat. Storage holds up to 50 sessions / 4 MiB. Save failures appear in
+Sessions and Stats; delete old sessions to free space. Old chats are never silently
+evicted. Refreshing during a running turn restores the last saved state. Sessions
+and files are stored plainly on this device, with no encryption for now.
 
 ## Endpoint requirements
 
@@ -136,7 +155,7 @@ at `/lethetic/`, custom subpaths, and domain roots. Pages deployment requires th
 Pushing an ordinary commit deploys Pages. Pushing a `v*` tag additionally attaches
 `lethetic-browser.zip` and `lethetic-browser.zip.sha256` to the GitHub release,
 alongside the existing native release workflow. A `browser-v*` tag (for example,
-`browser-v0.2.0`) publishes an independent embedding release with those same assets.
+`browser-v0.3.0`) publishes an independent embedding release with those same assets.
 A commit does not create a version tag automatically. The ZIP contains both standalone and embedding modes; it does
 not contain API keys or downloaded Pyodide packages. Build outputs live under
 `target/` and are not committed. `manifest.json` contains per-file SHA-256 hashes.
@@ -159,7 +178,8 @@ under `web/`, and the WASM module lives under `browser/wasm/`.
       name: 'My service', provider: 'openai', model: 'my-model',
       endpoint: 'https://models.example.com/v1/chat/completions'
     }],
-    storage: localStorage, // Enables metadata persistence and encrypted code saving.
+    storage: localStorage, // Saves connections, sessions and files unencrypted.
+    // Optional: sessionRouting: true to use the session hash routes.
     // Optional: python: true, pyodideIndexURL: 'https://your-site/pyodide/'
   });
   // On teardown: view.destroy();
@@ -169,8 +189,8 @@ under `web/`, and the WASM module lives under `browser/wasm/`.
 Mount one UI per document: the shared UI owns document-level keyboard shortcuts,
 focus handling, theme variables, and styles. Give its container a definite height
 (for example, `height: 100vh` in your stylesheet). Use an iframe for isolated styles
-or multiple instances. Omit `storage` for an embed with no persistence; its code
-library will explain that storage is unavailable. `view.destroy()` aborts pending
+or multiple instances. Omit `storage` to keep files and sessions only in memory.
+Session routing is off by default so the embed does not take over its host URL. `view.destroy()` aborts pending
 work, terminates Python, removes dialogs, and releases application listeners.
 
 An iframe also works: `<iframe src="https://maxfridbe.github.io/lethetic/?embed=1"
@@ -214,6 +234,7 @@ try {
   const reply = await agent.send('Calculate the first ten Fibonacci numbers.');
   console.log(reply);
   // agent.history() returns conversation JSON data without credentials.
+  // agent.restore(savedHistory) restores complete turns while idle; it never runs tools.
   // agent.cancel() stops a turn; agent.clear() clears an idle conversation.
 } finally {
   agent.dispose();
@@ -241,6 +262,9 @@ are a separate build and are not required by this package.
 The browser tool uses [Pyodide 0.29.3](https://pyodide.org/en/0.29.3/usage/quickstart.html),
 loaded lazily from `https://cdn.jsdelivr.net/pyodide/v0.29.3/full/`. It runs in a
 dedicated module Web Worker with persistent globals and a virtual filesystem.
+Use it for calculations, CSV/JSON processing, NumPy/pandas analysis, and Matplotlib
+plots in its virtual filesystem. That filesystem is separate from the saved Files
+browser; this edition returns text and does not automatically export Python files.
 Stdout, stderr, and the final expression are returned to the model, capped at 64 KiB.
 Python exceptions are returned as tool output. Standard input receives EOF.
 Packages bundled with Pyodide are loaded from imports; arbitrary native pip packages
