@@ -268,6 +268,7 @@ function sessionsPanel(context, snapshot) {
                     uiIcon(session.selected ? "check" : "play"),
                     choiceLabel(session)),
                 h("span", null, session.selected ? "Current" : "Resume")),
+            context.state.sessionActions?.(session.session_id) ?? null,
             h("button", { attrs: {
                     type: "button",
                     class: "danger-button compact-button",

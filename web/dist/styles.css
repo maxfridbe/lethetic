@@ -1772,3 +1772,6 @@ progress {
   flex: 0 0 auto;
   width: auto;
 }
+
+.chat-block-actions { display: flex; justify-content: flex-end; margin-top: .4rem; }
+.chat-block-actions button { min-height: 28px; padding: .15rem .35rem; font-size: .8rem; }

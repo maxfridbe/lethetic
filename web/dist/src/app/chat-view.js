@@ -67,7 +67,7 @@ export function chatBlockAnchor(snapshot, index) {
     const ordinal = snapshot.blocks.omitted_before + index - (hasSyntheticNotice ? 1 : 0);
     return `block-${ordinal}`;
 }
-function renderBlock(block, index, maxJsonSegments, anchor, actions, codeActions) {
+function renderBlock(block, index, maxJsonSegments, anchor, actions, codeActions, copyContents) {
     if (block.kind === "divider") {
         return (h("div", { key: anchor ?? `synthetic-block-${index}`, attrs: {
                 class: "chat-divider",
@@ -101,7 +101,11 @@ function renderBlock(block, index, maxJsonSegments, anchor, actions, codeActions
         block.usage === null ? null : (h("details", { attrs: { class: "block-usage" } },
             h("summary", null, "Usage"),
             h("span", null, `${block.usage.total_tokens} total tokens`),
-            block.estimated_cost === null ? null : (h("span", null, `${block.estimated_cost.display} estimated`))))));
+            block.estimated_cost === null ? null : (h("span", null, `${block.estimated_cost.display} estimated`)))),
+        h("footer", { attrs: { class: "chat-block-actions" } },
+            h("button", { attrs: { type: "button", "data-copy-turn": "", title: "Copy this turn’s contents" }, props: { disabled: !copyContents || !content }, on: { click: () => copyContents?.(content) } },
+                uiIcon("copy"),
+                "Copy contents"))));
 }
 function renderChat(context) {
     const { snapshot, chatStart } = context.state;
@@ -133,7 +137,7 @@ function renderChat(context) {
         } },
         snapshot.blocks.omitted_before > 0 ? (h("div", { attrs: { class: "bounded-notice" } }, `${snapshot.blocks.omitted_before} earlier blocks were omitted by the server.`)) : null,
         start > 0 ? (h("div", { attrs: { class: "virtual-spacer", "aria-hidden": "true" }, style: { height: `${start * CHAT_ROW_ESTIMATE}px` } })) : null,
-        h("div", { attrs: { class: "chat-window" } }, visible.map((block, offset) => renderBlock(block, start + offset, jsonSegmentAllocations[offset] ?? 0, chatBlockAnchor(snapshot, start + offset), context.state.blockActions?.(block) ?? null, context.state.codeActions))),
+        h("div", { attrs: { class: "chat-window" } }, visible.map((block, offset) => renderBlock(block, start + offset, jsonSegmentAllocations[offset] ?? 0, chatBlockAnchor(snapshot, start + offset), context.state.blockActions?.(block) ?? null, context.state.codeActions, context.actions.copyContents))),
         end < blocks.length ? (h("div", { attrs: { class: "virtual-spacer", "aria-hidden": "true" }, style: { height: `${(blocks.length - end) * CHAT_ROW_ESTIMATE}px` } })) : null,
         snapshot.blocks.truncated ? (h("div", { attrs: { class: "bounded-notice warning" } }, "Conversation content was bounded by the server.")) : null));
 }

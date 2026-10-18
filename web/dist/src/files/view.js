@@ -1,3 +1,4 @@
+import { fileSize } from "./size.js";
 import { jsx as h } from "../../lib/snabbdom/build/index.js";
 import { uiIcon } from "../icons.js";
 import { exclusionLabel } from "./protocol.js";
@@ -77,6 +78,7 @@ function breadcrumbs(directory, live, actions, rootLabel = "Launch root") {
 }
 export function renderFilesPane(state, live, actions, extensions = {}) {
     const path = state.selectedPath ?? state.directory;
+    const selectedSize = state.preview?.size ?? state.listing?.entries.find(entry => entry.path === state.selectedPath)?.size ?? null;
     const exclusions = state.listing === null ? null : exclusionLabel(state.listing.exclusions);
     return h("section", { key: "files-pane", attrs: { class: `files-pane${state.open ? " is-open" : ""}`, "aria-label": extensions.scope ?? "Read-only launch-directory files" } },
         h("header", { attrs: { class: "files-toolbar" } },
@@ -114,16 +116,16 @@ export function renderFilesPane(state, live, actions, extensions = {}) {
                             title: entry.path, "aria-pressed": state.selectedPath === entry.path ? "true" : "false" }, props: { disabled: !live }, on: { click: () => entry.kind === "directory" ? actions.navigate(entry.path) : actions.select(entry.path) } },
                         h("span", { attrs: { "aria-hidden": "true" } }, uiIcon(entry.kind === "directory" ? "folder" : "file")),
                         h("span", null, entry.name),
-                        h("small", null, entry.kind === "directory" ? "Folder" : `${entry.size ?? "0"} B`))),
+                        h("small", { attrs: { title: entry.kind === "directory" ? "Folder" : `${entry.size ?? "Unknown"} bytes` } }, entry.kind === "directory" ? "Folder" : fileSize(entry.size)))),
                     state.listing?.entries.length === 0 ? h("p", null, "No eligible files in this folder.") : null),
                 state.listing?.truncated === true ? h("p", { attrs: { class: "files-notice" } }, "Showing the first 1,000 eligible entries. Narrow the folder selection.") : null,
                 exclusions === null ? null : h("p", { attrs: { class: "files-notice" } }, exclusions)),
             h("div", { attrs: { class: "files-preview has-content-actions" } },
                 h("div", { attrs: { class: "files-path", title: "Path relative to the fixed launch directory" } },
                     h("span", null, state.selectedPath ?? "Select a file to view"),
-                    state.preview === null ? null : h("small", null,
-                        state.preview.size,
-                        " bytes \u00B7 read-only")),
+                    selectedSize === null ? null : h("small", { attrs: { title: `${selectedSize} bytes` } },
+                        fileSize(selectedSize),
+                        extensions.local ? "" : " · read-only")),
                 h("div", { attrs: { class: "files-content-actions files-actions" } },
                     h("button", { attrs: { type: "button", title: "Download the selected file (up to 32 MiB)" }, props: { disabled: !live || state.selectedPath === null || state.downloadBusy }, on: { click: () => actions.download(false) } },
                         uiIcon("download"),

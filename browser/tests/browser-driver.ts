@@ -57,7 +57,7 @@ async function until(expression: string): Promise<void> {
     if (await evaluate(expression)) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error(`Condition failed: ${expression}`);
+  throw new Error(`Condition failed: ${expression}\n${await evaluate("document.body.innerText.slice(-5000)")}`);
 }
 
 try {
@@ -96,6 +96,30 @@ try {
   check(await evaluate("!JSON.stringify(localStorage).includes('secret-never-persisted')"), "key persisted");
   await evaluate("document.querySelector('[data-field=test]').click()");
   await until("document.querySelector('dialog[open] [data-field=status]').textContent.includes('valid response')");
+  check(await evaluate("!!document.querySelector('[data-field=active-summary] .is-valid') && document.querySelector('[data-field=active-summary]').textContent.includes('Key present')"), "active connection or key presence is unclear");
+  const connectionSession = await evaluate("location.hash");
+  await evaluate("document.querySelector('[data-field=duplicate]').click()");
+  check(await evaluate("document.querySelector('[data-field=name]').value==='Browser test copy' && document.querySelector('[data-field=key]').value==='secret-never-persisted'"), "duplicate lost connection key");
+  check(await evaluate("document.querySelector('[data-field=active-summary] strong').textContent==='Browser test'"), "duplicating activated the copy");
+  await evaluate("document.querySelector('[data-field=use]').click()");
+  check(await evaluate("document.querySelector('[data-field=active-summary] strong').textContent==='Browser test copy'"), "Use did not activate the copy");
+  check(await evaluate("location.hash")===connectionSession,"switching connections changed session");
+  await evaluate(`globalThis.connectionFetch=fetch;
+    globalThis.fetch=(url,options)=>String(url).endsWith('/v1/chat/completions') ? Promise.resolve(new Response('Invalid key',{status:401})) : globalThis.connectionFetch(url,options);
+    document.querySelector('[data-field=key]').value='bad-test-key'; document.querySelector('[data-field=key]').dispatchEvent(new Event('input'));
+    document.querySelector('[data-field=connection-form]').requestSubmit()`);
+  await until("!!document.querySelector('[data-field=active-summary] .is-invalid')");
+  const connectionImage=await rpc("Page.captureScreenshot",{format:"png"});
+  await writeFile(config.screenshot.replace('.png','-connections.png'),Buffer.from(String(connectionImage['data']),'base64'));
+  await rpc("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});
+  check(await evaluate("document.querySelector('.browser-connections .overlay-body').scrollWidth<=document.querySelector('.browser-connections .overlay-body').clientWidth+1"), "connections overflow on a phone");
+  const connectionMobile=await rpc("Page.captureScreenshot",{format:"png"});
+  await writeFile(config.screenshot.replace('.png','-connections-mobile.png'),Buffer.from(String(connectionMobile['data']),'base64'));
+  await rpc("Emulation.clearDeviceMetricsOverride");
+  await evaluate("globalThis.fetch=globalThis.connectionFetch; document.querySelector('[data-connection-index=\"0\"] [data-connection-action=use]').click()");
+  await until("!!document.querySelector('[data-field=active-summary] .is-valid')");
+  await evaluate("document.querySelector('[data-connection-index=\"0\"] [data-connection-action=edit]').click()");
+  check(await evaluate("document.querySelector('[data-field=key]').value==='secret-never-persisted' && !!document.querySelector('[data-field=active-summary] .is-valid')"), "switching back lost the original key or validation");
   await evaluate(`document.querySelector('dialog[open]').close();
     const prompt=document.getElementById('composer-input'); prompt.value='hello';
     prompt.dispatchEvent(new Event('input',{bubbles:true})); document.querySelector('form.composer').requestSubmit()`);
@@ -103,6 +127,12 @@ try {
   await until("document.querySelector('.browser-usage-summary').textContent.includes('1,200 in')");
   check(await evaluate("document.querySelector('.browser-status').textContent.includes('1,024') && !document.querySelector('.transport-level')"), "provider cache usage or browser status failed");
   check(await evaluate("performance.getEntriesByType('resource').some(r=>r.name.includes('/lethetic/browser/wasm/lethetic_wasm_bg.wasm'))"), "WASM was not loaded from the project subpath");
+  await evaluate(`Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{globalThis.copiedTurn=text}}});
+    document.querySelector('.block-user [data-copy-turn]').click()`);
+  await until("globalThis.copiedTurn==='hello'");
+  await evaluate("document.querySelector('.block-markdown [data-copy-turn]').click()");
+  await until("globalThis.copiedTurn.includes('Hello from the browser test') && globalThis.copiedTurn.includes('private snippet')");
+  check(await evaluate("[...document.querySelectorAll('article.chat-block')].every(block=>!!block.querySelector('.chat-block-actions [data-copy-turn]'))"), "a turn is missing Copy contents");
   // These are the original remote UI controls, driven by the local transport.
   await evaluate("document.querySelector('[aria-label=\"Open command palette\"]').click()");
   await until("!!document.querySelector('#palette-command-themes')");
@@ -189,11 +219,25 @@ try {
   await evaluate("document.querySelector('dialog[open]').close(); globalThis.confirm=()=>true; document.querySelector('[data-file-action=delete]').click()");
   await until("!document.querySelector('.files-entry[title=\"reports/preview.html\"]')");
   await evaluate("document.querySelector('#files-toggle').click()");
+  await evaluate("document.querySelector('.browser-status').open=true; document.querySelectorAll('[data-stat-pin][aria-pressed=false]').forEach(button=>button.click()); document.querySelector('.browser-status').open=false");
+  check(await evaluate("document.querySelectorAll('[data-pinned-stat]').length===14"), "stats did not pin");
   const originalHash = await evaluate("location.hash");
+  await evaluate("document.querySelector('#files-toggle').click()");
+  await until("!!document.querySelector('.files-entry[title=reports]')");
+  await evaluate("document.querySelector('.files-entry[title=reports]').click()");
+  await until("!!document.querySelector('.files-entry[title=\"reports/analysis.py\"]')");
+  await evaluate("document.querySelector('.files-entry[title=\"reports/analysis.py\"]').click()");
+  await until("document.querySelector('.files-path small')?.textContent.includes('B')");
+  await until("!!document.querySelector('#files-monaco[data-editor-ready=true]')");
+  await until("!document.querySelector('.toast')");
+  const filesImage = await rpc("Page.captureScreenshot", { format: "png" });
+  await writeFile(config.screenshot.replace('.png','-files.png'), Buffer.from(String(filesImage["data"]), "base64"));
+  await evaluate("document.querySelector('#files-toggle').click()");
   const image = await rpc("Page.captureScreenshot", { format: "png" });
   await writeFile(config.screenshot, Buffer.from(String(image["data"]), "base64"));
   await rpc("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   check(await evaluate("document.documentElement.scrollWidth <= innerWidth"), "mobile layout overflows");
+  check(await evaluate("(()=>{const bar=document.querySelector('.browser-usage-summary');return bar.clientHeight>40 && bar.clientHeight<=parseFloat(getComputedStyle(bar).lineHeight)*3+8})()"), "pinned stats did not wrap within three lines");
   const viewportResult = await evaluate(`(async () => {
     const {fitViewport}=await import('./src/viewport.js');
     const root=document.getElementById('browser-root');
@@ -220,6 +264,7 @@ try {
   process.stdout.write("Shared UI, WASM chat, code capture, and mobile layout passed.\n");
   await rpc("Page.reload");
   await until("!!document.querySelector('[data-field=name]')");
+  check(await evaluate("document.querySelectorAll('[data-pinned-stat]').length===14"), "pins did not survive reload");
   await evaluate("document.querySelector('[data-browser-action=connections]').click()");
   check(await evaluate("document.querySelector('[data-field=name]').value==='Browser test' && document.querySelector('[data-field=key]').value==='secret-never-persisted'"), "reload did not preserve connection metadata and tab key");
   await evaluate("document.querySelector('[data-field=key]').value='updated-tab-key'; document.querySelector('[data-field=connection-form]').requestSubmit()");
@@ -239,6 +284,15 @@ try {
   await evaluate("document.querySelector('dialog[open]').close(); document.querySelector('#files-toggle').click(); document.querySelector('[data-browser-action=sessions]').click()");
   await until("!!document.querySelector('.sessions-panel')");
   check(await evaluate("document.querySelector('.sessions-panel').textContent.includes('hello')"), "chat missing in shared Sessions screen");
+  await evaluate(`globalThis.exportObjectURL=URL.createObjectURL; globalThis.exportAnchorClick=HTMLAnchorElement.prototype.click;
+    URL.createObjectURL=blob=>{globalThis.exportedBundle=blob;return globalThis.exportObjectURL(blob)};
+    HTMLAnchorElement.prototype.click=function(){globalThis.exportedName=this.download};
+    document.querySelector('[data-session-export]').click()`);
+  await until("globalThis.exportedName?.endsWith('.tar.gz')");
+  const debugArchive = await evaluate("(async()=>btoa(String.fromCharCode(...new Uint8Array(await globalThis.exportedBundle.arrayBuffer()))))()");
+  await writeFile(config.screenshot.replace('.png','-session.tar.gz'),Buffer.from(String(debugArchive),'base64'));
+  check(await evaluate("location.hash")===originalHash,"export changed the current session");
+  await evaluate("URL.createObjectURL=globalThis.exportObjectURL; HTMLAnchorElement.prototype.click=globalThis.exportAnchorClick");
   await evaluate("document.querySelector('.sessions-panel .primary-button').click()");
   await until("!document.querySelector('.sessions-panel')");
   const newHash = await evaluate("location.hash");

@@ -62,6 +62,7 @@ export interface ChatViewState {
 }
 
 export interface ChatViewActions {
+  readonly copyContents?: (content: string) => void;
   readonly openPalette: () => void;
   readonly invokeCommand: (command: CommandView) => void;
   readonly openPanel: (panel: "tool_approval" | "ask_user") => void;
@@ -81,6 +82,7 @@ export interface ChatViewContext {
 
 export interface PanelViewState {
   readonly sessionsNotice?: string | null;
+  readonly sessionActions?: (id: string) => VNode | null;
   readonly panel: PanelId;
   readonly snapshot: WebAppSnapshot | null;
   readonly live: boolean;

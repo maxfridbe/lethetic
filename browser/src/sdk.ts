@@ -57,12 +57,23 @@ export const DEFAULT_PROMPT = "You are Lethetic, a thoughtful coding and analysi
   "Work carefully, explain your results clearly, and use only the tools provided by the host. " +
   "You run in a browser and have no native filesystem or shell access.";
 
+// wasm-bindgen's async initializer can instantiate twice when first callers overlap.
+// Share the initialization promise so every runtime uses the same WASM memory.
+let moduleReady: Promise<WasmModule> | null = null;
+function loadRuntimeModule(wasm?: BufferSource): Promise<WasmModule> {
+  if (!moduleReady) moduleReady = (async () => {
+    const moduleUrl = new URL("../wasm/lethetic_wasm.js", import.meta.url);
+    const module: WasmModule = await import(moduleUrl.href);
+    await module.default(wasm ? { module_or_path: wasm } : undefined);
+    return module;
+  })().catch(error => { moduleReady = null; throw error; });
+  return moduleReady;
+}
+
 /** Load the real Rust/WASM runtime. No native Lethetic server is required. */
 export async function createRuntime(options: RuntimeOptions): Promise<LetheticRuntime> {
   const connection = validateConnection(options.connection);
-  const moduleUrl = new URL("../wasm/lethetic_wasm.js", import.meta.url);
-  const module: WasmModule = await import(moduleUrl.href);
-  await module.default(options.wasm ? { module_or_path: options.wasm } : undefined);
+  const module = await loadRuntimeModule(options.wasm);
   const tools = options.tools ?? [];
   const definitions = tools.map(({ name, description, parameters }) => ({ name, description, parameters }));
   return new LetheticRuntime(new module.BrowserRuntime(options.systemPrompt ?? DEFAULT_PROMPT,

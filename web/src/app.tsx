@@ -205,6 +205,7 @@ export class SpaApplication implements BrowserTransportEvents {
     status?: () => VNode;
     promptPlaceholder?: string;
     sessionsNotice?: () => string;
+    sessionActions?: (id: string) => VNode | null;
     files?: FilePaneExtensions;
     blockActions?: (block: RenderBlockView) => VNode | null;
     codeActions?: (code: string, language: string | null) => VNode | null;
@@ -1210,6 +1211,11 @@ export class SpaApplication implements BrowserTransportEvents {
         },
         submitPrompt: () => this.#submitPrompt(),
         stop: () => this.#sendStop(),
+        copyContents: (content) => {
+          if (!navigator.clipboard?.writeText) { this.#showToast("Clipboard is unavailable. Select and copy the text."); return; }
+          void navigator.clipboard.writeText(content).then(() => this.#showToast("Contents copied."))
+            .catch(() => this.#showToast("Could not copy contents. Check browser clipboard access."));
+        },
         toggleDebugger: () => this.#toggleDebugger(),
         onChatKeyDown: this.#onChatKeyDown,
         onChatManualIntent: this.#onChatManualIntent,
@@ -1227,6 +1233,7 @@ export class SpaApplication implements BrowserTransportEvents {
       state: {
         panel,
         sessionsNotice: this.extensions.sessionsNotice?.() ?? null,
+        ...(this.extensions.sessionActions ? { sessionActions: this.extensions.sessionActions } : {}),
         snapshot,
         live,
         palette: this.#palette,

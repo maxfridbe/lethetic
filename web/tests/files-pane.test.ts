@@ -4,6 +4,7 @@ import test from "node:test";
 import { renderChatView } from "../src/app/chat-view.js";
 import { historyRecallMatches, type PendingHistoryRecall } from "../src/app/history-recall.js";
 import { FileClient, boundedResponseBytes } from "../src/files/client.js";
+import { fileSize } from "../src/files/size.js";
 import { fileLanguage } from "../src/files/editor.js";
 import {
   FILE_VIEW_BYTES,
@@ -250,4 +251,13 @@ test("changes tab renders counts beside every file and folder and a diff host", 
   }
   assert.ok(find(pane, (node) => attr(node, "id") === "files-diff-monaco"));
   assert.equal(find(pane, (node) => attr(node, "id") === "files-monaco"), null);
+});
+
+test("file sizes preserve exact large counts and use readable binary units", () => {
+  for (const [bytes, label] of [["0", "0 B"], ["1023", "1023 B"], ["1024", "1 KiB"],
+    ["1536", "1.5 KiB"], ["1048575", "1 MiB"], ["1048576", "1 MiB"],
+    ["18446744073709551615", "16 EiB"], ["bad", "Unknown size"]]) {
+    assert.equal(fileSize(bytes!), label);
+  }
+  assert.equal(fileSize(null), "Unknown size");
 });

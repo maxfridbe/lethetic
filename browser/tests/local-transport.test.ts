@@ -114,3 +114,22 @@ await test("connection edits and Python toggles preserve the resumed session, hi
   assert.ok(!JSON.stringify([...values]).includes("replacement"));
   transport.dispose();
 });
+
+await test("duplicate endpoints resume the selected named connection and export without switching", () => {
+  const values = new Map<string,string>();
+  const storage = {getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value);}} as Storage;
+  const original = {name:"Original",provider:"openai" as const,endpoint:"https://example.com/v1/chat/completions",model:"test",apiKey:"first-key"};
+  const copy = {...original,name:"Copy",apiKey:"second-key"};
+  const make = () => new LocalTransport({socketOpened(){},authenticationEpochChanged(){},transportStatus(){},protocolFault(){},serverMessage(){},commandResponse(){}},
+    {connections:[original,copy],storage});
+  let transport=make(); transport.start(); const id=transport.state.session.session_id;
+  transport.setConnections([original,copy],1); transport.dispose();
+  transport=make(); transport.start();
+  assert.equal(transport.connection?.name,"Copy"); assert.equal(transport.connection?.apiKey,"second-key");
+  assert.equal(transport.state.session.session_id,id);
+  const exported=transport.sessionForExport(id); assert.equal(exported.connection?.name,"Copy");
+  assert.ok(!JSON.stringify(exported).includes("second-key"));
+  transport.openSession("new"); const current=transport.state.session.session_id;
+  assert.equal(transport.sessionForExport(id).id,id); assert.equal(transport.state.session.session_id,current);
+  transport.dispose();
+});

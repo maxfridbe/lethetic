@@ -69,3 +69,52 @@ dialog.browser-dialog::backdrop { background: rgb(0 0 0 / .65); backdrop-filter:
 
 .browser-model-picker { grid-column: 1 / -1; min-width: 0; }
 .browser-model-picker select { overflow-x: auto; }
+
+.browser-connections { width: min(1080px, 96vw); }
+.connection-active { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem .8rem; padding: .65rem .8rem; margin-bottom: .75rem; border: 1px solid var(--theme-highlight-fg); border-radius: 8px; background: color-mix(in srgb, var(--theme-highlight-fg) 7%, var(--surface)); }
+.connection-active > small { width: 100%; font-size: .7rem; letter-spacing: .08em; }
+.connection-active > strong { font-size: 1.1rem; overflow-wrap: anywhere; }
+.connection-active-model { overflow-wrap: anywhere; }
+.connection-key-badge { font-size: .8rem; }
+.connection-layout { display: grid; grid-template-columns: minmax(200px, 28%) minmax(0, 1fr); gap: 1rem; }
+.connection-sidebar, .connection-editor { min-width: 0; }
+.connection-section-heading { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+.browser-connections h3 { margin: .25rem 0 .5rem; font-size: .95rem; }
+.connection-cards { display: grid; gap: .5rem; max-height: 55vh; overflow: auto; }
+.connection-card { display: grid; gap: .3rem; padding: .55rem; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+.connection-card.is-active { border-color: var(--theme-highlight-fg); background: color-mix(in srgb, var(--theme-highlight-fg) 7%, var(--surface)); }
+.connection-card.is-editing { box-shadow: inset 3px 0 var(--theme-highlight-fg); }
+.connection-card strong, .connection-card-model { overflow-wrap: anywhere; }
+.connection-card-model, .connection-card small { font-size: .75rem; }
+.connection-card-actions { display: flex; flex-wrap: wrap; gap: .3rem; }
+.connection-card-actions button { font-size: .75rem; }
+.connection-health { display: inline-flex; align-items: center; gap: .3rem; font-size: .8rem; }
+.connection-health.is-valid { color: #50d890; }
+.connection-health.is-invalid { color: #ff6b75; }
+.connection-health.is-testing { color: #e2b65c; }
+.connection-health.is-untested { opacity: .75; }
+.connection-key-input { display: flex; gap: .3rem; align-items: center; }
+.connection-key-input input { min-width: 0; flex: 1; }
+.connection-key-input button { flex-shrink: 0; }
+.connection-editor label { min-width: 0; }
+.connection-editor label small { display: block; margin-top: .3rem; font-size: .75rem; }
+.connection-hint { margin: .35rem 0; font-size: .8rem; opacity: .85; }
+.connection-test-state { display: inline-flex; align-items: center; }
+@media (max-width: 700px) {
+  .connection-layout { grid-template-columns: minmax(0, 1fr); gap: .7rem; }
+  .connection-cards { grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); max-height: 25dvh; }
+  .connection-active { padding: .5rem; }
+}
+.session-choice:has([data-session-export]) { grid-template-columns: minmax(0, 1fr) auto auto; }
+@media (max-width: 700px) {
+  .session-choice:has([data-session-export]) { grid-template-columns: 1fr 1fr; }
+  .session-choice:has([data-session-export]) > .choice-row { grid-column: 1 / -1; }
+}
+
+.browser-status summary { align-items: center; }
+.browser-usage-summary { display: flex; flex: 1; flex-wrap: wrap; gap: .2rem .7rem; white-space: normal; line-height: 1.4rem; max-height: 4.6rem; overflow: auto; overscroll-behavior: contain; }
+.pinned-stat { display: inline-block; flex-shrink: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.browser-status dt { display: flex; align-items: center; justify-content: space-between; gap: .4rem; }
+.stat-pin { min-height: 26px; padding: .1rem .3rem; }
+.stat-pin .ui-icon { margin: 0; }
+.stat-pin[aria-pressed="true"] { color: var(--theme-highlight-fg); border-color: var(--theme-highlight-fg); background: color-mix(in srgb, var(--theme-highlight-fg) 15%, var(--surface)); }

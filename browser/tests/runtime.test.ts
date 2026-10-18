@@ -15,6 +15,17 @@ const call = (name: string, arguments_ = "{}"): Response => Response.json({ choi
     { id: "one", type: "function", function: { name, arguments: arguments_ } },
   ] } }] });
 
+await test("concurrent first initialization keeps WASM conversations independent", async () => {
+  const runtimes = await Promise.all(Array.from({ length: 8 }, () => createRuntime({ connection, wasm,
+    fetch: async () => answer("ok") })));
+  try {
+    await Promise.all(runtimes.map((runtime, index) => runtime.send(`prompt ${index}`)));
+    for (let index = 0; index < runtimes.length; index++) {
+      assert.deepEqual(runtimes[index]!.history(), [{ role: "user", content: `prompt ${index}` }, { role: "assistant", content: "ok" }]);
+    }
+  } finally { for (const runtime of runtimes) runtime.dispose(); }
+});
+
 await test("actual WASM SDK exposes provider usage and measured response time", async () => {
   const events: import("../src/sdk.js").RuntimeEvent[] = [];
   const runtime = await createRuntime({ connection, wasm, onEvent: (event) => events.push(event),

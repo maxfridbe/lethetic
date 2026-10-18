@@ -1,11 +1,16 @@
 # Lethetic Intelligence Engine
 
-**[Try it in your browser](https://maxfridbe.github.io/lethetic/) · [Embed it in your app](integration.md#embed-the-complete-ui) · [Run it locally](integration.md#build-and-test)**
+**[Try it now in your browser](https://maxfridbe.github.io/lethetic/) · [Embed it in your app](integration.md#embed-the-complete-ui) · [Run it locally](integration.md#build-and-test)**
 
 The browser edition uses the same UI as remote mode, with a local **WASM runtime**,
 your own model connections, **Pyodide Python**, the existing **Files browser**, and
 **saved sessions** that reopen after refresh. No native server is needed.
 [Download the standalone site and embedding SDK](https://github.com/maxfridbe/lethetic/releases/latest).
+
+<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-desktop.png" alt="Lethetic browser edition with session files, Python code and pinned usage stats" width="760"></a>
+<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-mobile.png" alt="Lethetic browser edition on a phone" width="260"></a>
+
+Desktop and phone screenshots with a demo conversation. Click either to try it.
 
 > "...so many various filters and enhancements, so many possible patterns, that it was as much an art as a craft. We didn't have the trained personnel that we needed, and as good as the lethetic intelligence engines were, they still lacked the ability to make intuitive leaps. LIs could give you statistical probabilities; they couldn't give you hunches—although the last I'd heard, they were working on adding that function too."
 
@@ -22,7 +27,8 @@ A Rust TUI coding agent for local and proxied LLMs, with an optional exact-ident
 Open **[Lethetic in your browser](https://maxfridbe.github.io/lethetic/)** to connect
 an OpenAI-compatible Chat Completions endpoint or an Anthropic Messages endpoint.
 In **Connections**, use **Fetch models** to browse and filter the available models,
-or enter a model ID manually.
+or enter a model ID manually. The active connection and key status are explicit;
+use **Duplicate with key** to copy a connection and **Use connection** to switch.
 The standalone edition runs a Rust/WASM conversation runtime locally, with optional
 **Pyodide Python tools** in a persistent Web Worker. It needs no native Lethetic process.
 API keys survive refresh in this tab; they are excluded from saved chats.
@@ -33,6 +39,10 @@ context and usage stats; refresh keeps the current session. Pyodide files under
 `/home/pyodide` sync with **Files** after each call, including CSVs and images.
 File edits flow back into Python, and each session restores its own workspace.
 Preview HTML, Markdown, SVG, text, and images such as PNGs directly in Files.
+File sizes use readable units with exact bytes in tooltips. Pin individual stats
+from **Stats** to a bottom bar that wraps onto up to three lines.
+Copy any turn with its bottom-right **Copy contents** button. Download a session
+and its files for debugging using **Export debug (.tar.gz)** in **Sessions**.
 [Start a new session](https://maxfridbe.github.io/lethetic/#/new) or
 [open the latest](https://maxfridbe.github.io/lethetic/#/latest).
 

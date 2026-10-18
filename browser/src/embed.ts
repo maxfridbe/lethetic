@@ -1,3 +1,5 @@
+import { PinnedStats } from "./pinned-stats.js";
+import { sessionDebugBundle, downloadSessionBundle } from "./session-export.js";
 import { uiIcon } from "../../web/src/icons.js";
 import { h } from "../../web/lib/snabbdom/build/index.js";
 import { SpaApplication } from "../../web/src/app.js";
@@ -36,11 +38,14 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
     (options.storage ? loadConnections(options.storage) : []);
   if (options.credentialStorage) connections = restoreConnectionKeys(options.credentialStorage, connections);
   const files = new BrowserFiles(options.storage);
+  const pinnedStats = new PinnedStats(options.storage);
   let editor: ReturnType<typeof createFileEditor> | null = null;
   const preview = createFilePreview();
   let settings: ReturnType<typeof createConnectionsDialog> | null = null;
   let transport: LocalTransport | null = null;
   let fileStatus = "";
+  let exportStatus = "";
+  let exporting = false;
   const mount = document.createElement("div"); root.replaceChildren(mount);
   const snippetActions = (snippet: { code: string; language: string }) => h("div.browser-code-actions", [
     h("button", { attrs: { type: "button", "data-browser-action": "save-code" }, on: { click: () => editor?.open(snippetName(snippet), snippet.code) } }, [uiIcon("save"), "Save to Files"]),
@@ -53,9 +58,27 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
     } } }, [uiIcon("copy"), "Copy contents"]),
   ]);
   const application = new SpaApplication(mount, {
-    status: () => renderBrowserStatus(transport),
+    status: () => renderBrowserStatus(transport, pinnedStats, () => transport?.publish()),
     promptPlaceholder: "Message your model…",
-    sessionsNotice: () => transport?.persistenceStatus ?? "",
+    sessionsNotice: () => [transport?.persistenceStatus, exportStatus].filter(Boolean).join(" "),
+    sessionActions: (id) => h("button", { attrs: { type: "button", "data-session-export": id, title: "Download this session, its files and debug information as .tar.gz" },
+      props: { disabled: exporting }, on: { click: () => {
+        if (!transport || exporting) return;
+        exporting = true; exportStatus = "Preparing debug bundle…"; transport.publish();
+        void (async () => {
+          try {
+            const session = transport!.sessionForExport(id);
+            const current = id === transport!.state.session.session_id;
+            const bundle = await sessionDebugBundle(session, {
+              browser: navigator.userAgent, language: navigator.language, viewport: { width: innerWidth, height: innerHeight },
+              current, busy: current && transport!.busy,
+              ...(current ? { status: transport!.state.status, activity: transport!.state.activity, debugger: transport!.state.debugger } : {}),
+            }, transport!.options.connections.flatMap(connection => connection.apiKey ? [connection.apiKey] : []));
+            downloadSessionBundle(bundle, id); exportStatus = "Debug bundle downloaded. Connection keys are excluded.";
+          } catch (error) { exportStatus = `Export failed: ${String(error)}`; }
+          finally { exporting = false; transport?.publish(); }
+        })();
+      } } }, [uiIcon("download"), "Export debug (.tar.gz)"]),
     files: { local: true, scope: options.storage ? "Session files · synced with Python" : "Session files · this tab only", rootLabel: "Session files",
       contentActions: (state) => h("span.browser-file-actions", [
         h("button", { attrs: { type: "button", "data-file-action": "new" }, props: { disabled: transport?.busy }, on: { click: () => editor?.open(state.directory ? state.directory + "/untitled.txt" : "untitled.txt", "") } }, [uiIcon("add"), "New file"]),

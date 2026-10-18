@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -106,6 +107,13 @@ def main():
             subprocess.run(["node", "--experimental-default-type=module",
                             str(temp / "tests/browser/tests/browser-driver.js")],
                            input=json.dumps(config), text=True, check=True, timeout=300)
+            with tarfile.open(ROOT / "target/browser-preview-session.tar.gz", "r:gz") as archive:
+                assert archive.extractfile("workspace/reports/analysis.py").read() == b"print('private snippet')"
+                session = archive.extractfile("session.json").read()
+                assert b"secret-never-persisted" not in session and b"updated-tab-key" not in session
+                assert "apiKey" not in json.loads(session)["connection"]
+                assert archive.getmember("diagnostics.json").isfile()
+            print("Downloaded session debug archive verified with Python tarfile.")
         finally:
             server.shutdown()
             server.server_close()

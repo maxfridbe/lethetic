@@ -141,6 +141,7 @@ function renderBlock(
   anchor: string | null,
   actions: VNode | null,
   codeActions?: (code: string, language: string | null) => VNode | null,
+  copyContents?: (content: string) => void,
 ): VNode {
   if (block.kind === "divider") {
     return (
@@ -211,6 +212,12 @@ function renderBlock(
           )}
         </details>
       )}
+      <footer attrs={{ class: "chat-block-actions" }}>
+        <button attrs={{ type: "button", "data-copy-turn": "", title: "Copy this turn’s contents" }}
+          props={{ disabled: !copyContents || !content }} on={{ click: () => copyContents?.(content) }}>
+          {uiIcon("copy")}Copy contents
+        </button>
+      </footer>
     </article>
   );
 }
@@ -275,6 +282,7 @@ function renderChat(context: ChatViewContext): VNode {
             chatBlockAnchor(snapshot, start + offset),
             context.state.blockActions?.(block) ?? null,
             context.state.codeActions,
+            context.actions.copyContents,
           ),
         )}
       </div>

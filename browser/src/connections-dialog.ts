@@ -7,44 +7,215 @@ import type { Connection, LetheticRuntime } from "./sdk.js";
 import type { LocalTransport } from "./local-transport.js";
 import { createDialog, errorMessage, field } from "./dialog.js";
 
+type Health = { state: "testing" | "valid" | "invalid"; message: string };
+// Compare actual request settings, including the key. Never put this identity in the DOM or storage.
+const identity = (connection: Connection): string => JSON.stringify([connection.provider, connection.endpoint, connection.model, connection.apiKey ?? ""]);
+
 export function createConnectionsDialog(transport: LocalTransport, storage?: Storage, credentialStorage?: Storage): {
   dialog: HTMLDialogElement; open(): void; destroy(): void;
 } {
   const dialog = createDialog("Connections", `
-    <p>Connect directly to an OpenAI-compatible or Anthropic endpoint. ${credentialStorage ? "Keys survive refresh in this tab; closing the tab clears them." : "Keys stay in memory."} Saved chats never contain keys.</p>
-    <label>Saved connections<select data-field="connections"></select></label>
-    <form data-field="connection-form" class="browser-connection-form">
-      <label>Name<input data-field="name" required maxlength="100" autocomplete="off"></label>
-      <label>Protocol<select data-field="provider"><option value="openai">OpenAI-compatible</option><option value="anthropic">Anthropic Messages</option></select></label>
-      <label>Endpoint URL<input data-field="endpoint" type="url" required placeholder="https://your-server/v1/chat/completions" autocomplete="off" spellcheck="false"></label>
-      <label>Model<input data-field="model" required autocomplete="off" spellcheck="false"></label>
-      <label>API key (optional, ${credentialStorage ? "this tab" : "memory only"})<input data-field="key" type="password" autocomplete="off" spellcheck="false"></label>
-      <div class="panel-toolbar"><button class="primary-button" type="submit">${buttonIconHtml("save")}Save connection</button><button type="button" data-field="remove">${buttonIconHtml("trash")}Remove</button><button type="button" data-field="test">${buttonIconHtml("check")}Test saved connection</button><button type="button" data-field="fetch-models">${buttonIconHtml("refresh")}Fetch models</button></div>
-      <section class="browser-model-picker" data-field="model-picker" hidden>
-        <label>Filter models<input data-field="model-filter" type="search" placeholder="Search model IDs or names" autocomplete="off"></label>
-        <label>Available models<select data-field="model-list" size="6"></select></label>
-        <p data-field="model-count" role="status"></p>
-        <button type="button" data-field="use-model">${buttonIconHtml("check")}Use selected model</button>
+    <section class="connection-active" aria-label="Current session connection" data-field="active-summary"></section>
+    <div class="connection-layout">
+      <section class="connection-sidebar" aria-label="Saved connections">
+        <div class="connection-section-heading"><h3>Saved connections</h3><button type="button" data-field="new">${buttonIconHtml("add")}New</button></div>
+        <div class="connection-cards" data-field="connections"></div>
       </section>
-    </form>
-    <label class="browser-python"><input data-field="python" type="checkbox"> Enable Python tools (Pyodide)</label>
-    <p>Python runs without per-call approval, with browser network access and session files synced to Files. Stop resets its variables. Changing connections or Python mode keeps this session’s history and files.</p>
-    <p>Endpoints must permit this page’s origin through CORS. HTTPS pages require HTTPS endpoints.</p>
+      <section class="connection-editor">
+        <h3 data-field="editor-title">New connection</h3>
+        <p class="connection-hint" data-field="edit-state" role="status"></p>
+        <form data-field="connection-form" class="browser-connection-form">
+          <label>Name<input data-field="name" required maxlength="100" autocomplete="off"></label>
+          <label>Protocol<select data-field="provider"><option value="openai">OpenAI-compatible</option><option value="anthropic">Anthropic Messages</option></select></label>
+          <label>Endpoint URL<input data-field="endpoint" type="url" required placeholder="https://your-server/v1/chat/completions" autocomplete="off" spellcheck="false"></label>
+          <label>Model<input data-field="model" required autocomplete="off" spellcheck="false"></label>
+          <label>API key (optional)<span class="connection-key-input"><input data-field="key" type="password" autocomplete="off" spellcheck="false"><button type="button" data-field="show-key" aria-label="Show API key" aria-pressed="false">${buttonIconHtml("preview")}Show</button></span><small data-field="key-state" role="status"></small></label>
+          <div class="panel-toolbar">
+            <button class="primary-button" type="submit" data-field="save">${buttonIconHtml("save")}Save changes</button>
+            <button type="button" data-field="use">${buttonIconHtml("connection")}Use this connection</button>
+            <button type="button" data-field="duplicate">${buttonIconHtml("copy")}Duplicate with key</button>
+            <button type="button" data-field="remove">${buttonIconHtml("trash")}Remove</button>
+          </div>
+          <div class="panel-toolbar">
+            <button type="button" data-field="test">${buttonIconHtml("connection")}Test connection</button>
+            <button type="button" data-field="fetch-models">${buttonIconHtml("refresh")}Fetch models</button>
+            <span data-field="test-state" class="connection-test-state" role="status"></span>
+          </div>
+          <section class="browser-model-picker" data-field="model-picker" hidden>
+            <label>Filter models<input data-field="model-filter" type="search" placeholder="Search model IDs or names" autocomplete="off"></label>
+            <label>Available models<select data-field="model-list" size="6"></select></label>
+            <p data-field="model-count" role="status"></p>
+            <button type="button" data-field="use-model">${buttonIconHtml("check")}Use selected model</button>
+          </section>
+        </form>
+      </section>
+    </div>
+    <label class="browser-python"><input data-field="python" type="checkbox"> Python tools for this session (Pyodide)</label>
+    <p class="connection-hint">${credentialStorage ? "Keys stay in this tab and survive refresh." : "Keys stay in memory."} Switching connections keeps this session’s history, files, and Python state.</p>
     <p data-field="status" role="status"></p>`);
+  dialog.classList.add("browser-connections");
   const input = (name: string): HTMLInputElement => field<HTMLInputElement>(dialog, name);
-  const select = field<HTMLSelectElement>(dialog, "connections");
+  const button = (name: string): HTMLButtonElement => field<HTMLButtonElement>(dialog, name);
+  const status = (text: string): void => { field(dialog, "status").textContent = text; };
+  const health = new Map<string, Health>();
   let selected = transport.connection ? transport.selected : -1;
-  let testRuntime: LetheticRuntime | null = null;
   let operation: AbortController | null = null;
+  let operationKey: string | null = null;
   let modelOperation: AbortController | null = null;
   let models: AvailableModel[] = [];
+  let destroyed = false;
+  const newDraft = Symbol("new");
+  const drafts = new Map<string | symbol, Connection>();
+  const draftKey = (): string | symbol => transport.options.connections[selected]?.name ?? newDraft;
   const modelList = field<HTMLSelectElement>(dialog, "model-list");
+  const draft = (): Connection => ({ name: input("name").value.trim(), endpoint: input("endpoint").value.trim(),
+    model: input("model").value.trim(), provider: field<HTMLSelectElement>(dialog, "provider").value as Connection["provider"], apiKey: input("key").value });
+  const dirty = (): boolean => {
+    const saved = transport.options.connections[selected], current = draft();
+    return !saved || saved.name !== current.name || identity(saved) !== identity(current);
+  };
+  const node = (tag: string, text: string, className = ""): HTMLElement => {
+    const element = document.createElement(tag); element.textContent = text; element.className = className; return element;
+  };
+  const healthBadge = (connection: Connection): HTMLElement => {
+    const check = health.get(identity(connection));
+    const badge = node("span", "", `connection-health is-${check?.state ?? "untested"}`);
+    badge.innerHTML = buttonIconHtml("connection");
+    badge.append(document.createTextNode(check?.state === "valid" ? "Connected" : check?.state === "invalid" ? "Connection failed" : check?.state === "testing" ? "Testing…" : "Not tested"));
+    badge.title = check?.message ?? "Test this connection to verify the endpoint, model and key.";
+    return badge;
+  };
+  const activeSummary = (): void => {
+    const summary = field(dialog, "active-summary"), active = transport.connection;
+    summary.replaceChildren(node("small", "ACTIVE FOR THIS SESSION"));
+    if (active) {
+      summary.append(node("strong", active.name), healthBadge(active), node("span", active.model, "connection-active-model"),
+        node("span", active.apiKey ? "Key present" : "No key provided", "connection-key-badge"));
+    } else summary.append(node("strong", "No active connection"), node("span", "Add a connection to start chatting."));
+  };
+  const renderCards = (): void => {
+    activeSummary();
+    const list = field(dialog, "connections"); list.replaceChildren();
+    transport.options.connections.forEach((connection, index) => {
+      const active = index === transport.selected, editing = index === selected;
+      const card = node("article", "", `connection-card${active ? " is-active" : ""}${editing ? " is-editing" : ""}`);
+      card.dataset.connectionIndex = String(index);
+      card.append(node("strong", connection.name), node("span", connection.model, "connection-card-model"), healthBadge(connection),
+        node("small", connection.apiKey ? "Key present" : "No key provided"));
+      const actions = node("div", "", "connection-card-actions");
+      for (const [action, label, icon] of [["use", active ? "Active" : "Use connection", active ? "check" : "connection"], ["edit", editing ? "Editing" : "Edit", "edit"]] as const) {
+        const control = document.createElement("button"); control.type = "button"; control.dataset.connectionAction = action;
+        control.innerHTML = buttonIconHtml(icon); control.append(document.createTextNode(label));
+        control.setAttribute("aria-label", `${label}: ${connection.name}`);
+        if (action === "use") { control.disabled = active || transport.busy; control.setAttribute("aria-pressed", String(active)); }
+        control.addEventListener("click", () => {
+          if (action === "use") activate(index);
+          else { selected = index; fill(); status(""); }
+        });
+        actions.append(control);
+      }
+      card.append(actions); list.append(card);
+    });
+    if (!transport.options.connections.length) list.append(node("p", "No saved connections yet.", "connection-hint"));
+  };
+  const updateEditor = (): void => {
+    const current = draft(), changed = dirty(), active = selected >= 0 && selected === transport.selected;
+    let valid = false;
+    try { validateConnection(current); valid = true; } catch { /* Keep incomplete drafts editable. */ }
+    field(dialog, "editor-title").textContent = selected < 0 ? "New connection" : `Editing ${transport.options.connections[selected]?.name ?? "connection"}`;
+    field(dialog, "edit-state").textContent = transport.busy ? "A turn is running. Finish or stop it before saving or switching connections." : changed ? "Unsaved changes — save to apply." : active ? "This connection is active for the current session." : "Saved. Use this connection to switch the current session.";
+    const keyChanged = (transport.options.connections[selected]?.apiKey ?? "") !== (current.apiKey ?? "");
+    field(dialog, "key-state").textContent = current.apiKey ? (keyChanged ? "Key entered · not yet saved" : "Key present") : "No key provided · optional for endpoints without authentication";
+    button("save").disabled = !changed || !valid || transport.busy;
+    button("use").disabled = !valid || transport.busy || (active && !changed);
+    button("use").innerHTML = buttonIconHtml(active && !changed ? "check" : "connection") + (active && !changed ? "Active connection" : changed ? "Save & use connection" : "Use this connection");
+    button("duplicate").disabled = selected < 0 || transport.busy;
+    button("remove").disabled = selected < 0 || transport.busy;
+    button("test").disabled = !valid || operation !== null;
+    field(dialog, "test-state").replaceChildren(healthBadge(current));
+    input("python").checked = transport.pythonEnabled;
+    input("python").disabled = transport.busy;
+  };
   const cancelModels = (): void => {
     modelOperation?.abort(); modelOperation = null; models = [];
-    field<HTMLButtonElement>(dialog, "fetch-models").disabled = false;
-    field(dialog, "model-picker").hidden = true;
+    button("fetch-models").disabled = false; field(dialog, "model-picker").hidden = true;
     modelList.replaceChildren(); input("model-filter").value = "";
   };
+  const cancelTest = (): void => {
+    operation?.abort(); operation = null;
+    if (operationKey && health.get(operationKey)?.state === "testing") health.delete(operationKey);
+    operationKey = null;
+  };
+  const fill = (): void => {
+    cancelModels(); cancelTest();
+    const connection = drafts.get(draftKey()) ?? transport.options.connections[selected];
+    for (const name of ["name", "endpoint", "model", "key"] as const) input(name).value = (name === "key" ? connection?.apiKey : connection?.[name]) ?? "";
+    field<HTMLSelectElement>(dialog, "provider").value = connection?.provider ?? "openai";
+    input("key").type = "password"; button("show-key").setAttribute("aria-pressed", "false");
+    button("show-key").setAttribute("aria-label", "Show API key"); button("show-key").innerHTML = buttonIconHtml("preview") + "Show";
+    updateEditor(); renderCards();
+  };
+  const persist = (): void => {
+    try {
+      if (credentialStorage) saveConnectionKeys(credentialStorage, transport.options.connections);
+      if (storage) saveConnections(storage, transport.options.connections);
+    } catch { status("Changes are active in memory. Browser storage is unavailable; they may not survive refresh."); }
+  };
+  const activate = (index: number): void => {
+    try {
+      transport.setConnections(transport.options.connections, index);
+      updateEditor(); renderCards();
+      if (transport.connection) checkConnection(transport.connection);
+      status(`Now using ${transport.connection?.name} for this session. History and files are unchanged.`);
+    } catch (error) { status(errorMessage(error)); updateEditor(); renderCards(); }
+  };
+  const save = (use: boolean): void => {
+    const form = field<HTMLFormElement>(dialog, "connection-form");
+    if (!form.reportValidity()) return;
+    try {
+      const connection = validateConnection(draft());
+      const connections = [...transport.options.connections];
+      if (connections.some((other, index) => other.name === connection.name && index !== selected)) throw new Error("Choose a unique connection name.");
+      const index = selected < 0 ? connections.length : selected;
+      const savedDraft = draftKey();
+      connections[index] = connection;
+      transport.setConnections(connections, use || !transport.connection ? index : transport.selected); drafts.delete(savedDraft); selected = index;
+      fill();
+      if (transport.connection && selected === transport.selected) checkConnection(transport.connection);
+      status(`Connection saved. ${transport.connection?.name ?? "No connection"} is active for this session.`); persist();
+    } catch (error) { status(errorMessage(error)); }
+  };
+  field(dialog, "connection-form").addEventListener("submit", event => { event.preventDefault(); save(false); });
+  button("use").addEventListener("click", () => { if (dirty()) save(true); else activate(selected); });
+  button("new").addEventListener("click", () => { selected = -1; fill(); status("New connection draft. Your active connection has not changed."); input("name").focus(); });
+  button("duplicate").addEventListener("click", () => {
+    try {
+      const source = transport.options.connections[selected]; if (!source) return;
+      let name = `${source.name.slice(0, 85)} copy`, suffix = 2;
+      while (transport.options.connections.some(item => item.name === name)) name = `${source.name.slice(0, 85)} copy ${suffix++}`;
+      const connections = [...transport.options.connections, { ...source, name }];
+      transport.setConnections(connections, transport.selected); selected = connections.length - 1;
+      fill(); status(`Duplicated ${source.name}${source.apiKey ? " including its key" : ""}. ${transport.connection?.name} remains active. Edit the copy or choose Use this connection.`); persist(); input("name").focus();
+    } catch (error) { status(errorMessage(error)); }
+  });
+  button("remove").addEventListener("click", () => {
+    try {
+      const removedDraft = draftKey();
+      const connections = transport.options.connections.filter((_item, index) => index !== selected);
+      const active = transport.selected === selected ? 0 : transport.selected - (selected < transport.selected ? 1 : 0);
+      transport.setConnections(connections, active); drafts.delete(removedDraft); selected = connections.length ? transport.selected : -1;
+      fill(); status(`Connection removed. ${transport.connection ? `Now using ${transport.connection.name}.` : "No active connection."}`); persist();
+    } catch (error) { status(errorMessage(error)); }
+  });
+  button("show-key").addEventListener("click", () => {
+    const show = input("key").type === "password"; input("key").type = show ? "text" : "password";
+    button("show-key").setAttribute("aria-pressed", String(show)); button("show-key").setAttribute("aria-label", show ? "Hide API key" : "Show API key");
+    button("show-key").innerHTML = buttonIconHtml("preview") + (show ? "Hide" : "Show");
+  });
+  for (const name of ["name", "endpoint", "key", "provider", "model"]) field(dialog, name).addEventListener("input", () => {
+    drafts.set(draftKey(), draft());
+    cancelTest(); if (["endpoint", "key", "provider"].includes(name)) cancelModels(); updateEditor(); status("");
+  });
   const filterModels = (): void => {
     const query = input("model-filter").value.trim().toLowerCase();
     const matching = models.filter(model => `${model.id} ${model.name}`.toLowerCase().includes(query));
@@ -52,114 +223,60 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     modelList.replaceChildren(...matching.map(model => new Option(model.name === model.id ? model.id : `${model.name} — ${model.id}`, model.id)));
     modelList.value = matching.some(model => model.id === chosen) ? chosen : matching[0]?.id ?? "";
     field(dialog, "model-count").textContent = `${matching.length} of ${models.length} models`;
-    field<HTMLButtonElement>(dialog, "use-model").disabled = matching.length === 0;
+    button("use-model").disabled = matching.length === 0;
   };
   input("model-filter").addEventListener("input", filterModels);
-  field(dialog, "use-model").addEventListener("click", () => {
-    if (modelList.value) { input("model").value = modelList.value; status("Model selected. Save the connection to use it."); }
+  button("use-model").addEventListener("click", () => {
+    if (modelList.value) { input("model").value = modelList.value; drafts.set(draftKey(), draft()); cancelTest(); updateEditor(); status("Model selected. Save to apply it."); }
   });
-  for (const name of ["endpoint", "key", "provider"]) field(dialog, name).addEventListener("input", cancelModels);
-  field(dialog, "fetch-models").addEventListener("click", () => {
-    cancelModels();
-    const controller = new AbortController(); modelOperation = controller;
-    field<HTMLButtonElement>(dialog, "fetch-models").disabled = true;
-    status("Fetching models…");
+  button("fetch-models").addEventListener("click", () => {
+    cancelModels(); const controller = new AbortController(); modelOperation = controller;
+    button("fetch-models").disabled = true; status("Fetching models…");
     const timer = setTimeout(() => controller.abort(new Error("Model list request timed out.")), 30_000);
     void (async () => {
       try {
-        const fetched = await fetchModels({ endpoint: input("endpoint").value.trim(),
-          provider: field<HTMLSelectElement>(dialog, "provider").value as Connection["provider"],
-          apiKey: input("key").value }, controller.signal);
-        if (modelOperation !== controller) return;
-        controller.signal.throwIfAborted();
-        models = fetched; filterModels(); field(dialog, "model-picker").hidden = false;
-        status(models.length ? "Models fetched. Filter and select a model, then save the connection." : "No models returned. You can enter a model manually.");
-      } catch (error) {
-        if (modelOperation === controller) status(`${errorMessage(error)} Check endpoint access and CORS; manual model entry is available.`);
-      } finally {
-        clearTimeout(timer);
-        if (modelOperation === controller) {
-          modelOperation = null; field<HTMLButtonElement>(dialog, "fetch-models").disabled = false;
-        }
-      }
+        const fetched = await fetchModels(draft(), controller.signal);
+        if (modelOperation !== controller || destroyed) return;
+        controller.signal.throwIfAborted(); models = fetched; filterModels(); field(dialog, "model-picker").hidden = false;
+        status(models.length ? "Choose a model below. Your active connection stays unchanged until you save." : "No models returned. Enter a model manually.");
+      } catch (error) { if (modelOperation === controller && !destroyed) status(`${errorMessage(error)} Check endpoint access and CORS; manual model entry is available.`); }
+      finally { clearTimeout(timer); if (modelOperation === controller) { modelOperation = null; button("fetch-models").disabled = false; } }
     })();
-  });
-  const status = (text: string): void => { field(dialog, "status").textContent = text; };
-  const fill = (): void => {
-    cancelModels();
-    const connection = transport.options.connections[selected];
-    input("name").value = connection?.name ?? "";
-    input("endpoint").value = connection?.endpoint ?? "";
-    input("model").value = connection?.model ?? "";
-    input("key").value = connection?.apiKey ?? "";
-    field<HTMLSelectElement>(dialog, "provider").value = connection?.provider ?? "openai";
-    input("python").checked = transport.pythonEnabled;
-    field<HTMLButtonElement>(dialog, "remove").disabled = selected < 0;
-    field<HTMLButtonElement>(dialog, "test").disabled = selected < 0 || operation !== null;
-  };
-  const refresh = (): void => {
-    select.replaceChildren(new Option("New connection", ""));
-    transport.options.connections.forEach((connection, index) => select.add(new Option(connection.name, String(index))));
-    select.value = selected < 0 ? "" : String(selected); fill();
-  };
-  const persist = (): void => {
-    try {
-      if (credentialStorage) saveConnectionKeys(credentialStorage, transport.options.connections);
-      if (storage) saveConnections(storage, transport.options.connections);
-    }
-    catch { status("Connection is active in memory; storage is unavailable, so changes may not survive refresh."); }
-  };
-  field(dialog, "connection-form").addEventListener("submit", (event) => {
-    event.preventDefault();
-    try {
-      const connection = validateConnection({ name: input("name").value.trim(),
-        endpoint: input("endpoint").value.trim(), model: input("model").value,
-        provider: field<HTMLSelectElement>(dialog, "provider").value as Connection["provider"], apiKey: input("key").value });
-      const connections = [...transport.options.connections];
-      if (connections.some((other, index) => other.name === connection.name && index !== selected)) throw new Error("Choose a unique connection name.");
-      const index = selected < 0 ? connections.length : selected;
-      connections[index] = connection; transport.setConnections(connections, index); selected = index;
-      refresh(); status("Connection saved. Close this dialog to start chatting."); persist();
-    } catch (error) { status(errorMessage(error)); }
-  });
-  select.addEventListener("change", () => {
-    try {
-      const index = select.value === "" ? -1 : Number(select.value);
-      if (index >= 0) transport.setConnections(transport.options.connections, index);
-      selected = index; fill(); status("");
-    } catch (error) { status(errorMessage(error)); }
-  });
-  field(dialog, "remove").addEventListener("click", () => {
-    try {
-      const connections = transport.options.connections.filter((_item, index) => index !== selected);
-      transport.setConnections(connections, 0); selected = connections.length ? 0 : -1;
-      refresh(); status("Connection removed."); persist();
-    } catch (error) { status(errorMessage(error)); }
   });
   input("python").addEventListener("change", () => {
-    try {
-      if (transport.busy) throw new Error("Stop the current turn first.");
-      transport.setPythonMode(input("python").checked);
-    } catch (error) { input("python").checked = transport.pythonEnabled; status(errorMessage(error)); }
+    try { transport.setPythonMode(input("python").checked); status(`Python ${transport.pythonEnabled ? "enabled" : "disabled"} for this session.`); }
+    catch (error) { status(errorMessage(error)); }
+    updateEditor();
   });
-  field(dialog, "test").addEventListener("click", () => {
-    if (operation) return;
-    operation = new AbortController(); const signal = operation.signal;
-    field<HTMLButtonElement>(dialog, "test").disabled = true; status("Testing saved connection…");
+  const checkConnection = (connection: Connection): void => {
+    cancelTest();
+    const controller = new AbortController(); operation = controller;
+    const key = identity(connection); operationKey = key; health.set(key, {state:"testing",message:"Testing the endpoint, model and key."});
+    updateEditor(); renderCards(); status(`Testing ${connection.name}…`);
     void (async () => {
+      let runtime: LetheticRuntime | null = null;
       try {
-        const connection = transport.options.connections[selected];
-        if (!connection) throw new Error("Save a connection first.");
-        testRuntime = await createRuntime({ connection, timeoutMs: 30_000 });
-        await testRuntime.send("Reply with the single word Connected.", signal);
-        status("Connected. The model returned a valid response.");
-      } catch (error) { status(errorMessage(error)); }
-      finally { testRuntime?.dispose(); testRuntime = null; operation = null; field<HTMLButtonElement>(dialog, "test").disabled = selected < 0; }
+        runtime = await createRuntime({ connection, timeoutMs: 30_000 });
+        controller.signal.throwIfAborted();
+        await runtime.send("Reply with the single word Connected.", controller.signal);
+        if (operation !== controller || destroyed) return;
+        health.set(key, {state:"valid",message:"The model returned a valid response."}); status("Connected. The model returned a valid response.");
+      } catch (error) {
+        if (operation === controller && !destroyed) { health.set(key, {state:"invalid",message:errorMessage(error)}); status(`Connection failed: ${errorMessage(error)}`); }
+      } finally {
+        runtime?.dispose();
+        if (operation === controller) { operation = null; operationKey = null; if (health.get(key)?.state === "testing") health.delete(key); }
+        if (!destroyed) { updateEditor(); renderCards(); }
+      }
     })();
+  };
+  button("test").addEventListener("click", () => {
+    try { checkConnection(validateConnection(draft())); } catch (error) { status(errorMessage(error)); }
   });
-  dialog.addEventListener("close", () => { operation?.abort(); cancelModels(); });
+  dialog.addEventListener("close", () => { cancelTest(); cancelModels(); input("key").type = "password"; });
   return { dialog, open(): void {
-    selected = transport.connection ? transport.selected : -1; refresh(); status("");
+    selected = transport.connection ? transport.selected : -1; fill(); status("");
     if (!dialog.open) dialog.showModal();
-  }, destroy(): void { cancelModels(); operation?.abort(); testRuntime?.dispose(); dialog.remove(); } };
+    if (transport.connection) checkConnection(transport.connection);
+  }, destroy(): void { destroyed = true; cancelTest(); cancelModels(); health.clear(); dialog.remove(); } };
 }

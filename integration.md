@@ -35,7 +35,7 @@ Open https://maxfridbe.github.io/lethetic/ and save a connection:
 2. Enter the complete endpoint, including a proxy path if required:
    `https://your-server/v1/chat/completions` or `https://your-server/v1/messages`.
 3. Enter the exact model ID and an optional API key. Save the connection.
-4. Use **Test saved connection** to send a small model request, then close the dialog to chat.
+4. Use **Test connection** to send a small model request, then close the dialog to chat.
 5. Enable **Python tools** to let the model execute Python with Pyodide.
 
 Use **Fetch models** in Connections to query the endpoint with the currently
@@ -45,6 +45,16 @@ when an endpoint does not support model discovery or CORS blocks it. Discovery u
 the sibling `/models` endpoint, preserving proxy prefixes, following the
 [OpenAI models API](https://developers.openai.com/api/reference/resources/models/methods/list)
 and [Anthropic models API](https://platform.claude.com/docs/en/api/models/list).
+
+The **Active for this session** banner and **Active** card identify the connection
+used by the next turn. **Edit** opens settings without switching; **Use connection**
+switches only the current session's connection. Saving an inactive connection does
+not activate it. **Duplicate with key** creates a separately editable copy including
+its API key and leaves the current connection active. Key badges say **Key present**
+or **No key provided** without displaying the secret; **Show** reveals it on request.
+Selecting a connection automatically sends a small test request. The plug icon is
+green after success, red after failure, and neutral when untested; edited settings
+must be tested again. **Test connection** tests the current editor values.
 
 Connection names, protocols, endpoint URLs, and model IDs are saved in localStorage.
 The hosted app keeps API keys in tab-scoped sessionStorage so refresh retains them.
@@ -100,6 +110,17 @@ stats, system prompt, Python mode, theme and connection metadata in
 `lethetic.sessions.v1`. API keys are excluded. Reopening a chat restores its context
 without rerunning tools. Its files and empty directories are restored before the
 next Python call. Python variables are recreated, so save durable results to files.
+
+Each session has an **Export debug (.tar.gz)** button. The download contains
+`session.json` (transcript, model history, settings), `diagnostics.json` (runtime
+state and file inventory), and `workspace/` (text and binary files, including empty
+folders). Exporting does not switch sessions. During an active turn, files come
+from the last completed checkpoint while the visible transcript is included.
+Connection keys are excluded and known keys are redacted from text. The archive
+is assembled locally; it is not uploaded. Every turn also has **Copy contents** at
+its bottom-right, copying the source text or tool payload without UI labels.
+
+The **Stats** panel lets you pin individual metrics to the bottom bar; pins persist across refreshes and wrap to three lines. The Files list and viewer show human-readable sizes with exact byte counts in tooltips.
 
 The hosted page supports these routes without requiring server-side rewrites:
 
@@ -180,7 +201,7 @@ at `/lethetic/`, custom subpaths, and domain roots. Pages deployment requires th
 Pushing an ordinary commit deploys Pages. Pushing a `v*` tag additionally attaches
 `lethetic-browser.zip` and `lethetic-browser.zip.sha256` to the GitHub release,
 alongside the existing native release workflow. A `browser-v*` tag (for example,
-`browser-v0.4.2`) publishes an independent embedding release with those same assets.
+`browser-v0.4.3`) publishes an independent embedding release with those same assets.
 A commit does not create a version tag automatically. The ZIP contains both standalone and embedding modes; it does
 not contain API keys or downloaded Pyodide packages. Build outputs live under
 `target/` and are not committed. `manifest.json` contains per-file SHA-256 hashes.

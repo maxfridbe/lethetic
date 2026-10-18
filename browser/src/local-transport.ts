@@ -9,6 +9,7 @@ import { emptyWorkspace, parseWorkspace } from "./workspace.js";
 import type { Workspace } from "./workspace.js";
 import { block, initialState, NO_LOSS } from "./local-state.js";
 import { BrowserMetrics } from "./metrics.js";
+import type { SavedSession } from "./sessions.js";
 import { SessionStore } from "./sessions.js";
 import type { BrowserFiles } from "./files.js";
 import type { FileEndpoint } from "../../web/src/files/protocol.js";
@@ -94,8 +95,12 @@ export class LocalTransport implements ApplicationTransport {
 
   setConnections(connections: Connection[], selected: number): void {
     this.#requireIdle();
+    const before = this.connection, after = connections[selected];
     this.#saveSession(true);
-    this.#runtime?.dispose(); this.#runtime = null;
+    if (before?.endpoint !== after?.endpoint || before?.provider !== after?.provider ||
+        before?.model !== after?.model || before?.apiKey !== after?.apiKey) {
+      this.#runtime?.dispose(); this.#runtime = null;
+    }
     this.options.connections = connections;
     this.selected = selected;
     this.#saveSession();
@@ -335,14 +340,28 @@ export class LocalTransport implements ApplicationTransport {
       if (session.metrics) this.metrics.restore(session.metrics);
       for (const theme of this.state.themes) theme.selected = theme.theme_id === session.theme;
       if (session.connection) {
-        let index = this.options.connections.findIndex((item) => item.endpoint === session.connection?.endpoint &&
-          item.model === session.connection?.model && item.provider === session.connection?.provider);
+        const matches = (item: Connection): boolean => item.endpoint === session.connection?.endpoint &&
+          item.model === session.connection?.model && item.provider === session.connection?.provider;
+        let index = this.options.connections.findIndex(item => item.name === session.connection?.name && matches(item));
+        if (index < 0) {
+          const candidates = this.options.connections.map((item, index) => ({item,index})).filter(({item}) => matches(item));
+          if (candidates.length === 1) index = candidates[0]!.index;
+        }
         if (index < 0) { index = this.options.connections.length; this.options.connections.push(session.connection); }
         this.selected = index;
       }
       this.options.onSessionChanged?.(session.id);
     } else this.#newSession();
     this.#saveSession();
+  }
+
+  sessionForExport(id: string): SavedSession {
+    if (id === this.state.session.session_id) this.#saveSession();
+    const saved = this.#sessions.list().find(item => item.id === id);
+    if (!saved) throw new Error("Session not found on this device.");
+    // Include current diagnostics/transcript even during a running or failed turn.
+    return structuredClone(id === this.state.session.session_id ? { ...saved,
+      blocks: this.state.blocks.blocks, metrics: this.metrics.snapshot(), workspace: this.#workspace } : saved);
   }
 
   #saveSession(mustSave = false): void {
@@ -358,7 +377,7 @@ export class LocalTransport implements ApplicationTransport {
         metrics: this.metrics.snapshot(),
         theme: this.state.themes.find((theme) => theme.selected)?.theme_id ?? "dracula",
         connection: connection ? { name: connection.name, provider: connection.provider, endpoint: connection.endpoint, model: connection.model } : null });
-      if (this.options.storage) this.persistenceStatus = "Chats and files are saved unencrypted on this device. API keys are not saved. Session files sync with Python at /home/pyodide. Python variables reset on reload or session switch.";
+      if (this.options.storage) this.persistenceStatus = "Chats and files are saved unencrypted on this device. API keys are excluded from saved chats. Session files sync with Python at /home/pyodide. Python variables reset on reload or session switch.";
       this.state.sessions = { sessions: this.#sessions.list().map((item) => ({ session_id: item.id,
         display_name: item.name, fallback_label: item.label, selected: item.id === this.state.session.session_id })), has_more: false };
     } catch (error) {

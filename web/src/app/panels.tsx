@@ -501,6 +501,7 @@ function sessionsPanel(
               </strong>
               <span>{session.selected ? "Current" : "Resume"}</span>
             </button>
+            {context.state.sessionActions?.(session.session_id) ?? null}
             <button
               attrs={{
                 type: "button",

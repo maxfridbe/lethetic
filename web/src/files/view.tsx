@@ -1,3 +1,4 @@
+import { fileSize } from "./size.js";
 import { jsx as h } from "../../lib/snabbdom/build/index.js";
 import type { VNode } from "../../lib/snabbdom/build/index.js";
 import type { DiffLayout, FilePaneState, FilePaneTab } from "./state.js";
@@ -120,6 +121,7 @@ function breadcrumbs(directory: string, live: boolean, actions: FilePaneActions,
 
 export function renderFilesPane(state: FilePaneState, live: boolean, actions: FilePaneActions, extensions: FilePaneExtensions = {}): VNode {
   const path = state.selectedPath ?? state.directory;
+  const selectedSize = state.preview?.size ?? state.listing?.entries.find(entry => entry.path === state.selectedPath)?.size ?? null;
   const exclusions = state.listing === null ? null : exclusionLabel(state.listing.exclusions);
   return <section key="files-pane" attrs={{ class: `files-pane${state.open ? " is-open" : ""}`, "aria-label": extensions.scope ?? "Read-only launch-directory files" }}>
     <header attrs={{ class: "files-toolbar" }}>
@@ -164,7 +166,7 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
             on={{ click: () => entry.kind === "directory" ? actions.navigate(entry.path) : actions.select(entry.path) }}>
             <span attrs={{ "aria-hidden": "true" }}>{uiIcon(entry.kind === "directory" ? "folder" : "file")}</span>
             <span>{entry.name}</span>
-            <small>{entry.kind === "directory" ? "Folder" : `${entry.size ?? "0"} B`}</small>
+            <small attrs={{ title: entry.kind === "directory" ? "Folder" : `${entry.size ?? "Unknown"} bytes` }}>{entry.kind === "directory" ? "Folder" : fileSize(entry.size)}</small>
           </button>)}
           {state.listing?.entries.length === 0 ? <p>No eligible files in this folder.</p> : null}
         </div>
@@ -174,7 +176,7 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
       <div attrs={{ class: "files-preview has-content-actions" }}>
         <div attrs={{ class: "files-path", title: "Path relative to the fixed launch directory" }}>
           <span>{state.selectedPath ?? "Select a file to view"}</span>
-          {state.preview === null ? null : <small>{state.preview.size} bytes · read-only</small>}
+          {selectedSize === null ? null : <small attrs={{ title: `${selectedSize} bytes` }}>{fileSize(selectedSize)}{extensions.local ? "" : " · read-only"}</small>}
         </div>
         <div attrs={{ class: "files-content-actions files-actions" }}>
         <button attrs={{ type: "button", title: "Download the selected file (up to 32 MiB)" }}
