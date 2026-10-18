@@ -1,4 +1,5 @@
 import { jsx as h } from "../../lib/snabbdom/build/index.js";
+import { uiIcon } from "../icons.js";
 import { exclusionLabel } from "./protocol.js";
 import { CHANGE_LETTERS, changeRows } from "./git.js";
 /** `+added −removed` counts, or `binary` when git reported no line numbers. */
@@ -21,7 +22,9 @@ function changeRow(row, state, live, actions) {
             title: row.folder ? `${row.path} · ${row.files} changed file${row.files === 1 ? "" : "s"}` : `${row.path} · ${row.kind ?? ""}`,
             "aria-pressed": selected ? "true" : "false",
             ...(row.folder ? { "aria-expanded": collapsed ? "false" : "true" } : {}) }, style: { paddingLeft: `${0.5 + row.depth * 0.9}rem` }, props: { disabled: !live && !row.folder }, on: { click: () => row.folder ? actions.toggleFolder(row.path) : actions.selectChange(row.path) } },
-        h("span", { attrs: { class: "changes-marker", "aria-hidden": "true" } }, row.folder ? (collapsed ? "▸" : "▾") : CHANGE_LETTERS[row.kind ?? "modified"]),
+        h("span", { attrs: { class: "changes-marker", "aria-hidden": "true" } },
+            row.folder ? uiIcon(collapsed ? "collapse" : "expand") : uiIcon("file"),
+            row.folder ? null : CHANGE_LETTERS[row.kind ?? "modified"]),
         h("span", { attrs: { class: "changes-name" } }, row.folder ? `${row.name}/` : row.name),
         lineCounts(row.added, row.removed));
 }
@@ -33,7 +36,9 @@ function renderChangesBody(state, live, actions) {
         removed: file.removed === null ? sum.removed : (sum.removed ?? 0) + file.removed,
     }), { added: null, removed: null });
     const layoutButton = (layout, label, title) => h("button", { attrs: { type: "button", title, "aria-pressed": state.diffLayout === layout ? "true" : "false",
-            class: state.diffLayout === layout ? "is-active" : "" }, on: { click: () => actions.setDiffLayout(layout) } }, label);
+            class: state.diffLayout === layout ? "is-active" : "" }, on: { click: () => actions.setDiffLayout(layout) } },
+        uiIcon(layout === "inline" ? "list" : "columns"),
+        label);
     return h("div", { attrs: { id: "files-body", class: "files-body changes-body" } },
         h("div", { attrs: { class: "files-browser" } },
             h("div", { attrs: { class: "changes-summary" } },
@@ -61,27 +66,42 @@ function renderChangesBody(state, live, actions) {
 function breadcrumbs(directory, live, actions, rootLabel = "Launch root") {
     const parts = directory === "" ? [] : directory.split("/");
     return h("nav", { attrs: { class: "files-breadcrumbs", "aria-label": "File directory" } },
-        h("button", { attrs: { type: "button", title: "Fixed process launch directory" }, props: { disabled: !live }, on: { click: () => actions.navigate("") } }, rootLabel),
+        h("button", { attrs: { type: "button", title: "Fixed process launch directory" }, props: { disabled: !live }, on: { click: () => actions.navigate("") } },
+            uiIcon("folder"),
+            rootLabel),
         parts.map((part, index) => h("span", { key: String(index) },
             h("span", { attrs: { "aria-hidden": "true" } }, " / "),
-            h("button", { attrs: { type: "button" }, props: { disabled: !live }, on: { click: () => actions.navigate(parts.slice(0, index + 1).join("/")) } }, part))));
+            h("button", { attrs: { type: "button" }, props: { disabled: !live }, on: { click: () => actions.navigate(parts.slice(0, index + 1).join("/")) } },
+                uiIcon("folder"),
+                part))));
 }
 export function renderFilesPane(state, live, actions, extensions = {}) {
     const path = state.selectedPath ?? state.directory;
     const exclusions = state.listing === null ? null : exclusionLabel(state.listing.exclusions);
     return h("section", { key: "files-pane", attrs: { class: `files-pane${state.open ? " is-open" : ""}`, "aria-label": extensions.scope ?? "Read-only launch-directory files" } },
         h("header", { attrs: { class: "files-toolbar" } },
-            h("button", { attrs: { type: "button", id: "files-toggle", "aria-expanded": state.open ? "true" : "false", "aria-controls": "files-body" }, props: { disabled: !live && !state.open }, on: { click: actions.toggle } }, state.open ? "▾ Files" : "▸ Files"),
+            h("button", { attrs: { type: "button", id: "files-toggle", "aria-expanded": state.open ? "true" : "false", "aria-controls": "files-body" }, props: { disabled: !live && !state.open }, on: { click: actions.toggle } },
+                uiIcon(state.open ? "expand" : "collapse"),
+                "Files"),
             !state.open ? h("span", { attrs: { class: "files-scope" } }, extensions.scope ?? "Read-only · fixed launch root")
                 : h("span", { attrs: { class: "files-tabs", role: "tablist", "aria-label": "Files view" } }, (extensions.local ? ["files"] : ["files", "changes"]).map((tab) => h("button", { key: tab, attrs: { type: "button", role: "tab", class: state.tab === tab ? "is-active" : "",
-                        "aria-selected": state.tab === tab ? "true" : "false" }, props: { disabled: !live }, on: { click: () => actions.showTab(tab) } }, tab === "files" ? "Browse" : "Changes"))),
+                        "aria-selected": state.tab === tab ? "true" : "false" }, props: { disabled: !live }, on: { click: () => actions.showTab(tab) } },
+                    uiIcon(tab === "files" ? "folder" : "code"),
+                    tab === "files" ? "Browse" : "Changes"))),
             !state.open || state.tab !== "changes" ? null : h("div", { attrs: { class: "files-actions" } },
-                h("button", { attrs: { type: "button" }, props: { disabled: !live || state.changesBusy }, on: { click: actions.refreshChanges } }, "Refresh")),
+                h("button", { attrs: { type: "button" }, props: { disabled: !live || state.changesBusy }, on: { click: actions.refreshChanges } },
+                    uiIcon("refresh"),
+                    "Refresh")),
             !state.open || state.tab !== "files" ? null : h("div", { attrs: { class: "files-actions" } },
-                h("button", { attrs: { type: "button" }, props: { disabled: !live || state.listingBusy || state.previewBusy }, on: { click: actions.refresh } }, "Refresh"),
-                h("button", { attrs: { type: "button", title: "Download the selected file (up to 32 MiB)" }, props: { disabled: !live || state.selectedPath === null || state.downloadBusy }, on: { click: () => actions.download(false) } }, "Download File"),
-                extensions.local ? null : h("button", { attrs: { type: "button", title: "Download the current folder as ZIP; exclusions and fixed limits apply" }, props: { disabled: !live || state.downloadBusy || state.listingBusy }, on: { click: () => actions.download(true) } }, "Download Folder"),
-                h("button", { attrs: { type: "button", title: "Copy a launch-root-relative path; does not change the prompt" }, props: { disabled: path === "" }, on: { click: actions.copyPath } }, "Copy Path"),
+                h("button", { attrs: { type: "button" }, props: { disabled: !live || state.listingBusy || state.previewBusy }, on: { click: actions.refresh } },
+                    uiIcon("refresh"),
+                    "Refresh"),
+                extensions.local ? null : h("button", { attrs: { type: "button", title: "Download the current folder as ZIP; exclusions and fixed limits apply" }, props: { disabled: !live || state.downloadBusy || state.listingBusy }, on: { click: () => actions.download(true) } },
+                    uiIcon("download"),
+                    "Download Folder"),
+                h("button", { attrs: { type: "button", title: "Copy a launch-root-relative path; does not change the prompt" }, props: { disabled: path === "" }, on: { click: actions.copyPath } },
+                    uiIcon("copy"),
+                    "Copy Path"),
                 extensions.actions?.(state) ?? null)),
         state.open && state.tab === "changes" ? renderChangesBody(state, live, actions) : null,
         !state.open || state.tab !== "files" ? null : h("div", { attrs: { id: "files-body", class: "files-body" } },
@@ -92,18 +112,23 @@ export function renderFilesPane(state, live, actions, extensions = {}) {
                     state.listingError === null ? null : h("p", { attrs: { class: "files-notice", role: "status" } }, state.listingError),
                     state.listing?.entries.map((entry) => h("button", { key: entry.path, attrs: { type: "button", class: `files-entry${state.selectedPath === entry.path ? " is-selected" : ""}`,
                             title: entry.path, "aria-pressed": state.selectedPath === entry.path ? "true" : "false" }, props: { disabled: !live }, on: { click: () => entry.kind === "directory" ? actions.navigate(entry.path) : actions.select(entry.path) } },
-                        h("span", { attrs: { "aria-hidden": "true" } }, entry.kind === "directory" ? "▸" : "·"),
+                        h("span", { attrs: { "aria-hidden": "true" } }, uiIcon(entry.kind === "directory" ? "folder" : "file")),
                         h("span", null, entry.name),
                         h("small", null, entry.kind === "directory" ? "Folder" : `${entry.size ?? "0"} B`))),
                     state.listing?.entries.length === 0 ? h("p", null, "No eligible files in this folder.") : null),
                 state.listing?.truncated === true ? h("p", { attrs: { class: "files-notice" } }, "Showing the first 1,000 eligible entries. Narrow the folder selection.") : null,
                 exclusions === null ? null : h("p", { attrs: { class: "files-notice" } }, exclusions)),
-            h("div", { attrs: { class: "files-preview" } },
+            h("div", { attrs: { class: "files-preview has-content-actions" } },
                 h("div", { attrs: { class: "files-path", title: "Path relative to the fixed launch directory" } },
                     h("span", null, state.selectedPath ?? "Select a file to view"),
                     state.preview === null ? null : h("small", null,
                         state.preview.size,
                         " bytes \u00B7 read-only")),
+                h("div", { attrs: { class: "files-content-actions files-actions" } },
+                    h("button", { attrs: { type: "button", title: "Download the selected file (up to 32 MiB)" }, props: { disabled: !live || state.selectedPath === null || state.downloadBusy }, on: { click: () => actions.download(false) } },
+                        uiIcon("download"),
+                        "Download File"),
+                    extensions.contentActions?.(state) ?? null),
                 h("div", { attrs: { class: "files-editor-area" } },
                     h("div", { key: "monaco-host", attrs: { id: "files-monaco", class: "files-monaco", "aria-label": "Read-only Monaco editor" } }),
                     state.preview !== null ? null : h("p", { attrs: { class: "files-preview-message", role: "status" } }, state.previewBusy ? "Loading file…" : state.previewError ?? "UTF-8 previews up to 2 MiB. File contents stay outside chat until you explicitly include them in a prompt."))),

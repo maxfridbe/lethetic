@@ -894,6 +894,7 @@ export class SpaApplication {
                 headerActions: this.extensions.headerActions?.() ?? null,
                 customStatus: this.extensions.status?.() ?? null,
                 promptPlaceholder: this.extensions.promptPlaceholder ?? null,
+                ...(this.extensions.codeActions ? { codeActions: this.extensions.codeActions } : {}),
                 ...(this.extensions.blockActions ? { blockActions: this.extensions.blockActions } : {}),
                 live,
                 activePanel,

@@ -642,7 +642,8 @@ function renderBlocks(nodes, budget) {
                                 ? { class: "json-highlight" }
                                 : codeChildren !== null
                                     ? { class: "code-highlight" }
-                                    : {} }, jsonChildren ?? codeChildren ?? node.text))));
+                                    : {} }, jsonChildren ?? codeChildren ?? node.text)),
+                    budget.codeActions?.(node.text, node.language) ?? null));
             }
             case "table":
                 return (h("div", { attrs: { class: "markdown-table-scroll" } },
@@ -661,7 +662,7 @@ function literalContent(source) {
     return (h("div", { attrs: { class: "markdown-render-host" } },
         h("pre", { attrs: { class: "block-content" } }, source)));
 }
-export function renderMarkdownContent(blockKind, source, highlightJson = true, maxJsonSegments = MAX_JSON_SEGMENTS) {
+export function renderMarkdownContent(blockKind, source, highlightJson = true, maxJsonSegments = MAX_JSON_SEGMENTS, codeActions) {
     if (UTF8_ENCODER.encode(source).byteLength > MAX_MARKDOWN_SOURCE_BYTES) {
         return literalContent(source);
     }
@@ -675,6 +676,7 @@ export function renderMarkdownContent(blockKind, source, highlightJson = true, m
             h("div", { attrs: { class: "block-content markdown-content" } }, renderBlocks(normalized.blocks, {
                 highlightJson,
                 jsonSegmentsRemaining: maxJsonSegments,
+                ...(codeActions ? { codeActions } : {}),
             }))));
     }
     catch {
@@ -709,6 +711,6 @@ export function toolResultContentThunk(source, payloadTruncated, maxJsonSegments
         maxJsonSegments,
     ]);
 }
-export function markdownContentThunk(blockKind, source, highlightJson = true, maxJsonSegments = MAX_JSON_SEGMENTS) {
-    return thunk("div", renderMarkdownContent, [blockKind, source, highlightJson, maxJsonSegments]);
+export function markdownContentThunk(blockKind, source, highlightJson = true, maxJsonSegments = MAX_JSON_SEGMENTS, codeActions) {
+    return thunk("div", renderMarkdownContent, [blockKind, source, highlightJson, maxJsonSegments, codeActions]);
 }

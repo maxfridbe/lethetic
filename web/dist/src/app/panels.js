@@ -101,7 +101,9 @@ function themesPanel(context, snapshot) {
                 h("span", { style: {
                         backgroundColor: safeThemeColor(theme.colors.highlight_fg, "highlight_fg"),
                     } })),
-            h("strong", null, theme.name),
+            h("strong", null,
+                uiIcon("theme"),
+                theme.name),
             h("span", null, theme.selected ? "Current" : "Select")))))));
 }
 function historyPanel(context, snapshot) {
@@ -118,7 +120,9 @@ function historyPanel(context, snapshot) {
                 }, props: { disabled: !context.state.live }, on: {
                     click: () => context.actions.selectHistoryEntry(snapshot, entry),
                 } },
-                h("span", null, entry.label)))))),
+                h("span", null,
+                    uiIcon("history"),
+                    entry.label)))))),
         data.has_more ? (h("p", { class: { "bounded-notice": true } }, "Older entries are omitted.")) : null));
 }
 function modesPanel(context, snapshot, dataType) {
@@ -147,7 +151,9 @@ function modesPanel(context, snapshot, dataType) {
                         mode_id: mode.mode_id,
                     }),
             } },
-            h("strong", null, mode.label),
+            h("strong", null,
+                uiIcon(mode.selected ? "check" : "play"),
+                mode.label),
             h("span", null, mode.selected ? "Current" : mode.disabled_reason ?? "Select")))))));
 }
 function editorAvailabilityNotice(editorContent, contentTruncated) {
@@ -184,7 +190,9 @@ function systemPromptPanel(context, snapshot) {
                     }, props: { disabled: !live }, on: {
                         click: () => context.actions.selectSystemPrompt(snapshot, prompt.prompt_id),
                     } },
-                    h("span", null, prompt.label))))))),
+                    h("span", null,
+                        uiIcon("file"),
+                        prompt.label))))))),
         h("form", { attrs: { class: "prompt-editor", "aria-label": "System prompt editor" }, on: {
                 submit: (event) => {
                     event.preventDefault();
@@ -257,7 +265,7 @@ function sessionsPanel(context, snapshot) {
                     }),
                 } },
                 h("strong", null,
-                    session.selected ? null : uiIcon("play"),
+                    uiIcon(session.selected ? "check" : "play"),
                     choiceLabel(session)),
                 h("span", null, session.selected ? "Current" : "Resume")),
             h("button", { attrs: {
@@ -330,7 +338,7 @@ function skillsPanel(context, snapshot) {
                     skill.source,
                     h("br", null),
                     h("small", null, skill.description)),
-                h("span", null, skill.enabled ? [uiIcon("check"), "On"] : "Off"))))))),
+                h("span", null, skill.enabled ? [uiIcon("check"), "On"] : [uiIcon("power"), "Off"]))))))),
         h("h3", null, "Catalog \u00B7 Anthropic skills repository"),
         h("ul", { attrs: { class: "choice-list" } }, data.catalog.map((entry) => (h("li", { key: entry.entry_id, attrs: { class: "skill-catalog-row" } },
             h("span", null,
@@ -344,7 +352,7 @@ function skillsPanel(context, snapshot) {
                 } }, entry.installed
                 ? [uiIcon("check"), "Installed"]
                 : entry.installing
-                    ? "Installing…"
+                    ? [uiIcon("download"), "Installing…"]
                     : [uiIcon("download"), "Install"])))))));
 }
 function latestFilesPanel(context, snapshot) {
@@ -388,7 +396,9 @@ function modelsPanel(context, snapshot) {
                 }),
             } },
             h("span", { attrs: { class: "choice-main" } },
-                h("strong", null, model.label),
+                h("strong", null,
+                    uiIcon("model"),
+                    model.label),
                 h("small", null, `${model.model_name} · ${model.transport}`)),
             h("span", null, model.selected
                 ? "Current"

@@ -77,8 +77,8 @@ textarea {
 }
 
 button {
-  min-height: 36px;
-  padding: 0.5rem 0.75rem;
+  min-height: 30px;
+  padding: 0.2rem 0.45rem;
   cursor: pointer;
 }
 
@@ -209,7 +209,7 @@ kbd {
 }
 
 button .ui-icon {
-  margin-inline-end: 0.42rem;
+  margin-inline-end: 0.3rem;
 }
 
 .icon-button .ui-icon {
@@ -218,10 +218,10 @@ button .ui-icon {
 
 .icon-button {
   display: inline-grid;
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
-  min-height: 36px;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
   padding: 0;
   place-items: center;
   font-size: 1.08rem;
@@ -232,8 +232,8 @@ button .ui-icon {
 }
 
 .text-button {
-  min-height: 32px;
-  padding-block: 0.3rem;
+  min-height: 30px;
+  padding-block: 0.2rem;
 }
 
 .connection-summary,
@@ -896,8 +896,8 @@ progress {
 }
 
 .compact-button {
-  min-height: 30px;
-  padding: 0.3rem 0.55rem;
+  min-height: 28px;
+  padding: 0.15rem 0.35rem;
   font-size: 0.75rem;
 }
 
@@ -1199,7 +1199,7 @@ progress {
 }
 
 .palette-command-surface .choice-row {
-  padding: 0.5rem 0.75rem;
+  padding: 0.25rem 0.45rem;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
@@ -1223,7 +1223,7 @@ progress {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  min-height: 48px;
+  min-height: 36px;
   text-align: left;
 }
 

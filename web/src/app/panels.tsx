@@ -206,7 +206,7 @@ function themesPanel(
                 }}
               ></span>
             </span>
-            <strong>{theme.name}</strong>
+            <strong>{uiIcon("theme")}{theme.name}</strong>
             <span>{theme.selected ? "Current" : "Select"}</span>
           </button>
         </li>
@@ -239,7 +239,7 @@ function historyPanel(
                 click: () => context.actions.selectHistoryEntry(snapshot, entry),
               }}
             >
-              <span>{entry.label}</span>
+              <span>{uiIcon("history")}{entry.label}</span>
             </button>
           </li>
         ))}
@@ -292,7 +292,7 @@ function modesPanel(
                 ),
             }}
           >
-            <strong>{mode.label}</strong>
+            <strong>{uiIcon(mode.selected ? "check" : "play")}{mode.label}</strong>
             <span>
               {mode.selected ? "Current" : mode.disabled_reason ?? "Select"}
             </span>
@@ -368,7 +368,7 @@ function systemPromptPanel(
                     ),
                 }}
               >
-                <span>{prompt.label}</span>
+                <span>{uiIcon("file")}{prompt.label}</span>
               </button>
             </li>
           ))}
@@ -496,7 +496,7 @@ function sessionsPanel(
               }}
             >
               <strong>
-                {session.selected ? null : uiIcon("play")}
+                {uiIcon(session.selected ? "check" : "play")}
                 {choiceLabel(session)}
               </strong>
               <span>{session.selected ? "Current" : "Resume"}</span>
@@ -620,7 +620,7 @@ function skillsPanel(
                   <br />
                   <small>{skill.description}</small>
                 </span>
-                <span>{skill.enabled ? [uiIcon("check"), "On"] : "Off"}</span>
+                <span>{skill.enabled ? [uiIcon("check"), "On"] : [uiIcon("power"), "Off"]}</span>
               </button>
             </li>
           ))}
@@ -649,7 +649,7 @@ function skillsPanel(
               {entry.installed
                 ? [uiIcon("check"), "Installed"]
                 : entry.installing
-                  ? "Installing…"
+                  ? [uiIcon("download"), "Installing…"]
                   : [uiIcon("download"), "Install"]}
             </button>
           </li>
@@ -731,7 +731,7 @@ function modelsPanel(
             }}
           >
             <span attrs={{ class: "choice-main" }}>
-              <strong>{model.label}</strong>
+              <strong>{uiIcon("model")}{model.label}</strong>
               <small>{`${model.model_name} · ${model.transport}`}</small>
             </span>
             <span>

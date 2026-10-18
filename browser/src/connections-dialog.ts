@@ -1,4 +1,5 @@
-import { validateConnection, saveConnections } from "./connection.js";
+import { buttonIconHtml } from "../../web/src/icons.js";
+import { validateConnection, saveConnections, saveConnectionKeys } from "./connection.js";
 import { fetchModels } from "./models.js";
 import type { AvailableModel } from "./models.js";
 import { createRuntime } from "./sdk.js";
@@ -6,28 +7,28 @@ import type { Connection, LetheticRuntime } from "./sdk.js";
 import type { LocalTransport } from "./local-transport.js";
 import { createDialog, errorMessage, field } from "./dialog.js";
 
-export function createConnectionsDialog(transport: LocalTransport, storage?: Storage): {
+export function createConnectionsDialog(transport: LocalTransport, storage?: Storage, credentialStorage?: Storage): {
   dialog: HTMLDialogElement; open(): void; destroy(): void;
 } {
   const dialog = createDialog("Connections", `
-    <p>Connect directly to an OpenAI-compatible or Anthropic endpoint. Keys stay in memory; only connection metadata is saved.</p>
+    <p>Connect directly to an OpenAI-compatible or Anthropic endpoint. ${credentialStorage ? "Keys survive refresh in this tab; closing the tab clears them." : "Keys stay in memory."} Saved chats never contain keys.</p>
     <label>Saved connections<select data-field="connections"></select></label>
     <form data-field="connection-form" class="browser-connection-form">
       <label>Name<input data-field="name" required maxlength="100" autocomplete="off"></label>
       <label>Protocol<select data-field="provider"><option value="openai">OpenAI-compatible</option><option value="anthropic">Anthropic Messages</option></select></label>
       <label>Endpoint URL<input data-field="endpoint" type="url" required placeholder="https://your-server/v1/chat/completions" autocomplete="off" spellcheck="false"></label>
       <label>Model<input data-field="model" required autocomplete="off" spellcheck="false"></label>
-      <label>API key (optional, memory only)<input data-field="key" type="password" autocomplete="off" spellcheck="false"></label>
-      <div class="panel-toolbar"><button class="primary-button" type="submit">Save connection</button><button type="button" data-field="remove">Remove</button><button type="button" data-field="test">Test saved connection</button><button type="button" data-field="fetch-models">Fetch models</button></div>
+      <label>API key (optional, ${credentialStorage ? "this tab" : "memory only"})<input data-field="key" type="password" autocomplete="off" spellcheck="false"></label>
+      <div class="panel-toolbar"><button class="primary-button" type="submit">${buttonIconHtml("save")}Save connection</button><button type="button" data-field="remove">${buttonIconHtml("trash")}Remove</button><button type="button" data-field="test">${buttonIconHtml("check")}Test saved connection</button><button type="button" data-field="fetch-models">${buttonIconHtml("refresh")}Fetch models</button></div>
       <section class="browser-model-picker" data-field="model-picker" hidden>
         <label>Filter models<input data-field="model-filter" type="search" placeholder="Search model IDs or names" autocomplete="off"></label>
         <label>Available models<select data-field="model-list" size="6"></select></label>
         <p data-field="model-count" role="status"></p>
-        <button type="button" data-field="use-model">Use selected model</button>
+        <button type="button" data-field="use-model">${buttonIconHtml("check")}Use selected model</button>
       </section>
     </form>
     <label class="browser-python"><input data-field="python" type="checkbox"> Enable Python tools (Pyodide)</label>
-    <p>Python runs without per-call approval, with browser network access and session files synced to Files. Stop resets its variables. Changing connections or Python mode starts a new chat.</p>
+    <p>Python runs without per-call approval, with browser network access and session files synced to Files. Stop resets its variables. Changing connections or Python mode keeps this session’s history and files.</p>
     <p>Endpoints must permit this page’s origin through CORS. HTTPS pages require HTTPS endpoints.</p>
     <p data-field="status" role="status"></p>`);
   const input = (name: string): HTMLInputElement => field<HTMLInputElement>(dialog, name);
@@ -102,9 +103,11 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     select.value = selected < 0 ? "" : String(selected); fill();
   };
   const persist = (): void => {
-    if (!storage) return;
-    try { saveConnections(storage, transport.options.connections); }
-    catch { status("Connection saved for this tab; browser storage is unavailable."); }
+    try {
+      if (credentialStorage) saveConnectionKeys(credentialStorage, transport.options.connections);
+      if (storage) saveConnections(storage, transport.options.connections);
+    }
+    catch { status("Connection is active in memory; storage is unavailable, so changes may not survive refresh."); }
   };
   field(dialog, "connection-form").addEventListener("submit", (event) => {
     event.preventDefault();

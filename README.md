@@ -25,7 +25,8 @@ In **Connections**, use **Fetch models** to browse and filter the available mode
 or enter a model ID manually.
 The standalone edition runs a Rust/WASM conversation runtime locally, with optional
 **Pyodide Python tools** in a persistent Web Worker. It needs no native Lethetic process.
-API keys stay in memory. Chats and files are saved unencrypted on your device.
+API keys survive refresh in this tab; they are excluded from saved chats.
+Chats and files are saved unencrypted on your device.
 Use **Save to Files** beneath code blocks, then browse folders, edit, preview,
 download, or copy contents in **Files**. **Sessions** reopens earlier chats with
 context and usage stats; refresh keeps the current session. Pyodide files under

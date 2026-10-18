@@ -94,14 +94,10 @@ export class LocalTransport implements ApplicationTransport {
 
   setConnections(connections: Connection[], selected: number): void {
     this.#requireIdle();
-    const before = this.connection;
-    const after = connections[selected];
-    const changed = before?.endpoint !== after?.endpoint || before?.model !== after?.model || before?.provider !== after?.provider;
-    if (changed) this.#saveSession(true);
+    this.#saveSession(true);
+    this.#runtime?.dispose(); this.#runtime = null;
     this.options.connections = connections;
     this.selected = selected;
-    if (changed) this.#newSession();
-    else { this.#savedMessages = this.#runtime?.history() ?? this.#savedMessages; this.#runtime?.dispose(); this.#runtime = null; }
     this.#saveSession();
     this.publish();
   }
@@ -109,7 +105,11 @@ export class LocalTransport implements ApplicationTransport {
   setPythonMode(enabled: boolean): void {
     this.#requireIdle();
     if (enabled === this.pythonEnabled) return;
-    this.#saveSession(true); this.pythonEnabled = enabled; this.#newSession(); this.#saveSession(); this.publish();
+    this.#saveSession(true);
+    this.#runtime?.dispose(); this.#runtime = null;
+    if (!enabled) { this.#python?.reset(); this.#python = null; }
+    this.pythonEnabled = enabled;
+    this.#saveSession(); this.publish();
   }
 
   reset(): void {

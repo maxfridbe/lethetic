@@ -29,8 +29,10 @@
 }
 
 .files-toolbar button,
+.files-content-actions button,
 .files-breadcrumbs button {
-  padding: 0.25rem 0.4rem;
+  min-height: 28px;
+  padding: 0.15rem 0.35rem;
   font-size: 0.8rem;
 }
 
@@ -297,3 +299,7 @@
   padding: 0.15rem 0.4rem;
   font-size: 0.75rem;
 }
+
+.files-preview.has-content-actions { grid-template-rows: auto auto minmax(0, 1fr); }
+.files-content-actions { margin: 0; padding: .2rem .4rem; border-bottom: 1px solid var(--border); }
+.files-content-actions .browser-file-actions { display: contents; }

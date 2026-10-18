@@ -47,9 +47,10 @@ the sibling `/models` endpoint, preserving proxy prefixes, following the
 and [Anthropic models API](https://platform.claude.com/docs/en/api/models/list).
 
 Connection names, protocols, endpoint URLs, and model IDs are saved in localStorage.
-API keys stay in memory. Re-enter keys after reloading. Chats are saved locally.
-Changing connections or Python mode starts a new session, keeping the previous one
-in **Sessions**. Clearing context resets the current conversation and Python runtime. Editing connection fields takes effect when you save them.
+The hosted app keeps API keys in tab-scoped sessionStorage so refresh retains them.
+Keys are excluded from saved chats and device-local connection metadata. Chats are saved locally.
+Changing connections, updating a key, or toggling Python keeps the current session,
+history, and files. Use **New session** to start a separate chat. Clearing context resets the current conversation and Python runtime. Editing connection fields takes effect when you save them.
 
 Responses appear when each model request completes; this edition currently uses
 non-streaming Chat Completions and Messages. Responses API endpoints, native
@@ -179,7 +180,7 @@ at `/lethetic/`, custom subpaths, and domain roots. Pages deployment requires th
 Pushing an ordinary commit deploys Pages. Pushing a `v*` tag additionally attaches
 `lethetic-browser.zip` and `lethetic-browser.zip.sha256` to the GitHub release,
 alongside the existing native release workflow. A `browser-v*` tag (for example,
-`browser-v0.4.1`) publishes an independent embedding release with those same assets.
+`browser-v0.4.2`) publishes an independent embedding release with those same assets.
 A commit does not create a version tag automatically. The ZIP contains both standalone and embedding modes; it does
 not contain API keys or downloaded Pyodide packages. Build outputs live under
 `target/` and are not committed. `manifest.json` contains per-file SHA-256 hashes.
@@ -214,6 +215,8 @@ Mount one UI per document: the shared UI owns document-level keyboard shortcuts,
 focus handling, theme variables, and styles. Give its container a definite height
 (for example, `height: 100vh` in your stylesheet). Use an iframe for isolated styles
 or multiple instances. Omit `storage` to keep files and sessions only in memory.
+Pass `credentialStorage: sessionStorage` to retain keys through tab reloads;
+embedded hosts otherwise keep keys in memory.
 Session routing is off by default so the embed does not take over its host URL. `view.destroy()` aborts pending
 work, terminates Python, removes dialogs, and releases application listeners.
 

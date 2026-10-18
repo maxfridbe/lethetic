@@ -1,3 +1,4 @@
+import { uiIcon } from "../icons.js";
 import { jsx as h } from "../../lib/snabbdom/build/index.js";
 import { boundedText } from "../safety.js";
 function diagnosticCodeLabel(code) {
@@ -15,7 +16,9 @@ function renderDebuggerContent(debuggerState, close, autofocus) {
                     "aria-label": "Close debugger",
                     title: "Close debugger",
                     ...(autofocus ? { "data-autofocus": "true" } : {}),
-                }, on: { click: close } }, "Close")),
+                }, on: { click: close } },
+                uiIcon("close"),
+                "Close")),
         h("p", { attrs: { class: "debugger-summary" } }, boundedText(debuggerState.summary)),
         debuggerState.omitted_before === 0 ? (h("span", { attrs: { class: "debugger-omission-placeholder", "aria-hidden": "true" } })) : (h("p", { attrs: { class: "bounded-notice" } }, `${debuggerState.omitted_before} older diagnostic event(s) were omitted.`)),
         debuggerState.entries.length === 0 ? (h("p", { attrs: { class: "empty-state debugger-empty" } }, "No browser-safe operational events have been recorded.")) : (h("ol", { attrs: { class: "debugger-entries" } }, debuggerState.entries.map((entry, index) => (h("li", { key: `diagnostic-${index}-${entry.code}`, attrs: { class: `diagnostic diagnostic-${entry.severity}` } },

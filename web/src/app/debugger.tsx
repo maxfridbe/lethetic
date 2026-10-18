@@ -1,3 +1,4 @@
+import { uiIcon } from "../icons.js";
 import { jsx as h } from "../../lib/snabbdom/build/index.js";
 import type { VNode } from "../../lib/snabbdom/build/index.js";
 import type {
@@ -32,7 +33,7 @@ function renderDebuggerContent(
         }}
         on={{ click: close }}
       >
-        Close
+        {uiIcon("close")}Close
       </button>
     </header>,
     <p attrs={{ class: "debugger-summary" }}>

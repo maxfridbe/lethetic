@@ -86,3 +86,31 @@ await test("Files are session-scoped, reopen with their session and preserve old
   const saved = new SessionStore(storage).list().find(session=>session.id===first);
   assert.equal(textFile(saved!.workspace!.files[0]!), 'first session'); transport.dispose();
 });
+
+await test("connection edits and Python toggles preserve the resumed session, history and files", () => {
+  const values = new Map<string,string>();
+  const storage = {getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value);}} as Storage;
+  const connection = {name:"Saved",provider:"openai" as const,endpoint:"https://example.com/v1/chat/completions",model:"test"};
+  const id = crypto.randomUUID();
+  const messages = [{role:"user",content:"remember me"},{role:"assistant",content:"remembered"}];
+  new SessionStore(storage).save({id,name:"Work",label:"remember me",updatedAt:new Date().toISOString(),
+    blocks:[],messages,inputs:["remember me"],system:"help",python:false,theme:"dracula",connection});
+  const files = new BrowserFiles(storage);
+  const transport = new LocalTransport({socketOpened(){},authenticationEpochChanged(){},transportStatus(){},protocolFault(){},serverMessage(){},commandResponse(){}},
+    {connections:[connection],storage,files});
+  transport.start(); files.save("keep.csv","42");
+  transport.setConnections([{...connection,apiKey:"replacement"}],0);
+  transport.setPythonMode(true);
+  assert.equal(transport.state.session.session_id,id);
+  assert.equal(transport.state.session.display_name,"Work");
+  assert.equal(files.list()[0]?.content,"42");
+  let saved = new SessionStore(storage).list();
+  assert.equal(saved.length,1); assert.equal(saved[0]?.python,true); assert.deepEqual(saved[0]?.messages,messages);
+  transport.setConnections([{...connection,model:"other",apiKey:"replacement"}],0);
+  transport.setPythonMode(false);
+  assert.equal(transport.state.session.session_id,id);
+  saved = new SessionStore(storage).list();
+  assert.equal(saved.length,1); assert.equal(saved[0]?.python,false); assert.deepEqual(saved[0]?.messages,messages);
+  assert.ok(!JSON.stringify([...values]).includes("replacement"));
+  transport.dispose();
+});

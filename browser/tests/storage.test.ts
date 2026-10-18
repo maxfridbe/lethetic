@@ -77,3 +77,15 @@ await test("Pages routes support a specific session, latest and new without serv
   assert.equal(sessionRoute("#/new"), "new"); assert.equal(sessionRoute(`#/sessions/${id}`), id);
   for (const route of ["#/sessions/nope", "#/sessions/../secret", "#https://example.com"]) assert.throws(() => sessionRoute(route));
 });
+
+await test("tab credentials survive reload without entering saved metadata and are removed with their connection", async () => {
+  const {saveConnections, loadConnections, saveConnectionKeys, restoreConnectionKeys} = await import("../src/connection.js");
+  const device = storage(); const tab = storage();
+  const connection = {name:"Test",provider:"openai" as const,endpoint:"https://example.com/v1/chat/completions",model:"test",apiKey:"tab-secret"};
+  saveConnections(device,[connection]); saveConnectionKeys(tab,[connection]);
+  assert.ok(!JSON.stringify([...device.values]).includes("tab-secret"));
+  assert.equal(restoreConnectionKeys(tab,loadConnections(device))[0]?.apiKey,"tab-secret");
+  assert.equal(restoreConnectionKeys(tab,[{...connection,endpoint:"https://elsewhere.com/v1/chat/completions",apiKey:undefined}])[0]?.apiKey,undefined);
+  assert.equal(restoreConnectionKeys(tab,[{...connection,apiKey:"explicit"}])[0]?.apiKey,"explicit");
+  saveConnectionKeys(tab,[]); assert.equal(restoreConnectionKeys(tab,loadConnections(device))[0]?.apiKey,undefined);
+});

@@ -1,5 +1,4 @@
 import { jsx as h } from "../../lib/snabbdom/build/index.js";
-import { ICON_GLYPHS } from "../generated/contracts.js";
 import { activitySpinner, uiIcon } from "../icons.js";
 import { jsonPreformattedThunk } from "../json.js";
 import { isMarkdownBlockKind, markdownContentThunk, toolResultContentThunk, } from "../markdown.js";
@@ -16,8 +15,7 @@ function renderHeader(context) {
                 class: "icon-button palette-button",
                 "aria-label": "Open command palette",
                 title: "Command palette (Ctrl+P)",
-            }, props: { disabled: snapshot === null }, on: { click: context.actions.openPalette } },
-            h("span", { attrs: { "aria-hidden": "true" } }, ICON_GLYPHS.command)),
+            }, props: { disabled: snapshot === null }, on: { click: context.actions.openPalette } }, uiIcon("command")),
         h("div", { attrs: { class: "connection-summary" } },
             h("span", { attrs: {
                     class: `connection-dot ${live ? "is-live" : "is-stale"}`,
@@ -69,7 +67,7 @@ export function chatBlockAnchor(snapshot, index) {
     const ordinal = snapshot.blocks.omitted_before + index - (hasSyntheticNotice ? 1 : 0);
     return `block-${ordinal}`;
 }
-function renderBlock(block, index, maxJsonSegments, anchor, actions) {
+function renderBlock(block, index, maxJsonSegments, anchor, actions, codeActions) {
     if (block.kind === "divider") {
         return (h("div", { key: anchor ?? `synthetic-block-${index}`, attrs: {
                 class: "chat-divider",
@@ -82,7 +80,7 @@ function renderBlock(block, index, maxJsonSegments, anchor, actions) {
     const content = block.tool?.payload ?? block.content;
     const displayContent = boundedText(content);
     const renderedContent = isMarkdownBlockKind(block.kind)
-        ? markdownContentThunk(block.kind, displayContent, markdownBlockUsesJsonHighlighting(block), maxJsonSegments)
+        ? markdownContentThunk(block.kind, displayContent, markdownBlockUsesJsonHighlighting(block), maxJsonSegments, codeActions)
         : toolResultUsesAutoRendering(block)
             ? toolResultContentThunk(displayContent, block.tool?.payload_loss.truncation !== null, maxJsonSegments)
             : jsonPreformattedThunk("block", displayContent, toolBlockUsesJsonHighlighting(block), maxJsonSegments);
@@ -135,7 +133,7 @@ function renderChat(context) {
         } },
         snapshot.blocks.omitted_before > 0 ? (h("div", { attrs: { class: "bounded-notice" } }, `${snapshot.blocks.omitted_before} earlier blocks were omitted by the server.`)) : null,
         start > 0 ? (h("div", { attrs: { class: "virtual-spacer", "aria-hidden": "true" }, style: { height: `${start * CHAT_ROW_ESTIMATE}px` } })) : null,
-        h("div", { attrs: { class: "chat-window" } }, visible.map((block, offset) => renderBlock(block, start + offset, jsonSegmentAllocations[offset] ?? 0, chatBlockAnchor(snapshot, start + offset), context.state.blockActions?.(block) ?? null))),
+        h("div", { attrs: { class: "chat-window" } }, visible.map((block, offset) => renderBlock(block, start + offset, jsonSegmentAllocations[offset] ?? 0, chatBlockAnchor(snapshot, start + offset), context.state.blockActions?.(block) ?? null, context.state.codeActions))),
         end < blocks.length ? (h("div", { attrs: { class: "virtual-spacer", "aria-hidden": "true" }, style: { height: `${(blocks.length - end) * CHAT_ROW_ESTIMATE}px` } })) : null,
         snapshot.blocks.truncated ? (h("div", { attrs: { class: "bounded-notice warning" } }, "Conversation content was bounded by the server.")) : null));
 }

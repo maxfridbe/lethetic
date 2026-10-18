@@ -207,6 +207,7 @@ export class SpaApplication implements BrowserTransportEvents {
     sessionsNotice?: () => string;
     files?: FilePaneExtensions;
     blockActions?: (block: RenderBlockView) => VNode | null;
+    codeActions?: (code: string, language: string | null) => VNode | null;
     externalDialogOpen?: () => boolean;
   } = {}) {
     this.#tree = root;
@@ -1168,6 +1169,7 @@ export class SpaApplication implements BrowserTransportEvents {
         headerActions: this.extensions.headerActions?.() ?? null,
         customStatus: this.extensions.status?.() ?? null,
         promptPlaceholder: this.extensions.promptPlaceholder ?? null,
+        ...(this.extensions.codeActions ? { codeActions: this.extensions.codeActions } : {}),
         ...(this.extensions.blockActions ? { blockActions: this.extensions.blockActions } : {}),
         live,
         activePanel,

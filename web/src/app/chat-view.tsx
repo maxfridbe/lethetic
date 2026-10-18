@@ -1,6 +1,5 @@
 import { jsx as h } from "../../lib/snabbdom/build/index.js";
 import type { VNode } from "../../lib/snabbdom/build/index.js";
-import { ICON_GLYPHS } from "../generated/contracts.js";
 import type {
   ProjectionLossView,
   RenderBlockView,
@@ -52,7 +51,7 @@ function renderHeader(context: ChatViewContext): VNode {
         props={{ disabled: snapshot === null }}
         on={{ click: context.actions.openPalette }}
       >
-        <span attrs={{ "aria-hidden": "true" }}>{ICON_GLYPHS.command}</span>
+        {uiIcon("command")}
       </button>
       <div attrs={{ class: "connection-summary" }}>
         <span
@@ -141,6 +140,7 @@ function renderBlock(
   maxJsonSegments: number,
   anchor: string | null,
   actions: VNode | null,
+  codeActions?: (code: string, language: string | null) => VNode | null,
 ): VNode {
   if (block.kind === "divider") {
     return (
@@ -165,6 +165,7 @@ function renderBlock(
         displayContent,
         markdownBlockUsesJsonHighlighting(block),
         maxJsonSegments,
+        codeActions,
       )
     : toolResultUsesAutoRendering(block)
       ? toolResultContentThunk(
@@ -273,6 +274,7 @@ function renderChat(context: ChatViewContext): VNode {
             jsonSegmentAllocations[offset] ?? 0,
             chatBlockAnchor(snapshot, start + offset),
             context.state.blockActions?.(block) ?? null,
+            context.state.codeActions,
           ),
         )}
       </div>

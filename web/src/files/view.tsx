@@ -1,6 +1,7 @@
 import { jsx as h } from "../../lib/snabbdom/build/index.js";
 import type { VNode } from "../../lib/snabbdom/build/index.js";
 import type { DiffLayout, FilePaneState, FilePaneTab } from "./state.js";
+import { uiIcon } from "../icons.js";
 import { exclusionLabel } from "./protocol.js";
 import { CHANGE_LETTERS, changeRows, type ChangeRow } from "./git.js";
 
@@ -23,6 +24,7 @@ export interface FilePaneExtensions {
   rootLabel?: string;
   local?: boolean;
   actions?: (state: FilePaneState) => VNode;
+  contentActions?: (state: FilePaneState) => VNode;
 }
 
 /** `+added −removed` counts, or `binary` when git reported no line numbers. */
@@ -48,7 +50,8 @@ function changeRow(row: ChangeRow, state: FilePaneState, live: boolean, actions:
     props={{ disabled: !live && !row.folder }}
     on={{ click: () => row.folder ? actions.toggleFolder(row.path) : actions.selectChange(row.path) }}>
     <span attrs={{ class: "changes-marker", "aria-hidden": "true" }}>
-      {row.folder ? (collapsed ? "▸" : "▾") : CHANGE_LETTERS[row.kind ?? "modified"]}
+      {row.folder ? uiIcon(collapsed ? "collapse" : "expand") : uiIcon("file")}
+      {row.folder ? null : CHANGE_LETTERS[row.kind ?? "modified"]}
     </span>
     <span attrs={{ class: "changes-name" }}>{row.folder ? `${row.name}/` : row.name}</span>
     {lineCounts(row.added, row.removed)}
@@ -66,7 +69,7 @@ function renderChangesBody(state: FilePaneState, live: boolean, actions: FilePan
   const layoutButton = (layout: DiffLayout, label: string, title: string): VNode =>
     <button attrs={{ type: "button", title, "aria-pressed": state.diffLayout === layout ? "true" : "false",
       class: state.diffLayout === layout ? "is-active" : "" }}
-      on={{ click: () => actions.setDiffLayout(layout) }}>{label}</button>;
+      on={{ click: () => actions.setDiffLayout(layout) }}>{uiIcon(layout === "inline" ? "list" : "columns")}{label}</button>;
   return <div attrs={{ id: "files-body", class: "files-body changes-body" }}>
     <div attrs={{ class: "files-browser" }}>
       <div attrs={{ class: "changes-summary" }}>
@@ -106,11 +109,11 @@ function breadcrumbs(directory: string, live: boolean, actions: FilePaneActions,
   const parts = directory === "" ? [] : directory.split("/");
   return <nav attrs={{ class: "files-breadcrumbs", "aria-label": "File directory" }}>
     <button attrs={{ type: "button", title: "Fixed process launch directory" }} props={{ disabled: !live }}
-      on={{ click: () => actions.navigate("") }}>{rootLabel}</button>
+      on={{ click: () => actions.navigate("") }}>{uiIcon("folder")}{rootLabel}</button>
     {parts.map((part, index) => <span key={String(index)}>
       <span attrs={{ "aria-hidden": "true" }}> / </span>
       <button attrs={{ type: "button" }} props={{ disabled: !live }}
-        on={{ click: () => actions.navigate(parts.slice(0, index + 1).join("/")) }}>{part}</button>
+        on={{ click: () => actions.navigate(parts.slice(0, index + 1).join("/")) }}>{uiIcon("folder")}{part}</button>
     </span>)}
   </nav>;
 }
@@ -122,7 +125,7 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
     <header attrs={{ class: "files-toolbar" }}>
       <button attrs={{ type: "button", id: "files-toggle", "aria-expanded": state.open ? "true" : "false", "aria-controls": "files-body" }}
         props={{ disabled: !live && !state.open }} on={{ click: actions.toggle }}>
-        {state.open ? "▾ Files" : "▸ Files"}
+        {uiIcon(state.open ? "expand" : "collapse")}Files
       </button>
       {!state.open ? <span attrs={{ class: "files-scope" }}>{extensions.scope ?? "Read-only · fixed launch root"}</span>
         : <span attrs={{ class: "files-tabs", role: "tablist", "aria-label": "Files view" }}>
@@ -130,23 +133,20 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
             attrs={{ type: "button", role: "tab", class: state.tab === tab ? "is-active" : "",
               "aria-selected": state.tab === tab ? "true" : "false" }}
             props={{ disabled: !live }} on={{ click: () => actions.showTab(tab) }}>
-            {tab === "files" ? "Browse" : "Changes"}</button>)}
+            {uiIcon(tab === "files" ? "folder" : "code")}{tab === "files" ? "Browse" : "Changes"}</button>)}
         </span>}
       {!state.open || state.tab !== "changes" ? null : <div attrs={{ class: "files-actions" }}>
         <button attrs={{ type: "button" }} props={{ disabled: !live || state.changesBusy }}
-          on={{ click: actions.refreshChanges }}>Refresh</button>
+          on={{ click: actions.refreshChanges }}>{uiIcon("refresh")}Refresh</button>
       </div>}
       {!state.open || state.tab !== "files" ? null : <div attrs={{ class: "files-actions" }}>
         <button attrs={{ type: "button" }} props={{ disabled: !live || state.listingBusy || state.previewBusy }}
-          on={{ click: actions.refresh }}>Refresh</button>
-        <button attrs={{ type: "button", title: "Download the selected file (up to 32 MiB)" }}
-          props={{ disabled: !live || state.selectedPath === null || state.downloadBusy }}
-          on={{ click: () => actions.download(false) }}>Download File</button>
+          on={{ click: actions.refresh }}>{uiIcon("refresh")}Refresh</button>
         {extensions.local ? null : <button attrs={{ type: "button", title: "Download the current folder as ZIP; exclusions and fixed limits apply" }}
           props={{ disabled: !live || state.downloadBusy || state.listingBusy }}
-          on={{ click: () => actions.download(true) }}>Download Folder</button>}
+          on={{ click: () => actions.download(true) }}>{uiIcon("download")}Download Folder</button>}
         <button attrs={{ type: "button", title: "Copy a launch-root-relative path; does not change the prompt" }}
-          props={{ disabled: path === "" }} on={{ click: actions.copyPath }}>Copy Path</button>
+          props={{ disabled: path === "" }} on={{ click: actions.copyPath }}>{uiIcon("copy")}Copy Path</button>
         {extensions.actions?.(state) ?? null}
       </div>}
     </header>
@@ -162,7 +162,7 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
               title: entry.path, "aria-pressed": state.selectedPath === entry.path ? "true" : "false" }}
             props={{ disabled: !live }}
             on={{ click: () => entry.kind === "directory" ? actions.navigate(entry.path) : actions.select(entry.path) }}>
-            <span attrs={{ "aria-hidden": "true" }}>{entry.kind === "directory" ? "▸" : "·"}</span>
+            <span attrs={{ "aria-hidden": "true" }}>{uiIcon(entry.kind === "directory" ? "folder" : "file")}</span>
             <span>{entry.name}</span>
             <small>{entry.kind === "directory" ? "Folder" : `${entry.size ?? "0"} B`}</small>
           </button>)}
@@ -171,10 +171,16 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
         {state.listing?.truncated === true ? <p attrs={{ class: "files-notice" }}>Showing the first 1,000 eligible entries. Narrow the folder selection.</p> : null}
         {exclusions === null ? null : <p attrs={{ class: "files-notice" }}>{exclusions}</p>}
       </div>
-      <div attrs={{ class: "files-preview" }}>
+      <div attrs={{ class: "files-preview has-content-actions" }}>
         <div attrs={{ class: "files-path", title: "Path relative to the fixed launch directory" }}>
           <span>{state.selectedPath ?? "Select a file to view"}</span>
           {state.preview === null ? null : <small>{state.preview.size} bytes · read-only</small>}
+        </div>
+        <div attrs={{ class: "files-content-actions files-actions" }}>
+        <button attrs={{ type: "button", title: "Download the selected file (up to 32 MiB)" }}
+          props={{ disabled: !live || state.selectedPath === null || state.downloadBusy }}
+          on={{ click: () => actions.download(false) }}>{uiIcon("download")}Download File</button>
+          {extensions.contentActions?.(state) ?? null}
         </div>
         <div attrs={{ class: "files-editor-area" }}>
           <div key="monaco-host" attrs={{ id: "files-monaco", class: "files-monaco", "aria-label": "Read-only Monaco editor" }}></div>

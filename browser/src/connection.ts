@@ -5,7 +5,7 @@ export interface Connection {
   /** Full /v1/chat/completions or /v1/messages URL, including any proxy prefix. */
   endpoint: string;
   model: string;
-  /** Kept in memory; never saved by the app or passed to WASM or Python. */
+  /** Kept out of saved sessions and WASM/Python. The hosted UI retains keys in sessionStorage for this tab. */
   apiKey?: string;
 }
 
@@ -32,7 +32,7 @@ export function validateConnection(connection: Connection): Connection {
 
 const STORAGE_KEY = "lethetic.connections.v1";
 
-/** Persist endpoint metadata only. Keys stay in memory even across connection switches. */
+/** Persist endpoint metadata only; credentials use a separate optional tab store. */
 export function saveConnections(storage: Pick<Storage, "setItem">, connections: Connection[]): void {
   storage.setItem(STORAGE_KEY, JSON.stringify(connections.map(({ name, provider, endpoint, model }) =>
     ({ name, provider, endpoint, model }))));
@@ -54,4 +54,24 @@ export function loadConnections(storage: Pick<Storage, "getItem">): Connection[]
       } catch { return []; }
     });
   } catch { return []; }
+}
+
+const KEY_STORAGE = "lethetic.connection-keys.v1";
+const connectionIdentity = ({name,provider,endpoint,model}: Connection): string => JSON.stringify([name,provider,endpoint,model]);
+
+/** Pass sessionStorage to retain keys through reloads in this tab only. */
+export function saveConnectionKeys(storage: Pick<Storage, "setItem">, connections: Connection[]): void {
+  storage.setItem(KEY_STORAGE, JSON.stringify(connections.filter(item => item.apiKey)
+    .map(item => [connectionIdentity(item), item.apiKey])));
+}
+export function restoreConnectionKeys(storage: Pick<Storage, "getItem">, connections: Connection[]): Connection[] {
+  try {
+    const stored: unknown = JSON.parse(storage.getItem(KEY_STORAGE) ?? "[]");
+    if (!Array.isArray(stored)) return connections;
+    const keys = new Map<string,string>();
+    for (const entry of stored) if (Array.isArray(entry) && entry.length === 2 &&
+      typeof entry[0] === "string" && typeof entry[1] === "string") keys.set(entry[0],entry[1]);
+    return connections.map(item => item.apiKey !== undefined ? item :
+      {...item, apiKey: keys.get(connectionIdentity(item))});
+  } catch { return connections; }
 }

@@ -155,7 +155,10 @@ interface NormalizedMarkdown {
   readonly significant: boolean;
 }
 
+export type CodeActions = (code: string, language: string | null) => VNode | null;
+
 interface MarkdownRenderBudget {
+  readonly codeActions?: CodeActions;
   readonly highlightJson: boolean;
   jsonSegmentsRemaining: number;
 }
@@ -858,6 +861,7 @@ function renderBlocks(
                 {jsonChildren ?? codeChildren ?? node.text}
               </code>
             </pre>
+            {budget.codeActions?.(node.text, node.language) ?? null}
           </div>
         );
       }
@@ -913,6 +917,7 @@ export function renderMarkdownContent(
   source: string,
   highlightJson = true,
   maxJsonSegments = MAX_JSON_SEGMENTS,
+  codeActions?: CodeActions,
 ): VNode {
   if (UTF8_ENCODER.encode(source).byteLength > MAX_MARKDOWN_SOURCE_BYTES) {
     return literalContent(source);
@@ -930,6 +935,7 @@ export function renderMarkdownContent(
           {renderBlocks(normalized.blocks, {
             highlightJson,
             jsonSegmentsRemaining: maxJsonSegments,
+            ...(codeActions ? { codeActions } : {}),
           })}
         </div>
       </div>
@@ -985,10 +991,11 @@ export function markdownContentThunk(
   source: string,
   highlightJson = true,
   maxJsonSegments = MAX_JSON_SEGMENTS,
+  codeActions?: CodeActions,
 ): VNode {
   return thunk(
     "div",
     renderMarkdownContent,
-    [blockKind, source, highlightJson, maxJsonSegments],
+    [blockKind, source, highlightJson, maxJsonSegments, codeActions],
   );
 }
