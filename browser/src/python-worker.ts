@@ -1,9 +1,9 @@
 // Only source, a runtime URL and this session's workspace cross the worker boundary.
 import { captureWorkspace, restoreWorkspace } from "./python-filesystem.js";
 import type { PythonFS } from "./python-filesystem.js";
-import { parseWorkspace } from "./workspace.js";
+import { emptyWorkspace, parseWorkspace } from "./workspace.js";
 import type { Workspace } from "./workspace.js";
-interface PythonRequest { id: number; code: string; indexURL: string; workspace: Workspace }
+interface PythonRequest { id: number; code: string; indexURL: string; workspace?: Workspace; protocol?: number; type?: string }
 interface Pyodide {
   FS: PythonFS;
   runPythonAsync(code: string): Promise<unknown>;
@@ -21,10 +21,17 @@ let python: Promise<Pyodide> | null = null;
 let busy = false;
 let installedWorkspace = "";
 
-scope.onmessage = (event): void => { void execute(event.data); };
+scope.onmessage = (event): void => {
+  const request = event.data;
+  if (request.type === "hello") {
+    scope.postMessage({ id: request.id, type: "ready", protocol: 1 });
+    return;
+  }
+  void execute(request);
+};
 
-async function execute({ id, code, indexURL, workspace }: PythonRequest): Promise<void> {
-  if (busy) { scope.postMessage({ id, output: "Python is already running." }); return; }
+async function execute({ id, code, indexURL, workspace, protocol }: PythonRequest): Promise<void> {
+  if (busy) { scope.postMessage({ id, protocol: 1, output: "Python is already running." }); return; }
   busy = true;
   let output = "";
   let runtime: Pyodide | undefined;
@@ -39,15 +46,21 @@ async function execute({ id, code, indexURL, workspace }: PythonRequest): Promis
     if (line.length > remaining) truncated = true;
   };
   try {
+    if (protocol !== undefined && protocol !== 1) throw new Error("Unsupported Python worker protocol. Reload this page.");
+    // Older open tabs omit workspace; preserve their existing files between calls.
+    const legacy = protocol === undefined && workspace === undefined;
+    const incoming = legacy ? null : parseWorkspace(workspace);
     python ??= (async () => {
       const module: PyodideModule = await import(new URL("pyodide.mjs", indexURL).href);
       return module.loadPyodide({ indexURL });
     })().catch((error: unknown) => { python = null; throw error; });
     runtime = await python;
-    const incoming = parseWorkspace(workspace);
-    const serialized = JSON.stringify(incoming);
-    if (serialized !== installedWorkspace) {
-      restoreWorkspace(runtime.FS, incoming); installedWorkspace = serialized;
+    if (incoming || !installedWorkspace) {
+      const next = incoming ?? emptyWorkspace();
+      const serialized = JSON.stringify(next);
+      if (serialized !== installedWorkspace) {
+        restoreWorkspace(runtime.FS, next); installedWorkspace = serialized;
+      }
     }
     restored = true;
     runtime.setStdout({ batched: append });
@@ -67,7 +80,7 @@ async function execute({ id, code, indexURL, workspace }: PythonRequest): Promis
       catch (error) { workspaceError = String(error); }
     } else workspaceError = "Python workspace could not be restored; no files were changed in the saved session.";
     busy = false;
-    scope.postMessage({ id, workspace: snapshot, workspaceError, output: (output || "Python completed without output.\n") +
+    scope.postMessage({ id, protocol: 1, workspace: snapshot, workspaceError, output: (output || "Python completed without output.\n") +
       (truncated ? "\n[Output truncated at 64 KiB]\n" : "") });
   }
 }

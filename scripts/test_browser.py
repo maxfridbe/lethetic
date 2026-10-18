@@ -21,7 +21,16 @@ class Handler(SimpleHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        if self.path == "/pyodide/pyodide.mjs":
+        if self.path == "/v1/models":
+            body = json.dumps({"data": [{"id": "test", "name": "Test model"},
+                                        {"id": "deepseek/test", "name": "DeepSeek Test"},
+                                        {"id": "other", "name": "Other model"}]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif self.path == "/pyodide/pyodide.mjs":
             body = (ROOT / "browser/tests/fixtures/pyodide.mjs").read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "text/javascript")

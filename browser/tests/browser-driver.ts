@@ -67,6 +67,25 @@ try {
   await rpc("Page.enable"); await rpc("Runtime.enable");
   await rpc("Page.navigate", { url: `${config.origin}/lethetic/` });
   await until("!!document.querySelector('[data-field=name]')");
+  await evaluate(`document.querySelector('[data-field=endpoint]').value=location.origin+'/v1/chat/completions';
+    document.querySelector('[data-field=key]').value='secret-never-persisted';
+    document.querySelector('[data-field=fetch-models]').click()`);
+  await until("document.querySelector('[data-field=model-list]').options.length===3");
+  check(await evaluate("document.querySelector('[data-field=model]').value===''"), "discovery changed model before selection");
+  await evaluate(`{ const filter=document.querySelector('[data-field=model-filter]'); filter.value='DEEPSEEK'; filter.dispatchEvent(new Event('input')); }`);
+  check(await evaluate("document.querySelector('[data-field=model-list]').options.length===1"), "model list did not filter");
+  await evaluate("document.querySelector('[data-field=use-model]').click()");
+  check(await evaluate("document.querySelector('[data-field=model]').value==='deepseek/test'"), "model selection failed");
+  await evaluate(`{ const filter=document.querySelector('[data-field=model-filter]'); filter.value='no-such-model'; filter.dispatchEvent(new Event('input')); }`);
+  check(await evaluate("document.querySelector('[data-field=use-model]').disabled && document.querySelector('[data-field=model-count]').textContent==='0 of 3 models'"), "empty model filter was not handled");
+  // A stale in-flight list must not populate a different connection's picker.
+  await evaluate(`globalThis.originalFetch=fetch; globalThis.modelRequests=[];
+    globalThis.fetch=(url,options)=>String(url).endsWith('/v1/models') ? new Promise(resolve=>globalThis.modelRequests.push({resolve,signal:options.signal})) : globalThis.originalFetch(url,options);
+    document.querySelector('[data-field=fetch-models]').click();
+    document.querySelector('[data-field=endpoint]').dispatchEvent(new Event('input'));
+    globalThis.modelRequests[0].resolve(Response.json({data:[{id:'stale'}]}));`);
+  check(await evaluate("document.querySelector('[data-field=model-picker]').hidden && globalThis.modelRequests[0].signal.aborted"), "stale model discovery survived endpoint change");
+  await evaluate("globalThis.fetch=globalThis.originalFetch");
   check(await evaluate(`(() => {
     const set = (name, value) => document.querySelector('[data-field='+name+']').value=value;
     set('name','Browser test'); set('endpoint',location.origin+'/v1/chat/completions');
@@ -76,7 +95,7 @@ try {
   })()`), "connection could not be saved");
   check(await evaluate("!JSON.stringify(localStorage).includes('secret-never-persisted')"), "key persisted");
   await evaluate("document.querySelector('[data-field=test]').click()");
-  await until("document.querySelector('dialog[open] [role=status]').textContent.includes('valid response')");
+  await until("document.querySelector('dialog[open] [data-field=status]').textContent.includes('valid response')");
   await evaluate(`document.querySelector('dialog[open]').close();
     const prompt=document.getElementById('composer-input'); prompt.value='hello';
     prompt.dispatchEvent(new Event('input',{bubbles:true})); document.querySelector('form.composer').requestSubmit()`);
@@ -230,6 +249,26 @@ try {
   check(await evaluate("location.hash") === freshHash, "empty new session did not survive refresh");
   process.stdout.write("Files, sandbox previews, copy/download, session reload/context, and routes passed.\n");
   // Exercise the actual Worker bridge with a local dependency fixture, then with real Pyodide if requested.
+  const legacyPython = await evaluate(`(async () => {
+    const worker=new Worker(new URL('./browser/src/python-worker.js',location.href),{type:'module'});
+    let id=0;
+    const run=code=>new Promise((resolve,reject)=>{
+      const requestId=++id;
+      const timeout=setTimeout(()=>reject(Error('Legacy worker timed out')),10000);
+      worker.onmessage=event=>{if(event.data.id===requestId){clearTimeout(timeout);resolve(event.data)}};
+      worker.onerror=()=>{clearTimeout(timeout);reject(Error('Legacy worker failed'))};
+      // v0.3 clients omit workspace. An open tab can load a newer worker after deploy.
+      worker.postMessage({id:requestId,code,indexURL:location.origin+'/pyodide/'});
+    });
+    try {
+      const created=await run('# create-session-files');
+      const read=await run('# read-session-file');
+      return {created:created.output,read:read.output,files:read.workspace?.files.length};
+    } finally {worker.terminate();}
+  })()`);
+  check(JSON.stringify(legacyPython)===JSON.stringify({created:'files created\n',read:'read: value\n42\n\n',files:2}),
+    'Older open tab cannot use the updated worker: '+JSON.stringify(legacyPython));
+  process.stdout.write('Older client / updated worker compatibility passed.\n');
   const pythonResult = await evaluate(`(async () => {
     const {createPythonTool}=await import('./src/sdk.js');
     const python=createPythonTool({indexURL:location.origin+'/pyodide/',timeoutMs:10000});

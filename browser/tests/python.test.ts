@@ -7,10 +7,16 @@ import { createPythonTool } from "../src/python.js";
 class FakeWorker extends EventTarget {
   requests: { id: number; code: string; indexURL: string; workspace: Workspace }[] = [];
   terminated = false;
-  postMessage(data: { id: number; code: string; indexURL: string; workspace: Workspace }): void { this.requests.push(data); }
+  handshakes = 0;
+  postMessage(data: { id: number; code: string; indexURL: string; workspace: Workspace; type?: string }): void {
+    if (data.type === "hello") {
+      this.handshakes++;
+      this.dispatchEvent(new MessageEvent("message", { data: { id: data.id, type: "ready", protocol: 1 } }));
+    } else this.requests.push(data);
+  }
   terminate(): void { this.terminated = true; }
   answer(output: string, workspace = emptyWorkspace()): void {
-    this.dispatchEvent(new MessageEvent("message", { data: { id: this.requests.at(-1)?.id, output, workspace } }));
+    this.dispatchEvent(new MessageEvent("message", { data: { id: this.requests.at(-1)?.id, protocol: 1, output, workspace } }));
   }
 }
 
@@ -24,13 +30,14 @@ await test("Python worker is lazy, persistent, and receives no model credentials
   assert.equal(workers.length, 0);
   const running = python.execute({ code: "x = 40" }, new AbortController().signal);
   const worker = workers[0]; assert.ok(worker);
-  assert.deepEqual(Object.keys(worker.requests[0] ?? {}).sort(), ["code", "id", "indexURL", "workspace"]);
+  assert.deepEqual(Object.keys(worker.requests[0] ?? {}).sort(), ["code", "id", "indexURL", "protocol", "workspace"]);
   worker.answer("ok");
   assert.equal(await running, "ok");
   const again = python.execute({ code: "x + 2" }, new AbortController().signal);
   worker.answer("42");
   assert.equal(await again, "42");
   assert.equal(workers.length, 1);
+  assert.equal(worker.handshakes, 1);
   python.reset();
   assert.equal(worker.terminated, true);
 });
@@ -94,4 +101,19 @@ await test("failed persistence is reported in tool output and retains a recovera
   worker.answer('created',files);
   assert.match(String(await running),/Workspace not saved:.*quota/);
   assert.deepEqual(python.snapshotWorkspace(),files); python.reset();
+});
+
+await test("stale workers never receive user code or overwrite saved files", async () => {
+  const worker = new FakeWorker();
+  const requests: unknown[] = [];
+  worker.postMessage = data => {
+    requests.push(data);
+    worker.dispatchEvent(new MessageEvent("message", { data: { id: data.id, output: "Old worker error" } }));
+  };
+  const workspace = parseWorkspace({version:1,directories:[],files:[{path:"saved",data:"YQ=="}]});
+  const python = createPythonTool({workspace, workerFactory:()=>worker as unknown as Worker});
+  await assert.rejects(Promise.resolve(python.execute({code:"do not replay"},new AbortController().signal)), /out of date.*Reload/);
+  assert.deepEqual(requests,[{type:"hello",id:1,protocol:1}]);
+  assert.deepEqual(python.snapshotWorkspace(),workspace);
+  assert.equal(worker.terminated,true);
 });

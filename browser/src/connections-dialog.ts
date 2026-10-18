@@ -1,4 +1,6 @@
 import { validateConnection, saveConnections } from "./connection.js";
+import { fetchModels } from "./models.js";
+import type { AvailableModel } from "./models.js";
 import { createRuntime } from "./sdk.js";
 import type { Connection, LetheticRuntime } from "./sdk.js";
 import type { LocalTransport } from "./local-transport.js";
@@ -16,10 +18,16 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
       <label>Endpoint URL<input data-field="endpoint" type="url" required placeholder="https://your-server/v1/chat/completions" autocomplete="off" spellcheck="false"></label>
       <label>Model<input data-field="model" required autocomplete="off" spellcheck="false"></label>
       <label>API key (optional, memory only)<input data-field="key" type="password" autocomplete="off" spellcheck="false"></label>
-      <div class="panel-toolbar"><button class="primary-button" type="submit">Save connection</button><button type="button" data-field="remove">Remove</button><button type="button" data-field="test">Test saved connection</button></div>
+      <div class="panel-toolbar"><button class="primary-button" type="submit">Save connection</button><button type="button" data-field="remove">Remove</button><button type="button" data-field="test">Test saved connection</button><button type="button" data-field="fetch-models">Fetch models</button></div>
+      <section class="browser-model-picker" data-field="model-picker" hidden>
+        <label>Filter models<input data-field="model-filter" type="search" placeholder="Search model IDs or names" autocomplete="off"></label>
+        <label>Available models<select data-field="model-list" size="6"></select></label>
+        <p data-field="model-count" role="status"></p>
+        <button type="button" data-field="use-model">Use selected model</button>
+      </section>
     </form>
     <label class="browser-python"><input data-field="python" type="checkbox"> Enable Python tools (Pyodide)</label>
-    <p>Python executes model-generated code in a browser worker with network access and temporary files. Stop resets its variables. Changing connections or Python mode starts a new chat.</p>
+    <p>Python runs without per-call approval, with browser network access and session files synced to Files. Stop resets its variables. Changing connections or Python mode starts a new chat.</p>
     <p>Endpoints must permit this page’s origin through CORS. HTTPS pages require HTTPS endpoints.</p>
     <p data-field="status" role="status"></p>`);
   const input = (name: string): HTMLInputElement => field<HTMLInputElement>(dialog, name);
@@ -27,8 +35,57 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
   let selected = transport.connection ? transport.selected : -1;
   let testRuntime: LetheticRuntime | null = null;
   let operation: AbortController | null = null;
+  let modelOperation: AbortController | null = null;
+  let models: AvailableModel[] = [];
+  const modelList = field<HTMLSelectElement>(dialog, "model-list");
+  const cancelModels = (): void => {
+    modelOperation?.abort(); modelOperation = null; models = [];
+    field<HTMLButtonElement>(dialog, "fetch-models").disabled = false;
+    field(dialog, "model-picker").hidden = true;
+    modelList.replaceChildren(); input("model-filter").value = "";
+  };
+  const filterModels = (): void => {
+    const query = input("model-filter").value.trim().toLowerCase();
+    const matching = models.filter(model => `${model.id} ${model.name}`.toLowerCase().includes(query));
+    const chosen = modelList.value || input("model").value;
+    modelList.replaceChildren(...matching.map(model => new Option(model.name === model.id ? model.id : `${model.name} — ${model.id}`, model.id)));
+    modelList.value = matching.some(model => model.id === chosen) ? chosen : matching[0]?.id ?? "";
+    field(dialog, "model-count").textContent = `${matching.length} of ${models.length} models`;
+    field<HTMLButtonElement>(dialog, "use-model").disabled = matching.length === 0;
+  };
+  input("model-filter").addEventListener("input", filterModels);
+  field(dialog, "use-model").addEventListener("click", () => {
+    if (modelList.value) { input("model").value = modelList.value; status("Model selected. Save the connection to use it."); }
+  });
+  for (const name of ["endpoint", "key", "provider"]) field(dialog, name).addEventListener("input", cancelModels);
+  field(dialog, "fetch-models").addEventListener("click", () => {
+    cancelModels();
+    const controller = new AbortController(); modelOperation = controller;
+    field<HTMLButtonElement>(dialog, "fetch-models").disabled = true;
+    status("Fetching models…");
+    const timer = setTimeout(() => controller.abort(new Error("Model list request timed out.")), 30_000);
+    void (async () => {
+      try {
+        const fetched = await fetchModels({ endpoint: input("endpoint").value.trim(),
+          provider: field<HTMLSelectElement>(dialog, "provider").value as Connection["provider"],
+          apiKey: input("key").value }, controller.signal);
+        if (modelOperation !== controller) return;
+        controller.signal.throwIfAborted();
+        models = fetched; filterModels(); field(dialog, "model-picker").hidden = false;
+        status(models.length ? "Models fetched. Filter and select a model, then save the connection." : "No models returned. You can enter a model manually.");
+      } catch (error) {
+        if (modelOperation === controller) status(`${errorMessage(error)} Check endpoint access and CORS; manual model entry is available.`);
+      } finally {
+        clearTimeout(timer);
+        if (modelOperation === controller) {
+          modelOperation = null; field<HTMLButtonElement>(dialog, "fetch-models").disabled = false;
+        }
+      }
+    })();
+  });
   const status = (text: string): void => { field(dialog, "status").textContent = text; };
   const fill = (): void => {
+    cancelModels();
     const connection = transport.options.connections[selected];
     input("name").value = connection?.name ?? "";
     input("endpoint").value = connection?.endpoint ?? "";
@@ -85,7 +142,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
   field(dialog, "test").addEventListener("click", () => {
     if (operation) return;
     operation = new AbortController(); const signal = operation.signal;
-    fill(); status("Testing connection…");
+    field<HTMLButtonElement>(dialog, "test").disabled = true; status("Testing saved connection…");
     void (async () => {
       try {
         const connection = transport.options.connections[selected];
@@ -94,12 +151,12 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
         await testRuntime.send("Reply with the single word Connected.", signal);
         status("Connected. The model returned a valid response.");
       } catch (error) { status(errorMessage(error)); }
-      finally { testRuntime?.dispose(); testRuntime = null; operation = null; fill(); }
+      finally { testRuntime?.dispose(); testRuntime = null; operation = null; field<HTMLButtonElement>(dialog, "test").disabled = selected < 0; }
     })();
   });
-  dialog.addEventListener("close", () => operation?.abort());
+  dialog.addEventListener("close", () => { operation?.abort(); cancelModels(); });
   return { dialog, open(): void {
     selected = transport.connection ? transport.selected : -1; refresh(); status("");
     if (!dialog.open) dialog.showModal();
-  }, destroy(): void { operation?.abort(); testRuntime?.dispose(); dialog.remove(); } };
+  }, destroy(): void { cancelModels(); operation?.abort(); testRuntime?.dispose(); dialog.remove(); } };
 }

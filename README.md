@@ -21,6 +21,8 @@ A Rust TUI coding agent for local and proxied LLMs, with an optional exact-ident
 
 Open **[Lethetic in your browser](https://maxfridbe.github.io/lethetic/)** to connect
 an OpenAI-compatible Chat Completions endpoint or an Anthropic Messages endpoint.
+In **Connections**, use **Fetch models** to browse and filter the available models,
+or enter a model ID manually.
 The standalone edition runs a Rust/WASM conversation runtime locally, with optional
 **Pyodide Python tools** in a persistent Web Worker. It needs no native Lethetic process.
 API keys stay in memory. Chats and files are saved unencrypted on your device.

@@ -38,6 +38,14 @@ Open https://maxfridbe.github.io/lethetic/ and save a connection:
 4. Use **Test saved connection** to send a small model request, then close the dialog to chat.
 5. Enable **Python tools** to let the model execute Python with Pyodide.
 
+Use **Fetch models** in Connections to query the endpoint with the currently
+entered key, even before saving a connection. Filter by model ID or display name,
+choose **Use selected model**, then save. Manual model entry remains available
+when an endpoint does not support model discovery or CORS blocks it. Discovery uses
+the sibling `/models` endpoint, preserving proxy prefixes, following the
+[OpenAI models API](https://developers.openai.com/api/reference/resources/models/methods/list)
+and [Anthropic models API](https://platform.claude.com/docs/en/api/models/list).
+
 Connection names, protocols, endpoint URLs, and model IDs are saved in localStorage.
 API keys stay in memory. Re-enter keys after reloading. Chats are saved locally.
 Changing connections or Python mode starts a new session, keeping the previous one
@@ -171,7 +179,7 @@ at `/lethetic/`, custom subpaths, and domain roots. Pages deployment requires th
 Pushing an ordinary commit deploys Pages. Pushing a `v*` tag additionally attaches
 `lethetic-browser.zip` and `lethetic-browser.zip.sha256` to the GitHub release,
 alongside the existing native release workflow. A `browser-v*` tag (for example,
-`browser-v0.4.0`) publishes an independent embedding release with those same assets.
+`browser-v0.4.1`) publishes an independent embedding release with those same assets.
 A commit does not create a version tag automatically. The ZIP contains both standalone and embedding modes; it does
 not contain API keys or downloaded Pyodide packages. Build outputs live under
 `target/` and are not committed. `manifest.json` contains per-file SHA-256 hashes.
@@ -278,6 +286,13 @@ are a separate build and are not required by this package.
 The browser tool uses [Pyodide 0.29.3](https://pyodide.org/en/0.29.3/usage/quickstart.html),
 loaded lazily from `https://cdn.jsdelivr.net/pyodide/v0.29.3/full/`. It runs in a
 dedicated module Web Worker with persistent globals and a virtual filesystem.
+Enabling Python authorizes execution, virtual file access, and browser-supported
+networking without per-call approval. Browser CORS/TLS rules still apply.
+
+The worker accepts older open tabs and negotiates workspace support before a new
+client sends code. If you see an out-of-date worker error, reload the page; keep
+site storage so saved sessions and files remain available. The older
+`Invalid Python workspace.` error from mixed deployed assets is fixed in 0.4.1.
 Use it for calculations, CSV/JSON processing, NumPy/pandas analysis, and Matplotlib
 plots in the session workspace. The tool description tells the model to create
 files under `/home/pyodide`, its initial working directory, and explains persistence

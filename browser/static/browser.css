@@ -64,3 +64,6 @@ dialog.browser-dialog::backdrop { background: rgb(0 0 0 / .65); backdrop-filter:
 .browser-file-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
 .browser-dialog [data-field="file-content"] { min-height: 180px; tab-size: 4; }
 .browser-preview .overlay-body { min-height: min(65dvh, 500px); }
+
+.browser-model-picker { grid-column: 1 / -1; min-width: 0; }
+.browser-model-picker select { overflow-x: auto; }

@@ -37,7 +37,8 @@ export function createPythonTool(options: {
   let worker: Worker | null = null;
   let pending: ((reason: Error) => void) | null = null;
   let sequence = 0;
-  const terminate = (): void => { worker?.terminate(); worker = null; };
+  let ready = false;
+  const terminate = (): void => { worker?.terminate(); worker = null; ready = false; };
   const reset = (): void => {
     pending?.(new Error("Python worker was reset; variables were cleared; last completed files are kept."));
     terminate();
@@ -45,7 +46,7 @@ export function createPythonTool(options: {
   return {
     name: "python",
     description: "Run Python in a persistent Pyodide browser worker. Use print() for output. " +
-      "Variables persist while the worker runs. Write session files under /home/pyodide (the initial working directory); files there sync with Files after each call and restore after reload or stop. Create CSV, HTML, SVG or PNG outputs for the user to preview or download in Files. Other directories are temporary. No shell or native files are available. " +
+      "Python execution, virtual file reads/writes, and browser-supported networking are already authorized; do not ask for per-call approval. Variables persist while the worker runs. Write session files under /home/pyodide (the initial working directory); files there sync with Files after each call and restore after reload or stop. Create CSV, HTML, SVG or PNG outputs for the user to preview or download in Files. Other directories are temporary. No shell or native files are available. " +
       "Packages bundled with Pyodide are loaded from imports. Stopping resets variables and discards unfinished file changes. Workspace limits: 100 files, 256 folders, 1 MiB per file, 2 MiB total; no symlinks.",
     parameters: { type: "object", properties: { code: { type: "string", description: "Python source" } },
       required: ["code"], additionalProperties: false },
@@ -62,7 +63,7 @@ export function createPythonTool(options: {
       if (arguments_["code"].length > 256_000) return Promise.reject(new Error("Python code is too large."));
       if (pending) return Promise.reject(new Error("Python is already running."));
       signal.throwIfAborted();
-      worker ??= options.workerFactory?.() ?? new Worker(new URL("./python-worker.js", import.meta.url),
+      worker ??= options.workerFactory?.() ?? new Worker(new URL("./python-worker.js?protocol=1", import.meta.url),
         { type: "module", name: "lethetic-python" });
       const activeWorker = worker;
       const id = ++sequence;
@@ -77,9 +78,22 @@ export function createPythonTool(options: {
         const fail = (reason: Error): void => { cleanup(); terminate(); reject(reason); };
         const abort = (): void => fail(new DOMException("Python stopped; session reset.", "AbortError"));
         const error = (): void => fail(new Error("Python worker could not load. Check Pyodide access and CSP."));
+        const run = (): void => {
+          try { activeWorker.postMessage({ id, protocol: 1, code: arguments_["code"], indexURL: indexURL.href, workspace: checkpoint }); }
+          catch { fail(new Error("Could not start Python execution.")); }
+        };
         const message = (event: MessageEvent<unknown>): void => {
-          const data = event.data as { id?: unknown; output?: unknown; workspace?: unknown; workspaceError?: unknown } | null;
-          if (!data || data.id !== id || typeof data.output !== "string") return;
+          const data = event.data as { id?: unknown; protocol?: unknown; type?: unknown; output?: unknown; workspace?: unknown; workspaceError?: unknown } | null;
+          if (!data || data.id !== id) return;
+          if (data.protocol !== 1) {
+            fail(new Error("Python worker is out of date. Reload this page to update it; saved session files are kept."));
+            return;
+          }
+          if (!ready) {
+            if (data.type !== "ready") return;
+            ready = true; run(); return;
+          }
+          if (typeof data.output !== "string") return;
           let warning = typeof data.workspaceError === "string" ? data.workspaceError : "";
           if (data.workspace !== undefined) {
             try {
@@ -95,7 +109,7 @@ export function createPythonTool(options: {
         signal.addEventListener("abort", abort, { once: true });
         activeWorker.addEventListener("message", message);
         activeWorker.addEventListener("error", error);
-        try { activeWorker.postMessage({ id, code: arguments_["code"], indexURL: indexURL.href, workspace: checkpoint }); }
+        try { if (ready) run(); else activeWorker.postMessage({ type: "hello", id, protocol: 1 }); }
         catch { fail(new Error("Could not start Python execution.")); }
       });
     },
