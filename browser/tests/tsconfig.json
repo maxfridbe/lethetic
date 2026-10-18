@@ -1,5 +1,5 @@
 {
   "extends": "../tsconfig.json",
   "compilerOptions": { "declaration": false },
-  "include": ["../src/**/*.ts", "./**/*.ts", "../../web/tests/node-env.d.ts"]
+  "include": ["../src/**/*.ts", "./**/*.ts", "../../web/tests/node-env.d.ts", "../../web/src/files/monaco-modules.d.ts"]
 }

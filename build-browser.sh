@@ -19,15 +19,18 @@ stage="$(mktemp -d "$ROOT/target/browser-build.XXXXXX")"
 tests="$(mktemp -d "$ROOT/target/browser-tests.XXXXXX")"
 trap 'rm -rf -- "$stage" "$tests"' EXIT
 wasm-bindgen target/wasm32-unknown-unknown/release/lethetic_wasm.wasm \
-  --target web --out-dir "$stage/wasm" --out-name lethetic_wasm
+  --target web --out-dir "$stage/browser/wasm" --out-name lethetic_wasm
 tsc --project browser/tsconfig.json --outDir "$stage" --pretty false
+cp -R web/lib "$stage/web/lib"
+cp web/static/styles.css web/static/files.css "$stage/web/"
 cp -R browser/static/. "$stage/"
 cp integration.md "$stage/integration.md"
 touch "$stage/.nojekyll"
 
 tsc --project browser/tests/tsconfig.json --outDir "$tests" --pretty false
-cp -R "$stage/wasm" "$tests/wasm"
-for test in "$tests/tests/"*.test.js; do
+cp -R "$stage/browser/wasm" "$tests/browser/wasm"
+cp -R web/lib "$tests/web/lib"
+for test in "$tests/browser/tests/"*.test.js; do
   node --experimental-default-type=module "$test"
 done
 

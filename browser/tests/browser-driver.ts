@@ -72,23 +72,67 @@ try {
     set('name','Browser test'); set('endpoint',location.origin+'/v1/chat/completions');
     set('model','test'); set('key','secret-never-persisted');
     document.querySelector('[data-field=connection-form]').requestSubmit();
-    return !document.querySelector('[data-field=send]').disabled;
+    return document.querySelector('dialog[open] [data-field=status]').textContent.includes('Connection saved');
   })()`), "connection could not be saved");
   check(await evaluate("!JSON.stringify(localStorage).includes('secret-never-persisted')"), "key persisted");
   await evaluate("document.querySelector('[data-field=test]').click()");
-  await until("document.querySelector('[role=status]').textContent.includes('valid response')");
-  await evaluate(`document.querySelector('[data-field=prompt]').value='hello'; document.querySelector('[data-field=composer]').requestSubmit()`);
-  await until("document.querySelector('[data-field=transcript]').textContent.includes('Hello from the browser test')");
-  check(await evaluate("performance.getEntriesByType('resource').some(r=>r.name.includes('/lethetic/wasm/lethetic_wasm_bg.wasm'))"), "WASM was not loaded from the project subpath");
+  await until("document.querySelector('dialog[open] [role=status]').textContent.includes('valid response')");
+  await evaluate(`document.querySelector('dialog[open]').close();
+    const prompt=document.getElementById('composer-input'); prompt.value='hello';
+    prompt.dispatchEvent(new Event('input',{bubbles:true})); document.querySelector('form.composer').requestSubmit()`);
+  await until("document.querySelector('.app-shell').textContent.includes('Hello from the browser test')");
+  check(await evaluate("performance.getEntriesByType('resource').some(r=>r.name.includes('/lethetic/browser/wasm/lethetic_wasm_bg.wasm'))"), "WASM was not loaded from the project subpath");
+  // These are the original remote UI controls, driven by the local transport.
+  await evaluate("document.querySelector('[aria-label=\"Open command palette\"]').click()");
+  await until("!!document.querySelector('#palette-command-themes')");
+  await evaluate("document.querySelector('#palette-command-themes').click()");
+  await until("!!document.querySelector('.theme-choice')");
+  await evaluate("document.querySelector('.theme-choice:not(.is-selected)').click()");
+  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+  await evaluate("document.querySelector('[aria-label=\"Open command palette\"]').click(); document.querySelector('#palette-command-toggle-debugger').click()");
+  await until("!!document.querySelector('.has-debugger')");
+  await evaluate("document.querySelector('[aria-label=\"Open command palette\"]').click(); document.querySelector('#palette-command-toggle-debugger').click()");
+  await evaluate("document.querySelector('[data-browser-action=save-code]').click()");
+  await until("!!document.querySelector('dialog[open] [data-field=passphrase]')");
+  await evaluate(`document.querySelector('[data-field=passphrase]').value='browser test passphrase';
+    document.querySelector('[data-field=unlock-form]').requestSubmit()`);
+  await until("!document.querySelector('[data-field=editor]').hidden");
+  check(await evaluate("document.querySelector('[data-field=code]').value===\"print('private snippet')\""), "code capture failed");
+  await evaluate(`document.querySelector('[data-field=filename]').value='private-analysis.py';
+    document.querySelector('[data-field=save-form]').requestSubmit()`);
+  await until("document.querySelector('dialog[open] [role=status]').textContent.includes('Saved encrypted')");
+  check(await evaluate(`!JSON.stringify(localStorage).includes('private snippet') &&
+    !JSON.stringify(localStorage).includes('private-analysis.py') &&
+    !JSON.stringify(localStorage).includes('browser test passphrase')`), "plaintext code or passphrase persisted");
+  await evaluate("document.querySelector('dialog[open]').close()");
+  await until("document.querySelector('[data-field=editor]').hidden");
   const image = await rpc("Page.captureScreenshot", { format: "png" });
   await writeFile(config.screenshot, Buffer.from(String(image["data"]), "base64"));
   await rpc("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   check(await evaluate("document.documentElement.scrollWidth <= innerWidth"), "mobile layout overflows");
   await rpc("Emulation.clearDeviceMetricsOverride");
+  process.stdout.write("Shared UI, WASM chat, code capture, and mobile layout passed.\n");
   await rpc("Page.reload");
   await until("!!document.querySelector('[data-field=name]')");
+  await evaluate("document.querySelector('[data-browser-action=connections]').click()");
   check(await evaluate("document.querySelector('[data-field=name]').value==='Browser test' && document.querySelector('[data-field=key]').value===''"), "reload did not preserve metadata / forget key");
+  await evaluate(`document.querySelector('dialog[open]').close(); document.querySelector('[data-browser-action=code]').click();
+    document.querySelector('[data-field=passphrase]').value='wrong password'; document.querySelector('[data-field=unlock-form]').requestSubmit()`);
+  await until("document.querySelector('dialog[open] [role=status]').textContent.includes('Unable to unlock')");
+  check(await evaluate("document.querySelector('[data-field=editor]').hidden"), "wrong passphrase unlocked library");
+  await evaluate(`document.querySelector('[data-field=passphrase]').value='browser test passphrase';
+    document.querySelector('[data-field=unlock-form]').requestSubmit()`);
+  await until("!document.querySelector('[data-field=editor]').hidden");
+  check(await evaluate(`(() => {
+    const files=document.querySelector('[data-field=files]'); files.selectedIndex=1; files.dispatchEvent(new Event('change'));
+    return document.querySelector('[data-field=filename]').value==='private-analysis.py' &&
+      document.querySelector('[data-field=code]').value===\"print('private snippet')\";
+  })()`), "encrypted code did not survive reload");
+  await evaluate("document.querySelector('[data-field=delete]').click()");
+  await until("document.querySelector('dialog[open] [role=status]').textContent.includes('deleted')");
+  await evaluate("document.querySelector('dialog[open]').close()");
   // Exercise the actual Worker bridge with a local dependency fixture, then with real Pyodide if requested.
+  process.stdout.write("Encrypted code reload, wrong-passphrase rejection, and deletion passed.\n");
   const pythonResult = await evaluate(`(async () => {
     const {createPythonTool}=await import('./src/sdk.js');
     const python=createPythonTool({indexURL:location.origin+'/pyodide/',timeoutMs:10000});
@@ -103,26 +147,38 @@ try {
     } finally {python.reset()}
   })()`);
   check(JSON.stringify(pythonResult) === JSON.stringify({ output: "42\n", stopped: true, restarted: "42\n" }), "Python worker lifecycle failed");
+  process.stdout.write("Python worker lifecycle passed.\n");
+  await rpc("Page.navigate", { url: `${config.origin}/lethetic/integration.html` });
+  await until("document.title==='Lethetic integration guide'");
   check(await evaluate(`(async () => {
     const {mountLethetic}=await import('./src/embed.js');
-    const container=document.createElement('div');document.body.append(container);
+    const container=document.createElement('div');document.body.replaceChildren(container);
     const view=mountLethetic(container,{compact:true,python:true,pyodideIndexURL:location.origin+'/pyodide/',
       connections:[{name:'Embed',provider:'openai',endpoint:location.origin+'/v1/chat/completions',model:'test'}]});
-    container.querySelector('[data-field=prompt]').value='calculate';
-    container.querySelector('[data-field=composer]').requestSubmit();
+    const prompt=container.querySelector('#composer-input'); prompt.value='calculate';
+    prompt.dispatchEvent(new Event('input',{bubbles:true})); container.querySelector('form.composer').requestSubmit();
     for(let i=0;i<200;i++) {
-      if(container.textContent.includes('Python says: 42')) {view.destroy();container.remove();return true}
+      if(container.textContent.includes('Python says: 42')) {
+        const captured=!!container.querySelector('[data-browser-action=save-code]');
+        view.destroy(); const cleaned=!document.querySelector('dialog') && !container.childNodes.length;
+        container.remove();return captured && cleaned;
+      }
       await new Promise(resolve=>setTimeout(resolve,25));
     }
     view.destroy();container.remove();return false;
   })()`), "embedded UI Python/model tool loop failed");
+  process.stdout.write("Embedded shared UI and Python tool loop passed.\n");
   if (config.pyodide) {
-    const actual = await evaluate(`(async () => {
+    await evaluate(`(async () => {
       const {createPythonTool}=await import('./src/sdk.js');
-      const python=createPythonTool();
+      globalThis.testPython=createPythonTool();
+      return await globalThis.testPython.execute({code:'x = 40'},new AbortController().signal);
+    })()`);
+    process.stdout.write("Real Pyodide initialized.\n");
+    const actual = await evaluate(`(async () => {
+      const python=globalThis.testPython;
       const run=code=>python.execute({code},new AbortController().signal);
       try {
-        await run('x = 40');
         const value=await run('print(x + 2)');
         const error=await run('raise ValueError("expected-test-error")');
         const controller=new AbortController();

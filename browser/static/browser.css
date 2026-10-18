@@ -1,0 +1,28 @@
+#browser-root { width: 100%; height: 100%; }
+.app-shell { width: 100%; height: 100%; }
+.session-header { grid-template-columns: auto auto minmax(8rem, 1fr) minmax(6rem, auto) auto; }
+.browser-header-actions, .browser-code-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.browser-header-actions { margin-left: auto; }
+.browser-code-actions { margin-top: .6rem; }
+dialog.browser-dialog { padding: 0; color: var(--theme-output-fg); }
+dialog.browser-dialog:not([open]) { display: none; }
+dialog.browser-dialog::backdrop { background: rgb(0 0 0 / .65); backdrop-filter: blur(4px); }
+.browser-dialog .overlay-body { overflow: auto; }
+.browser-dialog label { display: block; margin: .75rem 0; }
+.browser-dialog select { width: 100%; padding: .6rem; color: var(--theme-output-fg); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+.browser-connection-form, .browser-code-metadata { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
+.browser-connection-form .panel-toolbar, .browser-connection-form label:has([data-field="endpoint"]) { grid-column: 1 / -1; }
+.browser-dialog .browser-python { display: flex; align-items: center; gap: .5rem; }
+.browser-python input { width: auto; }
+.browser-dialog [hidden] { display: none; }
+.browser-dialog [role="status"] { overflow-wrap: anywhere; }
+.browser-code-editor textarea { min-height: 240px; tab-size: 4; }
+.browser-unlock { display: flex; align-items: end; gap: 1rem; flex-wrap: wrap; }
+.browser-unlock label { flex: 1; min-width: 200px; }
+.browser-unlock button { margin-bottom: .75rem; }
+@media (max-width: 700px) {
+  .browser-connection-form, .browser-code-metadata { grid-template-columns: 1fr; }
+  .browser-header-actions { margin-left: 0; }
+  .session-header { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .browser-header-actions { grid-column: 1 / -1; }
+}

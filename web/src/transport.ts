@@ -105,6 +105,11 @@ export interface BrowserTransportEvents {
   protocolFault(reason: string): void;
 }
 
+/** UI transport boundary shared by the native controller and an in-browser runtime. */
+export type ApplicationTransport = Pick<BrowserTransport,
+  "pendingCount" | "lastSendFailure" | "send" | "requestFile" | "requestSnapshot" |
+  "noteHello" | "markSynchronized" | "markStale" | "closePermanently">;
+
 interface PendingRequest {
   readonly request: ICommandRequest;
   readonly encoded: string;

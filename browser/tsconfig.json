@@ -4,7 +4,8 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"], "strict": true,
     "noUncheckedIndexedAccess": true, "noImplicitReturns": true,
     "noEmitOnError": true, "declaration": true, "skipLibCheck": false,
-    "rootDir": ".", "outDir": "../target/browser", "types": []
+    "rootDir": "..", "outDir": "../target/browser", "types": [],
+    "jsx": "react", "jsxFactory": "h"
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "../web/src/files/monaco-modules.d.ts"]
 }

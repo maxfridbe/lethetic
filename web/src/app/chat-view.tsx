@@ -97,6 +97,7 @@ function renderHeader(context: ChatViewContext): VNode {
         <span attrs={{ class: "eyebrow" }}>Model</span>
         <span>{snapshot?.status.model_label ?? "—"}</span>
       </div>
+      {context.state.headerActions ?? null}
     </header>
   );
 }
@@ -139,6 +140,7 @@ function renderBlock(
   index: number,
   maxJsonSegments: number,
   anchor: string | null,
+  actions: VNode | null,
 ): VNode {
   if (block.kind === "divider") {
     return (
@@ -195,6 +197,7 @@ function renderBlock(
       </header>
       {content.length === 0 ? null : renderedContent}
       {renderProjectionLossNotices(block)}
+      {actions}
       {block.duration_label === null ? null : (
         <p attrs={{ class: "block-duration" }}>⏱ {block.duration_label}</p>
       )}
@@ -269,6 +272,7 @@ function renderChat(context: ChatViewContext): VNode {
             start + offset,
             jsonSegmentAllocations[offset] ?? 0,
             chatBlockAnchor(snapshot, start + offset),
+            context.state.blockActions?.(block) ?? null,
           ),
         )}
       </div>

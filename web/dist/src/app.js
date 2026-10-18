@@ -4,7 +4,6 @@ import { captureChatAnchor, restoreChatAnchor, } from "./app/chat-anchor.js";
 import { THEME_CATALOG } from "./generated/contracts.js";
 import { beginRemoteConnection, createRemoteState, disconnectRemote, reduceServerMessage, } from "./protocol.js";
 import { assertNever, boundedText, isSafeCssColor } from "./safety.js";
-import { BrowserTransport } from "./transport.js";
 import { renderChatView } from "./app/chat-view.js";
 import { historyRecallMatches } from "./app/history-recall.js";
 import { FileClient } from "./files/client.js";
@@ -28,6 +27,7 @@ function isProtectedServerPanel(panel) {
     return panel !== null && PROTECTED_SERVER_PANELS.has(panel);
 }
 export class SpaApplication {
+    extensions;
     #patch = init([
         attributesModule,
         classModule,
@@ -92,7 +92,8 @@ export class SpaApplication {
         this.#debuggerWide = event.matches;
         this.#render();
     };
-    constructor(root) {
+    constructor(root, extensions = {}) {
+        this.extensions = extensions;
         this.#tree = root;
         this.#chatFollow = new ChatFollowController(CHAT_FOLLOW_SCHEDULER, () => this.#resumeChatFollowing());
         if (typeof globalThis.matchMedia === "function") {
@@ -101,15 +102,30 @@ export class SpaApplication {
             this.#debuggerMedia.addEventListener("change", this.#onDebuggerMediaChange);
         }
         globalThis.addEventListener("keydown", this.#onGlobalKeyDown);
-        globalThis.addEventListener("pagehide", () => {
-            this.#files.reset();
-            this.#fileEditor.dispose();
-        });
+        globalThis.addEventListener("pagehide", this.#onPageHide);
         this.#render();
     }
     attachTransport(transport) {
         this.#transport = transport;
         this.#files.attach(new FileClient((endpoint, path, signal) => transport.requestFile(endpoint, path, signal)));
+    }
+    #onPageHide = () => {
+        this.#files.reset();
+        this.#fileEditor.dispose();
+        this.#diffViewer.dispose();
+    };
+    /** Release listeners and resources when an embedding host unmounts the UI. */
+    dispose() {
+        globalThis.removeEventListener("keydown", this.#onGlobalKeyDown);
+        globalThis.removeEventListener("pagehide", this.#onPageHide);
+        this.#debuggerMedia?.removeEventListener("change", this.#onDebuggerMediaChange);
+        this.#onPageHide();
+        this.#chatFollow.dispose();
+        this.#clearSnapshotWait();
+        if (this.#toastTimer !== null)
+            globalThis.clearTimeout(this.#toastTimer);
+        if (this.#revisionLagTimer !== null)
+            globalThis.clearTimeout(this.#revisionLagTimer);
     }
     socketOpened() {
         this.#dismissedOverlay = null;
@@ -867,6 +883,8 @@ export class SpaApplication {
         return {
             state: {
                 snapshot,
+                headerActions: this.extensions.headerActions?.() ?? null,
+                ...(this.extensions.blockActions ? { blockActions: this.extensions.blockActions } : {}),
                 live,
                 activePanel,
                 transportStatus: this.#transportStatus,
@@ -1232,6 +1250,8 @@ export class SpaApplication {
         handlePaletteKeyDown(event, this.#keyboardContext());
     };
     #onGlobalKeyDown = (event) => {
+        if (this.extensions.externalDialogOpen?.())
+            return;
         handleGlobalKeyDown(event, this.#keyboardContext());
     };
 }

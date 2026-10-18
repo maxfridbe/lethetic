@@ -51,7 +51,7 @@ class Handler(SimpleHTTPRequestHandler):
         if messages[-1]["role"] == "tool":
             content = "Python says: " + messages[-1]["content"].strip()
         else:
-            content = "Connected" if "single word Connected" in messages[-1]["content"] else "Hello from the browser test"
+            content = "Connected" if "single word Connected" in messages[-1]["content"] else "Hello from the browser test\n\n```python\nprint('private snippet')\n```"
         if data.get("tools") and messages[-1]["role"] == "user":
             message = {"role": "assistant", "content": None, "tool_calls": [{
                 "id": "python-1", "type": "function",
@@ -75,7 +75,7 @@ def main():
     browser = os.environ.get("CHROME_BIN") or shutil.which("google-chrome") or shutil.which("chromium")
     if not browser:
         raise SystemExit("Set CHROME_BIN to a Chrome or Chromium executable")
-    if not (ROOT / "target/browser/wasm/lethetic_wasm_bg.wasm").is_file():
+    if not (ROOT / "target/browser/browser/wasm/lethetic_wasm_bg.wasm").is_file():
         raise SystemExit("Run ./build-browser.sh first")
     with tempfile.TemporaryDirectory(prefix="lethetic-browser-") as temporary:
         temp = Path(temporary)
@@ -91,7 +91,7 @@ def main():
                       "origin": origin, "pyodide": args.pyodide,
                       "screenshot": str(ROOT / "target/browser-preview.png")}
             subprocess.run(["node", "--experimental-default-type=module",
-                            str(temp / "tests/tests/browser-driver.js")],
+                            str(temp / "tests/browser/tests/browser-driver.js")],
                            input=json.dumps(config), text=True, check=True, timeout=300)
         finally:
             server.shutdown()

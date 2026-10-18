@@ -5,6 +5,13 @@ Rust conversation and tool orchestration runtime. It connects directly to a mode
 endpoint supplied by the user. GitHub Pages serves the application assets; it does
 not relay model traffic or hold API keys.
 
+**[Try it live](https://maxfridbe.github.io/lethetic/) · [Embed the UI](#embed-the-complete-ui) · [Run locally](#build-and-test)**
+
+Standalone and embedded browser modes reuse the existing remote-mode
+`SpaApplication`, chat renderer, command palette, themes, debugger, and styles.
+A local transport connects that UI to WASM through its existing typed commands and
+snapshots. The native remote controller continues to use its WebSocket transport.
+
 ## Run the hosted application
 
 Open https://maxfridbe.github.io/lethetic/ and save a connection:
@@ -13,20 +20,41 @@ Open https://maxfridbe.github.io/lethetic/ and save a connection:
 2. Enter the complete endpoint, including a proxy path if required:
    `https://your-server/v1/chat/completions` or `https://your-server/v1/messages`.
 3. Enter the exact model ID and an optional API key. Save the connection.
-4. Use **Test saved connection** to send a small model request, or start chatting.
+4. Use **Test saved connection** to send a small model request, then close the dialog to chat.
 5. Enable **Python tools** to let the model execute Python with Pyodide.
 
 Connection names, protocols, endpoint URLs, and model IDs are saved in localStorage.
-API keys and chats stay in memory. Re-enter keys after reloading. Export downloads
-conversation JSON, including tool inputs and results, without connection keys.
-Changing connections or Python mode, or choosing New chat, clears the conversation
+API keys and chats stay in memory. Re-enter keys after reloading.
+Changing connections or Python mode, or choosing **New chat / clear context** in the command palette, clears the conversation
 and Python session. Editing connection fields takes effect when you save them.
 
 Responses appear when each model request completes; this edition currently uses
 non-streaming Chat Completions and Messages. Responses API endpoints, native
 filesystem tools, shells, LSP, native skills, and Podman are not part of the browser
 runtime. The existing `lethetic --rc` browser controller remains available for those
-native capabilities and uses its own authenticated, same-origin UI.
+native capabilities through the same UI backed by its authenticated native connection.
+
+## Save code encrypted on this device
+
+Open **Code library**, or choose **Save code encrypted** beneath a fenced code
+block or Python tool call. Create a library with a passphrase of at least 12
+characters, enter a filename, and choose **Save encrypted**. Reopen the library
+with the same passphrase to edit, delete, or download a saved file. Capturing a
+snippet opens the editor; saving is explicit. Downloaded files are plaintext.
+
+The library stores one versioned record under `lethetic.code-vault.v1` in
+localStorage. Code, filenames, languages, and timestamps are encrypted together
+with AES-256-GCM, a fresh random 96-bit nonce on every save, and authenticated format
+metadata. Web Crypto derives a non-extractable key from the passphrase using
+PBKDF2-SHA-256 with 600,000 iterations and a random 128-bit salt. The passphrase and
+key are never persisted. Closing the dialog, leaving the page, or reloading locks
+the library and clears its editor. There is no passphrase recovery.
+
+This protects saved code at rest; code is visible to this page while unlocked and
+to model/tool execution when you submit it. The library supports up to 100 files
+and 1 MiB of plaintext. Writes detect changes from another tab and ask you to reopen
+the library instead of silently overwriting them. Storage quota failures preserve
+the previous saved record. Clearing site data removes the library.
 
 ## Endpoint requirements
 
@@ -93,7 +121,7 @@ at `/lethetic/`, custom subpaths, and domain roots. Pages deployment requires th
 Pushing an ordinary commit deploys Pages. Pushing a `v*` tag additionally attaches
 `lethetic-browser.zip` and `lethetic-browser.zip.sha256` to the GitHub release,
 alongside the existing native release workflow. A `browser-v*` tag (for example,
-`browser-v0.1.0`) publishes an independent embedding release with those same assets.
+`browser-v0.2.0`) publishes an independent embedding release with those same assets.
 A commit does not create a version tag automatically. The ZIP contains both standalone and embedding modes; it does
 not contain API keys or downloaded Pyodide packages. Build outputs live under
 `target/` and are not committed. `manifest.json` contains per-file SHA-256 hashes.
@@ -102,7 +130,9 @@ not contain API keys or downloaded Pyodide packages. Build outputs live under
 
 Download `lethetic-browser.zip` from a release and extract it under your site's
 `/vendor/lethetic/` directory. Serve `.wasm` as `application/wasm` and `.js` as
-JavaScript. Keep `src/` and `wasm/` at the same relative locations.
+JavaScript. Keep the extracted `src/`, `browser/`, and `web/` trees and stylesheets
+together. The `src/` entry points remain stable; the shared UI and libraries live
+under `web/`, and the WASM module lives under `browser/wasm/`.
 
 ```html
 <link rel="stylesheet" href="/vendor/lethetic/styles.css">
@@ -110,17 +140,23 @@ JavaScript. Keep `src/` and `wasm/` at the same relative locations.
 <script type="module">
   import { mountLethetic } from '/vendor/lethetic/src/embed.js';
   const view = mountLethetic(document.getElementById('assistant'), {
-    compact: true,
     connections: [{
       name: 'My service', provider: 'openai', model: 'my-model',
       endpoint: 'https://models.example.com/v1/chat/completions'
     }],
-    // Optional: storage: localStorage. The default embed stores nothing.
+    storage: localStorage, // Enables metadata persistence and encrypted code saving.
     // Optional: python: true, pyodideIndexURL: 'https://your-site/pyodide/'
   });
   // On teardown: view.destroy();
 </script>
 ```
+
+Mount one UI per document: the shared UI owns document-level keyboard shortcuts,
+focus handling, theme variables, and styles. Give its container a definite height
+(for example, `height: 100vh` in your stylesheet). Use an iframe for isolated styles
+or multiple instances. Omit `storage` for an embed with no persistence; its code
+library will explain that storage is unavailable. `view.destroy()` aborts pending
+work, terminates Python, removes dialogs, and releases application listeners.
 
 An iframe also works: `<iframe src="https://maxfridbe.github.io/lethetic/?embed=1"
 title="Lethetic" width="100%" height="900"></iframe>`. Users configure connections

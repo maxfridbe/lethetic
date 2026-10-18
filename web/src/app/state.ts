@@ -11,6 +11,7 @@ import type {
   UserAnswer,
   WebAppSnapshot,
   WebCommand,
+  RenderBlockView,
 } from "../generated/contracts.js";
 import type { TransportStatus } from "../transport.js";
 import type {
@@ -40,6 +41,8 @@ export interface ApprovalConfirmation {
 }
 
 export interface ChatViewState {
+  readonly headerActions?: VNode | null;
+  readonly blockActions?: (block: RenderBlockView) => VNode | null;
   readonly snapshot: WebAppSnapshot | null;
   readonly live: boolean;
   readonly activePanel: PanelId | null;

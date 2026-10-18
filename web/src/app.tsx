@@ -30,6 +30,7 @@ import type {
   ThemeColorsView,
   WebAppSnapshot,
   WebCommand,
+  RenderBlockView,
 } from "./generated/contracts.js";
 import {
   beginRemoteConnection,
@@ -39,8 +40,8 @@ import {
 } from "./protocol.js";
 import type { RemoteState } from "./protocol.js";
 import { assertNever, boundedText, isSafeCssColor } from "./safety.js";
-import { BrowserTransport } from "./transport.js";
 import type {
+  ApplicationTransport,
   BrowserTransportEvents,
   TransportStatus,
 } from "./transport.js";
@@ -136,7 +137,7 @@ export class SpaApplication implements BrowserTransportEvents {
     styleModule,
   ]);
   #tree: VNode | Element;
-  #transport: BrowserTransport | null = null;
+  #transport: ApplicationTransport | null = null;
   #remote: RemoteState = createRemoteState();
   #transportStatus: TransportStatus = {
     phase: "idle",
@@ -198,7 +199,11 @@ export class SpaApplication implements BrowserTransportEvents {
     this.#render();
   };
 
-  constructor(root: Element) {
+  constructor(root: Element, readonly extensions: {
+    headerActions?: () => VNode | null;
+    blockActions?: (block: RenderBlockView) => VNode | null;
+    externalDialogOpen?: () => boolean;
+  } = {}) {
     this.#tree = root;
     this.#chatFollow = new ChatFollowController(
       CHAT_FOLLOW_SCHEDULER,
@@ -213,16 +218,31 @@ export class SpaApplication implements BrowserTransportEvents {
       );
     }
     globalThis.addEventListener("keydown", this.#onGlobalKeyDown);
-    globalThis.addEventListener("pagehide", () => {
-      this.#files.reset();
-      this.#fileEditor.dispose();
-    });
+    globalThis.addEventListener("pagehide", this.#onPageHide);
     this.#render();
   }
 
-  attachTransport(transport: BrowserTransport): void {
+  attachTransport(transport: ApplicationTransport): void {
     this.#transport = transport;
     this.#files.attach(new FileClient((endpoint, path, signal) => transport.requestFile(endpoint, path, signal)));
+  }
+
+  readonly #onPageHide = (): void => {
+    this.#files.reset();
+    this.#fileEditor.dispose();
+    this.#diffViewer.dispose();
+  };
+
+  /** Release listeners and resources when an embedding host unmounts the UI. */
+  dispose(): void {
+    globalThis.removeEventListener("keydown", this.#onGlobalKeyDown);
+    globalThis.removeEventListener("pagehide", this.#onPageHide);
+    this.#debuggerMedia?.removeEventListener("change", this.#onDebuggerMediaChange);
+    this.#onPageHide();
+    this.#chatFollow.dispose();
+    this.#clearSnapshotWait();
+    if (this.#toastTimer !== null) globalThis.clearTimeout(this.#toastTimer);
+    if (this.#revisionLagTimer !== null) globalThis.clearTimeout(this.#revisionLagTimer);
   }
 
   socketOpened(): void {
@@ -1131,6 +1151,8 @@ export class SpaApplication implements BrowserTransportEvents {
     return {
       state: {
         snapshot,
+        headerActions: this.extensions.headerActions?.() ?? null,
+        ...(this.extensions.blockActions ? { blockActions: this.extensions.blockActions } : {}),
         live,
         activePanel,
         transportStatus: this.#transportStatus,
@@ -1561,6 +1583,7 @@ export class SpaApplication implements BrowserTransportEvents {
   };
 
   readonly #onGlobalKeyDown = (event: KeyboardEvent): void => {
+    if (this.extensions.externalDialogOpen?.()) return;
     handleGlobalKeyDown(event, this.#keyboardContext());
   };
 }

@@ -1,6 +1,6 @@
 import { mountLethetic } from "./embed.js";
 
-const root = document.getElementById("app");
+const root = document.getElementById("browser-root");
 if (!root) throw new Error("Missing application root.");
 let storage: Storage | undefined;
 try { storage = localStorage; } catch { /* Private or embedded contexts may deny storage. */ }

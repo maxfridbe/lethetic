@@ -46,7 +46,8 @@ function renderHeader(context) {
                     } }, uiIcon("edit")))),
         h("div", { attrs: { class: "model-summary" } },
             h("span", { attrs: { class: "eyebrow" } }, "Model"),
-            h("span", null, snapshot?.status.model_label ?? "—"))));
+            h("span", null, snapshot?.status.model_label ?? "—")),
+        context.state.headerActions ?? null));
 }
 function projectionLosses(block) {
     return block.tool === null
@@ -68,7 +69,7 @@ export function chatBlockAnchor(snapshot, index) {
     const ordinal = snapshot.blocks.omitted_before + index - (hasSyntheticNotice ? 1 : 0);
     return `block-${ordinal}`;
 }
-function renderBlock(block, index, maxJsonSegments, anchor) {
+function renderBlock(block, index, maxJsonSegments, anchor, actions) {
     if (block.kind === "divider") {
         return (h("div", { key: anchor ?? `synthetic-block-${index}`, attrs: {
                 class: "chat-divider",
@@ -95,6 +96,7 @@ function renderBlock(block, index, maxJsonSegments, anchor) {
             block.tool === null ? null : (h("span", { attrs: { class: "block-kind" } }, block.tool.kind))),
         content.length === 0 ? null : renderedContent,
         renderProjectionLossNotices(block),
+        actions,
         block.duration_label === null ? null : (h("p", { attrs: { class: "block-duration" } },
             "\u23F1 ",
             block.duration_label)),
@@ -133,7 +135,7 @@ function renderChat(context) {
         } },
         snapshot.blocks.omitted_before > 0 ? (h("div", { attrs: { class: "bounded-notice" } }, `${snapshot.blocks.omitted_before} earlier blocks were omitted by the server.`)) : null,
         start > 0 ? (h("div", { attrs: { class: "virtual-spacer", "aria-hidden": "true" }, style: { height: `${start * CHAT_ROW_ESTIMATE}px` } })) : null,
-        h("div", { attrs: { class: "chat-window" } }, visible.map((block, offset) => renderBlock(block, start + offset, jsonSegmentAllocations[offset] ?? 0, chatBlockAnchor(snapshot, start + offset)))),
+        h("div", { attrs: { class: "chat-window" } }, visible.map((block, offset) => renderBlock(block, start + offset, jsonSegmentAllocations[offset] ?? 0, chatBlockAnchor(snapshot, start + offset), context.state.blockActions?.(block) ?? null))),
         end < blocks.length ? (h("div", { attrs: { class: "virtual-spacer", "aria-hidden": "true" }, style: { height: `${(blocks.length - end) * CHAT_ROW_ESTIMATE}px` } })) : null,
         snapshot.blocks.truncated ? (h("div", { attrs: { class: "bounded-notice warning" } }, "Conversation content was bounded by the server.")) : null));
 }

@@ -16,6 +16,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def package(stage: Path) -> None:
+    # Keep the original SDK URLs stable while sharing the native remote UI tree.
+    (stage / "src").mkdir(exist_ok=True)
+    for module in (stage / "browser/src").glob("*.js"):
+        (stage / "src" / module.name).write_text(f'export * from "../browser/src/{module.name}";\n')
+        declaration = module.with_suffix(".d.ts")
+        if declaration.exists():
+            (stage / "src" / declaration.name).write_text(f'export * from "../browser/src/{module.name}";\n')
     crate = tomllib.loads((ROOT / "lethetic-wasm/Cargo.toml").read_text())
     version = os.environ.get("LETHETIC_RELEASE_VERSION", crate["package"]["version"])
     version = version.removeprefix("browser-v").removeprefix("v")
@@ -27,7 +34,7 @@ def package(stage: Path) -> None:
         "exports": {".": {"types": "./src/sdk.d.ts", "import": "./src/sdk.js"},
                     "./embed": {"types": "./src/embed.d.ts", "import": "./src/embed.js"},
                     "./styles.css": "./styles.css"},
-        "files": ["src", "wasm", "styles.css", "integration.md"],
+        "files": ["src", "browser", "web", "styles.css", "browser.css", "integration.md"],
         "private": True,
     }, indent=2) + "\n")
     # A readable, escaped copy needs no Markdown renderer, CDN, or script privileges.
