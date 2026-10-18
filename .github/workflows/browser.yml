@@ -1,0 +1,86 @@
+name: Browser and WASM
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+    tags: ['v*', 'browser-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: Swatinem/rust-cache@v2
+      - name: Install build tools
+        run: |
+          npm install --global typescript@7.0.2
+          cargo install wasm-bindgen-cli --version 0.2.128 --locked
+      - name: Build and test WASM, SDK, and Python worker lifecycle
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then export LETHETIC_RELEASE_VERSION="$RELEASE_REF"; fi
+          ./build-browser.sh
+          python3 scripts/check_source_lines.py
+      - name: Browser acceptance tests
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
+        run: python3 scripts/test_browser.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lethetic-browser
+          path: |
+            target/lethetic-browser.zip
+            target/lethetic-browser.zip.sha256
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/master'
+        with:
+          path: target/browser
+
+  deploy:
+    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/browser-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: lethetic-browser
+          path: release
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/lethetic-browser.zip
+            release/lethetic-browser.zip.sha256

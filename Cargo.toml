@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "gemma-chat"]
+members = [".", "gemma-chat", "lethetic-wasm"]
 
 [profile.release]
 lto = "thin"

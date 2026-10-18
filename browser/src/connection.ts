@@ -1,0 +1,57 @@
+/** A model endpoint supplied by the user or embedding application. */
+export interface Connection {
+  name: string;
+  provider: "openai" | "anthropic";
+  /** Full /v1/chat/completions or /v1/messages URL, including any proxy prefix. */
+  endpoint: string;
+  model: string;
+  /** Kept in memory; never saved by the app or passed to WASM or Python. */
+  apiKey?: string;
+}
+
+export function validateConnection(connection: Connection): Connection {
+  if (connection.provider !== "openai" && connection.provider !== "anthropic") {
+    throw new Error("Choose an OpenAI-compatible or Anthropic connection.");
+  }
+  const endpoint = new URL(connection.endpoint);
+  if (endpoint.username || endpoint.password || endpoint.hash || endpoint.search) {
+    throw new Error("Use an endpoint without credentials, query parameters, or a fragment.");
+  }
+  const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname);
+  if (endpoint.protocol !== "https:" && !(endpoint.protocol === "http:" && loopback)) {
+    throw new Error("Use HTTPS, or HTTP on localhost for development.");
+  }
+  if (endpoint.protocol === "http:" && globalThis.location?.protocol === "https:") {
+    throw new Error("An HTTPS page needs an HTTPS model endpoint. Use a TLS proxy for local models.");
+  }
+  if (!connection.name.trim() || !connection.model.trim()) {
+    throw new Error("A connection name and model are required.");
+  }
+  return { ...connection, endpoint: endpoint.href, model: connection.model.trim() };
+}
+
+const STORAGE_KEY = "lethetic.connections.v1";
+
+/** Persist endpoint metadata only. Keys stay in memory even across connection switches. */
+export function saveConnections(storage: Pick<Storage, "setItem">, connections: Connection[]): void {
+  storage.setItem(STORAGE_KEY, JSON.stringify(connections.map(({ name, provider, endpoint, model }) =>
+    ({ name, provider, endpoint, model }))));
+}
+
+export function loadConnections(storage: Pick<Storage, "getItem">): Connection[] {
+  try {
+    const values: unknown = JSON.parse(storage.getItem(STORAGE_KEY) ?? "[]");
+    if (!Array.isArray(values)) return [];
+    return values.flatMap((value: unknown) => {
+      if (typeof value !== "object" || value === null) return [];
+      const item = value as Record<string, unknown>;
+      if (typeof item["name"] !== "string" || typeof item["model"] !== "string" ||
+          typeof item["endpoint"] !== "string" ||
+          (item["provider"] !== "openai" && item["provider"] !== "anthropic")) return [];
+      try {
+        return [validateConnection({ name: item["name"], model: item["model"],
+          endpoint: item["endpoint"], provider: item["provider"] })];
+      } catch { return []; }
+    });
+  } catch { return []; }
+}

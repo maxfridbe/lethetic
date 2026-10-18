@@ -10,6 +10,28 @@ A Rust TUI coding agent for local and proxied LLMs, with an optional exact-ident
 
 ## Quick Start
 
+### Browser, GitHub Pages, and embedding
+
+Open **[Lethetic in your browser](https://maxfridbe.github.io/lethetic/)** to connect
+an OpenAI-compatible Chat Completions endpoint or an Anthropic Messages endpoint.
+The standalone edition runs a Rust/WASM conversation runtime locally, with optional
+**Pyodide Python tools** in a persistent Web Worker. It needs no native Lethetic process.
+API keys stay in memory; only connection names, endpoint URLs, and model IDs are saved.
+
+The endpoint must permit browser requests through CORS and use HTTPS when the page
+uses HTTPS. This edition supports chat and registered browser/host tools; native
+filesystem, shell, LSP, and container tools remain in the native application.
+
+Build with `./build-browser.sh`. Serve `target/browser` over HTTP for local development,
+or use the `Browser and WASM` GitHub Actions workflow for Pages. Every `v*` release
+also builds `lethetic-browser.zip` and a SHA-256 checksum; `browser-v*` tags publish
+an independent embedding release. The archive contains the site,
+WASM bindings, TypeScript declarations, embedding SDK, and integration guide.
+See **[integration.md](integration.md)** for setup, Python mode, embedding examples,
+tests, CORS configuration, and deployment requirements.
+
+### Native application
+
 ```bash
 # Build
 cargo build --release

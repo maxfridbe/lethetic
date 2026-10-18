@@ -1,0 +1,65 @@
+:root { color-scheme: dark; background: #111817; }
+body { margin: 0; }
+.lethetic-browser { --bg: #111817; --panel: #17211f; --line: #2d3b36; --muted: #a3b6ad; --accent: #d8eeaf; color: #ecf0e8; background: var(--bg); font: 15px/1.5 system-ui, sans-serif; min-height: 100dvh; }
+.lethetic-browser * { box-sizing: border-box; }
+.lethetic-browser a { color: var(--accent); text-decoration: none; }
+.lethetic-browser .masthead { height: 88px; display: flex; align-items: center; justify-content: space-between; padding: 0 36px; border-bottom: 1px solid var(--line); gap: 20px; }
+.lethetic-browser .brand { font: 600 30px Georgia, serif; display: flex; align-items: center; gap: 14px; }
+.lethetic-browser .brand span { font: 600 22px system-ui, sans-serif; letter-spacing: -.8px; color: #ecf0e8; }
+.lethetic-browser .edition, .lethetic-browser .eyebrow { font-size: 10px; letter-spacing: 2px; color: var(--muted); }
+.lethetic-browser .workspace { display: grid; grid-template-columns: 320px minmax(0, 1fr); max-width: 1680px; margin: auto; }
+.lethetic-browser .connections { padding: 30px 26px; border-right: 1px solid var(--line); background: var(--panel); }
+.lethetic-browser h1 { font: 400 30px/1.15 Georgia, serif; margin: 16px 0; letter-spacing: -.6px; }
+.lethetic-browser .muted { color: var(--muted); font-size: 13px; }
+.lethetic-browser label { display: block; font-size: 12px; margin: 14px 0; color: #d4dfd7; }
+.lethetic-browser .optional { font-size: 10px; color: var(--muted); }
+.lethetic-browser input, .lethetic-browser select, .lethetic-browser textarea { width: 100%; border: 1px solid #3a4a42; background: #101916; border-radius: 7px; color: #ecf0e8; padding: 10px 11px; margin-top: 6px; font: inherit; }
+.lethetic-browser input::placeholder, .lethetic-browser textarea::placeholder { color: #8e9d94; }
+.lethetic-browser :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.lethetic-browser button { border: 1px solid #435448; border-radius: 7px; background: transparent; color: #dce8df; padding: 9px 12px; font: 500 12px system-ui, sans-serif; cursor: pointer; }
+.lethetic-browser button:hover { background: #2c3b30; }
+.lethetic-browser button.primary { color: #1e2c16; background: var(--accent); border-color: var(--accent); }
+.lethetic-browser button:disabled { opacity: .45; cursor: default; }
+.lethetic-browser .actions { display: flex; gap: 8px; }
+.lethetic-browser .test-connection { width: 100%; margin-top: 12px; }
+.lethetic-browser .python-setting { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 6px; }
+.lethetic-browser .checkbox { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.lethetic-browser .checkbox input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.lethetic-browser .fineprint { font-size: 11px; color: var(--muted); margin: 24px 0 0; }
+.lethetic-browser .conversation { min-width: 0; height: calc(100dvh - 88px); min-height: 600px; display: flex; flex-direction: column; }
+.lethetic-browser .chat-toolbar { min-height: 76px; padding: 16px 32px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.lethetic-browser .chat-toolbar strong { font-size: 13px; font-weight: 500; }
+.lethetic-browser .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #728177; margin-right: 10px; }
+.lethetic-browser.connected .status-dot { background: var(--accent); }
+.lethetic-browser .transcript { overflow: auto; flex: 1; padding: 30px clamp(20px, 5vw, 80px); scroll-behavior: smooth; }
+.lethetic-browser .welcome { max-width: 510px; margin: 10vh auto 30px; }
+.lethetic-browser .welcome-mark { font: italic 54px Georgia, serif; color: var(--accent); }
+.lethetic-browser h2 { font: 400 44px/1.15 Georgia, serif; letter-spacing: -1.3px; margin: 22px 0; }
+.lethetic-browser .welcome p { color: var(--muted); max-width: 430px; }
+.lethetic-browser .capabilities { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+.lethetic-browser .capabilities span { border: 1px solid var(--line); border-radius: 20px; padding: 6px 12px; font-size: 11px; color: var(--muted); }
+.lethetic-browser .message { margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+.lethetic-browser .message h3 { color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+.lethetic-browser .user-message h3 { color: #a3c3d1; }
+.lethetic-browser .message pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.7 ui-monospace, monospace; margin: 10px 0 0; }
+.lethetic-browser .composer { background: var(--panel); border: 1px solid #455846; margin: 0 28px; border-radius: 12px; padding: 14px 16px; }
+.lethetic-browser .composer label { margin: 0; font-size: 0; }
+.lethetic-browser .composer textarea { display: block; background: none; border: 0; resize: vertical; min-height: 80px; max-height: 260px; padding: 0; font: 15px/1.6 system-ui, sans-serif; margin: 0; }
+.lethetic-browser .composer-footer { display: flex; gap: 20px; align-items: center; justify-content: space-between; margin-top: 12px; }
+.lethetic-browser [role=status] { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.lethetic-browser .privacy { color: var(--muted); font-size: 10px; text-align: center; margin: 12px 20px 18px; }
+.lethetic-browser.compact { min-height: 100%; }
+.lethetic-browser.compact .masthead { display: none; }
+.lethetic-browser.compact .conversation { height: 100dvh; }
+@media (max-width: 800px) {
+  .lethetic-browser .masthead { padding: 0 20px; height: 70px; }
+  .lethetic-browser .edition { display: none; }
+  .lethetic-browser .workspace { grid-template-columns: 1fr; }
+  .lethetic-browser .connections { border-right: 0; border-bottom: 1px solid var(--line); padding: 24px; }
+  .lethetic-browser .conversation { min-height: 650px; height: 90dvh; }
+  .lethetic-browser .chat-toolbar { padding: 16px 20px; flex-wrap: wrap; }
+  .lethetic-browser .composer { margin: 0 16px; }
+  .lethetic-browser .welcome { margin-top: 20px; }
+  .lethetic-browser h2 { font-size: 34px; }
+}
+@media (prefers-reduced-motion: reduce) { .lethetic-browser .transcript { scroll-behavior: auto; } }
