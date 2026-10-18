@@ -6,6 +6,7 @@ import { LocalTransport } from "./local-transport.js";
 import { createConnectionsDialog } from "./connections-dialog.js";
 import { createVaultDialog } from "./vault-dialog.js";
 import { codeSnippets } from "./code-snippets.js";
+import { renderBrowserStatus } from "./status-view.js";
 
 export interface EmbedOptions {
   connections?: Connection[];
@@ -27,8 +28,11 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
     (options.storage ? loadConnections(options.storage) : []);
   const vault = createVaultDialog(options.storage);
   let settings: ReturnType<typeof createConnectionsDialog> | null = null;
+  let transport: LocalTransport | null = null;
   const mount = document.createElement("div"); root.replaceChildren(mount);
   const application = new SpaApplication(mount, {
+    status: () => renderBrowserStatus(transport),
+    promptPlaceholder: "Message your model…",
     headerActions: () => h("div", { attrs: { class: "browser-header-actions" } }, [
       h("button", { attrs: { type: "button", "data-browser-action": "connections" }, on: { click: () => settings?.open() } }, "Connections"),
       h("button", { attrs: { type: "button", "data-browser-action": "code" }, on: { click: () => vault.open() } }, "Code library"),
@@ -41,9 +45,9 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
     },
     externalDialogOpen: () => vault.dialog.open || (settings?.dialog.open ?? false),
   });
-  const transport = new LocalTransport(application, { ...options, connections });
+  transport = new LocalTransport(application, { ...options, connections });
   settings = createConnectionsDialog(transport, options.storage);
   application.attachTransport(transport); transport.start();
   if (!connections.length) settings.open();
-  return { destroy(): void { transport.dispose(); application.dispose(); settings?.destroy(); vault.destroy(); root.replaceChildren(); } };
+  return { destroy(): void { transport?.dispose(); application.dispose(); settings?.destroy(); vault.destroy(); root.replaceChildren(); } };
 }

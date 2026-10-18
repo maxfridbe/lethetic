@@ -201,6 +201,8 @@ export class SpaApplication implements BrowserTransportEvents {
 
   constructor(root: Element, readonly extensions: {
     headerActions?: () => VNode | null;
+    status?: () => VNode;
+    promptPlaceholder?: string;
     blockActions?: (block: RenderBlockView) => VNode | null;
     externalDialogOpen?: () => boolean;
   } = {}) {
@@ -1152,6 +1154,8 @@ export class SpaApplication implements BrowserTransportEvents {
       state: {
         snapshot,
         headerActions: this.extensions.headerActions?.() ?? null,
+        customStatus: this.extensions.status?.() ?? null,
+        promptPlaceholder: this.extensions.promptPlaceholder ?? null,
         ...(this.extensions.blockActions ? { blockActions: this.extensions.blockActions } : {}),
         live,
         activePanel,

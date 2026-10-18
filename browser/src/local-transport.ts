@@ -6,6 +6,7 @@ import type { Connection, LetheticRuntime, RuntimeEvent, Tool } from "./sdk.js";
 import { createPythonTool } from "./python.js";
 import type { PythonTool } from "./python.js";
 import { block, initialState, NO_LOSS } from "./local-state.js";
+import { BrowserMetrics } from "./metrics.js";
 
 export interface LocalOptions {
   connections: Connection[];
@@ -19,6 +20,8 @@ export interface LocalOptions {
 /** Drives the existing remote-mode UI using the same typed commands and snapshots. */
 export class LocalTransport implements ApplicationTransport {
   readonly state: WebAppSnapshot = initialState();
+  readonly metrics = new BrowserMetrics();
+  #ticker: ReturnType<typeof setInterval> | null = null;
   pendingCount = 0;
   lastSendFailure: string | null = null;
   selected = 0;
@@ -78,6 +81,7 @@ export class LocalTransport implements ApplicationTransport {
     this.#requireIdle();
     this.#runtime?.dispose(); this.#runtime = null;
     this.#python?.reset(); this.#python = null;
+    this.metrics.reset(); this.#requestCount = 0;
     this.state.blocks = { blocks: [], omitted_before: 0, truncated: false };
     this.state.status.stop_reason = "Ready";
     this.state.overlay = { active_panel: null, data: null };
@@ -113,6 +117,7 @@ export class LocalTransport implements ApplicationTransport {
   async requestFile(): Promise<Response> { throw new Error("Native files are unavailable in browser mode."); }
   closePermanently(): void { this.dispose(); }
   dispose(): void {
+    if (this.#ticker !== null) clearInterval(this.#ticker);
     this.#closed = true; this.#operation?.abort(); this.#runtime?.dispose(); this.#python?.reset();
   }
 
@@ -126,6 +131,8 @@ export class LocalTransport implements ApplicationTransport {
         if (!this.connection) throw new Error("Open Connections and save a model endpoint first.");
         if (!command.prompt.trim()) throw new Error("Enter a prompt.");
         this.#operation = new AbortController();
+        this.metrics.begin();
+        this.#ticker = setInterval(() => this.publish(), 1000);
         this.#history.push(command.prompt);
         this.state.blocks.blocks.push(block("user", command.prompt, "You"));
         this.state.activity = { kind: "processing", fully_idle: false, cancellable: true,
@@ -235,6 +242,8 @@ export class LocalTransport implements ApplicationTransport {
       this.state.blocks.blocks.push({ ...block("text", message + "\nIncomplete turn removed from model history; tool effects may remain.", "Turn interrupted"), success: false });
       this.state.status.stop_reason = message;
     } finally {
+      if (this.#ticker !== null) clearInterval(this.#ticker);
+      this.#ticker = null; this.metrics.finish();
       this.#operation = null;
       this.state.activity = { kind: "idle", fully_idle: true, cancellable: false, cancel_id: null, progress_percent: null };
       this.publish();
@@ -242,6 +251,7 @@ export class LocalTransport implements ApplicationTransport {
   }
 
   #event(event: RuntimeEvent): void {
+    this.metrics.event(event);
     switch (event.type) {
       case "request":
         this.#requestCount++;

@@ -1,4 +1,7 @@
 import { validateConnection } from "./connection.js";
+import { readUsage } from "./usage.js";
+import type { ProviderUsage } from "./usage.js";
+export type { ProviderUsage } from "./usage.js";
 import type { Connection } from "./connection.js";
 export type { Connection } from "./connection.js";
 export { createPythonTool } from "./python.js";
@@ -13,6 +16,7 @@ export interface Tool {
 }
 export type RuntimeEvent =
   | { type: "request"; round: number }
+  | { type: "response"; usage: ProviderUsage; durationMs: number }
   | { type: "assistant"; text: string }
   | { type: "tool_start"; call: ToolCall }
   | { type: "tool_end"; call: ToolCall; output: string };
@@ -102,6 +106,7 @@ export class LetheticRuntime {
         controller.signal.throwIfAborted();
         const body = this.#wasm.request(connection.provider, connection.model);
         this.#emit({ type: "request", round });
+        const started = performance.now();
         const response = await abortable((this.#options.fetch ?? globalThis.fetch)(connection.endpoint, {
           method: "POST", mode: "cors", credentials: "omit", redirect: "error",
           referrerPolicy: "no-referrer", cache: "no-store", signal: controller.signal,
@@ -113,6 +118,8 @@ export class LetheticRuntime {
         }
         const responseText = await readResponse(response, controller.signal);
         controller.signal.throwIfAborted();
+        this.#emit({ type: "response", usage: readUsage(connection.provider, JSON.parse(responseText)),
+          durationMs: performance.now() - started });
         const turn = JSON.parse(this.#wasm.accept(connection.provider, responseText)) as {
           text: string; calls: ToolCall[];
         };

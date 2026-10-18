@@ -884,6 +884,8 @@ export class SpaApplication {
             state: {
                 snapshot,
                 headerActions: this.extensions.headerActions?.() ?? null,
+                customStatus: this.extensions.status?.() ?? null,
+                promptPlaceholder: this.extensions.promptPlaceholder ?? null,
                 ...(this.extensions.blockActions ? { blockActions: this.extensions.blockActions } : {}),
                 live,
                 activePanel,

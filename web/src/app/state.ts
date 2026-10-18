@@ -42,6 +42,8 @@ export interface ApprovalConfirmation {
 
 export interface ChatViewState {
   readonly headerActions?: VNode | null;
+  readonly customStatus?: VNode | null;
+  readonly promptPlaceholder?: string | null;
   readonly blockActions?: (block: RenderBlockView) => VNode | null;
   readonly snapshot: WebAppSnapshot | null;
   readonly live: boolean;

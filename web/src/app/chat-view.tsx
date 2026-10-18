@@ -380,7 +380,7 @@ function renderComposer(context: ChatViewContext): VNode {
           maxlength: String(MAX_DRAFT_LENGTH),
           rows: String(rows),
           placeholder: live
-            ? "Type a prompt. Enter submits; Shift+Enter adds a line. Ctrl+P opens commands."
+            ? context.state.promptPlaceholder ?? "Type a prompt. Enter submits; Shift+Enter adds a line. Ctrl+P opens commands."
             : "Waiting for a synchronized connection…",
           "aria-describedby": "composer-help",
         }}
@@ -457,11 +457,11 @@ export function renderChatView(context: ChatViewContext): VNode {
         </div>
         {renderDebugger(context)}
       </div>
-      <div attrs={{ class: "status-stack" }}>
+      {state.customStatus ?? <div attrs={{ class: "status-stack" }}>
         {renderBackgroundTasks(state.snapshot)}
         {renderApplicationStatus(state.snapshot)}
-      </div>
-      {renderTransportStatus(state)}
+      </div>}
+      {state.customStatus ? null : renderTransportStatus(state)}
       <div
         attrs={{
           class: "sr-only",

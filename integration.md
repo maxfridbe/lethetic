@@ -12,6 +12,21 @@ Standalone and embedded browser modes reuse the existing remote-mode
 A local transport connects that UI to WASM through its existing typed commands and
 snapshots. The native remote controller continues to use its WebSocket transport.
 
+The browser footer shows endpoint-reported input/output tokens and measured turn
+time. Expand **Stats** for cache and reasoning counts, turn/session totals, request
+counts, model response time, and tool time. Missing or invalid usage is **Not
+reported**; totals are marked **partial** when some requests have no usage. Clearing
+the chat or switching connections resets these totals. Model time includes network,
+queueing, and generation; it is not a decoding-speed estimate. Native-only counters
+(memory, Git, containers), unknown context limits, and price estimates are omitted.
+Usage supports [DeepSeek cache fields](https://api-docs.deepseek.com/guides/kv_cache/),
+OpenAI-compatible token details, and Anthropic cache read/write accounting.
+
+On phones the prompt and Send button share a row, and the full-page application
+tracks the visual viewport when the keyboard opens or pans the page. The viewport
+also opts into [keyboard-driven layout resizing](https://developer.chrome.com/blog/viewport-resize-behavior).
+Embedded hosts retain control of their own container sizing.
+
 ## Run the hosted application
 
 Open https://maxfridbe.github.io/lethetic/ and save a connection:

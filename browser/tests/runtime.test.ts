@@ -15,6 +15,17 @@ const call = (name: string, arguments_ = "{}"): Response => Response.json({ choi
     { id: "one", type: "function", function: { name, arguments: arguments_ } },
   ] } }] });
 
+await test("actual WASM SDK exposes provider usage and measured response time", async () => {
+  const events: import("../src/sdk.js").RuntimeEvent[] = [];
+  const runtime = await createRuntime({ connection, wasm, onEvent: (event) => events.push(event),
+    fetch: async () => Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: "ok" } }],
+      usage: { prompt_tokens: 1200, completion_tokens: 64, prompt_cache_hit_tokens: 1024 } }) });
+  await runtime.send("hello"); runtime.dispose();
+  const response = events.find((event) => event.type === "response"); assert.ok(response);
+  assert.equal(response.usage.total, 1264); assert.equal(response.usage.cached, 1024);
+  assert.ok(response.durationMs >= 0 && Number.isFinite(response.durationMs));
+});
+
 await test("actual WASM sends provider requests and keeps separate conversations", async () => {
   const runtime = await createRuntime({ connection, wasm, fetch: async (url, init) => {
     assert.equal(url, connection.endpoint);

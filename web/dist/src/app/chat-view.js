@@ -189,7 +189,7 @@ function renderComposer(context) {
                 maxlength: String(MAX_DRAFT_LENGTH),
                 rows: String(rows),
                 placeholder: live
-                    ? "Type a prompt. Enter submits; Shift+Enter adds a line. Ctrl+P opens commands."
+                    ? context.state.promptPlaceholder ?? "Type a prompt. Enter submits; Shift+Enter adds a line. Ctrl+P opens commands."
                     : "Waiting for a synchronized connection…",
                 "aria-describedby": "composer-help",
             }, props: { value: draft, disabled: !live || snapshot === null }, on: {
@@ -235,10 +235,10 @@ export function renderChatView(context) {
                 renderActivity(context),
                 renderComposer(context)),
             renderDebugger(context)),
-        h("div", { attrs: { class: "status-stack" } },
+        state.customStatus ?? h("div", { attrs: { class: "status-stack" } },
             renderBackgroundTasks(state.snapshot),
             renderApplicationStatus(state.snapshot)),
-        renderTransportStatus(state),
+        state.customStatus ? null : renderTransportStatus(state),
         h("div", { attrs: {
                 class: "sr-only",
                 role: "status",

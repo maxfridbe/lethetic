@@ -81,6 +81,8 @@ try {
     const prompt=document.getElementById('composer-input'); prompt.value='hello';
     prompt.dispatchEvent(new Event('input',{bubbles:true})); document.querySelector('form.composer').requestSubmit()`);
   await until("document.querySelector('.app-shell').textContent.includes('Hello from the browser test')");
+  await until("document.querySelector('.browser-usage-summary').textContent.includes('1,200 in')");
+  check(await evaluate("document.querySelector('.browser-status').textContent.includes('1,024') && !document.querySelector('.transport-level')"), "provider cache usage or browser status failed");
   check(await evaluate("performance.getEntriesByType('resource').some(r=>r.name.includes('/lethetic/browser/wasm/lethetic_wasm_bg.wasm'))"), "WASM was not loaded from the project subpath");
   // These are the original remote UI controls, driven by the local transport.
   await evaluate("document.querySelector('[aria-label=\"Open command palette\"]').click()");
@@ -88,6 +90,7 @@ try {
   await evaluate("document.querySelector('#palette-command-themes').click()");
   await until("!!document.querySelector('.theme-choice')");
   await evaluate("document.querySelector('.theme-choice:not(.is-selected)').click()");
+  await evaluate("[...document.querySelectorAll('.theme-choice')].find(button=>button.textContent.includes('Dracula')).click()");
   await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
   await evaluate("document.querySelector('[aria-label=\"Open command palette\"]').click(); document.querySelector('#palette-command-toggle-debugger').click()");
   await until("!!document.querySelector('.has-debugger')");
@@ -110,6 +113,28 @@ try {
   await writeFile(config.screenshot, Buffer.from(String(image["data"]), "base64"));
   await rpc("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   check(await evaluate("document.documentElement.scrollWidth <= innerWidth"), "mobile layout overflows");
+  const viewportResult = await evaluate(`(async () => {
+    const {fitViewport}=await import('./src/viewport.js');
+    const root=document.getElementById('browser-root');
+    document.querySelector('#composer-input').focus();
+    await new Promise(resolve=>setTimeout(resolve,150));
+    const viewport=Object.assign(new EventTarget(),{height:400,offsetTop:34,scale:1});
+    const cleanup=fitViewport(root,viewport);
+    viewport.dispatchEvent(new Event('resize'));
+    await new Promise(resolve=>requestAnimationFrame(resolve));
+    const prompt=document.querySelector('#composer-input').getBoundingClientRect();
+    const send=document.querySelector('.composer button').getBoundingClientRect();
+    const visible=prompt.top>=34 && prompt.bottom<=434 && send.bottom<=434 && send.top>=34;
+    viewport.height=844;viewport.offsetTop=0;viewport.dispatchEvent(new Event('resize'));
+    const restored=root.style.height==='844px' && root.style.top==='0px';
+    cleanup();window.dispatchEvent(new Event('resize'));
+    document.querySelector('#composer-input').blur();
+    return {visible,restored,prompt:prompt.toJSON(),send:send.toJSON()};
+  })()`);
+  check((viewportResult as {visible:boolean;restored:boolean}).visible && (viewportResult as {restored:boolean}).restored,
+    "keyboard viewport obscures prompt or Send, or fails to restore: " + JSON.stringify(viewportResult));
+  const mobileImage = await rpc("Page.captureScreenshot", { format: "png" });
+  await writeFile(config.screenshot.replace('.png','-mobile.png'), Buffer.from(String(mobileImage['data']), 'base64'));
   await rpc("Emulation.clearDeviceMetricsOverride");
   process.stdout.write("Shared UI, WASM chat, code capture, and mobile layout passed.\n");
   await rpc("Page.reload");
@@ -160,8 +185,9 @@ try {
     for(let i=0;i<200;i++) {
       if(container.textContent.includes('Python says: 42')) {
         const captured=!!container.querySelector('[data-browser-action=save-code]');
+        const counted=container.querySelector('.browser-status').textContent.includes('2,528');
         view.destroy(); const cleaned=!document.querySelector('dialog') && !container.childNodes.length;
-        container.remove();return captured && cleaned;
+        container.remove();return captured && cleaned && counted;
       }
       await new Promise(resolve=>setTimeout(resolve,25));
     }

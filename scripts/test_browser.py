@@ -60,7 +60,9 @@ class Handler(SimpleHTTPRequestHandler):
             reason = "tool_calls"
         else:
             message, reason = {"role": "assistant", "content": content}, "stop"
-        body = json.dumps({"choices": [{"message": message, "finish_reason": reason}]}).encode()
+        body = json.dumps({"choices": [{"message": message, "finish_reason": reason}],
+                           "usage": {"prompt_tokens": 1200, "completion_tokens": 64,
+                                     "total_tokens": 1264, "prompt_cache_hit_tokens": 1024}}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
