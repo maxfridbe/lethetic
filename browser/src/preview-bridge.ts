@@ -9,7 +9,11 @@ addEventListener("message", event => {
   }
 });
 const previewBridgeSend = (direction: number): void => parent.postMessage({type:"lethetic-preview", token:previewBridgeToken, direction}, "*");
-const previewBridgeSelected = (): boolean => !!getSelection()?.toString();
+const previewBridgeSelected = (): boolean => {
+  const selection = getSelection();
+  // A range can be selected before Chrome computes its rendered text.
+  return !!selection && selection.rangeCount > 0 && !selection.isCollapsed;
+};
 addEventListener("keydown", event => {
   if (!previewBridgeFull || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || previewBridgeSelected() ||
     (event.target instanceof Element && event.target.closest("input,textarea,[contenteditable],audio,video"))) return;

@@ -245,8 +245,9 @@ try {
   await evaluate("document.querySelector('.browser-preview[open]').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}))");
   await until("document.querySelector('.browser-preview[open] h2').textContent==='reports/preview.html'");
   await new Promise(resolve=>setTimeout(resolve,100));
-  await previewInput("(()=>{const range=document.createRange();range.selectNodeContents(document.body);getSelection().addRange(range);dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}))})()");
-  check(await evaluate("document.querySelector('.browser-preview[open] h2').textContent==='reports/preview.html'"),"selection was replaced by navigation");
+  const selectionState=await previewInput("(()=>{const range=document.createRange();range.selectNodeContents(document.querySelector('h1'));const selection=getSelection();selection.removeAllRanges();selection.addRange(range);const state={text:selection.toString(),ranges:selection.rangeCount,collapsed:selection.isCollapsed};dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));return state})()");
+  check((selectionState as {ranges:number;collapsed:boolean}).ranges>0 && !(selectionState as {collapsed:boolean}).collapsed,"preview text selection was not established: "+JSON.stringify(selectionState));
+  check(await evaluate("document.querySelector('.browser-preview[open] h2').textContent==='reports/preview.html'"),"selection was replaced by navigation: "+JSON.stringify(selectionState));
   await previewInput("(()=>{getSelection().removeAllRanges();const t=new Touch({identifier:1,target:document.body,clientX:300,clientY:100});dispatchEvent(new TouchEvent('touchstart',{touches:[t]}));const end=new Touch({identifier:1,target:document.body,clientX:100,clientY:105});dispatchEvent(new TouchEvent('touchend',{changedTouches:[end]}))})()");
   await until("document.querySelector('.browser-preview[open] h2').textContent==='reports/analysis.py'");
   await evaluate("document.querySelector('[data-field=preview-previous]').click()");
