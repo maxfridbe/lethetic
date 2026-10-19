@@ -12,7 +12,7 @@ export function createFileEditor(files: BrowserFiles, saved: (path: string) => v
     <div class="browser-file-editor-actions">
     <button type="submit" class="primary-button">${buttonIconHtml("save")}Save file</button>
     <button type="button" data-field="preview-content">${buttonIconHtml("preview")}Preview</button>
-    <button type="button" data-field="copy-content">${buttonIconHtml("copy")}Copy contents</button>
+    <button type="button" data-field="copy-content">${buttonIconHtml("copy")}Copy</button>
     </div><p data-field="file-status" role="status"></p></form>`);
   const preview = createFilePreview();
   const content = (): string => field<HTMLTextAreaElement>(dialog, "file-content").value;

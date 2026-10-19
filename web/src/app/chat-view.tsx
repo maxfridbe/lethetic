@@ -215,7 +215,7 @@ function renderBlock(
       <footer attrs={{ class: "chat-block-actions" }}>
         <button attrs={{ type: "button", "data-copy-turn": "", title: "Copy this turn’s contents" }}
           props={{ disabled: !copyContents || !content }} on={{ click: () => copyContents?.(content) }}>
-          {uiIcon("copy")}Copy contents
+          {uiIcon("copy")}Copy
         </button>
       </footer>
     </article>
@@ -319,7 +319,7 @@ function renderActivity(context: ChatViewContext): VNode {
       <div attrs={{ class: "activity-summary" }}>
         <strong>
           {spinnerKind === null ? null : activitySpinner(spinnerKind)}
-          <span>{activityLabel(snapshot.activity.kind)}</span>
+          <span attrs={{ class: `activity-label${spinnerKind === "regular" ? " is-processing" : ""}` }}>{activityLabel(snapshot.activity.kind)}</span>
         </strong>
         {snapshot.activity.progress_percent === null ? null : (
           <progress

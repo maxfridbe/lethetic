@@ -73,7 +73,7 @@ native capabilities through the same UI backed by its authenticated native conne
 Use the existing **Files** directory browser. Choose **Save to Files** beneath a
 code block or Python tool call, or **New file** in Files. Enter a relative path such
 as `reports/analysis.py`. Folders are derived from these paths. Select a file to
-view its source in Monaco, **Edit**, **Preview**, **Download File**, **Copy contents**,
+view its source in Monaco, **Edit**, **Preview**, **Download File**, **Copy**,
 or **Delete** it. Code blocks also have direct Preview, Download, and Copy buttons.
 Saving from the editor is explicit. The Files browser represents the current
 session's Python workspace at `/home/pyodide`. Files created, changed, or deleted
@@ -129,7 +129,7 @@ state and file inventory), and `workspace/` (text and binary files, including em
 folders). Exporting does not switch sessions. During an active turn, files come
 from the last completed checkpoint while the visible transcript is included.
 Connection keys are excluded and known keys are redacted from text. The archive
-is assembled locally; it is not uploaded. Every turn also has **Copy contents** at
+is assembled locally; it is not uploaded. Every turn also has **Copy** at
 its bottom-right, copying the source text or tool payload without UI labels.
 
 Use **Top** or **Left** in the Files toolbar to choose its dock. Left mode stacks
@@ -218,7 +218,7 @@ at `/lethetic/`, custom subpaths, and domain roots. Pages deployment requires th
 Pushing an ordinary commit deploys Pages. Pushing a `v*` tag additionally attaches
 `lethetic-browser.zip` and `lethetic-browser.zip.sha256` to the GitHub release,
 alongside the existing native release workflow. A `browser-v*` tag (for example,
-`browser-v0.4.5`) publishes an independent embedding release with those same assets.
+`browser-v0.4.6`) publishes an independent embedding release with those same assets.
 A commit does not create a version tag automatically. The ZIP contains both standalone and embedding modes; it does
 not contain API keys or downloaded Pyodide packages. Build outputs live under
 `target/` and are not committed. `manifest.json` contains per-file SHA-256 hashes.

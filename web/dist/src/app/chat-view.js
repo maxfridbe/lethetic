@@ -105,7 +105,7 @@ function renderBlock(block, index, maxJsonSegments, anchor, actions, codeActions
         h("footer", { attrs: { class: "chat-block-actions" } },
             h("button", { attrs: { type: "button", "data-copy-turn": "", title: "Copy this turn’s contents" }, props: { disabled: !copyContents || !content }, on: { click: () => copyContents?.(content) } },
                 uiIcon("copy"),
-                "Copy contents"))));
+                "Copy"))));
 }
 function renderChat(context) {
     const { snapshot, chatStart } = context.state;
@@ -156,7 +156,7 @@ function renderActivity(context) {
         h("div", { attrs: { class: "activity-summary" } },
             h("strong", null,
                 spinnerKind === null ? null : activitySpinner(spinnerKind),
-                h("span", null, activityLabel(snapshot.activity.kind))),
+                h("span", { attrs: { class: `activity-label${spinnerKind === "regular" ? " is-processing" : ""}` } }, activityLabel(snapshot.activity.kind))),
             snapshot.activity.progress_percent === null ? null : (h("progress", { attrs: { "aria-label": "Activity progress" }, props: { value: snapshot.activity.progress_percent, max: 100 } }))),
         approval === null ? null : (h("button", { attrs: { type: "button", class: "attention-card" }, props: { disabled: !live }, on: { click: () => context.actions.openPanel("tool_approval") } },
             h("strong", null,

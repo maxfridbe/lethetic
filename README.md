@@ -46,7 +46,7 @@ Dock **Files** at the top or on the left; the left sidebar stacks the file list
 above the code viewer. File-type icons make files easier to recognize.
 File sizes use readable units with exact bytes in tooltips. Pin individual stats
 from **Stats** to a bottom bar that wraps onto up to three lines.
-Copy any turn with its bottom-right **Copy contents** button. Download a session
+Copy any turn with its bottom-right **Copy** button. Download a session
 and its files for debugging using **Export debug (.tar.gz)** in **Sessions**.
 [Start a new session](https://maxfridbe.github.io/lethetic/#/new) or
 [open the latest](https://maxfridbe.github.io/lethetic/#/latest).

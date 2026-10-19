@@ -55,7 +55,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
       const button = event.currentTarget as HTMLButtonElement;
       void copyCode(snippet.code).then(() => { button.title = "Contents copied"; })
         .catch((error: unknown) => { fileStatus = String(error); transport?.publish(); });
-    } } }, [uiIcon("copy"), "Copy contents"]),
+    } } }, [uiIcon("copy"), "Copy"]),
   ]);
   const application = new SpaApplication(mount, {
     status: () => renderBrowserStatus(transport, pinnedStats, () => transport?.publish()),
@@ -90,7 +90,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
         } } }, [uiIcon("preview"), "Preview"]),
         h("button", { attrs: { type: "button", "data-file-action": "copy" }, props: { disabled: !state.preview }, on: { click: () => {
           if (state.preview) void copyCode(state.preview.content).then(() => { fileStatus = "Contents copied."; transport?.publish(); }).catch((error: unknown) => { fileStatus = String(error); transport?.publish(); });
-        } } }, [uiIcon("copy"), "Copy contents"]),
+        } } }, [uiIcon("copy"), "Copy"]),
         h("button", { attrs: { type: "button", "data-file-action": "delete" }, props: { disabled: !state.selectedPath || transport?.busy }, on: { click: () => {
           if (state.selectedPath && confirm(`Delete ${state.selectedPath} from this session?`)) {
             try { files.remove(state.selectedPath); application.refreshFiles(); } catch (error) { fileStatus = String(error); transport?.publish(); }

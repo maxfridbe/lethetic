@@ -736,8 +736,25 @@ button .ui-icon {
   place-items: center;
   font-family: "JetBrains Mono Nerd Font", ui-monospace, monospace;
   font-weight: 400;
+  font-size: 2em;
   line-height: 1;
   white-space: pre;
+}
+
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .activity-label.is-processing {
+    background-image: linear-gradient(100deg, var(--theme-output-fg) 10%, var(--theme-highlight-fg) 35%, var(--theme-thought-fg) 50%, var(--theme-output-fg) 70%);
+    background-size: 250% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    animation: processing-shimmer 2s linear infinite;
+  }
+}
+
+@keyframes processing-shimmer {
+  from { background-position: 150% 0; }
+  to { background-position: -100% 0; }
 }
 
 .activity-spinner-regular {
@@ -1588,6 +1605,8 @@ progress {
     animation-iteration-count: 1 !important;
   }
 
+  .activity-label.is-processing { animation: none !important; background-position: 50% 0; }
+
   .activity-spinner-frame {
     animation: none !important;
     opacity: 0;
@@ -1604,6 +1623,8 @@ progress {
 }
 
 @media (forced-colors: active) {
+  .activity-label.is-processing { background: none; color: CanvasText; animation: none; }
+
   button,
   input,
   textarea,
