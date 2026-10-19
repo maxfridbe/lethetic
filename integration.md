@@ -36,7 +36,7 @@ Open https://maxfridbe.github.io/lethetic/ and save a connection:
    `https://your-server/v1/chat/completions` or `https://your-server/v1/messages`.
 3. Enter the exact model ID and an optional API key. Save the connection.
 4. Use **Test connection** to send a small model request, then close the dialog to chat.
-5. Enable **Python tools** to let the model execute Python with Pyodide.
+5. In **Runtime & security**, choose **Python · Pyodide** or **.NET 11 · WASM** to enable code execution for this session.
 
 Use **Fetch models** in Connections to query the endpoint with the currently
 entered key, even before saving a connection. Filter by model ID or display name,
@@ -145,7 +145,7 @@ records are also left untouched; no encrypted library or passphrase UI is involv
 
 **Sessions** uses the existing session screen to resume, name, create, or delete
 chats. Completed turns automatically save their transcript, model context, usage
-stats, system prompt, Python mode, theme and connection metadata in
+stats, system prompt, code mode, .NET network permission, theme and connection metadata in
 `lethetic.sessions.v1`. API keys are excluded. Reopening a chat restores its context
 without rerunning tools. Its files and empty directories are restored before the
 next Python call. Python variables are recreated, so save durable results to files.
@@ -269,7 +269,7 @@ at `/lethetic/`, custom subpaths, and domain roots. Pages deployment requires th
 Pushing an ordinary commit deploys Pages. Pushing a `v*` tag additionally attaches
 `lethetic-browser.zip` and `lethetic-browser.zip.sha256` to the GitHub release,
 alongside the existing native release workflow. A `browser-v*` tag (for example,
-`browser-v0.4.13`) publishes an independent embedding release with those same assets.
+`browser-v0.5.0`) publishes an independent embedding release with those same assets.
 A commit does not create a version tag automatically. The ZIP contains both standalone and embedding modes; it does
 not contain API keys or downloaded Pyodide packages. Build outputs live under
 `target/` and are not committed. `manifest.json` contains per-file SHA-256 hashes.
@@ -307,7 +307,7 @@ or multiple instances. Omit `storage` to keep files and sessions only in memory.
 Pass `credentialStorage: sessionStorage` to retain keys through tab reloads;
 embedded hosts otherwise keep keys in memory.
 Session routing is off by default so the embed does not take over its host URL. `view.destroy()` aborts pending
-work, terminates Python, removes dialogs, and releases application listeners.
+work, terminates Python/.NET workers, removes dialogs, and releases application listeners.
 
 An iframe also works: `<iframe src="https://maxfridbe.github.io/lethetic/?embed=1"
 title="Lethetic" width="100%" height="900"></iframe>`. Users configure connections
@@ -431,3 +431,85 @@ For CSP, allow `data:` in `media-src` for session audio/video previews. Allow yo
 `worker-src 'self'`, and `connect-src` for both model and runtime asset origins.
 The standalone app includes an appropriate meta CSP for its default CDN. Adapt it
 when self-hosting Pyodide. No `unsafe-eval` or cross-origin isolation is required.
+
+## .NET WASM mode
+
+Choose **Connections → Runtime & security → .NET 11 · WASM**, or select it in
+**Agent Mode**. This updates the existing session; connection changes also keep
+its ID, chat history and files. The browser loads .NET lazily on the first C# call.
+The same Files pane supports uploads, edits, previews, copy, download and ZIP export.
+Python and C# share relative session file paths. `System.IO` sees these files under
+`/home/dotnetdide`; only that directory is checkpointed after each completed call,
+including calls that return an exception. Stop/timeout discards unfinished file
+changes and resets variables. Reload restores files and settings, not variables.
+
+```js
+import { mountLethetic } from './src/embed.js';
+const view = mountLethetic(document.querySelector('#app'), {
+  connections: myConnections,
+  storage: localStorage,
+  mode: 'dotnet-wasm',
+  networkAccess: false, // .NET code only; does not disable model connections
+});
+```
+
+Headless hosts can import `createDotnetTool({ networkAccess, workspace, onWorkspace })`
+from `src/sdk.js`, use it in `createRuntime({ tools: [dotnet], ... })`, and call
+`dotnet.reset()` on disposal. `setWorkspace()` imports browser edits before the next
+call; `snapshotWorkspace()` returns the last completed checkpoint. Execution has a
+120-second timeout (configurable), cancellation, a 64 KiB output cap, and the same
+session limits as Python: 100 files, 256 folders, 1 MiB/file, 2 MiB total. An invalid
+or oversized snapshot is reported without replacing the last saved checkpoint.
+The mount composes C# instructions automatically; headless hosts can use
+`effectiveSystemPrompt(editable, 'dotnet-wasm', networkAccess)` from `src/prompts.js`.
+
+```csharp
+File.WriteAllText("Program.cs", "Console.WriteLine(6 * 7);");
+var result = await Dotnet.Run("Program.cs");
+Console.WriteLine(result.Build.Output);
+Console.WriteLine(result.ExitCode);
+// Or Dotnet.Build(), Dotnet.Build("app.csproj"), await Dotnet.Run("app.csproj").
+```
+
+Scripts import `System`, `System.IO`, `System.Linq`, `System.Collections.Generic`
+and `System.Threading.Tasks` by default. Use explicit `using` directives for other
+available namespaces, such as `System.Text.Json` and `System.IO.Compression`.
+Compiled programs don't inherit script variables or script using directives.
+Projects use a documented SDK-style subset, without NuGet restore, project/package
+references or full MSBuild. Read the bundled `runtimes/dotnetdide/llm.md` and
+`docs/runtime-namespaces.md` for supported libraries and project settings.
+
+### Runtime security
+
+**Network access** is off by default for .NET and is stored per session.
+The switch covers worker fetch/HTTP (`Dotnetdide.Net` and ordinary `HttpClient`),
+XHR and browser sockets. Runtime assets may load during bootstrap. Changing the
+setting restarts the .NET worker, preserving chat and completed files. Pyodide
+retains its existing authorized browser networking; the UI explicitly shows this.
+Session filesystem read/write is enabled for both code modes. Neither receives
+model keys or conversation history. Custom embedding tools remain host-authorized.
+
+```csharp
+var text = await Dotnetdide.Net.GetStringAsync("https://example.org/data.txt");
+var bytes = await Dotnetdide.Net.GetBytesAsync("https://example.org/image.png");
+File.WriteAllBytes("image.png", bytes);
+var response = await Dotnetdide.Net.PostJsonAsync("https://example.org/api", new { value = 42 });
+// For custom headers/methods: SendAsync(HttpRequestMessage), disposing the response.
+```
+
+CORS and HTTPS mixed-content rules still apply. This is a capability control,
+not a hostile-code sandbox: arbitrary JavaScript interop or dynamic imports can
+reach APIs outside these wrappers. Use a dedicated origin and an appropriate
+server CSP/network isolation policy if you execute untrusted code.
+
+### Released runtime delivery
+
+`browser/dotnetdide-release.json` pins the GitHub ZIP version and SHA-256.
+`build-browser.sh` downloads and verifies that exact release into a build cache,
+then bundles its runtime, licenses and guide beneath `runtimes/dotnetdide/`.
+No .NET SDK or new npm dependencies are needed to build Lethetic. A deployed site
+serves .NET assets from its own origin; it does not fetch a moving GitHub Pages build.
+Keep `runtimes/` with the embedding SDK when copying it to another host.
+The default browser acceptance suite executes the real bundled .NET release,
+checks network denial/opt-in, uploads, persistent variables, cancellation, restored
+files and session settings under the standalone page's CSP and project subpath.

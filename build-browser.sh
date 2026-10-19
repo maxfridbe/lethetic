@@ -26,6 +26,7 @@ cp web/static/styles.css web/static/files.css "$stage/web/"
 cp -R browser/static/. "$stage/"
 cp integration.md "$stage/integration.md"
 touch "$stage/.nojekyll"
+python3 scripts/fetch_dotnetdide.py "$stage"
 
 tsc --project browser/tests/tsconfig.json --outDir "$tests" --pretty false
 cp -R "$stage/browser/wasm" "$tests/browser/wasm"

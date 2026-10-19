@@ -129,3 +129,8 @@ dialog.browser-preview.is-full-preview {
   border-radius: 0; box-sizing: border-box;
 }
 .browser-preview.is-full-preview .overlay-body { min-height: 0; padding: .5rem; }
+
+.browser-runtime { display: grid; gap: .5rem; margin-top: .75rem; border: 1px solid var(--border); border-radius: .5rem; }
+.browser-runtime label { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.browser-runtime input[type="checkbox"] { width: auto; }
+.browser-runtime .browser-note { margin: 0; font-size: .85rem; }

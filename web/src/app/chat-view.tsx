@@ -167,7 +167,7 @@ function renderBlock(
   const python = pythonToolCode(block);
   const parsed = python !== null && !originalPython;
   const pythonDisplay = python === null ? "" : boundedText(python);
-  const renderedContent = parsed ? <pre attrs={{ class: "python-tool-code", "data-python-view": "parsed" }}><code attrs={{ class: "code-highlight" }}>{highlightCode(pythonDisplay, "python") ?? [pythonDisplay]}</code></pre> : isMarkdownBlockKind(block.kind)
+  const renderedContent = parsed ? <pre attrs={{ class: "python-tool-code", "data-python-view": "parsed" }}><code attrs={{ class: "code-highlight" }}>{highlightCode(pythonDisplay, block.tool?.tool_name === "dotnet" ? "csharp" : "python") ?? [pythonDisplay]}</code></pre> : isMarkdownBlockKind(block.kind)
     ? markdownContentThunk(
         block.kind,
         displayContent,
@@ -221,7 +221,7 @@ function renderBlock(
       )}
       <footer attrs={{ class: "chat-block-actions" }}>
         {python === null ? null : <span attrs={{ class: "python-view-controls", role: "group", "aria-label": "Python code display" }}>
-          <button attrs={{ type: "button", "data-python-view": "parsed", "aria-pressed": String(parsed), title: "Show Python code with indentation and syntax highlighting" }}
+          <button attrs={{ type: "button", "data-python-view": "parsed", "aria-pressed": String(parsed), title: "Show code with indentation and syntax highlighting" }}
             props={{ disabled: !setPythonOriginal }} on={{ click: () => setPythonOriginal?.(false) }}>{uiIcon("code")}Parsed</button>
           <button attrs={{ type: "button", "data-python-view": "original", "aria-pressed": String(!parsed), title: "Show the original tool arguments" }}
             props={{ disabled: !setPythonOriginal }} on={{ click: () => setPythonOriginal?.(true) }}>{uiIcon("file")}Original</button>

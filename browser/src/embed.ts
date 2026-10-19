@@ -25,6 +25,9 @@ export interface EmbedOptions {
   tools?: Tool[];
   systemPrompt?: string;
   python?: boolean;
+  mode?: import("./sessions.js").AgentMode;
+  /** .NET code network access; default false. Model connections are unaffected. */
+  networkAccess?: boolean;
   pyodideIndexURL?: string;
   /** Retained for compatibility; the shared remote-mode UI is already compact. */
   compact?: boolean;
@@ -65,7 +68,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
     } } }, [uiIcon("copy"), "Copy"]),
   ]);
   const application = new SpaApplication(mount, {
-    paletteCommands: () => [{ id: "local:compact-session", label: "Compact session context", description: "Summarize model context; keep this session, transcript, files and Python state", icon: "command", behavior: "execute", accelerator: null,
+    paletteCommands: () => [{ id: "local:compact-session", label: "Compact session context", description: "Summarize model context; keep this session, transcript, files and runtime state", icon: "command", behavior: "execute", accelerator: null,
       enabled: transport?.canCompact ?? false, disabled_reason: transport?.busy ? "Finish or stop the running turn first" : "Send a message with a configured connection first",
       run: () => { void transport?.compact().catch(error => { if (transport) { transport.persistenceStatus = `Compaction: ${String(error)}`; transport.publish(); } }); } }],
     status: () => renderBrowserStatus(transport, pinnedStats, () => transport?.publish()),
@@ -90,7 +93,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
           finally { exporting = false; transport?.publish(); }
         })();
       } } }, [uiIcon("download"), "Export debug (.tar.gz)"]),
-    files: { local: true, nativeText: () => plainText, count: () => files.snapshotWorkspace().files.length, entries: entries => fileTools.sort(entries), entryTitle: path => fileTools.title(path), scope: options.storage ? "Session files · synced with Python" : "Session files · this tab only", rootLabel: "Session files",
+    files: { local: true, nativeText: () => plainText, count: () => files.snapshotWorkspace().files.length, entries: entries => fileTools.sort(entries), entryTitle: path => fileTools.title(path), scope: options.storage ? "Session files · synced with code runtime" : "Session files · this tab only", rootLabel: "Session files",
       previewContent: state => {
         const file = state.selectedPath ? files.get(state.selectedPath) : undefined;
         return file && canRenderFile(file) && !sourceViews.has(file.path) ? h("iframe", { key: file.path, attrs: { class: "files-inline-preview", title: `Preview: ${file.path}`, sandbox: "", referrerpolicy: "no-referrer" }, props: { srcdoc: workspacePreview(file) } }) : null;
@@ -130,7 +133,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
       h("button", { attrs: { type: "button", "data-browser-action": "sessions" }, on: { click: () => transport?.send({ type: "invoke_command", command_id: "sessions" }, 0) } }, [uiIcon("history"), "Sessions"]),
     ]),
     codeActions: (code, language) => snippetActions({ code, language: language ?? "text" }),
-    blockActions: (block) => block.tool?.kind === "call" && block.tool.tool_name === "python"
+    blockActions: (block) => block.tool?.kind === "call" && ["python", "dotnet"].includes(block.tool.tool_name)
       ? h("div", codeSnippets(block).map(snippetActions)) : null,
     externalDialogOpen: () => !!document.querySelector("dialog[open]"),
   });

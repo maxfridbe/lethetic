@@ -42,8 +42,8 @@ export async function sessionDebugBundle(session: SavedSession, diagnostics: unk
   const { workspace: _workspace, ...metadata } = session;
   member("session.json", json(metadata));
   member("diagnostics.json", json({ formatVersion: 1, exportedAt: new Date().toISOString(), sessionId: session.id, diagnostics,
-    workspace: { root: "/home/pyodide", directories: workspace.directories, files: workspace.files.map(file => ({ path: file.path, bytes: decodeBytes(file.data).length })) } }));
-  member("README.txt", encoder.encode("Lethetic session debug bundle\n\nsession.json: transcript, model history and session settings.\ndiagnostics.json: browser/runtime state and workspace inventory.\nworkspace/: files from the last completed Python checkpoint, including browser edits.\nConnection keys are excluded; known keys are redacted from text.\n"));
+    workspace: { root: session.mode === "dotnet-wasm" ? "/home/dotnetdide" : "/home/pyodide", directories: workspace.directories, files: workspace.files.map(file => ({ path: file.path, bytes: decodeBytes(file.data).length })) } }));
+  member("README.txt", encoder.encode("Lethetic session debug bundle\n\nsession.json: transcript, model history and session settings.\ndiagnostics.json: browser/runtime state and workspace inventory.\nworkspace/: files from the last completed code checkpoint, including browser edits.\nConnection keys are excluded; known keys are redacted from text.\n"));
   for (const directory of workspace.directories) member(`workspace/${directory}/`, new Uint8Array(), true);
   for (const file of workspace.files) {
     let bytes = decodeBytes(file.data);

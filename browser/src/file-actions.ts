@@ -6,7 +6,7 @@ import type { WorkspaceFile } from "./workspace.js";
 import type { CodeSnippet } from "./code-snippets.js";
 
 export function snippetName(snippet: CodeSnippet): string {
-  const extensions: Record<string, string> = { python: "py", javascript: "js", typescript: "ts", markdown: "md", text: "txt" };
+  const extensions: Record<string, string> = { csharp: "cs", "c#": "cs", python: "py", javascript: "js", typescript: "ts", markdown: "md", text: "txt" };
   const extension = extensions[snippet.language] ?? (/^[a-z0-9]{1,8}$/u.test(snippet.language) ? snippet.language : "txt");
   return `snippet.${extension}`;
 }

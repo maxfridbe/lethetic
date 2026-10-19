@@ -5,6 +5,9 @@ import type { ApplicationTransport, BrowserTransportEvents } from "../../web/src
 import { createRuntime, DEFAULT_PROMPT } from "./sdk.js";
 import type { Connection, LetheticRuntime, RuntimeEvent, Tool } from "./sdk.js";
 import { effectiveSystemPrompt, injectedInstructions, toolDefinitions } from "./prompts.js";
+import { createDotnetTool } from "./dotnet.js";
+import type { DotnetTool } from "./dotnet.js";
+import type { AgentMode } from "./sessions.js";
 import { createPythonTool } from "./python.js";
 import type { PythonTool } from "./python.js";
 import { emptyWorkspace, dateWorkspace } from "./workspace.js";
@@ -19,6 +22,8 @@ import type { FileEndpoint } from "../../web/src/files/protocol.js";
 export interface LocalOptions {
   connections: Connection[];
   python?: boolean;
+  mode?: AgentMode;
+  networkAccess?: boolean;
   tools?: Tool[];
   systemPrompt?: string;
   pyodideIndexURL?: string;
@@ -38,11 +43,14 @@ export class LocalTransport implements ApplicationTransport {
   pendingCount = 0;
   lastSendFailure: string | null = null;
   selected = 0;
-  pythonEnabled: boolean;
+  mode: AgentMode;
+  networkAccess: boolean;
+  get pythonEnabled(): boolean { return this.mode === "python"; }
   #revision = 0;
   #closed = false;
   #runtime: LetheticRuntime | null = null;
   #python: PythonTool | null = null;
+  #dotnet: DotnetTool | null = null;
   #operation: AbortController | null = null;
   #history: string[] = [];
   #system: string;
@@ -54,7 +62,8 @@ export class LocalTransport implements ApplicationTransport {
   persistenceStatus = "Sessions stay in this tab; storage is not enabled.";
 
   constructor(readonly events: BrowserTransportEvents, readonly options: LocalOptions) {
-    this.pythonEnabled = options.python ?? false;
+    this.mode = options.mode ?? (options.python ? "python" : "general");
+    this.networkAccess = options.networkAccess ?? false;
     this.#system = options.systemPrompt ?? DEFAULT_PROMPT;
     this.#sessions = new SessionStore(options.storage);
     if (options.files) {
@@ -65,8 +74,8 @@ export class LocalTransport implements ApplicationTransport {
   }
 
   get promptDetails(): { instructions: string; tools: string } {
-    return { instructions: injectedInstructions(this.pythonEnabled),
-      tools: JSON.stringify(toolDefinitions(this.pythonEnabled, this.options.tools), null, 2) };
+    return { instructions: injectedInstructions(this.mode, this.networkAccess),
+      tools: JSON.stringify(toolDefinitions(this.mode, this.options.tools), null, 2) };
   }
 
   get busy(): boolean { return this.#operation !== null; }
@@ -94,7 +103,7 @@ export class LocalTransport implements ApplicationTransport {
     this.state.status.provider_label = connection?.name ?? "Configure a connection";
     this.state.status.provider_transport = connection?.provider === "anthropic" ? "claude_code_proxy" : "open_ai_chat_completions";
     this.state.status.python.profile = this.pythonEnabled ? "python_only" : "general";
-    this.state.status.tool_use = this.pythonEnabled ? "Pyodide · browser worker" : "Browser tools";
+    this.state.status.tool_use = this.pythonEnabled ? "Pyodide · browser worker" : this.mode === "dotnet-wasm" ? `.NET 11 · WASM · network ${this.networkAccess ? "on" : "off"}` : "Browser tools";
     this.state.status.visible_block_count = this.state.blocks.blocks.length;
     this.events.serverMessage({ type: "state_snapshot", snapshot: { protocol_version: WFE_PROTOCOL_VERSION,
       revision: this.#revision, sequence: this.#revision, state: structuredClone(this.state) } });
@@ -155,13 +164,28 @@ export class LocalTransport implements ApplicationTransport {
     this.publish();
   }
 
-  setPythonMode(enabled: boolean): void {
+  setPythonMode(enabled: boolean): void { this.setMode(enabled ? "python" : "general"); }
+
+  setMode(mode: AgentMode): void {
     this.#requireIdle();
-    if (enabled === this.pythonEnabled) return;
+    if (!["general", "python", "dotnet-wasm"].includes(mode)) throw new Error("Unknown agent mode.");
+    if (mode === this.mode) return;
     this.#saveSession(true);
     this.#runtime?.dispose(); this.#runtime = null;
-    if (!enabled) { this.#python?.reset(); this.#python = null; }
-    this.pythonEnabled = enabled;
+    this.#python?.reset(); this.#python = null;
+    this.#dotnet?.reset(); this.#dotnet = null;
+    this.mode = mode;
+    this.#saveSession(); this.publish();
+  }
+
+  setNetworkAccess(enabled: boolean): void {
+    this.#requireIdle();
+    if (typeof enabled !== "boolean") throw new Error("Network access must be a boolean.");
+    if (enabled === this.networkAccess) return;
+    this.#saveSession(true);
+    this.#runtime?.dispose(); this.#runtime = null;
+    this.#dotnet?.reset(); this.#dotnet = null;
+    this.networkAccess = enabled;
     this.#saveSession(); this.publish();
   }
 
@@ -169,6 +193,7 @@ export class LocalTransport implements ApplicationTransport {
     this.#requireIdle();
     this.#runtime?.dispose(); this.#runtime = null;
     this.#python?.reset(); this.#python = null;
+    this.#dotnet?.reset(); this.#dotnet = null;
     this.metrics.reset(); this.#requestCount = 0;
     this.#savedMessages = [];
     this.state.blocks = { blocks: [], omitted_before: 0, truncated: false };
@@ -211,7 +236,7 @@ export class LocalTransport implements ApplicationTransport {
   closePermanently(): void { this.dispose(); }
   dispose(): void {
     if (this.#ticker !== null) clearInterval(this.#ticker);
-    this.#closed = true; this.#operation?.abort(); this.#runtime?.dispose(); this.#python?.reset();
+    this.#closed = true; this.#operation?.abort(); this.#runtime?.dispose(); this.#python?.reset(); this.#dotnet?.reset();
   }
 
   #requireIdle(): void { if (this.busy) throw new Error("Stop the current turn first."); }
@@ -258,8 +283,8 @@ export class LocalTransport implements ApplicationTransport {
       }
       case "set_agent_mode":
         this.#requireIdle();
-        if (!["general", "python"].includes(command.mode_id)) throw new Error("Unknown agent mode.");
-        this.setPythonMode(command.mode_id === "python"); break;
+        if (!["general", "python", "dotnet-wasm"].includes(command.mode_id)) throw new Error("Unknown agent mode.");
+        this.setMode(command.mode_id as AgentMode); break;
       case "select_system_prompt": this.#openSystemPrompt(); break;
       case "save_system_prompt":
         this.#requireIdle(); this.#saveSession(true);
@@ -318,8 +343,9 @@ export class LocalTransport implements ApplicationTransport {
         entries: this.#history.map((label, index) => ({ entry_id: String(index), label })) };
       if (panel === "name_session") this.state.overlay.data = { type: "name_session", current_name: this.state.session.display_name };
       if (panel === "agent_mode") this.state.overlay.data = { type: "agent_modes", modes: [
-        { mode_id: "general", label: "Chat", selected: !this.pythonEnabled, enabled: !this.busy, disabled_reason: null },
-        { mode_id: "python", label: "Python · Pyodide", selected: this.pythonEnabled, enabled: !this.busy, disabled_reason: null } ] };
+        { mode_id: "general", label: "Chat", selected: this.mode === "general", enabled: !this.busy, disabled_reason: null },
+        { mode_id: "python", label: "Python · Pyodide", selected: this.pythonEnabled, enabled: !this.busy, disabled_reason: null },
+        { mode_id: "dotnet-wasm", label: ".NET 11 · WASM", selected: this.mode === "dotnet-wasm", enabled: !this.busy, disabled_reason: null } ] };
       if (panel === "system_prompt") this.#openSystemPrompt();
       return { type: "panel_opened", panel };
     }
@@ -348,7 +374,12 @@ export class LocalTransport implements ApplicationTransport {
             onWorkspace: (workspace) => this.#checkpointWorkspace(workspace) });
           tools.push(this.#python);
         }
-        const runtime = await createRuntime({ connection, tools, systemPrompt: effectiveSystemPrompt(this.#system, this.pythonEnabled), onEvent: (event) => this.#event(event) });
+        if (this.mode === "dotnet-wasm") {
+          this.#dotnet ??= createDotnetTool({ networkAccess: this.networkAccess, workspace: this.#workspace,
+            onWorkspace: workspace => this.#checkpointWorkspace(workspace) });
+          tools.push(this.#dotnet);
+        }
+        const runtime = await createRuntime({ connection, tools, systemPrompt: effectiveSystemPrompt(this.#system, this.mode, this.networkAccess), onEvent: (event) => this.#event(event) });
         if (this.#closed) { runtime.dispose(); return; }
         try { runtime.restore(this.#savedMessages); } catch (error) { runtime.dispose(); throw error; }
         this.#runtime = runtime;
@@ -371,6 +402,7 @@ export class LocalTransport implements ApplicationTransport {
 
   #newSession(): void {
     this.reset(); this.#history = []; this.#workspace = emptyWorkspace();
+    this.networkAccess = this.options.networkAccess ?? false;
     this.state.session = { session_id: crypto.randomUUID(), display_name: null, fallback_label: "New chat" };
     this.options.onSessionChanged?.(this.state.session.session_id);
   }
@@ -386,7 +418,8 @@ export class LocalTransport implements ApplicationTransport {
       this.state.session = { session_id: session.id, display_name: session.name, fallback_label: session.label };
       this.state.blocks.blocks = session.blocks; this.#savedMessages = session.messages; this.#history = session.inputs;
       this.#workspace = structuredClone(session.workspace ?? this.#legacyWorkspace);
-      this.#system = session.system; this.pythonEnabled = session.python;
+      this.#system = session.system; this.mode = session.mode ?? (session.python ? "python" : "general");
+      this.networkAccess = session.networkAccess ?? false;
       if (session.metrics) this.metrics.restore(session.metrics);
       for (const theme of this.state.themes) theme.selected = theme.theme_id === session.theme;
       if (session.connection) {
@@ -423,11 +456,11 @@ export class LocalTransport implements ApplicationTransport {
       this.state.session.fallback_label = label;
       this.#sessions.save({ id: this.state.session.session_id, name: this.state.session.display_name, label,
         updatedAt: new Date().toISOString(), blocks: this.state.blocks.blocks, messages: this.#savedMessages,
-        inputs: this.#history, system: this.#system, python: this.pythonEnabled, workspace: this.#workspace,
+        inputs: this.#history, system: this.#system, python: this.pythonEnabled, mode: this.mode, networkAccess: this.networkAccess, workspace: this.#workspace,
         metrics: this.metrics.snapshot(),
         theme: this.state.themes.find((theme) => theme.selected)?.theme_id ?? "dracula",
         connection: connection ? { name: connection.name, provider: connection.provider, endpoint: connection.endpoint, model: connection.model } : null });
-      if (this.options.storage) this.persistenceStatus = "Chats and files are saved unencrypted on this device. API keys are excluded from saved chats. Session files sync with Python at /home/pyodide. Python variables reset on reload or session switch.";
+      if (this.options.storage) this.persistenceStatus = "Chats and files are saved unencrypted on this device. API keys are excluded from saved chats. Session files sync with the selected code runtime. Variables reset on reload, stop, mode/permission changes or session switch.";
       this.state.sessions = { sessions: this.#sessions.list().map((item) => ({ session_id: item.id,
         display_name: item.name, fallback_label: item.label, selected: item.id === this.state.session.session_id })), has_more: false };
     } catch (error) {
@@ -442,6 +475,7 @@ export class LocalTransport implements ApplicationTransport {
     try { this.#saveSession(true); }
     catch (error) { this.#workspace = previous; this.publish(); throw error; }
     this.#python?.setWorkspace(this.#workspace);
+    this.#dotnet?.setWorkspace(this.#workspace);
     this.options.onFilesChanged?.(); this.publish();
   }
 

@@ -1,3 +1,4 @@
+import { testDotnetBrowser } from "./dotnet-browser.js";
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { PREVIEW_WEBM } from "./media-fixture.js";
@@ -389,14 +390,14 @@ try {
     prompt.dispatchEvent(new Event('input',{bubbles:true})); document.querySelector('form.composer').requestSubmit()`);
   await until("document.querySelector('.app-shell').textContent.includes('Context restored')");
   await until("document.querySelector('.browser-status').textContent.includes('2,528')");
-  await evaluate("document.querySelector('[data-browser-action=connections]').click(); document.querySelector('[data-field=python]').click()");
+  await evaluate("document.querySelector('[data-browser-action=connections]').click(); document.querySelector('[data-field=mode]').value='python'; document.querySelector('[data-field=mode]').dispatchEvent(new Event('change'))");
   check(await evaluate("location.hash") === originalHash, "enabling Python created a new session");
   check(await evaluate("document.querySelector('.app-shell').textContent.includes('Context restored')"), "enabling Python cleared history");
   await evaluate("document.querySelector('dialog[open]').close()");
   await rpc("Page.reload");
   await until("!!document.querySelector('[data-field=name]')");
   await evaluate("document.querySelector('[data-browser-action=connections]').click()");
-  check(await evaluate("document.querySelector('[data-field=python]').checked && document.querySelector('[data-field=key]').value==='updated-tab-key'"), "Python or updated credentials did not survive reload");
+  check(await evaluate("document.querySelector('[data-field=mode]').value==='python' && document.querySelector('[data-field=key]').value==='updated-tab-key'"), "Python or updated credentials did not survive reload");
   check(await evaluate("location.hash") === originalHash, "Python session changed on refresh");
   await evaluate("document.querySelector('dialog[open]').close(); document.querySelector('[aria-label=\"Open command palette\"]').click(); document.querySelector('#palette-command-system-prompt').click()");
   await until("!!document.querySelector('#prompt-injected')");
@@ -408,7 +409,7 @@ try {
   const promptImage=await rpc("Page.captureScreenshot",{format:"png"});
   await writeFile(config.screenshot.replace('.png','-prompt.png'),Buffer.from(String(promptImage['data']),'base64'));
   await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); document.querySelector('[data-browser-action=connections]').click()");
-  await evaluate("document.querySelector('[data-field=python]').click(); document.querySelector('dialog[open]').close()");
+  await evaluate("document.querySelector('[data-field=mode]').value='general'; document.querySelector('[data-field=mode]').dispatchEvent(new Event('change')); document.querySelector('dialog[open]').close()");
   await evaluate("document.querySelector('[aria-label=\"Open command palette\"]').click(); document.querySelector('#palette-command-system-prompt').click()");
   await until("!!document.querySelector('#prompt-injected')");
   check(await evaluate("!document.querySelector('#prompt-injected').value.includes('Because you are in Python mode') && document.querySelector('#prompt-content').value==='Solve the task carefully.' && document.querySelector('#prompt-tools').value==='[]'"), "chat prompt retained Python instructions or lost edits");
@@ -624,6 +625,19 @@ try {
   }
   await evaluate('globalThis.mediaView.destroy()');
   process.stdout.write('Automatic audio/video previews decoded in the browser with native controls.\n');
+  await testDotnetBrowser(evaluate);
+  process.stdout.write("Released .NET runtime: session files, state, cancellation, network permissions and UI reload passed.\n");
+  const dotnetScreenshot = await rpc("Page.captureScreenshot", { format: "png" });
+  await writeFile(config.screenshot.replace(".png", "-dotnet.png"), Buffer.from(String(dotnetScreenshot["data"]), "base64"));
+  await evaluate("document.querySelector('[data-browser-action=connections]').click()");
+  const securityScreenshot = await rpc("Page.captureScreenshot", { format: "png" });
+  await writeFile(config.screenshot.replace(".png", "-dotnet-security.png"), Buffer.from(String(securityScreenshot["data"]), "base64"));
+  await rpc("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  check(await evaluate("document.documentElement.scrollWidth <= innerWidth"), ".NET settings overflow on mobile");
+  await evaluate("document.querySelector('.browser-runtime').scrollIntoView({block:'end'})");
+  const mobileDotnet = await rpc("Page.captureScreenshot", { format: "png" });
+  await writeFile(config.screenshot.replace(".png", "-dotnet-mobile.png"), Buffer.from(String(mobileDotnet["data"]), "base64"));
+  await evaluate("globalThis.dotnetTestView.destroy()");
   if (config.pyodide) {
     await evaluate(`(async () => {
       const {createPythonTool}=await import('./src/sdk.js');

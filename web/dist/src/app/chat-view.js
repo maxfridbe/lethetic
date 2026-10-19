@@ -85,7 +85,7 @@ function renderBlock(block, index, maxJsonSegments, anchor, actions, codeActions
     const parsed = python !== null && !originalPython;
     const pythonDisplay = python === null ? "" : boundedText(python);
     const renderedContent = parsed ? h("pre", { attrs: { class: "python-tool-code", "data-python-view": "parsed" } },
-        h("code", { attrs: { class: "code-highlight" } }, highlightCode(pythonDisplay, "python") ?? [pythonDisplay])) : isMarkdownBlockKind(block.kind)
+        h("code", { attrs: { class: "code-highlight" } }, highlightCode(pythonDisplay, block.tool?.tool_name === "dotnet" ? "csharp" : "python") ?? [pythonDisplay])) : isMarkdownBlockKind(block.kind)
         ? markdownContentThunk(block.kind, displayContent, markdownBlockUsesJsonHighlighting(block), maxJsonSegments, codeActions)
         : toolResultUsesAutoRendering(block)
             ? toolResultContentThunk(displayContent, block.tool?.payload_loss.truncation !== null, maxJsonSegments)
@@ -110,7 +110,7 @@ function renderBlock(block, index, maxJsonSegments, anchor, actions, codeActions
             block.estimated_cost === null ? null : (h("span", null, `${block.estimated_cost.display} estimated`)))),
         h("footer", { attrs: { class: "chat-block-actions" } },
             python === null ? null : h("span", { attrs: { class: "python-view-controls", role: "group", "aria-label": "Python code display" } },
-                h("button", { attrs: { type: "button", "data-python-view": "parsed", "aria-pressed": String(parsed), title: "Show Python code with indentation and syntax highlighting" }, props: { disabled: !setPythonOriginal }, on: { click: () => setPythonOriginal?.(false) } },
+                h("button", { attrs: { type: "button", "data-python-view": "parsed", "aria-pressed": String(parsed), title: "Show code with indentation and syntax highlighting" }, props: { disabled: !setPythonOriginal }, on: { click: () => setPythonOriginal?.(false) } },
                     uiIcon("code"),
                     "Parsed"),
                 h("button", { attrs: { type: "button", "data-python-view": "original", "aria-pressed": String(!parsed), title: "Show the original tool arguments" }, props: { disabled: !setPythonOriginal }, on: { click: () => setPythonOriginal?.(true) } },

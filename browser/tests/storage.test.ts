@@ -89,3 +89,12 @@ await test("tab credentials survive reload without entering saved metadata and a
   assert.equal(restoreConnectionKeys(tab,[{...connection,apiKey:"explicit"}])[0]?.apiKey,"explicit");
   saveConnectionKeys(tab,[]); assert.equal(restoreConnectionKeys(tab,loadConnections(device))[0]?.apiKey,undefined);
 });
+
+await test("session mode/permissions round-trip and reject non-boolean grants", () => {
+  const store = new SessionStore(); const session = saved();
+  store.save(session); assert.equal(store.list()[0]?.mode, undefined); // Legacy sessions remain readable.
+  store.save({...session, mode:"dotnet-wasm", networkAccess:false});
+  assert.equal(store.list()[0]?.mode, "dotnet-wasm"); assert.equal(store.list()[0]?.networkAccess, false);
+  assert.throws(() => store.save({...session, networkAccess:"true" as unknown as boolean}), /network permission/);
+  assert.equal(store.list()[0]?.networkAccess, false);
+});

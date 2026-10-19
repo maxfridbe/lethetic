@@ -34,7 +34,7 @@ export function createFileUpload(files: BrowserFiles, session: () => Session | n
       const incoming = await readUploads(selected);
       if (!current()) throw new Error("Upload canceled: the session changed or a turn started. Choose the files again when idle.");
       const paths = files.importFiles(destination.directory, incoming);
-      updated(`Uploaded ${paths.length} file${paths.length === 1 ? "" : "s"} to ${destination.directory || "session root"}. Available to Python under /home/pyodide. Existing names are kept; duplicates get numbered filenames.`);
+      updated(`Uploaded ${paths.length} file${paths.length === 1 ? "" : "s"} to ${destination.directory || "session root"}. Available to the selected code runtime in its session workspace. Existing names are kept; duplicates get numbered filenames.`);
     } catch (error) { if (!destroyed) updated(error instanceof Error ? error.message : String(error)); }
     finally { uploading = false; if (!destroyed) updated(""); }
   };
@@ -42,7 +42,7 @@ export function createFileUpload(files: BrowserFiles, session: () => Session | n
     render(directory): VNode {
       return h("span.browser-upload", [
         h("button", { attrs: { type: "button", "data-file-action": "upload",
-          title: "Upload into this folder for Python: 1 MiB per file, 2 MiB total per session. Existing files are kept." },
+          title: "Upload into this folder for code execution: 1 MiB per file, 2 MiB total per session. Existing files are kept." },
           props: { disabled: uploading || !session() || session()?.busy }, on: { click: (event: Event) => {
             const current = session(); if (!current || current.busy || uploading || destroyed) return;
             target = { id: current.id, directory };

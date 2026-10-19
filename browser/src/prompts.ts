@@ -1,3 +1,5 @@
+import { DOTNET_TOOL_DEFINITION } from "./dotnet.js";
+import type { AgentMode } from "./sessions.js";
 import { PYTHON_TOOL_DEFINITION } from "./python.js";
 import type { Tool } from "./sdk.js";
 
@@ -34,13 +36,23 @@ ${PYODIDE_CHECK}
 
 sys.platform == "emscripten" identifies an Emscripten Python build, not exclusively Pyodide. For another package, importlib.util.find_spec("package_name") checks whether it is currently importable, not whether it can be installed. The tool automatically loads packages bundled with Pyodide from imports in the submitted code. For additional compatible wheels, use import micropip followed by await micropip.install("package-name"). Native desktop binaries, subprocesses, and OS shell commands are unavailable. Network requests remain subject to browser CORS; use async browser-compatible APIs such as pyodide.http.pyfetch. Use print() to report useful output, and inspect exceptions before claiming success.`;
 
-export function injectedInstructions(python: boolean): string {
-  return [BROWSER_INSTRUCTIONS, ...(python ? [PYTHON_INSTRUCTIONS] : [])].join("\n\n");
+export const DOTNET_INSTRUCTIONS = `dotnet-wasm mode
+The user expects you to write, compile and run C# programs to solve their problems. Your dotnet tool runs .NET 11 and Roslyn inside a browser worker. Use System.IO to inspect uploaded files and create reusable .cs programs and results under /home/dotnetdide (the initial working directory). These files sync into this session after each tool call and the user can preview or download them in Files. Python and .NET modes share relative session file paths.
+
+Default script usings: System, System.IO, System.Linq, System.Collections.Generic, System.Threading.Tasks. Use using (...) blocks for disposable script resources; top-level using var declarations require a regular compiled .cs program. Add explicit using directives for other .NET namespaces, e.g. System.Text.Json, System.Net.Http and System.IO.Compression. Variables persist until stop, reload, mode/permission changes or session switch; files survive. Session limits: 100 files, 256 folders, 1 MiB per file, 2 MiB total. Use Console.WriteLine to report output and inspect compiler diagnostics before claiming success.
+
+Write File.WriteAllText("Program.cs", source), then await Dotnet.Run("Program.cs"). Dotnet.Build() builds workspace sources; Dotnet.Build("app.csproj") and await Dotnet.Run("app.csproj") support a limited SDK-style project subset, not full MSBuild. Inspect the returned Success, Output or Build.Output and ExitCode. No NuGet restore, package/project references, native binaries or shell. Script variables and script using directives are not inherited by separately compiled programs.
+
+For browser HTTP use await Dotnetdide.Net.GetStringAsync(url), GetBytesAsync(url), PostJsonAsync(url, value), or System.Net.Http.HttpClient. Browser CORS applies. Save downloaded bytes with File.WriteAllBytes. Network access is a host permission, not something code should bypass. No model credentials are passed to the worker. Do not attempt JavaScript interop to evade permissions.`;
+
+export function injectedInstructions(mode: AgentMode | boolean, networkAccess = false): string {
+  return [BROWSER_INSTRUCTIONS, ...(mode === true || mode === "python" ? [PYTHON_INSTRUCTIONS] : []),
+    ...(mode === "dotnet-wasm" ? [DOTNET_INSTRUCTIONS, `Network access: ${networkAccess ? "enabled; browser HTTP requests are authorized" : "disabled; use session files and local computation only. The user can enable it in Connections → Runtime & security"}.`] : [])].join("\n\n");
 }
-export function effectiveSystemPrompt(editable: string, python: boolean): string {
-  return [editable, injectedInstructions(python)].filter(Boolean).join("\n\n");
+export function effectiveSystemPrompt(editable: string, mode: AgentMode | boolean, networkAccess = false): string {
+  return [editable, injectedInstructions(mode, networkAccess)].filter(Boolean).join("\n\n");
 }
-export function toolDefinitions(python: boolean, tools: readonly Tool[] = []): Pick<Tool, "name" | "description" | "parameters">[] {
-  return [...tools, ...(python ? [PYTHON_TOOL_DEFINITION] : [])]
+export function toolDefinitions(mode: AgentMode | boolean, tools: readonly Tool[] = []): Pick<Tool, "name" | "description" | "parameters">[] {
+  return [...tools, ...(mode === true || mode === "python" ? [PYTHON_TOOL_DEFINITION] : mode === "dotnet-wasm" ? [DOTNET_TOOL_DEFINITION] : [])]
     .map(({ name, description, parameters }) => ({ name, description, parameters }));
 }

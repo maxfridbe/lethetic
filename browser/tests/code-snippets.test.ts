@@ -23,3 +23,12 @@ await test("Python presentation extracts exact multiline code and refuses incomp
   assert.equal(pythonToolCode({tool:{...tool,payload:'{"code":'}}),null);
   assert.equal(pythonToolCode({tool:{...tool,payload_loss:{...loss,truncation:"size_limit"}}}),null);
 });
+
+await test("C# tool input is captured and parsed without interpreting result output", async () => {
+  const { pythonToolCode } = await import("../../web/src/app/helpers.js");
+  const code = 'using System.Text.Json;\nConsole.WriteLine("hello");';
+  const call = { ...block("tool_call", "", ".NET"), tool: { kind: "call" as const, tool_name: "dotnet",
+    payload: JSON.stringify({code}), payload_loss: NO_LOSS } };
+  assert.deepEqual(codeSnippets(call), [{code,language:"csharp"}]); assert.equal(pythonToolCode(call), code);
+  assert.deepEqual(codeSnippets({...call,tool:{...call.tool,kind:"result"}}), []);
+});

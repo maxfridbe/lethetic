@@ -4,11 +4,11 @@ export interface CodeSnippet { code: string; language: string }
 
 /** Extract complete fenced blocks and Python tool inputs, never tool output or prose. */
 export function codeSnippets(block: RenderBlockView): CodeSnippet[] {
-  if (block.tool?.kind === "call" && block.tool.tool_name === "python") {
+  if (block.tool?.kind === "call" && ["python", "dotnet"].includes(block.tool.tool_name)) {
     try {
       const args: unknown = JSON.parse(block.tool.payload);
       if (args && typeof args === "object" && "code" in args && typeof args.code === "string") {
-        return [{ code: args.code, language: "python" }];
+        return [{ code: args.code, language: block.tool.tool_name === "dotnet" ? "csharp" : "python" }];
       }
     } catch { /* Incomplete tool JSON is not saveable code. */ }
     return [];

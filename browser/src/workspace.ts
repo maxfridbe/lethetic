@@ -21,7 +21,7 @@ export function textFile(file: WorkspaceFile): string | null {
 
 /** Canonical, bounded snapshots shared by persistence, the worker and the Files UI. */
 export function parseWorkspace(value: unknown): Workspace {
-  if (!value || typeof value !== "object") throw new Error("Invalid Python workspace.");
+  if (!value || typeof value !== "object") throw new Error("Invalid session workspace.");
   const item = value as Workspace;
   if (item.version !== 1 || !Array.isArray(item.files) || item.files.length > 100 ||
       !Array.isArray(item.directories) || item.directories.length > 256) throw new Error("Workspace exceeds 100 files / 256 folders.");

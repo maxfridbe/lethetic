@@ -10,10 +10,13 @@ import type { MetricsSnapshot } from "./metrics.js";
 import { parseWorkspace } from "./workspace.js";
 import type { Workspace } from "./workspace.js";
 
+export type AgentMode = "general" | "python" | "dotnet-wasm";
+
 export interface SavedSession {
   id: string; name: string | null; label: string; updatedAt: string;
   blocks: RenderBlockView[]; messages: unknown[]; inputs: string[];
   system: string; connection: Omit<Connection, "apiKey"> | null; python: boolean; theme: string;
+  mode?: AgentMode; networkAccess?: boolean;
   metrics?: MetricsSnapshot;
   workspace?: Workspace;
 }
@@ -60,6 +63,8 @@ function parseSession(value: unknown): SavedSession {
       typeof item.system !== "string" || typeof item.python !== "boolean" || typeof item.theme !== "string") {
     throw new Error("Invalid saved session.");
   }
+  if (item.mode !== undefined && !["general", "python", "dotnet-wasm"].includes(item.mode)) throw new Error("Invalid saved mode.");
+  if (item.networkAccess !== undefined && typeof item.networkAccess !== "boolean") throw new Error("Invalid saved network permission.");
   const state = initialState(); state.blocks = { blocks: item.blocks, omitted_before: 0, truncated: false };
   if (!parseServerMessage(JSON.stringify({ type: "state_snapshot", snapshot: {
     protocol_version: WFE_PROTOCOL_VERSION, revision: 1, sequence: 1, state } })).ok) throw new Error("Invalid saved transcript.");
@@ -69,7 +74,9 @@ function parseSession(value: unknown): SavedSession {
     connection = { name: checked.name, provider: checked.provider, endpoint: checked.endpoint, model: checked.model };
   }
   return { id: item.id, name: item.name, label: item.label, updatedAt: item.updatedAt, blocks: item.blocks,
-    messages: item.messages, inputs: item.inputs, system: item.system, python: item.python, theme: item.theme, connection,
+    messages: item.messages, inputs: item.inputs, system: item.system, python: item.python,
+    ...(item.mode !== undefined ? { mode: item.mode } : {}),
+    ...(item.networkAccess !== undefined ? { networkAccess: item.networkAccess } : {}), theme: item.theme, connection,
     ...(item.workspace !== undefined ? { workspace: parseWorkspace(item.workspace) } : {}),
     ...(item.metrics ? { metrics: parseMetrics(item.metrics) } : {}) };
 }

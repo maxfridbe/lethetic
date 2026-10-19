@@ -7,7 +7,7 @@ import { encodeBytes, parseWorkspace } from "../src/workspace.js";
 await test("debug bundles are standard gzip/tar with Unicode paths, binary files, and redacted keys", async () => {
   const path = "reports/" + "long-name-".repeat(20) + "résumé.txt";
   const bundle = await sessionDebugBundle({id:crypto.randomUUID(),name:"Debug",label:"debug",updatedAt:new Date().toISOString(),
-    blocks:[],messages:[{role:"user",content:"key: test-secret"}],inputs:[],system:"help",python:true,theme:"dracula",
+    blocks:[],messages:[{role:"user",content:"key: test-secret"}],inputs:[],system:"help",python:false,mode:"dotnet-wasm",networkAccess:false,theme:"dracula",
     connection:{name:"Example",provider:"openai",endpoint:"https://example.com/v1/chat/completions",model:"test"},
     workspace:parseWorkspace({version:1,directories:["empty"],files:[{path,data:encodeBytes(new TextEncoder().encode("test-secret héllo"))},{path:"image.bin",data:"AP8B"}]})},
     {status:"Failed test-secret",apiKey:"test-secret"},["test-secret"]);
@@ -25,6 +25,8 @@ with tarfile.open(fileobj=io.BytesIO(base64.b64decode(sys.argv[1])),mode='r:gz')
     assert 'apiKey' not in metadata['connection']
     diagnostics=json.load(archive.extractfile('diagnostics.json'))
     assert diagnostics['diagnostics']=={'status':'Failed [REDACTED]'}
+    assert diagnostics['workspace']['root']=='/home/dotnetdide'
+    assert metadata['mode']=='dotnet-wasm' and metadata['networkAccess'] is False
 `,encoded,path],{stdio:["ignore","ignore","pipe"]});
     let errors=""; child.stderr?.setEncoding("utf8"); child.stderr?.on("data",text=>{errors+=text;});
     child.on("exit",code=>{if(code===0)resolve();else reject(Error(errors));});

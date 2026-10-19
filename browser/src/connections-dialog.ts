@@ -50,10 +50,16 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
         </form>
       </section>
     </div>
-    <label class="browser-python"><input data-field="python" type="checkbox"> Python tools for this session (Pyodide)</label>
-    <p class="connection-hint">${credentialStorage ? "Keys stay in this tab and survive refresh." : "Keys stay in memory."} Switching connections keeps this session’s history, files, and Python state.</p>
+    <fieldset class="browser-runtime"><legend>Runtime &amp; security · current session</legend>
+    <label>Code runtime <select data-field="mode"><option value="general">Chat</option><option value="python">Python · Pyodide</option><option value="dotnet-wasm">.NET 11 · WASM</option></select></label>
+    <label><input data-field="network" type="checkbox"> Network access (.NET code)</label>
+    <p data-field="permissions" class="browser-note"></p>
+    <p class="browser-note">Mode and permission changes keep this chat and its files; code variables restart. Pyodide retains browser networking. .NET controls cover HTTP and sockets, not hostile JavaScript interop. Browser CORS still applies.</p>
+    </fieldset>
+    <p class="connection-hint">${credentialStorage ? "Keys stay in this tab and survive refresh." : "Keys stay in memory."} Switching connections keeps this session’s history, files, and code variables.</p>
     <p data-field="status" role="status"></p>`);
   dialog.classList.add("browser-connections");
+  const select = (name: string): HTMLSelectElement => field<HTMLSelectElement>(dialog, name);
   const input = (name: string): HTMLInputElement => field<HTMLInputElement>(dialog, name);
   const button = (name: string): HTMLButtonElement => field<HTMLButtonElement>(dialog, name);
   const status = (text: string): void => { field(dialog, "status").textContent = text; };
@@ -130,8 +136,12 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     button("remove").disabled = selected < 0 || transport.busy;
     button("test").disabled = !valid || operation !== null;
     field(dialog, "test-state").replaceChildren(healthBadge(current));
-    input("python").checked = transport.pythonEnabled;
-    input("python").disabled = transport.busy;
+    select("mode").value = transport.mode; select("mode").disabled = transport.busy;
+    input("network").checked = transport.networkAccess;
+    input("network").disabled = transport.busy || transport.mode !== "dotnet-wasm";
+    field(dialog, "permissions").textContent = transport.mode === "dotnet-wasm"
+      ? `Session files: read/write enabled · Network: ${transport.networkAccess ? "enabled" : "disabled"}`
+      : transport.pythonEnabled ? "Session files: read/write enabled · Network: enabled (Pyodide)" : "Code execution is off.";
   };
   const cancelModels = (): void => {
     modelOperation?.abort(); modelOperation = null; models = [];
@@ -237,8 +247,13 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
       finally { clearTimeout(timer); if (modelOperation === controller) { modelOperation = null; button("fetch-models").disabled = false; } }
     })();
   });
-  input("python").addEventListener("change", () => {
-    try { transport.setPythonMode(input("python").checked); status(`Python ${transport.pythonEnabled ? "enabled" : "disabled"} for this session.`); }
+  select("mode").addEventListener("change", () => {
+    try { transport.setMode(select("mode").value as import("./sessions.js").AgentMode); status(`Runtime updated for this session: ${transport.mode}.`); }
+    catch (error) { status(errorMessage(error)); }
+    updateEditor();
+  });
+  input("network").addEventListener("change", () => {
+    try { transport.setNetworkAccess(input("network").checked); status(`.NET network access ${transport.networkAccess ? "enabled" : "disabled"}.`); }
     catch (error) { status(errorMessage(error)); }
     updateEditor();
   });

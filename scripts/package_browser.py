@@ -30,11 +30,11 @@ def package(stage: Path) -> None:
         raise ValueError("release version must be a semantic version")
     (stage / "package.json").write_text(json.dumps({
         "name": "@lethetic/browser", "version": version, "type": "module",
-        "description": "Lethetic browser WASM runtime, Pyodide tools, and embeddable UI",
+        "description": "Lethetic browser WASM runtime, Pyodide and .NET tools, and embeddable UI",
         "exports": {".": {"types": "./src/sdk.d.ts", "import": "./src/sdk.js"},
                     "./embed": {"types": "./src/embed.d.ts", "import": "./src/embed.js"},
                     "./styles.css": "./styles.css"},
-        "files": ["src", "browser", "web", "styles.css", "browser.css", "integration.md"],
+        "files": ["src", "browser", "web", "runtimes", "styles.css", "browser.css", "integration.md"],
         "private": True,
     }, indent=2) + "\n")
     # A readable, escaped copy needs no Markdown renderer, CDN, or script privileges.

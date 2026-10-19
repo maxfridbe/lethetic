@@ -491,9 +491,9 @@ export function projectionLossMessages(
   ].filter((message): message is string => message !== null);
 }
 
-/** Extract only complete Python call input; never parse tool output as code. */
+/** Extract only complete Python/C# call input; never parse tool output as code. */
 export function pythonToolCode(block: Pick<RenderBlockView, "tool">): string | null {
-  if (block.tool?.kind !== "call" || block.tool.tool_name !== "python" || projectionLossIsTruncated(block.tool.payload_loss)) return null;
+  if (block.tool?.kind !== "call" || !["python", "dotnet"].includes(block.tool.tool_name) || projectionLossIsTruncated(block.tool.payload_loss)) return null;
   try {
     const value: unknown = JSON.parse(block.tool.payload);
     return typeof value === "object" && value !== null && "code" in value && typeof value.code === "string" ? value.code : null;

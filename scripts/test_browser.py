@@ -53,7 +53,7 @@ class Handler(SimpleHTTPRequestHandler):
         data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         messages = data["messages"]
         if messages[-1]["role"] == "tool":
-            content = "Python says: " + messages[-1]["content"].strip()
+            content = ("C# says: " if messages[-1].get("tool_call_id", "").startswith("dotnet") else "Python says: ") + messages[-1]["content"].strip()
         else:
             content = "Connected" if "single word Connected" in messages[-1]["content"] else "Hello from the browser test\n\n```python\nprint('private snippet')\n```"
         if messages[-1]["role"] == "user" and messages[-1]["content"] == "remember earlier":
@@ -74,6 +74,11 @@ class Handler(SimpleHTTPRequestHandler):
                 "id": "python-1", "type": "function",
                 "function": {"name": "python", "arguments": json.dumps({"code": code})},
             }]}
+            if data["tools"][0]["function"]["name"] == "dotnet":
+                code = 'File.WriteAllText("Program.cs", "Console.WriteLine(42);"); var built = await Dotnet.Run("Program.cs"); Console.WriteLine("dotnet files ready");'
+                message["tool_calls"][0]["id"] = "dotnet-1"
+                message["tool_calls"][0]["function"] = {"name": "dotnet", "arguments": json.dumps({"code": code})}
+                assert "Network access: disabled" in messages[0]["content"]
             reason = "tool_calls"
         else:
             message, reason = {"role": "assistant", "content": content}, "stop"

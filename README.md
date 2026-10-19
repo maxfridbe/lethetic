@@ -3,7 +3,7 @@
 **[Try it now in your browser](https://maxfridbe.github.io/lethetic/) · [Embed it in your app](integration.md#embed-the-complete-ui) · [Run it locally](integration.md#build-and-test)**
 
 The browser edition uses the same UI as remote mode, with a local **WASM runtime**,
-your own model connections, **Pyodide Python**, the existing **Files browser**, and
+your own model connections, **Pyodide Python or .NET 11 WASM**, the existing **Files browser**, and
 **saved sessions** that reopen after refresh. No native server is needed.
 [Download the standalone site and embedding SDK](https://github.com/maxfridbe/lethetic/releases/latest).
 
@@ -11,6 +11,11 @@ your own model connections, **Pyodide Python**, the existing **Files browser**, 
 <a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-mobile.png" alt="Lethetic browser edition on a phone" width="260"></a>
 
 Desktop and phone screenshots with a demo conversation. Click either to try it.
+
+<details><summary>.NET WASM: C# compilation and shared session files</summary>
+<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-dotnet.png" alt="Lethetic running C# with generated Program.cs and compiled DLL/PDB files in the session workspace" width="1000"></a>
+<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-dotnet-mobile.png" alt="Mobile runtime settings showing .NET WASM selected and Network access disabled" width="260"></a>
+</details>
 
 > "...so many various filters and enhancements, so many possible patterns, that it was as much an art as a craft. We didn't have the trained personnel that we needed, and as good as the lethetic intelligence engines were, they still lacked the ability to make intuitive leaps. LIs could give you statistical probabilities; they couldn't give you hunches—although the last I'd heard, they were working on adding that function too."
 
@@ -30,7 +35,15 @@ In **Connections**, use **Fetch models** to browse and filter the available mode
 or enter a model ID manually. The active connection and key status are explicit;
 use **Duplicate with key** to copy a connection and **Use connection** to switch.
 The standalone edition runs a Rust/WASM conversation runtime locally, with optional
-**Pyodide Python tools** in a persistent Web Worker.
+**Python · Pyodide** or **.NET 11 · WASM** in a persistent Web Worker.
+Choose the runtime in **Connections → Runtime & security**. .NET networking is off
+by default; **Network access** enables browser HTTP and sockets for generated C#
+without affecting the model connection. The setting is saved with the session.
+Both modes share session files; .NET sees them at `/home/dotnetdide`.
+C# can use `System.IO`, `await Dotnet.Run("Program.cs")`, `Dotnet.Build()`, and
+`await Dotnetdide.Net.GetStringAsync(url)` when network access is enabled.
+The bundled runtime comes from a checksum-pinned
+[dotnetdide ZIP release](https://github.com/maxfridbe/dotnetdide/releases).
 The **System prompt** dialog shows your editable instructions, the exact runtime
 additions, and tool definitions. Python mode encourages tested, reusable `.py`
 programs saved to session Files for preview and download. It needs no native Lethetic process.
@@ -63,7 +76,7 @@ or use the `Browser and WASM` GitHub Actions workflow for Pages. Every `v*` rele
 also builds `lethetic-browser.zip` and a SHA-256 checksum; `browser-v*` tags publish
 an independent embedding release. The archive contains the site,
 WASM bindings, TypeScript declarations, embedding SDK, and integration guide.
-See **[integration.md](integration.md)** for setup, Python mode, embedding examples,
+See **[integration.md](integration.md)** for setup, Python and .NET modes, embedding examples,
 tests, CORS configuration, and deployment requirements.
 
 ### Native application

@@ -140,3 +140,26 @@ await test("duplicate endpoints resume the selected named connection and export 
   assert.equal(transport.sessionForExport(id).id,id); assert.equal(transport.state.session.session_id,current);
   transport.dispose();
 });
+
+await test(".NET mode and its network permission persist without changing session or shared files", async () => {
+  const records = new Map<string, string>();
+  const storage = { getItem: (key: string) => records.get(key) ?? null, setItem: (key: string, value: string) => { records.set(key, value); } } as Storage;
+  const events = { socketOpened() {}, authenticationEpochChanged() {}, transportStatus() {}, protocolFault() {}, serverMessage() {}, commandResponse() {} };
+  const files = new BrowserFiles();
+  const transport = new LocalTransport(events, {connections:[],storage,files}); transport.start();
+  const id = transport.state.session.session_id;
+  files.save("uploaded.txt", "shared");
+  transport.setMode("dotnet-wasm");
+  assert.equal(transport.networkAccess, false);
+  assert.match(transport.promptDetails.instructions, /Network access: disabled/);
+  assert.equal(JSON.parse(transport.promptDetails.tools)[0].name, "dotnet");
+  transport.setNetworkAccess(true); assert.equal(transport.state.session.session_id, id);
+  const saved = transport.sessionForExport(id);
+  assert.equal(saved.mode, "dotnet-wasm"); assert.equal(saved.networkAccess, true); assert.equal(saved.workspace?.files[0]?.path, "uploaded.txt");
+  transport.dispose();
+  const reopened = new LocalTransport(events, {connections:[],storage,initialSession:id}); reopened.start();
+  assert.equal(reopened.mode, "dotnet-wasm"); assert.equal(reopened.networkAccess, true);
+  reopened.setPythonMode(true); assert.equal(reopened.sessionForExport(id).workspace?.files[0]?.path, "uploaded.txt");
+  reopened.setMode("dotnet-wasm"); assert.equal(reopened.state.session.session_id, id);
+  reopened.dispose();
+});
