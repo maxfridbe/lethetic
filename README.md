@@ -1,656 +1,117 @@
 # Lethetic Intelligence Engine
 
-**[Try it now in your browser](https://maxfridbe.github.io/lethetic/) · [Embed it in your app](integration.md#embed-the-complete-ui) · [Run it locally](integration.md#build-and-test)**
-
-The browser edition uses the same UI as remote mode, with a local **WASM runtime**,
-your own model connections, **Pyodide Python or .NET 11 WASM**, the existing **Files browser**, and
-**saved sessions** that reopen after refresh. No native server is needed.
-[Download the standalone site and embedding SDK](https://github.com/maxfridbe/lethetic/releases/latest).
-
-<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-desktop.png" alt="Lethetic browser edition with Files docked left, a Python viewer below, and chat on the right" width="760"></a>
-<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-mobile.png" alt="Lethetic browser edition on a phone" width="260"></a>
-
-Desktop and phone screenshots with a demo conversation. Click either to try it.
-
-<details><summary>.NET WASM: C# compilation and shared session files</summary>
-<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-dotnet.png" alt="Lethetic running C# with generated Program.cs and compiled DLL/PDB files in the session workspace" width="1000"></a>
-<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-dotnet-mobile.png" alt="Mobile .NET runtime settings with the HTTP relay endpoint, token-present status and Network access switch" width="260"></a>
-
-[Runtime and proxy settings screenshot](res/browser-dotnet-security.png)
-</details>
-
 > "...so many various filters and enhancements, so many possible patterns, that it was as much an art as a craft. We didn't have the trained personnel that we needed, and as good as the lethetic intelligence engines were, they still lacked the ability to make intuitive leaps. LIs could give you statistical probabilities; they couldn't give you hunches—although the last I'd heard, they were working on adding that function too."
 
-A Rust TUI coding agent for local and proxied LLMs, with an optional exact-identity HTTPS browser mirror and default controller-token authentication. It supports OpenAI-compatible servers and native Anthropic Messages through `claude-code-proxy`, stable multi-connection model switching, native tools, and an optional persistent Python-only runspace.
+Lethetic is a Rust terminal coding agent and browser workspace for your own LLM
+connections. The standalone browser edition and native remote controller share
+the same UI.
 
-![Lethetic UI](res/Screenshot.webp)
+**[Try it now in your browser](https://maxfridbe.github.io/lethetic/) · [Embed it in your app](integration.md#embed-the-complete-ui) · [Run it locally](integration.md#build-and-test)**
 
----
+[Download the browser site and embedding SDK](https://github.com/maxfridbe/lethetic/releases/latest).
 
-## Quick Start
+<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-desktop.png" alt="Lethetic browser workspace with Files docked left, a Python editor and chat" width="760"></a>
+<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-mobile.png" alt="Lethetic browser workspace on a phone" width="260"></a>
+
+Click a screenshot to try the browser edition.
+
+<details>
+<summary>Native terminal and .NET WASM screenshots</summary>
+
+![Lethetic terminal UI](res/Screenshot.webp)
+
+<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-dotnet.png" alt="C# compilation with Program.cs and generated DLL/PDB files in the session workspace" width="1000"></a>
+<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-dotnet-mobile.png" alt="Mobile .NET settings with HTTP relay configuration and the Network access switch" width="260"></a>
+
+[Runtime and proxy settings](res/browser-dotnet-security.png)
+
+</details>
+
+## Quick start
 
 ### Browser, GitHub Pages, and embedding
 
-Open **[Lethetic in your browser](https://maxfridbe.github.io/lethetic/)** to connect
-an OpenAI-compatible Chat Completions endpoint or an Anthropic Messages endpoint.
-In **Connections**, use **Fetch models** to browse and filter the available models,
-or enter a model ID manually. The active connection and key status are explicit;
-use **Duplicate with key** to copy a connection and **Use connection** to switch.
-The standalone edition runs a Rust/WASM conversation runtime locally, with optional
-**Python · Pyodide** or **.NET 11 · WASM** in a persistent Web Worker.
-Choose the runtime in **Connections → Runtime & security**. .NET networking is off
-by default; **Network access** enables HTTP and supported browser networking for generated C#
-without affecting the model connection. The setting is saved with the session.
-Both modes share session files; .NET sees them at `/home/dotnetdide`.
-C# can use `System.IO`, `await Dotnet.Run("Program.cs")`, `Dotnet.Build()`, and
-`await Dotnetdide.Net.GetStringAsync(url)` when network access is enabled.
-The bundled runtime comes from a checksum-pinned
-[dotnetdide ZIP release](https://github.com/maxfridbe/dotnetdide/releases).
+1. Open **[Lethetic](https://maxfridbe.github.io/lethetic/)** and add your model endpoint
+   in **Connections**. OpenAI-compatible Chat Completions and Anthropic Messages
+   endpoints are supported. Use **Fetch models** to search the available models.
+2. Choose **Chat**, **Python · Pyodide**, or **.NET 11 · WASM** in
+   **Connections → Runtime & security**.
+3. Start a conversation. Use **Files** to upload inputs, edit generated programs,
+   preview supported documents and media, or download results.
 
-.NET HTTP supports GET/HEAD/OPTIONS/POST/PUT/PATCH/DELETE, custom headers, JSON,
-forms, binary uploads, streams and downloads into session files. Use direct browser
-CORS or configure an **HTTP relay** in **Runtime & security**. The optional native
-.NET relay can use SOCKS5, including a configured Tor client's SOCKS port.
-[Relay setup](https://github.com/maxfridbe/dotnetdide/blob/master/docs/networking.md).
-Tor's bridge website supplies bridge addresses; it is not a proxy endpoint.
+The conversation runtime and code workers run locally in your browser. Python
+and .NET share each session's files. Chats, files and settings survive refresh;
+code variables restart. API keys stay in the current tab and are excluded from
+saved chats. Chats and files are stored unencrypted on your device.
 
-The **System prompt** dialog shows your editable instructions, the exact runtime
-additions, and tool definitions. Python mode encourages tested, reusable `.py`
-programs saved to session Files for preview and download. It needs no native Lethetic process.
-API keys survive refresh in this tab; they are excluded from saved chats.
-Chats and files are saved unencrypted on your device.
-Use **Upload** in Files to add files from your device to the current folder;
-Python can read them under `/home/pyodide`. Text and binary files are supported.
-Supported images, web documents, audio, and video preview directly in Files.
-Use **Save to Session** beneath code blocks, then browse folders, edit, preview,
-download, or copy contents in **Files**. **Sessions** reopens earlier chats with
-context and usage stats; refresh keeps the current session. Pyodide files under
-`/home/pyodide` sync with **Files** after each call, including CSVs and images.
-File edits flow back into Python, and each session restores its own workspace.
-Preview HTML, Markdown, SVG, text, and images such as PNGs directly in Files.
-Dock **Files** at the top or on the left; the left sidebar stacks the file list
-above the code viewer. File-type icons make files easier to recognize.
-File sizes use readable units with exact bytes in tooltips. Pin individual stats
-from **Stats** to a bottom bar that wraps onto up to three lines.
-Copy any turn with its bottom-right **Copy** button. Download a session
-and its files for debugging using **Export debug (.tar.gz)** in **Sessions**.
-[Start a new session](https://maxfridbe.github.io/lethetic/#/new) or
-[open the latest](https://maxfridbe.github.io/lethetic/#/latest).
+**Sessions** reopens previous conversations and exports debug bundles as `.tar.gz`.
+You can also [start a new session](https://maxfridbe.github.io/lethetic/#/new) or
+[open the latest](https://maxfridbe.github.io/lethetic/#/latest) directly.
 
-The endpoint must permit browser requests through CORS and use HTTPS when the page
-uses HTTPS. This edition supports chat and registered browser/host tools; native
-filesystem, shell, LSP, and container tools remain in the native application.
+Model endpoints must allow browser requests through CORS and use HTTPS when the
+page uses HTTPS. Native shell, host filesystem, LSP and container tools are
+available in the native application.
 
-Build with `./build-browser.sh`. Serve `target/browser` over HTTP for local development,
-or use the `Browser and WASM` GitHub Actions workflow for Pages. Every `v*` release
-also builds `lethetic-browser.zip` and a SHA-256 checksum; `browser-v*` tags publish
-an independent embedding release. The archive contains the site,
-WASM bindings, TypeScript declarations, embedding SDK, and integration guide.
-See **[integration.md](integration.md)** for setup, Python and .NET modes, embedding examples,
-tests, CORS configuration, and deployment requirements.
+| Code runtime | Capabilities | Guide |
+| --- | --- | --- |
+| Python · Pyodide | Persistent Python worker; session files at `/home/pyodide` | [Python mode](integration.md#python-mode-with-pyodide) |
+| .NET 11 · WASM | C# scripts, `Dotnet.Build()`, `Dotnet.Run("Program.cs")`; session files at `/home/dotnetdide` | [.NET mode](integration.md#net-wasm-mode) |
+
+.NET network access is off by default and can be enabled per session. HTTP methods,
+JSON/forms, binary transfers, streams and file downloads use browser CORS or an
+optional native .NET relay. The relay supports upstream SOCKS5, including a Tor
+client's SOCKS port. See the [relay setup guide](https://github.com/maxfridbe/dotnetdide/blob/master/docs/networking.md).
+The runtime is bundled from a checksum-pinned [dotnetdide release](https://github.com/maxfridbe/dotnetdide/releases).
+
+For local hosting, build with `./build-browser.sh` and serve `target/browser` over
+HTTP. The release ZIP includes the standalone site, WASM runtime, embedding SDK,
+TypeScript declarations and integration guide. See [build requirements](integration.md#build-and-test),
+[embedding examples](integration.md#embed-the-complete-ui) and
+[Pages/release instructions](integration.md#github-pages-and-releases).
 
 ### Native application
 
-```bash
-# Build
-cargo build --release
+Configure your model server in `./config.yml` or `~/.config/lethetic/config.yml`.
+Lethetic connects to existing servers; it does not install or launch them.
+See the [configuration example](docs/native-reference.md#example-configyml) and
+[connection types](docs/native-reference.md#connection-kinds).
 
-# Run (reads config from ./config.yml or ~/.config/lethetic/config.yml)
+```bash
+cargo build --release
 cargo run --bin lethetic
 
 # Headless / scripted
 cargo run --bin lethetic -- --command "Fix all TypeScript errors in src/"
 
-# Browser control (bare --rc asks how to bind) and a sandboxed Python-only agent
-lethetic --rc
-lethetic --python-only isolated
+# Browser controller or sandboxed Python-only mode
+cargo run --bin lethetic -- --rc
+cargo run --bin lethetic -- --python-only isolated
 ```
 
-The debugger pane starts hidden (F12 shows it, F9 shows the model's todo list, F8 shows background tasks). Ctrl+P opens the command palette; type to fuzzy-filter it. Each directory remembers the model you last selected, and resuming a session restores its model, prompt, Agent Mode, theme and loop-detection mode.
-
-### Optional browser controller
-
-Expose the same chat to a browser with `--rc`:
-
-```bash
-lethetic --rc                     # interactive: pick address, port, auth, files, surface
-lethetic --rc 127.0.0.1           # this machine only, default port 11223, private token URL
-lethetic --rc brainiac:9443       # a lowercase host name or IP owned by this machine
-lethetic --rc 10.0.0.5 --rc-open  # no token: everyone who can reach the address gets control
-lethetic --rc brainiac --rc-files # also share the launch directory read-only (Linux)
-lethetic --rc brainiac --rc-only  # browser only, never enters the terminal UI
-```
-
-You can also start it later from **Ctrl+P → Remote Control: start**, which asks the same questions in a dialog and keeps the running session. Bare `--rc` lists this machine's loopback, interface, and host-name identities and asks how to bind; it prints the equivalent flags before starting. Every form uses exact-identity HTTPS with a generated certificate whose sole SAN is the chosen IP or DNS name, and by default a fresh process token protects the browser controller. Verify the printed fingerprint and keep the capability URL private. The first Enter acknowledges the displayed controller information and activates the browser-side actor while the terminal remains ordinary; press Enter later to enter the TUI of the same running actor.
-
-`--rc-only` requires `--rc`, conflicts with `--command`, and runs as a browser-only foreground process rather than daemonizing. Once started it ignores Unix SIGHUP and keeps running with zero browser clients. `--rc-open` keeps HTTPS but **does not authenticate the controller**: Lethetic prints a pre-bind warning and requires an Enter acknowledgement; restrict every printed address with host firewall and VPN ACLs. `--rc-files` shares only the fixed launch directory and its descendants read-only; protected control/credential files, links, mounts and special files are excluded, and in `--rc-open` mode every reachable peer can view them. The Files pane's **Changes** tab shows a git diff against `HEAD` in Monaco, side by side or inline, with `+added −removed` counts beside every changed file and folder. Bring your own TLS with `--rc-tls-cert`/`--rc-tls-key` plus `--rc-token-file` or `--rc-open`.
-
-The long spellings still work: `--wfe-remote-control <HTTPS_URL>`, `--wfe-files localonly`, `--wfe-disable-authtoken`, `--service`, `--wfe-tls-cert`, `--wfe-tls-key`, `--wfe-auth-token-file`. See [`docs/web-remote-control.md`](docs/web-remote-control.md) for the complete flag matrix, threat model, protocol, build, and recovery details.
-
-The protocol-v6 browser UI uses canonical `H`/`T`/`C`/`D` palette accelerators from its noneditable command list, a persistent wide right-hand Debugger or focus-trapped narrow drawer, bounded browser-safe operational diagnostics, and complete application/transport status in two horizontally scrollable bottom rows. Podman status includes only validated retained or active-transient operational names—never raw container/image IDs. Exact loss metadata explains filtering, redaction, fixed-size truncation, and invalid-source replacement without inferring loss from displayed text.
-
----
-
-## Model servers
-
-Lethetic is a client: it does not install or run model servers. Point `model_servers` in `config.yml` at anything it speaks:
-
-- **OpenAI-compatible chat completions**: llama.cpp `llama-server` (or a router in front of several), vLLM, OpenRouter, Azure, and similar.
-- **Anthropic Messages via `claude-code-proxy`**: Codex/ChatGPT subscription models such as gpt-5.6-sol and gpt-6-astra (see below).
-
-Each entry picks its `parser` dialect and `kind`; the model picker lists every configured connection and shows unreachable ones as offline.
-
----
-
-## Configuration
-
-### Location priority
-
-Lethetic selects its primary model configuration from:
-
-1. `./config.yml` (checked first)
-2. `~/.config/lethetic/config.yml`
-
-A sibling `config.local.yml` overlays the selected file for machine-specific endpoints or keys (entries merge by `name`). Lethetic also keeps two small state files it writes itself, so the hand-edited config is never rewritten:
-
-- `.lethetic/last_model.json` in each working directory: the model last selected there, re-activated at startup.
-- `~/.config/lethetic/saved_models.yml`: models added from the model picker's catalog scan, plus their catalog list prices, merged into each connection's `models` list at startup.
-
-Python-mode settings use separate managed sidecars so the TUI never rewrites model configuration or secrets:
-
-1. `~/.config/lethetic/python-mode.yml`
-2. `<workspace>/.lethetic/python-mode.yml` (overrides global)
-3. A one-time in-memory selection (current chat only)
-4. A literal Python CLI flag (immutable for this process; overrides all above)
-
-### Example `config.yml`
-
-```yaml
-server_url: http://brainiac-nvidia:7210/v1/responses
-model: Gemma-4-26B-TurboQuant-262k
-context_size: 262144
-theme: Default
-tool_calls: single        # or sequential: several tool calls per model turn
-background_tasks: notify  # or poll / off
-provider_retries: 2       # automatic retries of a failed model request; 0 disables
-
-model_servers:
-  - id: local-gemma
-    name: Gemma 4 26B
-    kind: open_ai_chat_completions
-    url: http://brainiac-nvidia:7210/v1/responses
-    model: Gemma-4-26B-TurboQuant-262k
-    parser: gemma4
-
-  - id: local-qwen
-    name: Qwen3 27B
-    kind: open_ai_chat_completions
-    url: http://brainiac-nvidia:7211/v1/responses
-    model: Qwen3-27B-Q5
-    parser: qwen3
-    provider_retries: 4       # this server restarts often; overrides the global count
-
-  - id: local-claude-code-proxy
-    name: Claude Code Proxy (Local)
-    kind: claude_code_proxy
-    url: http://127.0.0.1:18765
-    model: gpt-5.6-sol
-    parser: default
-    api_key: claudecodex-local # non-secret placeholder
-    context_size: 262144 # legacy fallback for unlisted discovered models
-    context_limits:
-      applies_to_models: [gpt-5.6-sol]
-      total_context_tokens: 1050000
-      maximum_input_tokens: 922000
-      maximum_output_tokens: 128000
-      request_output_tokens: 24576
-      lethetic_input_budget_tokens: 900000
-    thinking: true
-    extra_body:
-      output_config:
-        effort: max
-```
-
-`context_size` remains the backward-compatible input/history budget for models without exact metadata. `context_limits` applies only to an exact listed model ID; discovered models that are not listed use the legacy fallback instead of inheriting Sol's limits. Lethetic re-trims the active conversation immediately when switching to a smaller input budget.
-
-`extra_body` may contain provider extension fields such as `output_config`, but it must be an object and cannot override host-owned request fields: `model`, `messages`, `system`, `max_tokens`, `max_completion_tokens`, `stream`, `stream_options`, `tools`, `tool_choice`, `parallel_tool_calls`, `functions`, `function_call`, `mcp_servers`, `n`, or `thinking`. Lethetic rejects these keys in both the active config and every model-server entry before provider I/O.
-
-### `parser` dialect
-
-Each `model_servers` entry has a `parser` field that controls two things:
-
-| `parser` | Initial state | Tool call format |
-|---|---|---|
-| `gemma4` (default) | Thought block | `<\|"\|>string<\|"\|>` asymmetric markers |
-| `qwen3` / `default` | Text | Standard JSON strings |
-
-The system prompt's **Tool call format** section is automatically tailored to the active model — Qwen3 receives plain JSON instructions; Gemma4 receives the asymmetric marker instructions. Switching models via the palette reloads the parser and context.
-
-### Connection kinds
-
-`kind` is independent from the model/parser and defaults to `open_ai_chat_completions` for old configuration files.
-
-| `kind` | Protocol | Tool behavior |
-|---|---|---|
-| `open_ai_chat_completions` | OpenAI Chat Completions through `gemma-chat` | Existing structured or marker-based calls |
-| `claude_code_proxy` | Native Anthropic Messages at `/v1/messages` | Native `tool_use`/`tool_result`, signed thinking replay |
-
-Stable `id` values distinguish connections even when they share a URL. Legacy entries fall back to `name`.
-
-### Attaching to `claude-code-proxy`
-
-Lethetic connects to an already-running proxy; it never starts, stops, authorizes, or reads OAuth credentials from it. For the bundled local entry:
-
-- Listener: `http://127.0.0.1:18765`
-- Model discovery: `GET /v1/models`
-- Messages: `POST /v1/messages`
-- Default model: `gpt-5.6-sol`
-- Official limits: 1,050,000 total context, 922,000 maximum input, 128,000 maximum output
-- Lethetic request output: 24,576; conservative input/history budget: 900,000
-- Placeholder bearer token: `claudecodex-local` (not an OAuth secret)
-
-Start and authorize `claude-code-proxy` separately, then choose **Ctrl+P → Models → Claude Code Proxy**. Connection errors remain visibly offline instead of silently switching providers.
-
-### Cost: reported charges and estimates
-
-When a provider reports the actual charge (OpenRouter sends `usage.cost` on every response), Lethetic shows it as **cost** and uses it for turn and session totals. Otherwise it estimates from a price table:
-
-- a connection's structured `pricing` block for the exact model, or
-- the list price captured when you scan that connection's catalog in the model picker (OpenRouter publishes per-token prices).
-
-Estimates are labelled **EST API-eq**. Structured `pricing` is scoped to exact model IDs. The bundled `gpt-5.6-sol` entry uses the rates effective 2026-08-25 (promotional validity currently documented through 2026-11-21): uncached input `$4.00/M`, cached-read input `$0.40/M`, cache creation/write `$5.00/M`, and output `$20.00/M`. Each provider request above 272,000 input tokens is priced with input ×2 and output ×1.5 before requests are summed. Lethetic preserves provider cache categories, records every tool continuation idempotently, and shows latest logical-turn plus cumulative chat-session estimates. `*` marks incomplete/unpriced usage and `†` marks stale pricing. These are API-equivalent estimates only—not actual OAuth/Codex subscription, credit, or invoice charges.
-
----
-
-## Python-only Mode
-
-See [`docs/python-isolation.md`](docs/python-isolation.md) for the complete isolation, notebook-audit, todo-module, lifecycle, and troubleshooting reference.
-
-Python-only mode is a tool profile, not a model connection. It works with either OpenAI-compatible servers or `claude-code-proxy`; General mode remains unchanged and does not expose Python.
-
-The model receives exactly one tool:
-
-| Tool | Behavior |
-|---|---|
-| `python` | Executes one notebook-style cell. Imports, variables, `_`, and `os.chdir()` persist for the active worker. Captures stdout/stderr, the final expression `repr`, and tracebacks. |
-
-Task state remains host-backed at `.lethetic/todos.json`, but Python-only mode accesses it through `import lethetic_todo` and the module's revision-checked `get()` / `set(...)` API. General mode may continue to use the legacy `todowrite` model tool.
-
-For a resolved Python-only policy, Lethetic appends noneditable effective-policy guidance after the selected prompt template. It declares `python` as the only model tool; `lethetic_todo` is an imported host module and `lethetic-pkg` is an in-Python subprocess helper, not another model tool. Package-helper instructions appear only for the exact valid retained Podman/Nonlocal/read-write/session-package/no-extra-grant route. Every other or invalid policy explicitly advertises no Lethetic-managed package path. Operational runtime/container identities are never added to model context.
-
-The built-in worker requires `python3` but not Jupyter/IPython. It has no interactive stdin or rich MIME display. Globals reset on a new/loaded chat, cancellation of an executing cell, worker crash, or policy/backend change; model switching preserves them.
-
-Open **Ctrl+P → Agent Mode** to choose:
-
-- **Host** — Python has the same files, environment, network, and subprocess rights as Lethetic. Each cell still uses the normal approval dialog.
-- **Bubblewrap** — Linux namespace sandbox around the host Python installation.
-- **Podman** — rootless container sandbox. None/Full use a transient read-only container; Public-packages mode uses the trusted local retained runtime image.
-
-Sandbox setup explicitly chooses:
-
-- Network **None**, **Public packages only; blocks host/LAN**, or **Full**. Full includes reachable localhost, LAN, VPN/local routes, and the Internet.
-- Workspace **read-only** or **read/write**.
-- Extra files/directories through a path picker, each **RO** or **RW**. Ordinary YAML/TUI-managed Public-packages mode forbids extra grants and requires a Lethetic-managed read/write workspace; the literal Nonlocal flag instead uses the externally owned launch cwd described below.
-- Persistence: one-time, project sidecar, or global sidecar. Repository policy cannot enable the privileged retained package runtime.
-
-Backends are probed with a real smoke launch. Missing or unusable runtimes fail closed with a reason: there is no Host/backend/network fallback and no automatic runtime installation. A Distrobox `podman` compatibility symlink is supported when it forwards to verified rootless host Podman. Podman container creation always uses `--pull=never`; an image pull is a separate explicit TUI action with its own confirmation.
-
-For trust-boundary safety, a repository-controlled project policy cannot activate unrestricted Host execution or select the host Python executable. Use a one-time TUI choice or trusted global policy for Host; project policies may select sandboxed Python or General mode. Project sandbox policies inherit the trusted global/default executable.
-
-Three mutually exclusive literal flags provide invocation-locked, non-persisted Podman profiles. Each shares the canonical launch cwd read/write at the same path and hides the real host `.lethetic` control directory behind an inaccessible nested tmpfs:
-
-| Flag | Network | Lethetic-managed package path | Lifetime |
-|---|---|---|---|
-| `--python-only` / `--python-only isolated` | None | Unavailable | Transient |
-| `--python-only nonlocal` | Constrained public HTTP(S) broker; direct network disabled | Explicit `lethetic-pkg`; per-chat layer | Retained, 14-day TTL |
-| `--python-only permissive` | Full host/localhost/LAN/VPN/Internet reachability | Unavailable; no automatic install | Transient |
-
-`--sandbox-python-only` is an alias of `--python-only`; the long spellings `--python-fully-isolated`, `--python-isolated-with-nonlocal-network`, and `--python-isolated-permissive` still work.
-
-A literal flag is an immutable process-scoped constraint with higher precedence than chat, project, global, and model-server policy. It remains active across New Session, Resume/load, active-session replacement, context clearing, and model switching; chat transitions still detach the worker and reset notebook globals. TUI/WFE Agent Mode controls report the `cli_locked` source and cannot weaken the profile. Restart Lethetic without the literal flag to choose another Agent Mode.
-
-Ordinary YAML/TUI-selected Nonlocal continues to use a Lethetic-owned managed workspace. See the full guide for exact mount identity, cleanup, and residual-risk semantics.
-
-Every recognized Python attempt is audit-checkpointed in a standard nbformat 4.5 `python.ipynb` before approval or execution. Durable chats use `.lethetic/sessions/<session-id>/python.ipynb`; non-durable runs use `.lethetic/python-sessions/<run-uuid>/python.ipynb`. The notebook retains exact source and can contain secrets, so review it before sharing.
-
-### Retained public-package mode
-
-`--python-only nonlocal` is the literal invocation-locked CLI selection for the strict retained Podman route. The container still runs with `--network=none`; public HTTP/HTTPS package traffic crosses a typed Unix-socket broker that resolves and validates destinations outside the container. Direct public egress, host addresses, localhost, RFC1918/LAN, CGNAT and route-visible VPN/local routes, link-local, metadata, multicast, documentation/benchmark, transition, and reserved ranges are denied. Broker/DNS/route failures deny traffic rather than weakening the backend. A public service can still relay requests, and public-address VPN or NAT-hairpin destinations may be indistinguishable from ordinary public services.
-
-The immutable OCI image is never pulled, committed, pushed, or replaced automatically. Each chat owns one named rootless Podman container and its writable native COW layer. The container is **stopped while detached**; installed packages survive Lethetic restart/resume, but Python globals reset. Successful resume/use refreshes a 14-day TTL. Startup and hourly in-process maintenance removes expired exact manifest-bound containers; there is no daemon, timer, `podman prune`, prefix deletion, or label-wide deletion. Runtime manifests record an explicit broker-layout attestation profile: schema-v2 containers are imported only after one complete frozen layout matches, and the superseded runtime-local layout is delete-only. **Ctrl+P → Delete Python runtime/packages** removes only the package layer and keeps source; deleting/wiping a chat removes its exact runtime first. WFE status may show the validated canonical retained name while active or inactive, or an active canonical transient name; Host/Bubblewrap, malformed/mismatched identities, inactive transients, and raw container/image IDs remain absent.
-
-Model Python remains the invoking unprivileged UID with no capabilities. Missing distro packages can be requested only from Python through:
-
-```text
-lethetic-pkg refresh
-lethetic-pkg install NAME...
-```
-
-The helper accepts strict package names and fixed `apt-get` arguments; options, URLs, paths, repository changes, and shell syntax are rejected. Existing None/Full modes do not gain automatic package installation. Signed repository packages may run maintainer scripts as namespaced container-root and can mutate that chat’s retained container layer.
-
-A managed policy is a complete, versioned snapshot. For example:
-
-```yaml
-version: 2
-tool_profile: python_only
-python_runtime:
-  target: sandbox
-  python_executable: python3
-  sandbox:
-    backend: bubblewrap
-    network: none
-    workspace_access: read_write
-    package_access: disabled
-    grants:
-      - path: /data/reference
-        access: read_only
-    podman_image: docker.io/library/python:3.13-slim
-```
-
-> The sandbox applies to the Python process, not Lethetic’s LLM HTTP transport. `lethetic_todo` uses only a typed host capability for `.lethetic/todos.json`; it is not a filesystem, command, or network bridge. Namespace/container restrictions are not a VM and do not guarantee CPU, memory, time, or kernel isolation. Broad path grants and Full network reduce isolation.
-
-Headless `--command` cannot open the policy wizard. Any effective retained Nonlocal policy, including a YAML/global selection, must choose one exact durable identity before provider work and use a positive timeout:
-
-```bash
-# Create; put --command last so the remaining text is the prompt.
-lethetic --python-only nonlocal --new-session \
-  --timeout-seconds 1800 --command "Build the project"
-
-# Resume the printed UUID. Packages persist; Python globals start fresh.
-lethetic --python-only nonlocal \
-  --session-id 01234567-89ab-4def-8123-456789abcdef \
-  --timeout-seconds 1800 --command "Continue"
-```
-
-Headless output prints the session, managed workspace, runtime, exact container, and audit identities plus latest-turn and cumulative-session **API-equivalent estimates**. A timeout exits nonzero. Estimates are not actual OAuth/Codex subscription or credit charges.
-
----
-
-## Model Switcher
-
-**Ctrl+P → Models** opens a panel that queries `/v1/models` through each configured connection kind and shows a combined list. Set `discover_models: false` on a `model_servers` entry to skip that probe and list only its configured `model`, or set `models: [id, …]` to keep only those IDs from discovery (the connection still shows as offline when the probe fails). Use these for catalog endpoints such as OpenRouter or the proxy's long model list. The active entry is matched by stable connection ID plus model ID and marked `▶`. Selecting a new entry:
-- Switches the complete connection/model settings atomically
-- Resets the stream parser to the new dialect
-- Preserves the active Python runspace because the chat session did not change
-- Updates the status bar with connection and model identity
-- Remembers the choice for this working directory (`.lethetic/last_model.json`)
-
-Press **s** on a row to scan that connection's full catalog: type to filter (several words must all match), Enter adds the model to the picker. Additions are stored in `~/.config/lethetic/saved_models.yml`; a scan also records catalog list prices for the models already in the picker.
-
-For codex, one `claude_code_proxy` entry per reasoning effort (`extra_body.output_config.effort: max | high | medium`, each with its own `id`) gives effort choices in the same picker.
-
----
-
-## Architecture
-
-### gemma-chat library (`gemma-chat/`)
-
-Standalone Rust library for OpenAI-compatible streaming over llama.cpp:
-
-- **SSE parser** — `data:` line parsing from HTTP server-sent events
-- **Stream parser** — converts raw SSE to typed events: `ReasoningDelta`, `TextDelta`, `ToolCallComplete`, `Done`
-- **Client** — `stream_chat()` and `complete()` over `/v1/chat/completions`
-
-```bash
-cargo test -p gemma-chat -- --nocapture
-```
-
-### Provider transport (`src/transport/`)
-
-Lethetic converts context and tool definitions into provider-neutral messages, then dispatches by `ConnectionKind`:
-
-- `openai.rs` preserves the existing `gemma-chat` request/stream behavior.
-- `anthropic.rs` implements native Messages requests, byte-safe SSE parsing, image blocks, native tool schemas, errors, usage, thinking/signature blocks, and `/v1/models` discovery for `claude-code-proxy`.
-
-Provider-native assistant blocks are persisted in session JSON and replayed unchanged before a matching tool result, including signed/redacted thinking. Lethetic never logs proxy authorization headers.
-
-### Stream parser (`src/parser.rs`)
-
-Stateful chunk parser. Mode controls initial state and which token markers are recognised:
-
-- **Gemma4**: starts in `Thought`; markers: `<|channel>thought`, `<channel|>`, `<|tool_call>`, `<|channel>text`
-- **Qwen3 / default**: starts in `Text`; markers: `<think>`, `</think>`, `<tool_call>`
-
----
-
-## Context Management
-
-### Two-tier file cache
-
-Files read or written during a session are tracked in two tiers:
-- **active_files** — accessed ≤3 turns ago; injected as `<active_file>` immediately before the model turn (highest attention)
-- **latest_files** — older; injected as `<latest_files>` before the system prompt (background context)
-
-Files are always re-read from disk at context-build time. If a file was deleted or moved, the context shows `⚠ File was deleted or no longer exists on disk.`
-
-### Token budget
-
-Files are evicted (oldest first) when the total file token budget exceeds 35% of `context_size`. The prompt order is:
-
-```
-latest_files → system_prompt → messages → active_file → [model turn]
-```
-
-### Tool-call ids
-
-Models that pick their own `tool_call_id` sometimes reuse one many turns later. Strict providers such as OpenRouter reject a conversation with two calls under one id, so a reused id is sent as `commit_fix-2`, `commit_fix-3`, … on both the call and its result. The saved transcript keeps the original ids, and the renaming is deterministic.
-
-### Large tool output
-
-Tool outputs > 20,000 chars are saved to `.lethetic/tool_responses/<id>.txt` and replaced in context with a truncation message and navigation hint. `read_file` is exempt — file content always goes into the cache regardless of size (up to 500k chars).
-
----
-
-## Tools
-
-All tools accept `tool_call_id` (unique string identifier) and `description` (short action summary).
-
-### File System
-
-| Tool | Description |
-|---|---|
-| `read_file` | Read a complete file with line numbers. Always placed in file cache — no truncation. |
-| `read_file_lines` | Read a line range (start–end, inclusive). |
-| `read_folder` | List files and subdirectories (non-recursive). |
-| `write_file` | Create or overwrite a file. Parent dirs created automatically. |
-| `edit` | Fuzzy-match file edit: tolerates whitespace drift. Three-tier matching: exact → normalized → similarity-scored. |
-| `replace_text` | Replace an exact string occurrence. `replace_all: true` to replace every match. Error includes line numbers on multi-match. |
-| `apply_patch` | Block-level replace via `old_content`/`new_content`. Uses `diffy` to generate a deterministic diff. |
-| `glob` | ripgrep-based file pattern search (`**/*.ts`). Results sorted by mtime, capped at 200. |
-| `search_text` | Regex search across files. Prefers `rg`; excludes `target/`, `.git/`, `node_modules/`. |
-
-### Code Intelligence
-
-| Tool | Description |
-|---|---|
-| `find_symbol` | Definition, references, or all-symbols scan via `rg` patterns. |
-| `lsp` | Language Server Protocol: `goToDefinition`, `findReferences`, `hover`, `documentSymbol`, `workspaceSymbol`. Auto-installs missing server on first use. Falls back to `find_symbol` if unavailable. Supported: Rust (rust-analyzer), TypeScript (typescript-language-server), Python (pyright), Go (gopls), C/C++ (clangd), C# (csharp-ls), Lua. |
-
-### Shell & Math
-
-| Tool | Description |
-|---|---|
-| `run_shell_command` | Execute a bash command; output streamed to UI in real time. Requires approval. |
-| `calculate` | Evaluate math: `sin(pi/2)`, `sqrt(9)`, `2^10`, `log(100,10)`. Powered by `meval`. |
-
-### Python-only profile
-
-| Tool | Description |
-|---|---|
-| `python` | Persistent notebook-style Python cell execution. Available only in Python-only mode; import `lethetic_todo` for revision-checked task state. |
-
-All other model-originated tool names are rejected at dispatch in Python-only mode, even if a stale session or malformed prompt tries to call one.
-
-### Web
-
-| Tool | Description |
-|---|---|
-| `fetch_url` | Fetch a URL and convert to Markdown (default), plain text, or raw HTML. |
-| `web_search` | DuckDuckGo search. `num_results` param (1–20, default 10). |
-
-### Project & Tasks
-
-| Tool | Description |
-|---|---|
-| `repo_overview` | Ecosystem detection, 2-level dir tree, README preview, entry points. |
-| `todowrite` | Write a structured todo list (status + priority) to `.lethetic/todos.json`. F9 shows it live in a right-hand pane. |
-| `background_task` | Run a long command in the background and keep working: `start` returns an id (`bg1`…); `status`, `wait`, `output`, `stop`, `list` follow it. Progress comes from percentages in the output, a `progress_pattern` regex, or a growing `watch_path` (with optional `expected_bytes`). Full output is logged to `.lethetic/background/`. Not offered to headless sub-agents. |
-| `skill` | Load an enabled skill's instructions by name (offered only when a skill is enabled). |
-| `task` | Spawn an autonomous sub-agent with all tools except `task` and `ask_the_user`. 5-minute timeout; sub-agent progress streamed to parent UI. |
-
-### Document & Vision *(requires `enable_image_processing_tool: true`)*
-
-| Tool | Description |
-|---|---|
-| `get_pdf_text` | Extract full text layer from a PDF. |
-| `process_image` | Analyze an image with vision. |
-| `process_pdf_image` | Render a PDF page to image and analyze it. |
-
-### Interaction
-
-| Tool | Description |
-|---|---|
-| `ask_the_user` | Pause and ask the user a question. Response is injected back into context. |
-| `summarize_content` | LLM summarization of a file or text. `prompt` required. |
-
----
-
-## Engine Reliability
-
-### Loop detection
-
-Combined NGram + phrase-frequency watchdog (the default). Only model text/thought output is checked — tool results (compiler errors, stack traces) are excluded to prevent false positives. Block length is not capped by default, because long legitimate reasoning tripped a pure size limit; the **Combined + block limit** mode (Ctrl+P → Loop Detection cycles modes) adds a 10,000-character cap back.
-
-- NGram window: 128 chars, threshold: 4 occurrences
-- Phrase frequency: tracks self-correction phrases (`"Actually,"`, `"Wait,"`, etc.)
-- On detection: auto-injects correction prompt; on persistent loop: hands control to user
-
-### Background tasks
-
-`background_task` starts a shell command in its own process group and returns at once. Each task records its elapsed time and when it last showed activity (output or watched-file growth), so a stalled task is visible; one idle for a minute is flagged "may be stalled".
-
-- **Where you see them.** A status line lists running and recently finished tasks with a small progress bar. **F8** opens a right-hand pane with a full bar, the last output line, and the command. The browser shows the same tasks as progress cards above the status row and toasts when one finishes.
-- **Who is told when one finishes.** Each task has a `notify` target. `model` (the default) starts a model turn with the finish notice once the agent is idle; while it is busy, running and unreviewed tasks travel with the latest message as a `<background_tasks>` block. `user` adds a note to the transcript only. `none` means the model polls with `status` or `wait`.
-- **Turning it off.** `background_tasks: notify | poll | off` in `config.yml` sets the default, and **Ctrl+P → Background Tasks** cycles it at runtime. `poll` keeps the tool but never wakes the model. `off` removes the tool.
-
-Running tasks are stopped (SIGTERM, then SIGKILL) when Lethetic exits.
-
-### Skills
-
-A skill is a folder with a `SKILL.md` whose frontmatter gives a `name` and a `description`, in the Agent Skills format that Claude Code uses, so its skills work unchanged. Lethetic looks in this order, and the first skill with a given name wins:
-
-1. `.lethetic/skills/` in the project
-2. `~/.config/lethetic/skills/`
-3. `.claude/skills/` in the project
-4. `~/.claude/skills/`
-
-Skills in Lethetic's folders start enabled. Skills found in Claude's folders start disabled, because another tool put them there. **Ctrl+P → Skills** (terminal and browser) turns any skill on or off; choices are saved in `~/.config/lethetic/skills.yml`.
-
-Only enabled skills reach the model: the `skill` tool lists their names and descriptions, and calling it returns the skill's instructions, its folder, and its file list. The menu also lists a small catalog from [Anthropic's skills repository](https://github.com/anthropics/skills) (`skill-creator`, `mcp-builder`, `webapp-testing`, `frontend-design`, `doc-coauthoring`, `pdf`, `docx`, `xlsx`, `pptx`). Each entry links to its folder; installing downloads it into `~/.config/lethetic/skills/`, enabled. The `pdf`, `docx`, `xlsx` and `pptx` skills carry Anthropic's proprietary license; read it before relying on them.
-
-### Automatic retries
-
-When a model request fails for a transient reason, Lethetic discards any partial reply and sends the same request again after 3 s, then 6 s, 12 s, and so on up to 30 s. Transient means the connection failed or dropped, the server returned 5xx or 429, or the reply ended without finishing (for example when a local llama.cpp server crashes mid-reply). A 4xx rejection, an invalid tool call, or a request-policy error is reported at once. The transcript shows each failure and the countdown; Esc Esc during the wait cancels the retry.
-
-`provider_retries` sets the count (default 2, `0` disables); the same key on a model server overrides it for that connection. Sub-agents and `--command` runs retry the same way.
-
-### Plan tracking
-
-Every tool call except `todowrite` carries a required `todo_id` naming the todo item it serves. After each call the harness checks `.lethetic/todos.json` and appends a **HARNESS WARNING** to the tool result when the id is missing, unknown, or already completed/cancelled, so the model keeps its plan accurate. `todowrite` items need ids (missing ones are assigned `t1`, `t2`, …). The current list travels with the latest message as a `<todos>` block that names each item's id, so the model can reference items even after compaction, and F9 shows it. Sub-agents see the same list.
-
-### Timing
-
-Each thinking block shows how long the engine thought, each model reply shows how long the whole turn took from request to finish, and each tool result shows how long the call took (`⏱ engine thought for 1m 05s`, `⏱ model turn took 8.4s`, `⏱ tool call took 3.2s`), in the terminal and the browser. When the model's turn ends in a tool call, its line sits under that call.
-
-### Several tool calls per turn
-
-`tool_calls: single | sequential` in `config.yml` sets how many tool calls one model turn may carry, and **Ctrl+P → Tool Calls** switches it at runtime. `single` (the default) asks providers for one call; a turn that still carries several is rejected with an explanation to the model. `sequential` asks providers to allow several and runs them one after another, each with its own approval, and asks the model again only when every call has a result. Harness warnings raised mid-batch wait until the batch ends. Stopping mid-batch gives each unrun call a "not run" result. Python-only mode always uses `single`.
-
-The system prompt states the rule in one line of its tool-call format section: "Call at most one tool per assistant turn" in `single`, or, in `sequential`, that the model may call several independent tools in one turn, which run in order with all results returned together. Custom prompt templates get this line only if they keep the `[TOOL_CALL_FORMAT]` placeholder.
-
-### Duplicate tool call detection
-
-Same tool + same key parameters called repeatedly:
-- `edit` / `replace_text`: warns at 2nd identical call
-- `run_shell_command` with `rm`/`mv`/`unlink`: warns at 2nd call
-- All others: warns at 3rd call
-
-If an `edit`/`replace_text` was already applied earlier in the session and the model tries it again (with the same `old_string`), it receives: *"EDIT ALREADY APPLIED — move on to the next issue."*
-
-### Intent-text detection
-
-If the model responds with a short text describing what it's about to do (without calling a tool), lethetic re-prompts: *"You described an action without calling a tool. Call the tool now."*
-
-### TUI stop-reason status area
-
-The status area grows to as many rows as its items need at the current width, and shows memory use and the size of the working directory's `.lethetic` state (refreshed every ~20 s), a **Tool use** line counting this session's calls (e.g. `87 shell commands, 10 edits, 5 line reads, 4 file writes`), where this session's time went (`EngTime: 33m | ToolTime: 2m | IdleTime: 3h 05m`: model working, tools running, and waiting for you; saved with the session at least once a minute, and carried into a compacted session unchanged), connection/model identity, the active General or Python execution profile (backend, network, workspace access, grant count, and policy source), and why the engine stopped:
-- `Response complete (N tokens)` / `Response complete (N tokens, context X% full)`
-- `→ Tool dispatched: <tool>` / `→ Loop #N detected — auto-correcting`
-- `⚠ Context saturated` / `⚠ Persistent loop terminated` / `⚠ Minimal response`
-- `⏸ Waiting for your answer: <question>` / `⏸ Awaiting approval: <tool>`
-- `✗ Server error: <msg>` / `Cancelled by user`
-
----
-
-## TUI hotkeys
-
-These keys describe the terminal UI. Browser palette accelerators, editable-target guards, Debugger layout, and Escape precedence are documented in [`docs/web-remote-control.md`](docs/web-remote-control.md).
-
-| Key | Action |
-|---|---|
-| **TAB** | Switch focus: Input ↔ Output |
-| **Up / Down** (at input boundary) | Scroll output line by line |
-| **Alt + Up / Down** | Scroll output at any time |
-| **Page Up / Down** | Scroll output 20 lines |
-| **Ctrl+P** (or Esc when idle) | Command Palette: type to fuzzy-filter (ranked by match), ↑↓ to move, Enter to run, Esc to close |
-| **F1** | Hotkeys reference (also Ctrl+P → Hotkeys) |
-| **Esc Esc** (within 0.8 s) | Stop the active response or tool; a single Esc only arms it |
-| **F12** | Toggle debugger pane |
-| **F10** | Toggle mouse capture: off lets you select and copy text with the mouse; on (default) makes the wheel scroll the output. Shift+drag also selects in most terminals |
-| **F8** | Toggle the background tasks pane: progress bars, last output and activity for each task |
-| **F9** | Toggle the todo list pane: the model's remaining todos on the right, stacked above the debugger when both are open |
-| **Ctrl+O** | Hide or show thinking blocks (persisted per session) |
-| **Click 󰇻** | Copy a block's content to the clipboard via `wl-copy` |
-| **Ctrl+C** | State-aware cancel/exit: cancel active provider, tool, initial Python backend probe, Python policy validation, image pull/setup, or LSP work and wait for containment; otherwise exit gracefully (including pending approval/question) |
-
-### Command Palette items
-
-| Item | Action |
-|---|---|
-| Hotkeys | Show key reference |
-| Themes | Pick from 30 built-in themes |
-| Input History | Browse and restore previous prompts (shared across sessions of a project via `.lethetic/history.json`) |
-| Loop Detection | Cycle detection mode (Off / Block limit only / NGram / Phrase / Combined / Combined + block limit) |
-| System Prompt | Edit or switch prompt template |
-| Clear UI (Keep Context) | Clear display, keep context |
-| Clear All Context | Clear display and context, start fresh after confirmation |
-| Toggle Debugger | Show/hide debug log pane |
-| Toggle Todo List | Show/hide the model's todo list pane (F9) |
-| Toggle Background Tasks | Show/hide the background tasks pane (F8) |
-| Skills | Turn found skills on or off, or install catalog skills from Anthropic's skills repository |
-| Tool Calls: one per turn / several per turn | Switch between one tool call per model turn and several run in order |
-| Background Tasks: notify / poll only / off | Cycle whether the model may start background tasks and whether their finishes wake it |
-| Sessions | Load, resume, compact, or delete sessions. Each entry shows its model, Agent Mode and remote control on a second line; resuming restores those settings (launch flags still win). If the session had remote control and none is running, a prompt shows its address, access mode and file sharing and asks whether to start it again: **Enter/y** starts it (a new token is issued), **e** opens the setup with those settings filled in, **Esc/n** skips. **C** compacts the selected session: pick any configured model, the log is summarised in parallel windows with a streaming merge, and the result is saved as a new resumable session that inherits the source's model, prompt, theme, history, cost, Agent Mode, loop-detection mode, tool-use counts and remote-control settings, and opens with the current todo list |
-| Name/Rename Session | Set display-only durable session metadata without changing its UUID or path |
-| Latest Files | View and manage file context cache |
-| Models | Switch between configured model servers |
-| LSP Servers | View install status; Enter installs only when a safe installer is configured, otherwise shows manual guidance (no fallback installer) |
-| Agent Mode | Choose General or Python-only and configure Host/sandbox policy step by step |
-| Agent Mode: General tools | Preset: back to the General tool set, confirm and go |
-| Python-only: isolated | Preset: rootless Podman, launch cwd read/write, no network, no package installs |
-| Python-only: nonlocal packages | Preset: retained Podman with the public HTTP(S) broker and `lethetic-pkg` |
-| Python-only: permissive network | Preset: rootless Podman with full host/LAN/VPN/Internet reachability |
-| Remote Control: start / stop | Serve this session to a browser without restarting: choose address, port, token or open access, and file sharing; the private URL appears in a popup (`c` copies it). Disabled when `--rc` set it at launch |
-| Delete Python runtime/packages | Remove this chat’s retained package layer; keep source/session |
-| Quit | Exit after confirmation |
-
----
+**Ctrl+P** opens the command palette and model picker. **F12** shows the debugger,
+**F9** the model's todo list, and **F8** background tasks. Resuming a session restores
+its model, prompt, mode, theme and loop-detection settings.
+
+`--rc` serves the current chat over HTTPS and asks how to bind and authenticate.
+Keep the printed controller-token URL private. Use `--rc --rc-only` for a browser-only
+foreground process. See the [remote-control guide](docs/web-remote-control.md) for
+file sharing, TLS, authentication and service operation.
+
+## Guides and reference
+
+| Topic | Documentation |
+| --- | --- |
+| Browser UI, files, saved sessions and embedding | [Integration guide](integration.md) |
+| Native configuration, providers and model switching | [Native reference](docs/native-reference.md#configuration) |
+| Native Python profiles and container isolation | [Python isolation](docs/python-isolation.md) |
+| Browser control of the native application | [Web remote control](docs/web-remote-control.md) |
+| Native tools, context management and engine behavior | [Tools](docs/native-reference.md#tools), [context](docs/native-reference.md#context-management), [reliability](docs/native-reference.md#engine-reliability) |
+| Terminal shortcuts and palette commands | [Hotkeys](docs/native-reference.md#tui-hotkeys) |
+| Provider transports and stream parsing | [Architecture](docs/native-reference.md#architecture) |
 
 ## Testing
 
-### Deterministic unit and lifecycle tests
-
-These do not require a model server, provider credentials, or a container runtime:
+Native unit and lifecycle checks:
 
 ```bash
 cargo test --lib
@@ -658,30 +119,13 @@ cargo test --bin lethetic
 cargo test --test test_service_signals -- --nocapture
 ```
 
-The Linux PTY lifecycle suite covers the browser-first and optional-TUI gates (including a WSS snapshot command before the second Enter), foreground service signals, interactive signals (including inherited ignored SIGHUP), terminal-input loss before and after TUI entry, terminal restoration, zero-client persistence, and the absence of TUI control sequences in service/browser-only phases.
-
-### Live integration tests
-
-The non-ignored live tests run on a hosted connection, OpenRouter by default, so they never touch local GPU servers. They read `~/.config/lethetic/config.yml` (override with `LETHETIC_LIVE_CONFIG`) and the connection id `openrouter` (override with `LETHETIC_LIVE_SERVER`). Tests that need a local llama.cpp server, Azure, or the codex proxy are ignored unless you pass `--ignored`. Tests are serialized via the `llm` named lock.
+Browser build and acceptance checks:
 
 ```bash
-# Hosted live tests
-cargo test --test live -- --nocapture
-
-# One module/filter
-cargo test --test live test_live_qwen3 -- --nocapture
-cargo test --test live test_live_azure -- --nocapture
-
-# Explicit ignored claude-code-proxy text + Python roundtrips
-cargo test --test live test_claude_proxy -- --ignored --nocapture --test-threads=1
-
-# Conditional ignored sandbox tests (never install, pull, or fall back)
-cargo test --test test_python_sandbox -- --ignored --nocapture --test-threads=1
+./build-browser.sh
+CHROME_BIN=/path/to/chrome python3 scripts/test_browser.py
 ```
 
-### Diagnostic tools
-
-```bash
-# Replay a session's token stream through the parser
-cargo run --bin playback -- .lethetic/sessions/<session>/tokens.jsonl
-```
+See the [native test reference](docs/native-reference.md#testing) for live provider,
+container and diagnostic tests, and the [browser build guide](integration.md#build-and-test)
+for prerequisites. Live provider tests can incur API charges.
