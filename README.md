@@ -2,6 +2,8 @@
 
 > "...so many various filters and enhancements, so many possible patterns, that it was as much an art as a craft. We didn't have the trained personnel that we needed, and as good as the lethetic intelligence engines were, they still lacked the ability to make intuitive leaps. LIs could give you statistical probabilities; they couldn't give you hunches—although the last I'd heard, they were working on adding that function too."
 
+- Greek Origin: Derived from Lethe (Λήθη), the mythological Greek river of forgetfulness and oblivion in Hades.
+
 Lethetic is a Rust terminal coding agent and browser workspace for your own LLM
 connections. The standalone browser edition and native remote controller share
 the same UI.
