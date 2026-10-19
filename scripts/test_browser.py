@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import tarfile
@@ -108,9 +109,18 @@ def main():
             config = {"browser": browser, "profile": str(temp / "profile"),
                       "origin": origin, "pyodide": args.pyodide,
                       "screenshot": str(ROOT / "target/browser-preview.png")}
-            subprocess.run(["node", "--experimental-default-type=module",
-                            str(temp / "tests/browser/tests/browser-driver.js")],
-                           input=json.dumps(config), text=True, check=True, timeout=300)
+            result = subprocess.run(["node", "--experimental-default-type=module",
+                                     str(temp / "tests/browser/tests/browser-driver.js")],
+                                    input=json.dumps(config), text=True, capture_output=True, timeout=300)
+            sys.stdout.write(result.stdout)
+            sys.stderr.write(result.stderr)
+            if result.returncode and os.environ.get("GITHUB_ACTIONS"):
+                lines = result.stderr.splitlines()
+                failure = next((line for line in lines if line.startswith("Error:")), "Browser test failed")
+                caller = next((line.strip() for line in reversed(lines) if "browser-driver.js:" in line), "")
+                detail = (failure + " " + caller)[:3000].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+                print(f"::error title=Browser acceptance::{detail}", flush=True)
+            result.check_returncode()
             with tarfile.open(ROOT / "target/browser-preview-session.tar.gz", "r:gz") as archive:
                 assert archive.extractfile("workspace/reports/analysis.py").read() == b"print('private snippet')"
                 session = archive.extractfile("session.json").read()
