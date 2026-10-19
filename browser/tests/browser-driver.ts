@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
+import { PREVIEW_WEBM } from "./media-fixture.js";
 
 interface Config { browser: string; profile: string; origin: string; pyodide: boolean; screenshot: string }
 process.stdin.setEncoding("utf8");
@@ -606,14 +607,8 @@ try {
     word(0,'RIFF');data.setUint32(4,1636,true);word(8,'WAVE');word(12,'fmt ');data.setUint32(16,16,true);
     data.setUint16(20,1,true);data.setUint16(22,1,true);data.setUint32(24,8000,true);data.setUint32(28,16000,true);
     data.setUint16(32,2,true);data.setUint16(34,16,true);word(36,'data');data.setUint32(40,1600,true);
-    const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;
-    const stream=canvas.captureStream(10),recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp8'}),chunks=[];
-    recorder.ondataavailable=event=>chunks.push(event.data);
-    const stopped=new Promise(resolve=>recorder.onstop=resolve);recorder.start();
-    canvas.getContext('2d').fillRect(0,0,32,32);await new Promise(resolve=>setTimeout(resolve,200));recorder.stop();await stopped;stream.getTracks().forEach(track=>track.stop());
-    const video=new Uint8Array(await new Blob(chunks).arrayBuffer());
     const store=new SessionStore(localStorage),saved=store.list()[0];
-    saved.workspace={version:1,directories:[],files:[{path:'clip.wav',data:encodeBytes(bytes)},{path:'clip.webm',data:encodeBytes(video)}]};store.save(saved);
+    saved.workspace={version:1,directories:[],files:[{path:'clip.wav',data:encodeBytes(bytes)},{path:'clip.webm',data:${JSON.stringify(PREVIEW_WEBM)}}]};store.save(saved);
     const root=document.createElement('div');root.style.height='900px';document.body.replaceChildren(root);
     globalThis.mediaView=mountLethetic(root,{storage:localStorage,connections:[{name:'Media',provider:'openai',endpoint:location.origin+'/v1/chat/completions',model:'test'}]});
     root.querySelector('#files-toggle').click();
@@ -624,7 +619,7 @@ try {
     await until(`!!document.querySelector('.files-inline-preview')?.srcdoc.includes('<${tag}')`);
     check(await evaluate("!document.querySelector('.files-inline-preview').srcdoc.includes('autoplay')"),'media unexpectedly autoplays');
     await evaluate("document.querySelector('[data-preview-expand]').click()");
-    check(await previewInput(`(async()=>{const media=document.querySelector('${tag}'); if(media.readyState<1)await new Promise((resolve,reject)=>{media.addEventListener('loadedmetadata',resolve,{once:true});media.addEventListener('error',()=>reject(Error('Media failed to load')),{once:true});setTimeout(()=>reject(Error('Media metadata timed out')),5000)});return media.controls && media.readyState>=1 && !media.autoplay})()`),'media did not decode');
+    check(await previewInput(`(async()=>{const media=document.querySelector('${tag}'); if(media.readyState<1)await new Promise((resolve,reject)=>{media.addEventListener('loadedmetadata',resolve,{once:true});media.addEventListener('error',()=>reject(Error('${name} failed to load: '+media.error?.message)),{once:true});setTimeout(()=>reject(Error('${name} metadata timed out: ready='+media.readyState+', network='+media.networkState+', error='+media.error?.message)),15000)});return media.controls && media.readyState>=1 && !media.autoplay})()`),'media did not decode');
     await evaluate("document.querySelector('.browser-preview[open]').close()");
   }
   await evaluate('globalThis.mediaView.destroy()');
