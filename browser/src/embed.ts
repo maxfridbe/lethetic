@@ -1,3 +1,4 @@
+import { createFileTools } from "./file-tools.js";
 import { createFileUpload } from "./file-upload.js";
 import { PinnedStats } from "./pinned-stats.js";
 import { sessionDebugBundle, downloadSessionBundle } from "./session-export.js";
@@ -49,9 +50,10 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   let exporting = false;
   const upload = createFileUpload(files, () => transport ? { id: transport.state.session.session_id, busy: transport.busy } : null,
     message => { if (message) fileStatus = message; transport?.publish(); });
+  const fileTools = createFileTools(files, () => transport?.publish());
   const mount = document.createElement("div"); root.replaceChildren(mount);
   const snippetActions = (snippet: { code: string; language: string }) => h("div.browser-code-actions", [
-    h("button", { attrs: { type: "button", "data-browser-action": "save-code" }, on: { click: () => editor?.open(snippetName(snippet), snippet.code) } }, [uiIcon("save"), "Save to Files"]),
+    h("button", { attrs: { type: "button", "data-browser-action": "save-code" }, on: { click: () => editor?.open(snippetName(snippet), snippet.code) } }, [uiIcon("save"), "Save to Session"]),
     h("button", { attrs: { type: "button", "data-browser-action": "preview" }, on: { click: () => preview.open(snippet.code, snippet.language, snippetName(snippet)) } }, [uiIcon("preview"), "Preview"]),
     h("button", { attrs: { type: "button", "data-browser-action": "download" }, on: { click: () => downloadCode(snippet.code, snippetName(snippet)) } }, [uiIcon("download"), "Download"]),
     h("button", { attrs: { type: "button", "data-browser-action": "copy" }, on: { click: (event: Event) => {
@@ -83,13 +85,13 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
           finally { exporting = false; transport?.publish(); }
         })();
       } } }, [uiIcon("download"), "Export debug (.tar.gz)"]),
-    files: { local: true, scope: options.storage ? "Session files · synced with Python" : "Session files · this tab only", rootLabel: "Session files",
-      actions: state => upload.render(state.directory),
+    files: { local: true, nativeText: true, count: () => files.snapshotWorkspace().files.length, entries: entries => fileTools.sort(entries), entryTitle: path => fileTools.title(path), scope: options.storage ? "Session files · synced with Python" : "Session files · this tab only", rootLabel: "Session files",
+      actions: state => h("span.browser-file-actions", [upload.render(state.directory), fileTools.render()]),
       contentActions: (state) => h("span.browser-file-actions", [
         h("button", { attrs: { type: "button", "data-file-action": "new" }, props: { disabled: transport?.busy }, on: { click: () => editor?.open(state.directory ? state.directory + "/untitled.txt" : "untitled.txt", "") } }, [uiIcon("add"), "New file"]),
         h("button", { attrs: { type: "button", "data-file-action": "edit" }, props: { disabled: !state.preview || transport?.busy }, on: { click: () => { if (state.preview) editor?.open(state.preview.path, state.preview.content, true); } } }, [uiIcon("edit"), "Edit"]),
         h("button", { attrs: { type: "button", "data-file-action": "preview" }, props: { disabled: !canPreviewFile(state.selectedPath ? files.get(state.selectedPath) : undefined) }, on: { click: () => {
-          try { const file = state.selectedPath ? files.get(state.selectedPath) : undefined; if (file) preview.openFile(file); }
+          try { const file = state.selectedPath ? files.get(state.selectedPath) : undefined; if (file) preview.openFile(file, fileTools.sortFiles().filter(canPreviewFile)); }
           catch (error) { fileStatus = String(error); transport?.publish(); }
         } } }, [uiIcon("preview"), "Preview"]),
         h("button", { attrs: { type: "button", "data-file-action": "copy" }, props: { disabled: !state.preview }, on: { click: () => {

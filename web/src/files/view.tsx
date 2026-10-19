@@ -1,12 +1,15 @@
 import { fileSize } from "./size.js";
 import { jsx as h } from "../../lib/snabbdom/build/index.js";
 import type { VNode } from "../../lib/snabbdom/build/index.js";
+import type { FileListEntry } from "../generated/contracts.js";
 import type { DiffLayout, FileDock, FilePaneState, FilePaneTab } from "./state.js";
 import { uiIcon, fileTypeIcon } from "../icons.js";
 import { exclusionLabel } from "./protocol.js";
 import { CHANGE_LETTERS, changeRows, type ChangeRow } from "./git.js";
 
 export interface FilePaneActions {
+  readonly expandPreview: () => void;
+  readonly nextPreview: (direction: number) => void;
   readonly toggle: () => void;
   readonly setDock: (dock: FileDock) => void;
   readonly navigate: (path: string) => void;
@@ -22,11 +25,44 @@ export interface FilePaneActions {
 }
 
 export interface FilePaneExtensions {
+  nativeText?: boolean;
+  count?: () => number;
+  entries?: (entries: readonly FileListEntry[]) => FileListEntry[];
+  entryTitle?: (path: string) => string;
   scope?: string;
   rootLabel?: string;
   local?: boolean;
   actions?: (state: FilePaneState) => VNode;
   contentActions?: (state: FilePaneState) => VNode;
+}
+
+/** Pointer capture keeps resizing reliable even when the pointer leaves the divider. */
+function splitter(outer = false): VNode {
+  const context = (target: HTMLElement) => {
+    const pane = target.closest<HTMLElement>(".files-pane")!;
+    const left = pane.dataset["dock"] === "left" && matchMedia("(min-width: 900px)").matches;
+    const host = outer ? pane.parentElement! : target.parentElement!;
+    const vertical = !outer && left;
+    return { host, vertical, property: outer ? "--files-width" : vertical ? "--files-list-height" : "--files-list-width" };
+  };
+  return <div attrs={{ class: `files-splitter${outer ? " files-outer-splitter" : ""}`, role: "separator", tabindex: "0",
+    "aria-label": outer ? "Resize Files pane" : "Resize file list and preview", title: "Drag to resize; arrow keys adjust the split" }}
+    on={{ pointerdown: (event: PointerEvent) => {
+      event.preventDefault(); const target = event.currentTarget as HTMLElement;
+      const {host, vertical, property} = context(target); const bounds = host.getBoundingClientRect();
+      target.setPointerCapture(event.pointerId);
+      const move = (event: PointerEvent) => {
+        const ratio = vertical ? (event.clientY-bounds.top)/bounds.height : (event.clientX-bounds.left)/bounds.width;
+        host.style.setProperty(property, `${Math.max(15, Math.min(80, ratio*100))}%`);
+      };
+      const stop = () => { target.removeEventListener("pointermove", move); target.removeEventListener("lostpointercapture", stop); };
+      target.addEventListener("pointermove", move); target.addEventListener("lostpointercapture", stop);
+    }, keydown: (event: KeyboardEvent) => {
+      if (!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(event.key)) return;
+      event.preventDefault(); const {host, property} = context(event.currentTarget as HTMLElement);
+      const current = Number.parseFloat(host.style.getPropertyValue(property)) || 34;
+      host.style.setProperty(property, `${Math.max(15,Math.min(80,current+(["ArrowRight","ArrowDown"].includes(event.key)?3:-3)))}%`);
+    } }}></div>;
 }
 
 /** `+added −removed` counts, or `binary` when git reported no line numbers. */
@@ -89,6 +125,7 @@ function renderChangesBody(state: FilePaneState, live: boolean, actions: FilePan
       {changes === null || changes.protected === 0 ? null
         : <p attrs={{ class: "files-notice" }}>{`${changes.protected} changed path${changes.protected === 1 ? " is" : "s are"} hidden by the disclosure policy.`}</p>}
     </div>
+    {splitter()}
     <div attrs={{ class: "files-preview" }}>
       <div attrs={{ class: "files-path changes-path" }}>
         <span>{state.selectedChange ?? "Select a changed file"}</span>
@@ -123,12 +160,16 @@ function breadcrumbs(directory: string, live: boolean, actions: FilePaneActions,
 export function renderFilesPane(state: FilePaneState, live: boolean, actions: FilePaneActions, extensions: FilePaneExtensions = {}): VNode {
   const path = state.selectedPath ?? state.directory;
   const selectedSize = state.preview?.size ?? state.listing?.entries.find(entry => entry.path === state.selectedPath)?.size ?? null;
+  const entries = extensions.entries?.(state.listing?.entries ?? []) ?? state.listing?.entries ?? [];
+  const count = extensions.count?.();
+  const rootLabel = (extensions.rootLabel ?? "Launch root") + (count === undefined ? "" : ` (${count})`);
   const exclusions = state.listing === null ? null : exclusionLabel(state.listing.exclusions);
-  return <section key="files-pane" attrs={{ class: `files-pane${state.open ? " is-open" : ""}`, "data-dock": state.dock, "aria-label": extensions.scope ?? "Read-only launch-directory files" }}>
+  return <section key="files-pane" attrs={{ class: `files-pane${state.open ? " is-open" : ""}${state.fullPreview ? " is-full-preview" : ""}`, "data-dock": state.dock, "aria-label": extensions.scope ?? "Read-only launch-directory files" }}>
+    {state.open ? splitter(true) : null}
     <header attrs={{ class: "files-toolbar" }}>
       <button attrs={{ type: "button", id: "files-toggle", "aria-expanded": state.open ? "true" : "false", "aria-controls": "files-body" }}
         props={{ disabled: !live && !state.open }} on={{ click: actions.toggle }}>
-        {uiIcon(state.open ? "expand" : "collapse")}Files
+        {uiIcon(state.open ? "expand" : "collapse")}Files{count === undefined ? "" : ` (${count})`}
       </button>
       {!state.open ? <span attrs={{ class: "files-scope" }}>{extensions.scope ?? "Read-only · fixed launch root"}</span>
         : <span attrs={{ class: "files-tabs", role: "tablist", "aria-label": "Files view" }}>
@@ -162,37 +203,54 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
     {state.open && state.tab === "changes" ? renderChangesBody(state, live, actions) : null}
     {!state.open || state.tab !== "files" ? null : <div attrs={{ id: "files-body", class: "files-body" }}>
       <div attrs={{ class: "files-browser" }}>
-        {breadcrumbs(state.directory, live, actions, extensions.rootLabel)}
+        {breadcrumbs(state.directory, live, actions, rootLabel)}
         <div attrs={{ class: "files-list", "aria-label": "Directory entries", "aria-busy": state.listingBusy ? "true" : "false" }}>
           {state.listingBusy ? <p attrs={{ role: "status" }}>Loading directory…</p> : null}
           {state.listingError === null ? null : <p attrs={{ class: "files-notice", role: "status" }}>{state.listingError}</p>}
-          {state.listing?.entries.map((entry) => <button key={entry.path}
+          {entries.map((entry) => <button key={entry.path}
             attrs={{ type: "button", class: `files-entry${state.selectedPath === entry.path ? " is-selected" : ""}`,
               title: entry.path, "aria-pressed": state.selectedPath === entry.path ? "true" : "false" }}
             props={{ disabled: !live }}
             on={{ click: () => entry.kind === "directory" ? actions.navigate(entry.path) : actions.select(entry.path) }}>
             <span attrs={{ "aria-hidden": "true" }}>{entry.kind === "directory" ? uiIcon("folder") : fileTypeIcon(entry.name)}</span>
             <span>{entry.name}</span>
-            <small attrs={{ title: entry.kind === "directory" ? "Folder" : `${entry.size ?? "Unknown"} bytes` }}>{entry.kind === "directory" ? "Folder" : fileSize(entry.size)}</small>
+            <small attrs={{ title: entry.kind === "directory" ? "Folder" : `${entry.size ?? "Unknown"} bytes${extensions.entryTitle ? " · " + extensions.entryTitle(entry.path) : ""}` }}>{entry.kind === "directory" ? "Folder" : fileSize(entry.size)}</small>
           </button>)}
           {state.listing?.entries.length === 0 ? <p>No eligible files in this folder.</p> : null}
         </div>
         {state.listing?.truncated === true ? <p attrs={{ class: "files-notice" }}>Showing the first 1,000 eligible entries. Narrow the folder selection.</p> : null}
         {exclusions === null ? null : <p attrs={{ class: "files-notice" }}>{exclusions}</p>}
       </div>
-      <div attrs={{ class: "files-preview has-content-actions" }}>
+      {splitter()}
+      <div attrs={{ class: "files-preview has-content-actions", ...(state.fullPreview ? { role: "dialog", "aria-modal": "true", "aria-label": state.selectedPath ?? "File preview" } : {}) }}>
         <div attrs={{ class: "files-path", title: "Path relative to the fixed launch directory" }}>
           <span>{state.selectedPath ?? "Select a file to view"}</span>
           {selectedSize === null ? null : <small attrs={{ title: `${selectedSize} bytes` }}>{fileSize(selectedSize)}{extensions.local ? "" : " · read-only"}</small>}
         </div>
-        <div attrs={{ class: "files-content-actions files-actions" }}>
+        <div attrs={{ class: "files-content-actions files-actions", tabindex: "0", "aria-label": "Preview controls" }}
+          on={{ keydown: (event: KeyboardEvent) => {
+            if (!state.fullPreview || event.shiftKey || event.ctrlKey || event.metaKey) return;
+            if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); actions.expandPreview(); }
+            if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); actions.nextPreview(event.key === "ArrowLeft" ? -1 : 1); }
+          } }}>
+        <button attrs={{ type: "button", "data-preview-expand": "", title: state.fullPreview ? "Restore preview" : "Expand preview to fill the window", "aria-pressed": String(state.fullPreview) }}
+          on={{ click: actions.expandPreview }}>{uiIcon(state.fullPreview ? "restore" : "fullscreen")}{state.fullPreview ? "Restore" : "Expand"}</button>
+        {!state.fullPreview ? null : <span attrs={{ class: "preview-navigation", tabindex: "0", title: "Swipe here or use arrow keys to change files" }}
+          on={{ touchstart: (event: TouchEvent) => { const touch = event.touches[0]; if (touch) (event.currentTarget as HTMLElement).dataset["swipeX"] = String(touch.clientX); },
+            touchend: (event: TouchEvent) => { const x = Number((event.currentTarget as HTMLElement).dataset["swipeX"]); const touch = event.changedTouches[0]; if (touch && Math.abs(touch.clientX - x) > 60) actions.nextPreview(touch.clientX < x ? 1 : -1); } }}>
+          <button attrs={{ type: "button", title: "Previous file" }} on={{ click: () => actions.nextPreview(-1) }}>{uiIcon("previous")}Previous</button>
+          <button attrs={{ type: "button", title: "Next file" }} on={{ click: () => actions.nextPreview(1) }}>{uiIcon("next")}Next</button>
+        </span>}
+
         <button attrs={{ type: "button", title: "Download the selected file (up to 32 MiB)" }}
           props={{ disabled: !live || state.selectedPath === null || state.downloadBusy }}
           on={{ click: () => actions.download(false) }}>{uiIcon("download")}Download File</button>
           {extensions.contentActions?.(state) ?? null}
         </div>
         <div attrs={{ class: "files-editor-area" }}>
-          <div key="monaco-host" attrs={{ id: "files-monaco", class: "files-monaco", "aria-label": "Read-only Monaco editor" }}></div>
+          {extensions.nativeText ? <textarea key="native-preview" attrs={{ class: "files-native-text", readonly: true, spellcheck: "false", "aria-label": `File contents: ${state.selectedPath ?? ""}` }}
+            props={{ value: state.preview?.content ?? "" }}></textarea>
+            : <div key="monaco-host" attrs={{ id: "files-monaco", class: "files-monaco", "aria-label": "Read-only Monaco editor" }}></div>}
           {state.preview !== null ? null : <p attrs={{ class: "files-preview-message", role: "status" }}>
             {state.previewBusy ? "Loading file…" : state.previewError ?? "UTF-8 previews up to 2 MiB. File contents stay outside chat until you explicitly include them in a prompt."}
           </p>}

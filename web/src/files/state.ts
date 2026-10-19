@@ -10,6 +10,7 @@ export type FilePaneTab = "files" | "changes";
 export type DiffLayout = "side-by-side" | "inline";
 
 export interface FilePaneState {
+  readonly fullPreview: boolean;
   readonly open: boolean;
   readonly dock: FileDock;
   readonly tab: FilePaneTab;
@@ -34,7 +35,7 @@ export interface FilePaneState {
 }
 
 function initialState(diffLayout: DiffLayout = "side-by-side", dock: FileDock = "top"): FilePaneState {
-  return { open: false, dock, tab: "files", directory: "", listing: null, listingBusy: false, listingError: null,
+  return { open: false, fullPreview: false, dock, tab: "files", directory: "", listing: null, listingBusy: false, listingError: null,
     selectedPath: null, preview: null, previewBusy: false, previewError: null, downloadBusy: false,
     changes: null, changesBusy: false, changesError: null, collapsed: new Set(),
     selectedChange: null, diff: null, diffBusy: false, diffError: null, diffLayout };
@@ -65,6 +66,16 @@ export class FilesController {
     this.#state = { ...this.#state, dock };
     try { this.#preferences?.setItem(DOCK_KEY, dock); } catch { /* Keep the preference for this view. */ }
     this.changed();
+  }
+  expandPreview(): void {
+    this.#state = { ...this.#state, fullPreview: !this.#state.fullPreview };
+    this.changed();
+  }
+  nextPreview(direction: number, paths?: readonly string[]): void {
+    const files = paths ?? this.#state.listing?.entries.filter(file => file.kind === "file").map(file => file.path) ?? [];
+    if (!files.length) return;
+    const index = files.indexOf(this.#state.selectedPath ?? "");
+    void this.select(files[(index + direction + files.length) % files.length]!);
   }
   get state(): FilePaneState { return this.#state; }
   attach(client: FileClient): void { this.#client = client; }

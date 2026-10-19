@@ -908,6 +908,11 @@ export class SpaApplication {
                 toast: this.#toast,
                 filesPane: this.#filesEnabled ? renderFilesPane(this.#files.state, live, {
                     toggle: () => this.#files.toggle(),
+                    expandPreview: () => this.#files.expandPreview(),
+                    nextPreview: direction => {
+                        const entries = this.#files.state.listing?.entries ?? [];
+                        this.#files.nextPreview(direction, (this.extensions.files?.entries?.(entries) ?? entries).filter(file => file.kind === "file").map(file => file.path));
+                    },
                     setDock: (dock) => this.#files.setDock(dock),
                     navigate: (path) => { void this.#files.navigate(path); },
                     select: (path) => { void this.#files.select(path); },
@@ -1275,6 +1280,25 @@ export class SpaApplication {
     #onGlobalKeyDown = (event) => {
         if (this.extensions.externalDialogOpen?.())
             return;
+        if (this.#files.state.fullPreview) {
+            if (event.key === "Escape") {
+                event.preventDefault();
+                this.#files.expandPreview();
+            }
+            if (event.key === "Tab") {
+                const controls = Array.from(document.querySelectorAll(".files-pane.is-full-preview .files-preview button:not(:disabled), .files-pane.is-full-preview .files-preview textarea, .files-pane.is-full-preview .files-preview [tabindex='0']"));
+                const first = controls[0], last = controls.at(-1);
+                if (event.shiftKey && document.activeElement === first) {
+                    event.preventDefault();
+                    last?.focus();
+                }
+                else if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault();
+                    first?.focus();
+                }
+            }
+            return;
+        }
         handleGlobalKeyDown(event, this.#keyboardContext());
     };
 }

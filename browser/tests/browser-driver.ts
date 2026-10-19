@@ -169,6 +169,11 @@ try {
     document.querySelector('[data-field=file-form]').requestSubmit()`);
   await until("document.querySelector('.files-path')?.textContent.includes('reports/analysis.py') && !document.querySelector('[data-file-action=preview]').disabled");
   check(await evaluate("!!document.querySelector('.files-preview .files-content-actions [data-file-action=preview]')"), "file actions are not beside the content viewer");
+  check(await evaluate("(()=>{const text=document.querySelector('.files-native-text');text.focus();text.setSelectionRange(0,text.value.length);return text.selectionEnd>10 && text.value.includes(\"print('private snippet')\")})()"), "native multiline text selection failed");
+  await evaluate("document.querySelector('[data-preview-expand]').click()");
+  check(await evaluate("(()=>{const r=document.querySelector('.files-preview').getBoundingClientRect();return r.width>=innerWidth-2 && r.height>=innerHeight-2})()"), "Files preview did not expand");
+  await evaluate("document.querySelector('[data-preview-expand]').click()");
+
   check(await evaluate("!document.querySelector('[data-field=passphrase]') && !document.querySelector('[data-browser-action=code]')"), "encrypted library remains visible");
   await evaluate(`Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{globalThis.copiedText=text}}});
     document.querySelector('[data-file-action=copy]').click()`);
@@ -183,8 +188,12 @@ try {
   check(await evaluate("globalThis.downloadName") === "analysis.py", "download filename changed");
   await evaluate("HTMLAnchorElement.prototype.click=globalThis.originalAnchorClick; URL.createObjectURL=globalThis.originalObjectURL; document.querySelector('[data-file-action=preview]').click()");
   await until("!!document.querySelector('.browser-preview[open]')");
+  check(await evaluate("document.querySelector('.browser-preview[open] h2').textContent === 'reports/analysis.py'"), "preview title omitted filename");
+  await evaluate("document.querySelector('[data-field=preview-expand]').click()");
+  check(await evaluate("(()=>{const r=document.querySelector('.browser-preview[open]').getBoundingClientRect();return r.width>=innerWidth-2 && r.height>=innerHeight-2})()"), "preview did not expand to window");
+  await evaluate("document.querySelector('[data-field=preview-expand]').click()");
   check(await evaluate(`(() => { const frame=document.querySelector('[data-field=preview-frame]');
-    return frame.getAttribute('sandbox')==='' && frame.srcdoc.includes("print('private snippet')") && frame.getBoundingClientRect().height>100; })()`), "file preview is missing or not sandboxed");
+    return frame.getAttribute('sandbox')==='allow-scripts' && !frame.getAttribute('sandbox').includes('allow-same-origin') && frame.srcdoc.includes("print('private snippet')") && frame.getBoundingClientRect().height>100; })()`), "file preview is missing or not sandboxed");
   check(await evaluate(`(async () => {
     const {previewDocument}=await import('./src/file-actions.js');
     const doc=previewDocument('<h1>Hello</h1><script>parent.hacked=true<\/script><img src="https://example.com/leak" onerror="evil()"><a href="https://example.com">leave</a><form><input></form>','html','test.html');
@@ -226,6 +235,36 @@ try {
   }
   check(previewText === 'Rendered local HTML', 'HTML preview did not render: ' + JSON.stringify(previewText));
   check(!await evaluate('globalThis.hacked'), 'preview executed a script');
+  await evaluate("document.querySelector('[data-field=preview-expand]').click()");
+  const previewInput = async (expression: string): Promise<void> => {
+    const targets = await rpc('Target.getTargets');
+    const frame = (targets['targetInfos'] as {type:string;targetId:string;url:string}[]).find(target=>target.type==='iframe' && target.url==='about:srcdoc');
+    if (frame) {
+      const attached = await rpc('Target.attachToTarget',{targetId:frame.targetId,flatten:true});
+      const parentSession=session; session=String(attached['sessionId']);
+      try { await evaluate(expression); } finally {session=parentSession;}
+    } else {
+      const tree=await rpc('Page.getFrameTree');
+      const child=(tree['frameTree'] as {childFrames?:{frame:{id:string;url:string}}[]}).childFrames?.find(child=>child.frame.url==='about:srcdoc');
+      check(child,'preview frame missing');
+      const world=await rpc('Page.createIsolatedWorld',{frameId:child!.frame.id,worldName:'preview-navigation-test'});
+      await rpc('Runtime.evaluate',{contextId:world['executionContextId'],expression,returnByValue:true});
+    }
+  };
+  await previewInput("dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}))");
+  await until("document.querySelector('.browser-preview[open] h2').textContent==='reports/analysis.py'");
+  await evaluate("document.querySelector('.browser-preview[open]').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}))");
+  await until("document.querySelector('.browser-preview[open] h2').textContent==='reports/preview.html'");
+  await new Promise(resolve=>setTimeout(resolve,100));
+  await previewInput("(()=>{const range=document.createRange();range.selectNodeContents(document.body);getSelection().addRange(range);dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}))})()");
+  check(await evaluate("document.querySelector('.browser-preview[open] h2').textContent==='reports/preview.html'"),"selection was replaced by navigation");
+  await previewInput("(()=>{getSelection().removeAllRanges();const t=new Touch({identifier:1,target:document.body,clientX:300,clientY:100});dispatchEvent(new TouchEvent('touchstart',{touches:[t]}));const end=new Touch({identifier:1,target:document.body,clientX:100,clientY:105});dispatchEvent(new TouchEvent('touchend',{changedTouches:[end]}))})()");
+  await until("document.querySelector('.browser-preview[open] h2').textContent==='reports/analysis.py'");
+  await evaluate("document.querySelector('[data-field=preview-previous]').click()");
+  await until("document.querySelector('.browser-preview[open] h2').textContent==='reports/preview.html'");
+  const fullImage=await rpc('Page.captureScreenshot',{format:'png'});
+  await writeFile(config.screenshot.replace('.png','-fullscreen.png'),Buffer.from(String(fullImage['data']),'base64'));
+
   await evaluate("document.querySelector('dialog[open]').close(); globalThis.confirm=()=>true; document.querySelector('[data-file-action=delete]').click()");
   await until("!document.querySelector('.files-entry[title=\"reports/preview.html\"]')");
   await evaluate("document.querySelector('#files-toggle').click()");
@@ -238,12 +277,21 @@ try {
   await until("!!document.querySelector('.files-entry[title=\"reports/analysis.py\"]')");
   await evaluate("document.querySelector('.files-entry[title=\"reports/analysis.py\"]').click()");
   await until("document.querySelector('.files-path small')?.textContent.includes('B')");
-  await until("!!document.querySelector('#files-monaco[data-editor-ready=true]')");
+  await until("!!document.querySelector('.files-native-text')");
   await until("!document.querySelector('.toast')");
   await evaluate("document.querySelector('[data-files-dock=left]').click()");
   await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
   check(await evaluate("(()=>{const files=document.querySelector('.files-pane').getBoundingClientRect(), list=document.querySelector('.files-browser').getBoundingClientRect(), editor=document.querySelector('.files-preview').getBoundingClientRect(), chat=document.querySelector('#chat-scroll').getBoundingClientRect();return files.right<=chat.left+1 && list.bottom<=editor.top+1 && editor.width>200})()"), "left dock did not stack files above the viewer beside chat");
   check(await evaluate("!!document.querySelector('.files-entry .file-type-icon[title=Python]')"), "Python file icon missing");
+  const oldWidth = Number(await evaluate("document.querySelector('.files-pane').getBoundingClientRect().width"));
+  const grip = await evaluate("(()=>{const r=document.querySelector('.files-outer-splitter').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()") as {x:number;y:number};
+  await rpc('Input.dispatchMouseEvent',{type:'mousePressed',x:grip.x,y:grip.y,button:'left',clickCount:1});
+  await rpc('Input.dispatchMouseEvent',{type:'mouseMoved',x:grip.x+100,y:grip.y,button:'left',buttons:1});
+  await rpc('Input.dispatchMouseEvent',{type:'mouseReleased',x:grip.x+100,y:grip.y,button:'left',clickCount:1});
+  check(Number(await evaluate("document.querySelector('.files-pane').getBoundingClientRect().width"))>oldWidth+50,"Files edge did not resize");
+  await evaluate("document.querySelector('.files-body > .files-splitter').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}))");
+  check(await evaluate("!!document.querySelector('.files-body').style.getPropertyValue('--files-list-height')"),"list/preview split did not resize");
+
   const leftImage=await rpc("Page.captureScreenshot",{format:"png"});
   await writeFile(config.screenshot.replace('.png','-files-left.png'),Buffer.from(String(leftImage['data']),'base64'));
   await evaluate("document.querySelector('[data-files-dock=top]').click()");
@@ -467,6 +515,16 @@ try {
       await wait(()=>!!root.querySelector('.files-entry[title="outputs/upload.csv"]') && !!root.querySelector('.files-entry[title="outputs/raw.bin"]'));
       if(records()[0].workspace.files.find(file=>file.path==='outputs/raw.bin')?.data!=='AP8B')throw Error('Uploaded binary bytes changed');
       await send('read uploads','uploaded: a,b\\n1,2 / 00ff01');
+      if(!root.querySelector('.files-breadcrumbs').textContent.includes('Session files ('+records()[0].workspace.files.length+')'))throw Error('Missing session file count');
+      const sort=root.querySelector('[aria-label="Sort session files"]'); sort.value='size'; sort.dispatchEvent(new Event('change',{bubbles:true}));
+      const originalURL=URL.createObjectURL, originalClick=HTMLAnchorElement.prototype.click;
+      try {
+        URL.createObjectURL=blob=>{globalThis.__zipBlob=blob;return originalURL(blob)};
+        HTMLAnchorElement.prototype.click=function(){};
+        root.querySelector('[data-file-action=download-all]').click();
+      } finally { URL.createObjectURL=originalURL; HTMLAnchorElement.prototype.click=originalClick; }
+      globalThis.__sessionZip=Array.from(new Uint8Array(await globalThis.__zipBlob.arrayBuffer()));
+
 
       root.querySelector('.files-entry[title="outputs/chart.png"]').click();
       await wait(()=>!root.querySelector('[data-file-action=preview]').disabled);
@@ -505,6 +563,7 @@ try {
     } finally {view.destroy();root.remove();}
   })()`);
   check(workspaceResult, 'session workspace UI failed');
+  await writeFile(config.screenshot.replace('.png','-files.zip'), Uint8Array.from(await evaluate('globalThis.__sessionZip') as number[]));
   process.stdout.write('Python workspace creation, Files editing, image preview, reopen, isolation and deletion passed.\n');
   if (config.pyodide) {
     await evaluate(`(async () => {

@@ -2,6 +2,7 @@ import { jsx as h } from "../lib/snabbdom/build/index.js";
 import { SPINNER_FRAMES, TOOL_SPINNER_FRAMES, UI_ICON_GLYPHS, ICON_GLYPHS, } from "./generated/contracts.js";
 // UI-only actions do not change the native protocol's icon vocabulary.
 export const BUTTON_ICONS = { ...ICON_GLYPHS, ...UI_ICON_GLYPHS,
+    fullscreen: "\uf065", restore: "\uf066", previous: "\uf053", next: "\uf054",
     upload: "\uf093", pin: "\uf08d", copy: "\uf0c5", preview: "\uf06e", folder: "\uf07b", file: "\uf15b",
     refresh: "\uf021", connection: "\uf1e6", history: "\uf1da", code: "\uf121",
     expand: "\uf078", collapse: "\uf054", columns: "\uf0db", list: "\uf03a",

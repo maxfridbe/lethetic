@@ -1,7 +1,7 @@
 import { exclusionLabel, fileFailure } from "./protocol.js";
 const DOCK_KEY = "lethetic.files-dock.v1";
 function initialState(diffLayout = "side-by-side", dock = "top") {
-    return { open: false, dock, tab: "files", directory: "", listing: null, listingBusy: false, listingError: null,
+    return { open: false, fullPreview: false, dock, tab: "files", directory: "", listing: null, listingBusy: false, listingError: null,
         selectedPath: null, preview: null, previewBusy: false, previewError: null, downloadBusy: false,
         changes: null, changesBusy: false, changesError: null, collapsed: new Set(),
         selectedChange: null, diff: null, diffBusy: false, diffError: null, diffLayout };
@@ -38,6 +38,17 @@ export class FilesController {
         }
         catch { /* Keep the preference for this view. */ }
         this.changed();
+    }
+    expandPreview() {
+        this.#state = { ...this.#state, fullPreview: !this.#state.fullPreview };
+        this.changed();
+    }
+    nextPreview(direction, paths) {
+        const files = paths ?? this.#state.listing?.entries.filter(file => file.kind === "file").map(file => file.path) ?? [];
+        if (!files.length)
+            return;
+        const index = files.indexOf(this.#state.selectedPath ?? "");
+        void this.select(files[(index + direction + files.length) % files.length]);
     }
     get state() { return this.#state; }
     attach(client) { this.#client = client; }

@@ -3,7 +3,7 @@ import { validFilePath } from "../../web/src/files/protocol.js";
 export const WORKSPACE_ROOT = "/home/pyodide";
 export const FILE_BYTES = 1024 * 1024;
 export const WORKSPACE_BYTES = 2 * 1024 * 1024;
-export interface WorkspaceFile { path: string; data: string }
+export interface WorkspaceFile { path: string; data: string; modifiedAt?: number }
 export interface Workspace { version: 1; directories: string[]; files: WorkspaceFile[] }
 export const emptyWorkspace = (): Workspace => ({ version: 1, directories: [], files: [] });
 export function encodeBytes(bytes: Uint8Array): string {
@@ -41,9 +41,22 @@ export function parseWorkspace(value: unknown): Workspace {
     const bytes = decodeBytes(file.data);
     if (bytes.length > FILE_BYTES || encodeBytes(bytes) !== file.data) throw new Error("Invalid workspace encoding or file exceeds 1 MiB.");
     total += bytes.length; paths.add(file.path); parents(file.path);
-    return { path: file.path, data: file.data };
+    if (file.modifiedAt !== undefined && (!Number.isSafeInteger(file.modifiedAt) || file.modifiedAt < 0 || file.modifiedAt > 8_640_000_000_000_000)) throw new Error("Invalid file date.");
+    return { path: file.path, data: file.data, ...(file.modifiedAt === undefined ? {} : { modifiedAt: file.modifiedAt }) };
   });
   if (directories.size > 256 || total > WORKSPACE_BYTES) throw new Error("Workspace exceeds 256 folders / 2 MiB.");
   if ([...paths].some((path) => directories.has(path))) throw new Error("A workspace file conflicts with a folder.");
   return { version: 1, directories: [...directories].sort(), files: files.sort((a, b) => a.path.localeCompare(b.path)) };
+}
+
+/** Preserve dates across worker restores; only changed/new bytes get a new date. */
+export function dateWorkspace(value: Workspace, previous: Workspace, now = Date.now()): Workspace {
+  const next = parseWorkspace(value);
+  const before = new Map(previous.files.map(file => [file.path, file]));
+  next.files = next.files.map(file => {
+    const old = before.get(file.path);
+    const modifiedAt = old?.data === file.data ? old.modifiedAt : now;
+    return { path: file.path, data: file.data, ...(modifiedAt === undefined ? {} : { modifiedAt }) };
+  });
+  return next;
 }

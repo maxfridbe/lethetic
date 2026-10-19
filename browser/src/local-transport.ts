@@ -6,7 +6,7 @@ import type { Connection, LetheticRuntime, RuntimeEvent, Tool } from "./sdk.js";
 import { effectiveSystemPrompt, injectedInstructions, toolDefinitions } from "./prompts.js";
 import { createPythonTool } from "./python.js";
 import type { PythonTool } from "./python.js";
-import { emptyWorkspace, parseWorkspace } from "./workspace.js";
+import { emptyWorkspace, dateWorkspace } from "./workspace.js";
 import type { Workspace } from "./workspace.js";
 import { block, initialState, NO_LOSS } from "./local-state.js";
 import { BrowserMetrics } from "./metrics.js";
@@ -396,7 +396,7 @@ export class LocalTransport implements ApplicationTransport {
 
   #editWorkspace(value: Workspace): void {
     this.#requireIdle();
-    const previous = this.#workspace; this.#workspace = parseWorkspace(value);
+    const previous = this.#workspace; this.#workspace = dateWorkspace(value, previous);
     try { this.#saveSession(true); }
     catch (error) { this.#workspace = previous; this.publish(); throw error; }
     this.#python?.setWorkspace(this.#workspace);
@@ -405,7 +405,7 @@ export class LocalTransport implements ApplicationTransport {
 
   #checkpointWorkspace(workspace: Workspace): void {
     if (this.#closed) return;
-    this.#workspace = parseWorkspace(workspace);
+    this.#workspace = dateWorkspace(workspace, this.#workspace);
     // Save files after each completed Python call, even while the model turn continues.
     // Keep the last complete model history; restoring files must not replay partial turns.
     try {

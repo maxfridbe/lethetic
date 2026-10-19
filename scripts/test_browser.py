@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import threading
 import tarfile
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -115,6 +116,12 @@ def main():
                 assert "apiKey" not in json.loads(session)["connection"]
                 assert archive.getmember("diagnostics.json").isfile()
             print("Downloaded session debug archive verified with Python tarfile.")
+            with zipfile.ZipFile(ROOT / "target/browser-preview-files.zip") as archive:
+                assert archive.testzip() is None
+                assert archive.read("outputs/raw.bin") == bytes([0, 255, 1])
+                assert archive.read("outputs/upload.csv") == b"a,b\n1,2\n"
+                assert archive.getinfo("outputs/empty/").is_dir()
+            print("Downloaded session ZIP verified with Python zipfile.")
         finally:
             server.shutdown()
             server.server_close()

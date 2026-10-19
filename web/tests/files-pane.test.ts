@@ -45,7 +45,7 @@ const json = (value: unknown, options: { status?: number; headers?: Record<strin
   new Response(JSON.stringify(value), { ...options, headers: { "Content-Type": "application/json", ...options.headers } });
 const signal = (): AbortSignal => new AbortController().signal;
 const flush = async (): Promise<void> => { for (let i = 0; i < 6; i += 1) await Promise.resolve(); };
-const actions: FilePaneActions = { toggle() {}, setDock() {}, navigate() {}, select() {}, refresh() {}, download() {}, copyPath() {},
+const actions: FilePaneActions = { expandPreview() {}, nextPreview() {}, toggle() {}, setDock() {}, navigate() {}, select() {}, refresh() {}, download() {}, copyPath() {},
   showTab() {}, refreshChanges() {}, selectChange() {}, toggleFolder() {}, setDiffLayout() {} };
 
 test("file paths and exact response shapes are confined before display", () => {

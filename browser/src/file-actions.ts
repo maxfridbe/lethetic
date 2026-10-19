@@ -1,3 +1,4 @@
+import { buttonIconHtml } from "../../web/src/icons.js";
 import { parse } from "../../web/lib/marked/marked.esm.js";
 import { createDialog, field } from "./dialog.js";
 import { textFile } from "./workspace.js";
@@ -61,18 +62,73 @@ function workspacePreview(file: WorkspaceFile): string {
   return previewDocument(content, "", file.path);
 }
 
-export function createFilePreview(): { dialog: HTMLDialogElement; open(code: string, language: string, name: string): void; openFile(file: WorkspaceFile): void; clear(): void; destroy(): void } {
-  const dialog = createDialog("File preview", `<p>Static preview. Scripts, forms, navigation and network requests are disabled.</p><iframe data-field="preview-frame" title="File preview" sandbox="" referrerpolicy="no-referrer"></iframe>`);
+export function createFilePreview(): { dialog: HTMLDialogElement; open(code: string, language: string, name: string): void; openFile(file: WorkspaceFile, files?: readonly WorkspaceFile[]): void; clear(): void; destroy(): void } {
+  const dialog = createDialog("File preview", `<div class="preview-toolbar" tabindex="0" aria-label="Preview navigation">
+    <button type="button" data-field="preview-expand" aria-pressed="false">${buttonIconHtml("fullscreen")}Expand</button>
+    <button type="button" data-field="preview-previous">${buttonIconHtml("previous")}Previous</button>
+    <span data-field="preview-position" aria-live="polite"></span>
+    <button type="button" data-field="preview-next">${buttonIconHtml("next")}Next</button>
+    <small>Swipe or use ← → in full view. Select text to copy it.</small>
+    </div><iframe data-field="preview-frame" title="File preview" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>`);
   dialog.classList.add("browser-preview");
   const frame = field<HTMLIFrameElement>(dialog, "preview-frame");
-  const clear = (): void => { frame.removeAttribute("srcdoc"); if (dialog.open) dialog.close(); };
-  // The close event is queued; a rapid reopen must keep its new preview.
-  dialog.addEventListener("close", () => { if (!dialog.open) frame.removeAttribute("srcdoc"); });
-  return { dialog, open(code, language, name): void {
-    frame.srcdoc = previewDocument(code, language, name);
+  let files: readonly WorkspaceFile[] = [], index = 0, token = "";
+  const expand = field<HTMLButtonElement>(dialog, "preview-expand");
+  const previous = field<HTMLButtonElement>(dialog, "preview-previous");
+  const next = field<HTMLButtonElement>(dialog, "preview-next");
+  const display = (html: string, name: string): void => {
+    dialog.querySelector("h2")!.textContent = name;
+    frame.title = `Preview: ${name}`;
+    previous.disabled = next.disabled = files.length < 2;
+    field(dialog, "preview-position").textContent = files.length ? `${index + 1} / ${files.length}` : "";
+    // The opaque iframe permits only this nonce-scoped navigation bridge. User
+    // scripts/handlers were removed and cannot execute, access the host or fetch.
+    token = crypto.randomUUID();
+    const nonce = crypto.randomUUID();
+    const bridge = new URL("./preview-bridge.js", import.meta.url).href.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+    frame.srcdoc = html.replace("script-src 'none'", `script-src 'nonce-${nonce}'`).replace("</body>", `<script nonce="${nonce}" src="${bridge}" data-preview-token="${token}"></script></body>`);
     if (!dialog.open) dialog.showModal();
-  }, openFile(file): void {
-    frame.srcdoc = workspacePreview(file);
-    if (!dialog.open) dialog.showModal();
-  }, clear, destroy(): void { clear(); dialog.remove(); } };
+  };
+  const syncFull = (): void => frame.contentWindow?.postMessage({token,full:dialog.classList.contains("is-full-preview")}, "*");
+  frame.addEventListener("load", syncFull);
+  const step = (direction: number): void => {
+    if (!files.length) return;
+    index = (index + direction + files.length) % files.length;
+    const file = files[index]!; display(workspacePreview(file), file.path);
+  };
+  const toggle = (): void => {
+    const full = dialog.classList.toggle("is-full-preview");
+    expand.innerHTML = buttonIconHtml(full ? "restore" : "fullscreen") + (full ? "Restore" : "Expand");
+    expand.setAttribute("aria-pressed", String(full));
+    syncFull();
+  };
+  expand.addEventListener("click", toggle);
+  previous.addEventListener("click", () => step(-1)); next.addEventListener("click", () => step(1));
+  const message = (event: MessageEvent): void => {
+    if (!dialog.open || !dialog.classList.contains("is-full-preview") || event.source !== frame.contentWindow ||
+      event.data?.type !== "lethetic-preview" || event.data.token !== token) return;
+    if (event.data.direction === 0) toggle();
+    else if (event.data.direction === -1 || event.data.direction === 1) step(event.data.direction);
+  };
+  globalThis.addEventListener("message", message);
+  dialog.addEventListener("keydown", event => {
+    if (!dialog.classList.contains("is-full-preview") || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); step(event.key === "ArrowLeft" ? -1 : 1); }
+  });
+  let swipe: {x: number; y: number; time: number} | null = null;
+  dialog.addEventListener("touchstart", event => { const t = event.touches[0]; swipe = t ? {x:t.clientX,y:t.clientY,time:Date.now()} : null; }, {passive:true});
+  dialog.addEventListener("touchend", event => {
+    const t = event.changedTouches[0];
+    if (swipe && t && dialog.classList.contains("is-full-preview") && Date.now()-swipe.time<600 &&
+      Math.abs(t.clientX-swipe.x)>70 && Math.abs(t.clientX-swipe.x)>Math.abs(t.clientY-swipe.y)*2) step(t.clientX<swipe.x?-1:1);
+    swipe=null;
+  }, {passive:true});
+  const clear = (): void => { token = ""; files = []; frame.removeAttribute("srcdoc"); if (dialog.open) dialog.close(); };
+  dialog.addEventListener("close", () => { if (!dialog.open) { token = ""; files = []; frame.removeAttribute("srcdoc"); } });
+  return { dialog, open(code, language, name): void { files = []; display(previewDocument(code, language, name), name); },
+    openFile(file, available = [file]): void {
+      files = available.filter(canPreviewFile); index = files.findIndex(item => item.path === file.path);
+      if (index < 0) { files = [file]; index = 0; }
+      display(workspacePreview(file), file.path);
+    }, clear, destroy(): void { clear(); globalThis.removeEventListener("message", message); dialog.remove(); } };
 }

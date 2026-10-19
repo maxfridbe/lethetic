@@ -377,3 +377,34 @@
 }
 
 .files-entry .ui-icon { margin: 0; font-size: 1rem; }
+
+.files-native-text {
+  position: absolute; inset: 0; width: 100%; height: 100%; box-sizing: border-box;
+  min-height: 0; margin: 0; padding: .65rem; border: 0; border-radius: 0; resize: none;
+  font: 14px/1.5 monospace; white-space: pre; overflow: auto; tab-size: 4;
+  user-select: text; -webkit-user-select: text; touch-action: auto;
+}
+.files-sort { display: inline-flex; align-items: center; gap: .25rem; font-size: .8rem; }
+.files-sort select { padding: .15rem; color: var(--theme-output-fg); background: var(--surface); border: 1px solid var(--border); border-radius: 4px; }
+.files-pane.is-full-preview .files-preview {
+  position: fixed; inset: 0; z-index: 30; background: var(--surface);
+  width: 100%; height: 100dvh; box-shadow: 0 0 0 100vmax rgb(0 0 0 / .5);
+}
+.preview-navigation { display: inline-flex; align-items: center; gap: .4rem; touch-action: pan-y; }
+.files-splitter { background: var(--border); touch-action: none; padding: 0; border: 0; border-radius: 0; z-index: 3; }
+.files-splitter:hover, .files-splitter:focus-visible { background: var(--theme-highlight-fg); }
+.files-body { grid-template-columns: minmax(105px, var(--files-list-width, 27%)) 6px minmax(0, 1fr); }
+.files-splitter { cursor: col-resize; }
+.files-outer-splitter { display: none; }
+@media (min-width: 900px) {
+  .conversation-column:has(> .files-pane.is-open[data-dock="left"]) { grid-template-columns: clamp(220px, var(--files-width, 34%), 80%) minmax(0, 1fr); }
+  .files-pane.is-open[data-dock="left"] { padding-right: 6px; }
+  .files-pane.is-open[data-dock="left"] .files-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(65px, var(--files-list-height, 35%)) 6px minmax(0, 1fr);
+  }
+  .files-pane.is-open[data-dock="left"] .files-splitter { cursor: row-resize; }
+  .files-pane.is-open[data-dock="left"] .files-outer-splitter {
+    display: block; position: absolute; top: 0; right: 0; bottom: 0; width: 6px; cursor: col-resize;
+  }
+}

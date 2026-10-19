@@ -70,11 +70,24 @@ native capabilities through the same UI backed by its authenticated native conne
 
 ## Files, previews, and downloads
 
-Use the existing **Files** directory browser. Choose **Save to Files** beneath a
+Use the existing **Files** directory browser. Choose **Save to Session** beneath a
 code block or Python tool call, or **New file** in Files. Enter a relative path such
 as `reports/analysis.py`. Folders are derived from these paths. Select a file to
-view its source in Monaco, **Edit**, **Preview**, **Download File**, **Copy**,
+select and copy its source in the native text viewer, **Edit**, **Preview**, **Download File**, **Copy**,
 or **Delete** it. Code blocks also have direct Preview, Download, and Copy buttons.
+**Expand** fills the window in both the source pane and the rendered preview. Preview
+titles show the full relative filename. In expanded rendered previews, swipe horizontally
+or use left/right arrow keys to cycle through previewable session files in the selected
+sort order. Text selection and modified arrow keys are preserved. In the source pane,
+use the Previous/Next controls (or arrows/swipes on those controls) to change files.
+Drag the Files edge in Left mode to resize its width, or drag the divider between the
+file list and source to adjust their ratio. Focus a divider and use arrow keys for
+keyboard resizing. **Sort** supports name, date, and size, with reversible ordering;
+folders stay first. Dates record session content changes and survive reloads. Older
+files with no recorded date show Unknown. **Download all (.zip)** exports every file
+and empty folder in the session, preserving binary bytes and nested paths. The Files
+label and Session files breadcrumb include the session's total file count.
+
 Saving from the editor is explicit. The Files browser represents the current
 session's Python workspace at `/home/pyodide`. Files created, changed, or deleted
 by Python appear automatically after each completed call. Edits in Files are applied
@@ -84,7 +97,8 @@ are available to Python; they are not automatically appended to the model prompt
 Previews render static HTML, SVG, Markdown and images (PNG, JPEG, GIF, WebP, AVIF,
 BMP and ICO); JSON is formatted and other text is shown as source. Other binary
 files can be downloaded without changing their bytes; Edit and Copy apply to text. They use an opaque sandbox and a restrictive content policy:
-scripts, forms, external resources and navigation are disabled. Download the file
+file scripts, forms, external resources and navigation are disabled. A nonce-scoped,
+trusted navigation bridge handles preview arrows and swipes; it has no access to the host. Download the file
 to use it elsewhere. This is a static preview, not a JavaScript app runner.
 
 Files are **unencrypted**, saved with each session under `lethetic.sessions.v1`.
@@ -228,7 +242,7 @@ at `/lethetic/`, custom subpaths, and domain roots. Pages deployment requires th
 Pushing an ordinary commit deploys Pages. Pushing a `v*` tag additionally attaches
 `lethetic-browser.zip` and `lethetic-browser.zip.sha256` to the GitHub release,
 alongside the existing native release workflow. A `browser-v*` tag (for example,
-`browser-v0.4.7`) publishes an independent embedding release with those same assets.
+`browser-v0.4.8`) publishes an independent embedding release with those same assets.
 A commit does not create a version tag automatically. The ZIP contains both standalone and embedding modes; it does
 not contain API keys or downloaded Pyodide packages. Build outputs live under
 `target/` and are not committed. `manifest.json` contains per-file SHA-256 hashes.

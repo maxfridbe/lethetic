@@ -6,11 +6,11 @@ import type { BrowserFiles } from "./files.js";
 export function createFileEditor(files: BrowserFiles, saved: (path: string) => void): {
   dialog: HTMLDialogElement; open(path: string, content: string, existing?: boolean): void; destroy(): void;
 } {
-  const dialog = createDialog("Save local file", `<p>${files.storage ? "Files are saved unencrypted with this session and sync with Python." : "Files stay in this tab until it closes or reloads."} Saved files are available to this session’s Python tool.</p>
+  const dialog = createDialog("Save to Session", `<p>${files.storage ? "Files are saved unencrypted with this session and sync with Python." : "Files stay in this tab until it closes or reloads."} Saved files are available to this session’s Python tool.</p>
     <form data-field="file-form"><label>Path<input data-field="file-path" placeholder="reports/analysis.py" required maxlength="4096"></label>
     <label>Contents<textarea data-field="file-content" rows="16" spellcheck="false"></textarea></label>
     <div class="browser-file-editor-actions">
-    <button type="submit" class="primary-button">${buttonIconHtml("save")}Save file</button>
+    <button type="submit" class="primary-button">${buttonIconHtml("save")}Save to Session</button>
     <button type="button" data-field="preview-content">${buttonIconHtml("preview")}Preview</button>
     <button type="button" data-field="copy-content">${buttonIconHtml("copy")}Copy</button>
     </div><p data-field="file-status" role="status"></p></form>`);
