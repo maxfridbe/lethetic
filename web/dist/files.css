@@ -316,11 +316,16 @@
 }
 
 @media (min-width: 900px) {
-  .conversation-column:has(> .files-pane.is-open[data-dock="left"]) {
-    grid-template-columns: clamp(260px, 34%, 440px) minmax(0, 1fr);
+  .conversation-column:has(> .files-pane[data-dock="left"]) {
+    grid-template-columns: 3.25rem minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto auto;
   }
-  .files-pane.is-open[data-dock="left"] {
+  .conversation-column:has(> .files-pane.is-open[data-dock="left"]) {
+    grid-template-columns: clamp(260px, 34%, 440px) minmax(0, 1fr);
+  }
+  .files-pane[data-dock="left"] {
+    display: flex;
+    flex-direction: column;
     grid-column: 1;
     grid-row: 1 / 4;
     height: auto !important;
@@ -332,9 +337,32 @@
     border-bottom: 0;
     box-shadow: 10px 0 22px -6px rgb(0 0 0 / 55%);
   }
-  .files-pane.is-open[data-dock="left"] ~ .chat-scroll { grid-column: 2; grid-row: 1; }
-  .files-pane.is-open[data-dock="left"] ~ .activity-area { grid-column: 2; grid-row: 2; }
-  .files-pane.is-open[data-dock="left"] ~ .composer { grid-column: 2; grid-row: 3; }
+  .files-pane[data-dock="left"] ~ .chat-scroll { grid-column: 2; grid-row: 1; }
+  .files-pane[data-dock="left"] ~ .activity-area { grid-column: 2; grid-row: 2; }
+  .files-pane[data-dock="left"] ~ .composer { grid-column: 2; grid-row: 3; }
+  .files-pane:not(.is-open)[data-dock="left"] .files-toolbar {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: center;
+    height: 100%;
+    min-height: 0;
+    box-sizing: border-box;
+    padding: .4rem .2rem;
+    overflow: auto;
+  }
+  .files-pane:not(.is-open)[data-dock="left"] .files-toolbar button,
+  .files-pane:not(.is-open)[data-dock="left"] .files-scope {
+    writing-mode: vertical-rl;
+    white-space: nowrap;
+  }
+  .files-pane:not(.is-open)[data-dock="left"] .files-scope {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .files-pane:not(.is-open)[data-dock="left"] .files-dock-controls { flex-direction: column; }
+  .files-pane:not(.is-open)[data-dock="left"] .ui-icon { margin: 0 0 .25rem; }
   .files-pane.is-open[data-dock="left"] .files-body {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(100px, 35%) minmax(0, 1fr);

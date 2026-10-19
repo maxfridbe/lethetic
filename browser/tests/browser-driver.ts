@@ -243,6 +243,10 @@ try {
   await writeFile(config.screenshot.replace('.png','-files.png'), Buffer.from(String(filesImage["data"]), "base64"));
   await evaluate("document.querySelector('[data-files-dock=left]').click()");
   await evaluate("document.querySelector('#files-toggle').click()");
+  check(await evaluate("(()=>{const rail=document.querySelector('.files-pane').getBoundingClientRect(), chat=document.querySelector('#chat-scroll').getBoundingClientRect(), toggle=document.querySelector('#files-toggle').getBoundingClientRect();return rail.width<80 && rail.height>rail.width && rail.right<=chat.left+1 && Math.abs(rail.top-chat.top)<1 && toggle.height>toggle.width})()"), "collapsed left Files bar is not vertical beside chat");
+  await evaluate("document.querySelector('[data-files-dock=top]').click()");
+  check(await evaluate("document.querySelector('.files-pane').getBoundingClientRect().bottom<=document.querySelector('#chat-scroll').getBoundingClientRect().top+1"), "collapsed top dock did not restore above chat");
+  await evaluate("document.querySelector('[data-files-dock=left]').click()");
   const image = await rpc("Page.captureScreenshot", { format: "png" });
   await writeFile(config.screenshot, Buffer.from(String(image["data"]), "base64"));
   await rpc("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });

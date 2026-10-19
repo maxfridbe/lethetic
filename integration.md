@@ -133,8 +133,8 @@ is assembled locally; it is not uploaded. Every turn also has **Copy contents** 
 its bottom-right, copying the source text or tool payload without UI labels.
 
 Use **Top** or **Left** in the Files toolbar to choose its dock. Left mode stacks
-the file list above the code viewer, with the conversation on the right. The choice
-survives refresh and session changes; narrow screens use the top layout. File-type
+the file list above the code viewer, with the conversation on the right. When collapsed, the left dock stays as a narrow vertical bar beside the conversation.
+The choice survives refresh and session changes; narrow screens use the top layout. File-type
 icons appear to the left of filenames in Browse and Changes.
 
 The **Stats** panel lets you pin individual metrics to the bottom bar; pins persist across refreshes and wrap to three lines. The Files list and viewer show human-readable sizes with exact byte counts in tooltips.
@@ -218,7 +218,7 @@ at `/lethetic/`, custom subpaths, and domain roots. Pages deployment requires th
 Pushing an ordinary commit deploys Pages. Pushing a `v*` tag additionally attaches
 `lethetic-browser.zip` and `lethetic-browser.zip.sha256` to the GitHub release,
 alongside the existing native release workflow. A `browser-v*` tag (for example,
-`browser-v0.4.4`) publishes an independent embedding release with those same assets.
+`browser-v0.4.5`) publishes an independent embedding release with those same assets.
 A commit does not create a version tag automatically. The ZIP contains both standalone and embedding modes; it does
 not contain API keys or downloaded Pyodide packages. Build outputs live under
 `target/` and are not committed. `manifest.json` contains per-file SHA-256 hashes.
