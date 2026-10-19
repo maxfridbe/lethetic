@@ -57,6 +57,8 @@ class Handler(SimpleHTTPRequestHandler):
             content = "Connected" if "single word Connected" in messages[-1]["content"] else "Hello from the browser test\n\n```python\nprint('private snippet')\n```"
         if messages[-1]["role"] == "user" and messages[-1]["content"] == "remember earlier":
             content = "Context restored" if any(m.get("content") == "hello" for m in messages[:-1]) else "Missing context"
+        if messages and "You compact a conversation" in str(messages[0].get("content", "")):
+            content = "Continue the Python file task. Files in outputs include edited data.csv and uploaded binary files. Keep the session and files."
         if data.get("tools") and messages[-1]["role"] == "user":
             snippets = {
                 "read uploads": "# read-uploaded-files\nfrom pathlib import Path\nprint('uploaded: ' + Path('outputs/upload.csv').read_text().strip() + ' / ' + Path('outputs/raw.bin').read_bytes().hex())",

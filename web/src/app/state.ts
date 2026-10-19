@@ -25,6 +25,9 @@ import {
   utf8Length,
 } from "./helpers.js";
 
+export type LocalPaletteCommand = Omit<CommandView, "id"> & { id: `local:${string}`; run: () => void };
+export type PaletteCommand = CommandView | LocalPaletteCommand;
+
 export interface PaletteState {
   query: string;
   selected: number;
@@ -41,6 +44,7 @@ export interface ApprovalConfirmation {
 }
 
 export interface ChatViewState {
+  readonly originalPythonBlocks?: ReadonlySet<string>;
   readonly headerActions?: VNode | null;
   readonly customStatus?: VNode | null;
   readonly promptPlaceholder?: string | null;
@@ -62,9 +66,10 @@ export interface ChatViewState {
 }
 
 export interface ChatViewActions {
+  readonly setPythonOriginal?: (key: string, original: boolean) => void;
   readonly copyContents?: (content: string) => void;
   readonly openPalette: () => void;
-  readonly invokeCommand: (command: CommandView) => void;
+  readonly invokeCommand: (command: PaletteCommand) => void;
   readonly openPanel: (panel: "tool_approval" | "ask_user") => void;
   readonly updateDraft: (value: string) => void;
   readonly submitPrompt: () => void;
@@ -81,6 +86,7 @@ export interface ChatViewContext {
 }
 
 export interface PanelViewState {
+  readonly paletteCommands?: readonly LocalPaletteCommand[];
   readonly sessionsNotice?: string | null;
   readonly systemPromptDetails?: { instructions: string; tools: string } | null;
   readonly sessionActions?: (id: string) => VNode | null;
@@ -99,7 +105,7 @@ export interface PanelViewState {
 
 export interface PanelActions {
   readonly close: (forceDiscard?: boolean) => void;
-  readonly invokeCommand: (command: CommandView) => void;
+  readonly invokeCommand: (command: PaletteCommand) => void;
   readonly send: (command: WebCommand) => void;
   readonly sendConfirmable: (command: ConfirmableCommand) => void;
   readonly setPaletteQuery: (query: string) => void;
@@ -152,6 +158,7 @@ export interface PanelViewContext {
 }
 
 export interface KeyboardState {
+  readonly paletteCommands?: readonly LocalPaletteCommand[];
   readonly snapshot: WebAppSnapshot | null;
   readonly palette: PaletteState | null;
   readonly activePanel: PanelId | null;
@@ -167,7 +174,7 @@ export interface KeyboardActions {
   readonly toggleDebugger: () => void;
   readonly requestQuit: () => void;
   readonly setPaletteSelection: (selected: number) => void;
-  readonly invokeCommand: (command: CommandView) => void;
+  readonly invokeCommand: (command: PaletteCommand) => void;
 }
 
 export interface KeyboardContext {

@@ -297,8 +297,8 @@ export function fuzzyScore(query, text) {
     }
     return total;
 }
-export function filteredCommands(snapshot, query) {
-    const commands = orderedCommands(snapshot);
+export function filteredCommands(snapshot, query, local = []) {
+    const commands = [...orderedCommands(snapshot), ...local];
     if (query.trim().length === 0) {
         return commands;
     }
@@ -385,6 +385,18 @@ export function projectionLossMessages(losses) {
             ? "WFE replaced an invalid or incomplete value with a safe projection."
             : null,
     ].filter((message) => message !== null);
+}
+/** Extract only complete Python call input; never parse tool output as code. */
+export function pythonToolCode(block) {
+    if (block.tool?.kind !== "call" || block.tool.tool_name !== "python" || projectionLossIsTruncated(block.tool.payload_loss))
+        return null;
+    try {
+        const value = JSON.parse(block.tool.payload);
+        return typeof value === "object" && value !== null && "code" in value && typeof value.code === "string" ? value.code : null;
+    }
+    catch {
+        return null;
+    }
 }
 export function toolBlockUsesJsonHighlighting(block) {
     return (block.tool !== null && !projectionLossIsTruncated(block.tool.payload_loss));

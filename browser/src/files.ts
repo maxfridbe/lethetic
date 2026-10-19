@@ -100,7 +100,7 @@ export class BrowserFiles {
       if (!file) throw new Error("File not found");
       if (endpoint === "/api/files/read") {
         const content = textFile(file);
-        if (content === null) return Promise.resolve(Response.json({ error: { code: "unsupported", message: "Binary file: use Preview for images or Download File.", retryable: false } }, { status: 415 }));
+        if (content === null) return Promise.resolve(Response.json({ error: { code: "unsupported", message: "Binary file: supported images, audio, and video preview automatically; use Download File to keep a copy.", retryable: false } }, { status: 415 }));
         return Promise.resolve(Response.json({ path, content, size: String(decodeBytes(file.data).byteLength) }));
       }
       if (endpoint === "/api/files/download") {

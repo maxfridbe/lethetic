@@ -1,3 +1,4 @@
+import type { LocalPaletteCommand, PaletteCommand } from "./state.js";
 import type {
   ActivityKind,
   ApprovalDecision,
@@ -377,12 +378,13 @@ export function fuzzyScore(query: string, text: string): number | null {
 export function filteredCommands(
   snapshot: WebAppSnapshot,
   query: string,
-): CommandView[] {
-  const commands = orderedCommands(snapshot);
+  local: readonly LocalPaletteCommand[] = [],
+): PaletteCommand[] {
+  const commands: PaletteCommand[] = [...orderedCommands(snapshot), ...local];
   if (query.trim().length === 0) {
     return commands;
   }
-  const ranked: { command: CommandView; score: number; index: number }[] = [];
+  const ranked: { command: PaletteCommand; score: number; index: number }[] = [];
   commands.forEach((command, index) => {
     const main = fuzzyScore(query, command.label);
     const extra = fuzzyScore(query, command.description);
@@ -487,6 +489,15 @@ export function projectionLossMessages(
       ? "WFE replaced an invalid or incomplete value with a safe projection."
       : null,
   ].filter((message): message is string => message !== null);
+}
+
+/** Extract only complete Python call input; never parse tool output as code. */
+export function pythonToolCode(block: Pick<RenderBlockView, "tool">): string | null {
+  if (block.tool?.kind !== "call" || block.tool.tool_name !== "python" || projectionLossIsTruncated(block.tool.payload_loss)) return null;
+  try {
+    const value: unknown = JSON.parse(block.tool.payload);
+    return typeof value === "object" && value !== null && "code" in value && typeof value.code === "string" ? value.code : null;
+  } catch { return null; }
 }
 
 export function toolBlockUsesJsonHighlighting(

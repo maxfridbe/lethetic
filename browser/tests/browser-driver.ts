@@ -120,6 +120,13 @@ try {
   await until("!!document.querySelector('[data-field=active-summary] .is-valid')");
   await evaluate("document.querySelector('[data-connection-index=\"0\"] [data-connection-action=edit]').click()");
   check(await evaluate("document.querySelector('[data-field=key]').value==='secret-never-persisted' && !!document.querySelector('[data-field=active-summary] .is-valid')"), "switching back lost the original key or validation");
+  check(await evaluate("document.querySelector('[data-field=name]').value==='Browser test' && document.querySelector('[data-field=endpoint]').value===location.origin+'/v1/chat/completions'"),"saved name/endpoint did not populate");
+  await evaluate("for(const name of ['name','endpoint']){const input=document.querySelector('[data-field='+name+']');input.value='';input.dispatchEvent(new Event('input'))} document.querySelector('[data-connection-index=\"0\"] [data-connection-action=edit]').click()");
+  check(await evaluate("document.querySelector('[data-field=name]').value==='Browser test' && document.querySelector('[data-field=endpoint]').value===location.origin+'/v1/chat/completions'"),"stale blank draft replaced saved fields on Edit");
+  await evaluate("document.querySelector('[data-field=name]').value='Renamed connection'; document.querySelector('[data-field=endpoint]').value=location.origin+'/alternate/v1/chat/completions';document.querySelector('[data-field=connection-form]').requestSubmit();document.querySelector('[data-connection-index=\"1\"] [data-connection-action=edit]').click();document.querySelector('[data-connection-index=\"0\"] [data-connection-action=edit]').click()");
+  check(await evaluate("document.querySelector('[data-field=name]').value==='Renamed connection' && document.querySelector('[data-field=endpoint]').value.endsWith('/alternate/v1/chat/completions') && document.querySelector('[data-field=key]').value==='secret-never-persisted'"),"edited name, endpoint or key was lost");
+  await evaluate("document.querySelector('[data-field=name]').value='Browser test';document.querySelector('[data-field=endpoint]').value=location.origin+'/v1/chat/completions';document.querySelector('[data-field=connection-form]').requestSubmit()");
+
   await evaluate(`globalThis.processingFetch=fetch;
     globalThis.fetch=async (...args)=>{if(String(args[0]).endsWith('/v1/chat/completions'))await new Promise(resolve=>{globalThis.releaseProcessing=resolve}); return globalThis.processingFetch(...args)};
     document.querySelector('dialog[open]').close();
@@ -206,51 +213,33 @@ try {
     document.querySelector('[data-field=file-content]').value='<h1>Rendered local HTML</h1><script>parent.hacked=true<\\/script>';
     document.querySelector('[data-field=file-form]').requestSubmit()`);
   await until("document.querySelector('.files-path')?.textContent.includes('reports/preview.html') && !document.querySelector('[data-file-action=preview]').disabled");
-  await evaluate("document.querySelector('[data-file-action=preview]').click()");
+  check(await evaluate("document.querySelector('.files-inline-preview')?.srcdoc.includes('Rendered local HTML')"),"HTML did not preview automatically");
+  await evaluate("document.querySelector('[data-file-action=source]').click()");
+  check(await evaluate("document.querySelector('.files-native-text')?.value.includes('Rendered local HTML') && !document.querySelector('.files-inline-preview')"),"HTML source toggle failed");
+  await evaluate("document.querySelector('[data-file-action=source]').click();document.querySelector('[data-file-action=preview]').click()");
   await until("!!document.querySelector('.browser-preview[open]')");
-  // The opaque sandbox may run in a separate renderer; attach to its CDP target.
-  let previewText: unknown;
-  for (let attempt = 0; attempt < 40; attempt++) {
-    const targets = await rpc('Target.getTargets');
-    const frameTarget = (targets['targetInfos'] as { type: string; targetId: string; url: string }[])
-      .find(target => target.type === 'iframe' && target.url === 'about:srcdoc');
-    if (frameTarget) {
-      const attachedFrame = await rpc('Target.attachToTarget', { targetId: frameTarget.targetId, flatten: true });
-      const parentSession = session; session = String(attachedFrame['sessionId']);
-      try { previewText = await evaluate("document.querySelector('h1')?.textContent"); }
-      finally { session = parentSession; }
-      break;
+  // Resolve the open dialog's exact iframe; other inline/closed frames may coexist.
+  const previewInput = async (expression: string, full = true): Promise<unknown> => {
+    await until(`document.querySelector('.browser-preview[open] [data-field=preview-frame]').dataset.navigationReady==='${String(full)}'`);
+    const handle=await rpc('Runtime.evaluate',{expression:"document.querySelector('.browser-preview[open] iframe')"});
+    const node=await rpc('DOM.describeNode',{objectId:(handle['result'] as {objectId:string}).objectId});
+    const frameId=(node['node'] as {frameId:string}).frameId;
+    const targets=await rpc('Target.getTargets');
+    const frame=(targets['targetInfos'] as {type:string;targetId:string}[]).find(target=>target.type==='iframe' && target.targetId===frameId);
+    if(frame) {
+      const attached=await rpc('Target.attachToTarget',{targetId:frame.targetId,flatten:true});
+      const parentSession=session;session=String(attached['sessionId']);
+      try{return await evaluate(expression)}finally{session=parentSession}
     }
-    const tree = await rpc('Page.getFrameTree');
-    const frame = (tree['frameTree'] as { childFrames?: { frame: { id: string; url: string } }[] }).childFrames
-      ?.find(child => child.frame.url === 'about:srcdoc');
-    if (frame) {
-      const world = await rpc('Page.createIsolatedWorld', { frameId: frame.frame.id, worldName: 'preview-test' });
-      const rendered = await rpc('Runtime.evaluate', { contextId: world['executionContextId'],
-        expression: "document.querySelector('h1')?.textContent", returnByValue: true });
-      previewText = (rendered['result'] as { value: unknown }).value;
-      if (previewText === 'Rendered local HTML') break;
-    }
-    await new Promise(resolve => setTimeout(resolve, 50));
-  }
+    const world=await rpc('Page.createIsolatedWorld',{frameId,worldName:'preview-navigation-test'});
+    const result=await rpc('Runtime.evaluate',{contextId:world['executionContextId'],expression,returnByValue:true,awaitPromise:true});
+    check(!result['exceptionDetails'],JSON.stringify(result['exceptionDetails']));
+    return (result['result'] as {value:unknown}).value;
+  };
+  const previewText=await previewInput("document.querySelector('h1')?.textContent",false);
   check(previewText === 'Rendered local HTML', 'HTML preview did not render: ' + JSON.stringify(previewText));
   check(!await evaluate('globalThis.hacked'), 'preview executed a script');
   await evaluate("document.querySelector('[data-field=preview-expand]').click()");
-  const previewInput = async (expression: string): Promise<void> => {
-    const targets = await rpc('Target.getTargets');
-    const frame = (targets['targetInfos'] as {type:string;targetId:string;url:string}[]).find(target=>target.type==='iframe' && target.url==='about:srcdoc');
-    if (frame) {
-      const attached = await rpc('Target.attachToTarget',{targetId:frame.targetId,flatten:true});
-      const parentSession=session; session=String(attached['sessionId']);
-      try { await evaluate(expression); } finally {session=parentSession;}
-    } else {
-      const tree=await rpc('Page.getFrameTree');
-      const child=(tree['frameTree'] as {childFrames?:{frame:{id:string;url:string}}[]}).childFrames?.find(child=>child.frame.url==='about:srcdoc');
-      check(child,'preview frame missing');
-      const world=await rpc('Page.createIsolatedWorld',{frameId:child!.frame.id,worldName:'preview-navigation-test'});
-      await rpc('Runtime.evaluate',{contextId:world['executionContextId'],expression,returnByValue:true});
-    }
-  };
   await previewInput("dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}))");
   await until("document.querySelector('.browser-preview[open] h2').textContent==='reports/analysis.py'");
   await evaluate("document.querySelector('.browser-preview[open]').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}))");
@@ -500,6 +489,18 @@ try {
     try {
       root.querySelector('#files-toggle').click();
       await send('create files','files created');
+      const pythonBlock=[...root.querySelectorAll('.block-tool_call')].at(-1);
+      const parsedCode=pythonBlock.querySelector('.python-tool-code code').textContent;
+      if(!parsedCode.includes('from pathlib import Path') || !parsedCode.includes('\\n') || !pythonBlock.querySelector('.code-keyword'))throw Error('Python tool code was not parsed/highlighted');
+      Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{globalThis.pythonCopied=text}}});
+      pythonBlock.querySelector('[data-copy-turn]').click();await wait(()=>globalThis.pythonCopied===parsedCode);
+      pythonBlock.querySelector('button[data-python-view=original]').click();
+      if(pythonBlock.querySelector('.python-tool-code'))throw Error('Original did not restore JSON');
+      pythonBlock.querySelector('[data-copy-turn]').click();await wait(()=>globalThis.pythonCopied!==parsedCode);
+      if(JSON.parse(globalThis.pythonCopied).code!==parsedCode)throw Error('Original copy was not exact tool payload');
+      pythonBlock.querySelector('button[data-python-view=parsed]').click();
+      if(pythonBlock.querySelector('.python-tool-code code').textContent!==parsedCode)throw Error('Parsed toggle changed code');
+
       const first=records()[0].id;
       if(!records()[0].workspace.files.some(file=>file.path==='outputs/chart.png'))throw Error('Python files were not persisted');
       await wait(()=>!!root.querySelector('.files-entry[title=outputs]'));
@@ -528,7 +529,9 @@ try {
 
       root.querySelector('.files-entry[title="outputs/chart.png"]').click();
       await wait(()=>!root.querySelector('[data-file-action=preview]').disabled);
-      root.querySelector('[data-file-action=preview]').click();
+      if(!root.querySelector('.files-inline-preview')?.srcdoc.includes('data:image/png;base64,'))throw Error('PNG did not preview automatically');
+      root.querySelector('[data-preview-expand]').click();
+      if(!document.querySelector('.browser-preview.is-full-preview[open]'))throw Error('Image Expand did not open full preview');
       if(!document.querySelector('[data-field=preview-frame]').srcdoc.includes('data:image/png;base64,'))throw Error('PNG preview unavailable');
       document.querySelector('dialog[open]').close();
       root.querySelector('.files-entry[title="outputs/data.csv"]').click();
@@ -538,6 +541,15 @@ try {
       document.querySelector('[data-field=file-form]').requestSubmit();
       if(document.querySelector('dialog[open]'))throw Error('File editor stayed open: '+document.querySelector('dialog[open]').textContent);
       await send('read file','read: edited in Files');
+      const beforeCompact=records()[0];
+      root.querySelector('[aria-label="Open command palette"]').click();
+      const search=root.querySelector('#palette-search');search.value='compact';search.dispatchEvent(new Event('input',{bubbles:true}));
+      if(!root.querySelector('[id="palette-command-local:compact-session"]'))throw Error('Compaction missing from palette search');
+      root.querySelector('#palette-list').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+      await wait(()=>records()[0].blocks.some(block=>block.title==='Context compacted'));
+      if(records()[0].id!==first || records()[0].messages.length!==2 || records()[0].blocks.length<=beforeCompact.blocks.length)throw Error('Compaction did not preserve session/transcript or replace context');
+      if(JSON.stringify(records()[0].workspace)!==JSON.stringify(beforeCompact.workspace))throw Error('Compaction changed files');
+      await send('restore files','restored: edited in Files');
       view.destroy(); view=mountLethetic(root,options);
       if(!records()[0].workspace.files.some(file=>file.path==='outputs/upload.csv') || records()[0].workspace.files.find(file=>file.path==='outputs/raw.bin')?.data!=='AP8B')throw Error('Uploads lost on reopen');
       await send('restore files','restored: edited in Files');
@@ -565,6 +577,38 @@ try {
   check(workspaceResult, 'session workspace UI failed');
   await writeFile(config.screenshot.replace('.png','-files.zip'), Uint8Array.from(await evaluate('globalThis.__sessionZip') as number[]));
   process.stdout.write('Python workspace creation, Files editing, image preview, reopen, isolation and deletion passed.\n');
+  await evaluate(`(async()=>{
+    const {mountLethetic}=await import('./src/embed.js');
+    const {SessionStore}=await import('./src/sessions.js');
+    const {encodeBytes}=await import('./src/workspace.js');
+    const bytes=new Uint8Array(1644), data=new DataView(bytes.buffer);
+    const word=(offset,text)=>bytes.set(new TextEncoder().encode(text),offset);
+    word(0,'RIFF');data.setUint32(4,1636,true);word(8,'WAVE');word(12,'fmt ');data.setUint32(16,16,true);
+    data.setUint16(20,1,true);data.setUint16(22,1,true);data.setUint32(24,8000,true);data.setUint32(28,16000,true);
+    data.setUint16(32,2,true);data.setUint16(34,16,true);word(36,'data');data.setUint32(40,1600,true);
+    const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;
+    const stream=canvas.captureStream(10),recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp8'}),chunks=[];
+    recorder.ondataavailable=event=>chunks.push(event.data);
+    const stopped=new Promise(resolve=>recorder.onstop=resolve);recorder.start();
+    canvas.getContext('2d').fillRect(0,0,32,32);await new Promise(resolve=>setTimeout(resolve,200));recorder.stop();await stopped;stream.getTracks().forEach(track=>track.stop());
+    const video=new Uint8Array(await new Blob(chunks).arrayBuffer());
+    const store=new SessionStore(localStorage),saved=store.list()[0];
+    saved.workspace={version:1,directories:[],files:[{path:'clip.wav',data:encodeBytes(bytes)},{path:'clip.webm',data:encodeBytes(video)}]};store.save(saved);
+    const root=document.createElement('div');root.style.height='900px';document.body.replaceChildren(root);
+    globalThis.mediaView=mountLethetic(root,{storage:localStorage,connections:[{name:'Media',provider:'openai',endpoint:location.origin+'/v1/chat/completions',model:'test'}]});
+    root.querySelector('#files-toggle').click();
+  })()`);
+  for(const [name,tag] of [['clip.wav','audio'],['clip.webm','video']]) {
+    await until(`!!document.querySelector('.files-entry[title="${name}"]')`);
+    await evaluate(`document.querySelector('.files-entry[title="${name}"]').click()`);
+    await until(`!!document.querySelector('.files-inline-preview')?.srcdoc.includes('<${tag}')`);
+    check(await evaluate("!document.querySelector('.files-inline-preview').srcdoc.includes('autoplay')"),'media unexpectedly autoplays');
+    await evaluate("document.querySelector('[data-preview-expand]').click()");
+    check(await previewInput(`(async()=>{const media=document.querySelector('${tag}'); if(media.readyState<1)await new Promise((resolve,reject)=>{media.addEventListener('loadedmetadata',resolve,{once:true});media.addEventListener('error',()=>reject(Error('Media failed to load')),{once:true});setTimeout(()=>reject(Error('Media metadata timed out')),5000)});return media.controls && media.readyState>=1 && !media.autoplay})()`),'media did not decode');
+    await evaluate("document.querySelector('.browser-preview[open]').close()");
+  }
+  await evaluate('globalThis.mediaView.destroy()');
+  process.stdout.write('Automatic audio/video previews decoded in the browser with native controls.\n');
   if (config.pyodide) {
     await evaluate(`(async () => {
       const {createPythonTool}=await import('./src/sdk.js');

@@ -68,6 +68,20 @@ filesystem tools, shells, LSP, native skills, and Podman are not part of the bro
 runtime. The existing `lethetic --rc` browser controller remains available for those
 native capabilities through the same UI backed by its authenticated native connection.
 
+## Compacting context
+
+Choose **Ctrl+P → Compact session context** to summarize the current model history
+using the active connection. Long histories are summarized in bounded passes. The
+same session, visible transcript, custom prompt, files, and live Python variables
+are retained. The summary becomes the context for subsequent model turns and is
+saved across reloads. Compaction can be stopped like a normal turn; cancellation,
+request errors, and failed saves preserve the original model history. The command
+is unavailable while another turn runs or before any model history exists.
+
+In **Connections**, Edit and Use populate the saved name, endpoint, model, and key.
+Save edits before selecting another connection or closing the dialog; opening a
+saved connection always loads its saved values.
+
 ## Files, previews, and downloads
 
 Use the existing **Files** directory browser. Choose **Save to Session** beneath a
@@ -88,14 +102,25 @@ files with no recorded date show Unknown. **Download all (.zip)** exports every 
 and empty folder in the session, preserving binary bytes and nested paths. The Files
 label and Session files breadcrumb include the session's total file count.
 
+Python tool calls default to parsed code with indentation, tab stops, and syntax
+highlighting. **Parsed** / **Original** beside the bottom-right **Copy** button
+switches between code and raw tool arguments; Copy follows the selected view.
+Invalid or incomplete payloads remain in their original form.
+
 Saving from the editor is explicit. The Files browser represents the current
 session's Python workspace at `/home/pyodide`. Files created, changed, or deleted
 by Python appear automatically after each completed call. Edits in Files are applied
 before Python's next call. File edits are disabled during a model turn. Contents
 are available to Python; they are not automatically appended to the model prompt.
 
-Previews render static HTML, SVG, Markdown and images (PNG, JPEG, GIF, WebP, AVIF,
-BMP and ICO); JSON is formatted and other text is shown as source. Other binary
+Selecting a supported file immediately renders it in the Files pane. **Source** /
+**Rendered** switches text-based documents between source and rendered views;
+**Expand** opens the rendered preview full-size. Previews render static HTML, SVG, Markdown and images (PNG, JPEG, GIF, WebP, AVIF,
+BMP and ICO), plus audio/video formats reported playable by the browser (including
+MP3, WAV, Ogg, FLAC, MP4 and WebM where supported). Media uses native controls,
+loads from session bytes, and does not autoplay. Codec support depends on the
+browser; unsupported files remain downloadable. Existing workspace size limits
+also apply to media. JSON is formatted and other text is shown as source. Other binary
 files can be downloaded without changing their bytes; Edit and Copy apply to text. They use an opaque sandbox and a restrictive content policy:
 file scripts, forms, external resources and navigation are disabled. A nonce-scoped,
 trusted navigation bridge handles preview arrows and swipes; it has no access to the host. Download the file
@@ -242,7 +267,7 @@ at `/lethetic/`, custom subpaths, and domain roots. Pages deployment requires th
 Pushing an ordinary commit deploys Pages. Pushing a `v*` tag additionally attaches
 `lethetic-browser.zip` and `lethetic-browser.zip.sha256` to the GitHub release,
 alongside the existing native release workflow. A `browser-v*` tag (for example,
-`browser-v0.4.8`) publishes an independent embedding release with those same assets.
+`browser-v0.4.9`) publishes an independent embedding release with those same assets.
 A commit does not create a version tag automatically. The ZIP contains both standalone and embedding modes; it does
 not contain API keys or downloaded Pyodide packages. Build outputs live under
 `target/` and are not committed. `manifest.json` contains per-file SHA-256 hashes.
@@ -400,7 +425,7 @@ receives source, a runtime asset URL, and the active session's files, never mode
 keys or conversation history. Enable Python only when you intend to run model-generated code. Embedded
 hosts should apply their own approval policy if they require per-call consent.
 
-For CSP, allow your own scripts, `'wasm-unsafe-eval'`, the Pyodide module origin,
+For CSP, allow `data:` in `media-src` for session audio/video previews. Allow your own scripts, `'wasm-unsafe-eval'`, the Pyodide module origin,
 `worker-src 'self'`, and `connect-src` for both model and runtime asset origins.
 The standalone app includes an appropriate meta CSP for its default CDN. Adapt it
 when self-hosting Pyodide. No `unsafe-eval` or cross-origin isolation is required.

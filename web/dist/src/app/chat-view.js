@@ -1,3 +1,5 @@
+import { highlightCode } from "../highlight.js";
+import { pythonToolCode } from "./helpers.js";
 import { jsx as h } from "../../lib/snabbdom/build/index.js";
 import { activitySpinner, uiIcon } from "../icons.js";
 import { jsonPreformattedThunk } from "../json.js";
@@ -67,7 +69,7 @@ export function chatBlockAnchor(snapshot, index) {
     const ordinal = snapshot.blocks.omitted_before + index - (hasSyntheticNotice ? 1 : 0);
     return `block-${ordinal}`;
 }
-function renderBlock(block, index, maxJsonSegments, anchor, actions, codeActions, copyContents) {
+function renderBlock(block, index, maxJsonSegments, anchor, actions, codeActions, copyContents, originalPython = false, setPythonOriginal) {
     if (block.kind === "divider") {
         return (h("div", { key: anchor ?? `synthetic-block-${index}`, attrs: {
                 class: "chat-divider",
@@ -79,7 +81,11 @@ function renderBlock(block, index, maxJsonSegments, anchor, actions, codeActions
     }
     const content = block.tool?.payload ?? block.content;
     const displayContent = boundedText(content);
-    const renderedContent = isMarkdownBlockKind(block.kind)
+    const python = pythonToolCode(block);
+    const parsed = python !== null && !originalPython;
+    const pythonDisplay = python === null ? "" : boundedText(python);
+    const renderedContent = parsed ? h("pre", { attrs: { class: "python-tool-code", "data-python-view": "parsed" } },
+        h("code", { attrs: { class: "code-highlight" } }, highlightCode(pythonDisplay, "python") ?? [pythonDisplay])) : isMarkdownBlockKind(block.kind)
         ? markdownContentThunk(block.kind, displayContent, markdownBlockUsesJsonHighlighting(block), maxJsonSegments, codeActions)
         : toolResultUsesAutoRendering(block)
             ? toolResultContentThunk(displayContent, block.tool?.payload_loss.truncation !== null, maxJsonSegments)
@@ -103,7 +109,14 @@ function renderBlock(block, index, maxJsonSegments, anchor, actions, codeActions
             h("span", null, `${block.usage.total_tokens} total tokens`),
             block.estimated_cost === null ? null : (h("span", null, `${block.estimated_cost.display} estimated`)))),
         h("footer", { attrs: { class: "chat-block-actions" } },
-            h("button", { attrs: { type: "button", "data-copy-turn": "", title: "Copy this turn’s contents" }, props: { disabled: !copyContents || !content }, on: { click: () => copyContents?.(content) } },
+            python === null ? null : h("span", { attrs: { class: "python-view-controls", role: "group", "aria-label": "Python code display" } },
+                h("button", { attrs: { type: "button", "data-python-view": "parsed", "aria-pressed": String(parsed), title: "Show Python code with indentation and syntax highlighting" }, props: { disabled: !setPythonOriginal }, on: { click: () => setPythonOriginal?.(false) } },
+                    uiIcon("code"),
+                    "Parsed"),
+                h("button", { attrs: { type: "button", "data-python-view": "original", "aria-pressed": String(!parsed), title: "Show the original tool arguments" }, props: { disabled: !setPythonOriginal }, on: { click: () => setPythonOriginal?.(true) } },
+                    uiIcon("file"),
+                    "Original")),
+            h("button", { attrs: { type: "button", "data-copy-turn": "", title: "Copy this turn’s contents" }, props: { disabled: !copyContents || !content }, on: { click: () => copyContents?.(parsed ? python : content) } },
                 uiIcon("copy"),
                 "Copy"))));
 }
@@ -137,7 +150,7 @@ function renderChat(context) {
         } },
         snapshot.blocks.omitted_before > 0 ? (h("div", { attrs: { class: "bounded-notice" } }, `${snapshot.blocks.omitted_before} earlier blocks were omitted by the server.`)) : null,
         start > 0 ? (h("div", { attrs: { class: "virtual-spacer", "aria-hidden": "true" }, style: { height: `${start * CHAT_ROW_ESTIMATE}px` } })) : null,
-        h("div", { attrs: { class: "chat-window" } }, visible.map((block, offset) => renderBlock(block, start + offset, jsonSegmentAllocations[offset] ?? 0, chatBlockAnchor(snapshot, start + offset), context.state.blockActions?.(block) ?? null, context.state.codeActions, context.actions.copyContents))),
+        h("div", { attrs: { class: "chat-window" } }, visible.map((block, offset) => renderBlock(block, start + offset, jsonSegmentAllocations[offset] ?? 0, chatBlockAnchor(snapshot, start + offset), context.state.blockActions?.(block) ?? null, context.state.codeActions, context.actions.copyContents, context.state.originalPythonBlocks?.has(`${snapshot.session.session_id}:${chatBlockAnchor(snapshot, start + offset) ?? start + offset}`) ?? false, context.actions.setPythonOriginal ? original => context.actions.setPythonOriginal?.(`${snapshot.session.session_id}:${chatBlockAnchor(snapshot, start + offset) ?? start + offset}`, original) : undefined))),
         end < blocks.length ? (h("div", { attrs: { class: "virtual-spacer", "aria-hidden": "true" }, style: { height: `${(blocks.length - end) * CHAT_ROW_ESTIMATE}px` } })) : null,
         snapshot.blocks.truncated ? (h("div", { attrs: { class: "bounded-notice warning" } }, "Conversation content was bounded by the server.")) : null));
 }

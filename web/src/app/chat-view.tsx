@@ -1,3 +1,5 @@
+import { highlightCode } from "../highlight.js";
+import { pythonToolCode } from "./helpers.js";
 import { jsx as h } from "../../lib/snabbdom/build/index.js";
 import type { VNode } from "../../lib/snabbdom/build/index.js";
 import type {
@@ -142,6 +144,8 @@ function renderBlock(
   actions: VNode | null,
   codeActions?: (code: string, language: string | null) => VNode | null,
   copyContents?: (content: string) => void,
+  originalPython = false,
+  setPythonOriginal?: (original: boolean) => void,
 ): VNode {
   if (block.kind === "divider") {
     return (
@@ -160,7 +164,10 @@ function renderBlock(
   }
   const content = block.tool?.payload ?? block.content;
   const displayContent = boundedText(content);
-  const renderedContent = isMarkdownBlockKind(block.kind)
+  const python = pythonToolCode(block);
+  const parsed = python !== null && !originalPython;
+  const pythonDisplay = python === null ? "" : boundedText(python);
+  const renderedContent = parsed ? <pre attrs={{ class: "python-tool-code", "data-python-view": "parsed" }}><code attrs={{ class: "code-highlight" }}>{highlightCode(pythonDisplay, "python") ?? [pythonDisplay]}</code></pre> : isMarkdownBlockKind(block.kind)
     ? markdownContentThunk(
         block.kind,
         displayContent,
@@ -213,8 +220,15 @@ function renderBlock(
         </details>
       )}
       <footer attrs={{ class: "chat-block-actions" }}>
+        {python === null ? null : <span attrs={{ class: "python-view-controls", role: "group", "aria-label": "Python code display" }}>
+          <button attrs={{ type: "button", "data-python-view": "parsed", "aria-pressed": String(parsed), title: "Show Python code with indentation and syntax highlighting" }}
+            props={{ disabled: !setPythonOriginal }} on={{ click: () => setPythonOriginal?.(false) }}>{uiIcon("code")}Parsed</button>
+          <button attrs={{ type: "button", "data-python-view": "original", "aria-pressed": String(!parsed), title: "Show the original tool arguments" }}
+            props={{ disabled: !setPythonOriginal }} on={{ click: () => setPythonOriginal?.(true) }}>{uiIcon("file")}Original</button>
+        </span>}
+
         <button attrs={{ type: "button", "data-copy-turn": "", title: "Copy this turn’s contents" }}
-          props={{ disabled: !copyContents || !content }} on={{ click: () => copyContents?.(content) }}>
+          props={{ disabled: !copyContents || !content }} on={{ click: () => copyContents?.(parsed ? python : content) }}>
           {uiIcon("copy")}Copy
         </button>
       </footer>
@@ -283,6 +297,8 @@ function renderChat(context: ChatViewContext): VNode {
             context.state.blockActions?.(block) ?? null,
             context.state.codeActions,
             context.actions.copyContents,
+            context.state.originalPythonBlocks?.has(`${snapshot.session.session_id}:${chatBlockAnchor(snapshot, start + offset) ?? start + offset}`) ?? false,
+            context.actions.setPythonOriginal ? original => context.actions.setPythonOriginal?.(`${snapshot.session.session_id}:${chatBlockAnchor(snapshot, start + offset) ?? start + offset}`, original) : undefined,
           ),
         )}
       </div>

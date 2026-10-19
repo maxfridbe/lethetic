@@ -38,6 +38,7 @@ API keys survive refresh in this tab; they are excluded from saved chats.
 Chats and files are saved unencrypted on your device.
 Use **Upload** in Files to add files from your device to the current folder;
 Python can read them under `/home/pyodide`. Text and binary files are supported.
+Supported images, web documents, audio, and video preview directly in Files.
 Use **Save to Session** beneath code blocks, then browse folders, edit, preview,
 download, or copy contents in **Files**. **Sessions** reopens earlier chats with
 context and usage stats; refresh keeps the current session. Pyodide files under

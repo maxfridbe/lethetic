@@ -1,3 +1,4 @@
+import { COMPACTION_PROMPT, summarizeContext } from "./compaction.js";
 import { WFE_PROTOCOL_SCHEMA_SHA256, WFE_PROTOCOL_VERSION } from "../../web/src/generated/contracts.js";
 import type { CommandOutcome, ICommandRequest, PanelId, WebAppSnapshot, WebCommand } from "../../web/src/generated/contracts.js";
 import type { ApplicationTransport, BrowserTransportEvents } from "../../web/src/transport.js";
@@ -97,6 +98,47 @@ export class LocalTransport implements ApplicationTransport {
     this.state.status.visible_block_count = this.state.blocks.blocks.length;
     this.events.serverMessage({ type: "state_snapshot", snapshot: { protocol_version: WFE_PROTOCOL_VERSION,
       revision: this.#revision, sequence: this.#revision, state: structuredClone(this.state) } });
+  }
+
+  get canCompact(): boolean { return !this.busy && !!this.connection && this.#savedMessages.length > 0; }
+
+  async compact(): Promise<void> {
+    this.#requireIdle();
+    const connection = this.connection;
+    if (!connection) throw new Error("Choose a connection before compacting.");
+    this.#saveSession(true);
+    if (!this.#savedMessages.length) throw new Error("There is no model context to compact yet.");
+    const original = this.sessionForExport(this.state.session.session_id);
+    const controller = new AbortController(); this.#operation = controller;
+    this.state.overlay = { active_panel: null, data: null };
+    this.state.activity = { kind: "processing", fully_idle: false, cancellable: true, cancel_id: crypto.randomUUID(), progress_percent: 0 };
+    this.state.status.stop_reason = "Compacting context…"; this.metrics.begin(); this.publish();
+    let summarizer: LetheticRuntime | null = null;
+    try {
+      summarizer = await createRuntime({ connection, systemPrompt: COMPACTION_PROMPT, tools: [], onEvent: event => {
+        if (event.type === "request" || event.type === "response") { this.metrics.event(event); this.publish(); }
+      } });
+      const summary = await summarizeContext(summarizer, original.messages, controller.signal, (part, total) => {
+        this.state.status.stop_reason = `Compacting context · ${part}/${total}`;
+        this.state.activity.progress_percent = Math.round((part - 1) / total * 100); this.publish();
+      });
+      controller.signal.throwIfAborted();
+      const messages = [{role:"user",content:`Context from earlier in this session:\n\n${summary}`},
+        {role:"assistant",content:"I will continue using this context and the existing session files."}];
+      summarizer.restore(messages);
+      const blocks = [...this.state.blocks.blocks, block("markdown", summary, "Context compacted")];
+      // Persist before replacing working context; quota failures leave the original intact.
+      this.#sessions.save({...original, messages, blocks, updatedAt:new Date().toISOString(), metrics:this.metrics.snapshot()});
+      this.#runtime?.dispose(); this.#runtime = null; this.#savedMessages = messages;
+      this.state.blocks.blocks = blocks; this.state.status.stop_reason = "Context compacted";
+    } catch (error) {
+      this.state.status.stop_reason = `Compaction stopped: ${error instanceof Error ? error.message : String(error)}. Original context kept.`;
+      throw error;
+    } finally {
+      summarizer?.dispose(); this.metrics.finish(); this.#operation = null;
+      this.state.activity = { kind: "idle", fully_idle: true, cancellable: false, cancel_id: null, progress_percent: null };
+      if (!this.#closed) this.#saveSession(); this.publish();
+    }
   }
 
   setConnections(connections: Connection[], selected: number): void {

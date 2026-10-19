@@ -277,3 +277,14 @@ test("Files dock preference survives closing, session resets and a new view", ()
   const blocked = new FilesController(() => {}, () => {}, { getItem: () => { throw Error("blocked"); }, setItem: () => { throw Error("blocked"); } });
   blocked.setDock("left"); assert.equal(blocked.state.dock, "left");
 });
+
+test("cancelled file requests release concurrency before their old promises settle", async () => {
+  const waiting = deferred<Response>(); let count = 0;
+  const client = new FileClient(async () => ++count <= 2 ? waiting.promise : json(list()));
+  const first = new AbortController(), second = new AbortController();
+  const a = client.list("", first.signal).catch(() => null);
+  const b = client.list("", second.signal).catch(() => null);
+  first.abort(); second.abort();
+  assert.deepEqual(await client.list("", signal()),list());
+  waiting.resolve(json(list())); await Promise.all([a,b]);
+});

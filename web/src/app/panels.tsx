@@ -46,7 +46,7 @@ function commandPalette(
   snapshot: WebAppSnapshot,
 ): VNode {
   const palette = context.state.palette ?? { query: "", selected: 0 };
-  const commands = filteredCommands(snapshot, palette.query);
+  const commands = filteredCommands(snapshot, palette.query, context.state.paletteCommands);
   const selected = Math.min(
     palette.selected,
     Math.max(0, commands.length - 1),

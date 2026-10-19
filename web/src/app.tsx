@@ -1,3 +1,4 @@
+import type { LocalPaletteCommand, PaletteCommand } from "./app/state.js";
 import {
   attributesModule,
   classModule,
@@ -160,6 +161,7 @@ export class SpaApplication implements BrowserTransportEvents {
   );
   #promptRequestVersions = new Map<string, number>();
   #palette: PaletteState | null = null;
+  readonly #originalPythonBlocks = new Set<string>();
   #forcedPanel: PanelId | null = null;
   #dismissedOverlay: string | null = null;
   #toast: string | null = null;
@@ -201,6 +203,7 @@ export class SpaApplication implements BrowserTransportEvents {
   };
 
   constructor(root: Element, readonly extensions: {
+    paletteCommands?: () => readonly LocalPaletteCommand[];
     headerActions?: () => VNode | null;
     status?: () => VNode;
     promptPlaceholder?: string;
@@ -750,10 +753,13 @@ export class SpaApplication implements BrowserTransportEvents {
     return request;
   }
 
-  #invokeCommand(command: CommandView): void {
+  #invokeCommand(command: PaletteCommand): void {
     if (!command.enabled) {
       this.#showToast(command.disabled_reason ?? "Command is unavailable.");
       return;
+    }
+    if ("run" in command) {
+      this.#palette = null; this.#render(); command.run(); return;
     }
     const snapshot = this.#remote.view;
     if (snapshot === null) {
@@ -811,7 +817,7 @@ export class SpaApplication implements BrowserTransportEvents {
         this.#send({ type: "invoke_command", command_id: command.id });
         return;
       default:
-        assertNever(command.id, "command ID");
+        assertNever(command, "command ID");
     }
   }
 
@@ -1168,6 +1174,7 @@ export class SpaApplication implements BrowserTransportEvents {
     return {
       state: {
         snapshot,
+        originalPythonBlocks: this.#originalPythonBlocks,
         headerActions: this.extensions.headerActions?.() ?? null,
         customStatus: this.extensions.status?.() ?? null,
         promptPlaceholder: this.extensions.promptPlaceholder ?? null,
@@ -1218,6 +1225,13 @@ export class SpaApplication implements BrowserTransportEvents {
         },
         submitPrompt: () => this.#submitPrompt(),
         stop: () => this.#sendStop(),
+        setPythonOriginal: (key, original) => {
+          if (original) {
+            if (this.#originalPythonBlocks.size >= 512) this.#originalPythonBlocks.delete(this.#originalPythonBlocks.values().next().value!);
+            this.#originalPythonBlocks.add(key);
+          } else this.#originalPythonBlocks.delete(key);
+          this.#render();
+        },
         copyContents: (content) => {
           if (!navigator.clipboard?.writeText) { this.#showToast("Clipboard is unavailable. Select and copy the text."); return; }
           void navigator.clipboard.writeText(content).then(() => this.#showToast("Contents copied."))
@@ -1239,6 +1253,7 @@ export class SpaApplication implements BrowserTransportEvents {
     return {
       state: {
         panel,
+        paletteCommands: this.extensions.paletteCommands?.() ?? [],
         sessionsNotice: this.extensions.sessionsNotice?.() ?? null,
         systemPromptDetails: this.extensions.systemPromptDetails?.() ?? null,
         ...(this.extensions.sessionActions ? { sessionActions: this.extensions.sessionActions } : {}),
@@ -1580,6 +1595,7 @@ export class SpaApplication implements BrowserTransportEvents {
     return {
       state: {
         snapshot: this.#remote.view,
+        paletteCommands: this.extensions.paletteCommands?.() ?? [],
         palette: this.#palette,
         activePanel: this.#activePanel(),
         debuggerDrawerOpen:

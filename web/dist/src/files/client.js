@@ -68,7 +68,7 @@ function archiveExclusions(headers) {
 }
 export class FileClient {
     post;
-    #active = 0;
+    #active = new Set();
     constructor(post) {
         this.post = post;
     }
@@ -125,13 +125,13 @@ export class FileClient {
         if (!validFilePath(path, endpointAllowsRoot(endpoint))) {
             throw new FileServiceError("bad_request");
         }
-        if (this.#active >= 2)
+        if (this.#active.size >= 2)
             throw new FileServiceError("busy");
         if (signal.aborted)
             throw new FileServiceError("cancelled");
-        this.#active += 1;
         const abort = new AbortController();
-        const cancel = () => abort.abort();
+        this.#active.add(abort);
+        const cancel = () => { abort.abort(); this.#active.delete(abort); };
         signal.addEventListener("abort", cancel, { once: true });
         let timedOut = false;
         const deadline = globalThis.setTimeout(() => {
@@ -157,7 +157,7 @@ export class FileClient {
         finally {
             globalThis.clearTimeout(deadline);
             signal.removeEventListener("abort", cancel);
-            this.#active -= 1;
+            this.#active.delete(abort);
         }
     }
 }

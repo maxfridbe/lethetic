@@ -25,6 +25,8 @@ export interface FilePaneActions {
 }
 
 export interface FilePaneExtensions {
+  previewContent?: (state: FilePaneState) => VNode | null;
+  expandRendered?: (state: FilePaneState) => boolean;
   nativeText?: boolean;
   count?: () => number;
   entries?: (entries: readonly FileListEntry[]) => FileListEntry[];
@@ -158,6 +160,7 @@ function breadcrumbs(directory: string, live: boolean, actions: FilePaneActions,
 }
 
 export function renderFilesPane(state: FilePaneState, live: boolean, actions: FilePaneActions, extensions: FilePaneExtensions = {}): VNode {
+  const inlinePreview = extensions.previewContent?.(state) ?? null;
   const path = state.selectedPath ?? state.directory;
   const selectedSize = state.preview?.size ?? state.listing?.entries.find(entry => entry.path === state.selectedPath)?.size ?? null;
   const entries = extensions.entries?.(state.listing?.entries ?? []) ?? state.listing?.entries ?? [];
@@ -234,7 +237,7 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
             if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); actions.nextPreview(event.key === "ArrowLeft" ? -1 : 1); }
           } }}>
         <button attrs={{ type: "button", "data-preview-expand": "", title: state.fullPreview ? "Restore preview" : "Expand preview to fill the window", "aria-pressed": String(state.fullPreview) }}
-          on={{ click: actions.expandPreview }}>{uiIcon(state.fullPreview ? "restore" : "fullscreen")}{state.fullPreview ? "Restore" : "Expand"}</button>
+          on={{ click: () => { if (!extensions.expandRendered?.(state)) actions.expandPreview(); } }}>{uiIcon(state.fullPreview ? "restore" : "fullscreen")}{state.fullPreview ? "Restore" : "Expand"}</button>
         {!state.fullPreview ? null : <span attrs={{ class: "preview-navigation", tabindex: "0", title: "Swipe here or use arrow keys to change files" }}
           on={{ touchstart: (event: TouchEvent) => { const touch = event.touches[0]; if (touch) (event.currentTarget as HTMLElement).dataset["swipeX"] = String(touch.clientX); },
             touchend: (event: TouchEvent) => { const x = Number((event.currentTarget as HTMLElement).dataset["swipeX"]); const touch = event.changedTouches[0]; if (touch && Math.abs(touch.clientX - x) > 60) actions.nextPreview(touch.clientX < x ? 1 : -1); } }}>
@@ -248,10 +251,10 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
           {extensions.contentActions?.(state) ?? null}
         </div>
         <div attrs={{ class: "files-editor-area" }}>
-          {extensions.nativeText ? <textarea key="native-preview" attrs={{ class: "files-native-text", readonly: true, spellcheck: "false", "aria-label": `File contents: ${state.selectedPath ?? ""}` }}
+          {inlinePreview ?? (extensions.nativeText ? <textarea key="native-preview" attrs={{ class: "files-native-text", readonly: true, spellcheck: "false", "aria-label": `File contents: ${state.selectedPath ?? ""}` }}
             props={{ value: state.preview?.content ?? "" }}></textarea>
-            : <div key="monaco-host" attrs={{ id: "files-monaco", class: "files-monaco", "aria-label": "Read-only Monaco editor" }}></div>}
-          {state.preview !== null ? null : <p attrs={{ class: "files-preview-message", role: "status" }}>
+            : <div key="monaco-host" attrs={{ id: "files-monaco", class: "files-monaco", "aria-label": "Read-only Monaco editor" }}></div>)}
+          {state.preview !== null || inlinePreview !== null ? null : <p attrs={{ class: "files-preview-message", role: "status" }}>
             {state.previewBusy ? "Loading file…" : state.previewError ?? "UTF-8 previews up to 2 MiB. File contents stay outside chat until you explicitly include them in a prompt."}
           </p>}
         </div>

@@ -11,7 +11,7 @@ import { LocalTransport } from "./local-transport.js";
 import { createConnectionsDialog } from "./connections-dialog.js";
 import { codeSnippets } from "./code-snippets.js";
 import { renderBrowserStatus } from "./status-view.js";
-import { canPreviewFile, copyCode, createFilePreview, downloadCode, snippetName } from "./file-actions.js";
+import { canPreviewFile, canRenderFile, workspacePreview, copyCode, createFilePreview, downloadCode, snippetName } from "./file-actions.js";
 import { sessionRoute } from "./sessions.js";
 import { BrowserFiles } from "./files.js";
 import { createFileEditor } from "./file-editor.js";
@@ -46,6 +46,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   let settings: ReturnType<typeof createConnectionsDialog> | null = null;
   let transport: LocalTransport | null = null;
   let fileStatus = "";
+  const sourceViews = new Set<string>();
   let exportStatus = "";
   let exporting = false;
   const upload = createFileUpload(files, () => transport ? { id: transport.state.session.session_id, busy: transport.busy } : null,
@@ -63,6 +64,9 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
     } } }, [uiIcon("copy"), "Copy"]),
   ]);
   const application = new SpaApplication(mount, {
+    paletteCommands: () => [{ id: "local:compact-session", label: "Compact session context", description: "Summarize model context; keep this session, transcript, files and Python state", icon: "command", behavior: "execute", accelerator: null,
+      enabled: transport?.canCompact ?? false, disabled_reason: transport?.busy ? "Finish or stop the running turn first" : "Send a message with a configured connection first",
+      run: () => { void transport?.compact().catch(error => { if (transport) { transport.persistenceStatus = `Compaction: ${String(error)}`; transport.publish(); } }); } }],
     status: () => renderBrowserStatus(transport, pinnedStats, () => transport?.publish()),
     promptPlaceholder: "Message your model…",
     systemPromptDetails: () => transport?.promptDetails ?? null,
@@ -86,8 +90,20 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
         })();
       } } }, [uiIcon("download"), "Export debug (.tar.gz)"]),
     files: { local: true, nativeText: true, count: () => files.snapshotWorkspace().files.length, entries: entries => fileTools.sort(entries), entryTitle: path => fileTools.title(path), scope: options.storage ? "Session files · synced with Python" : "Session files · this tab only", rootLabel: "Session files",
+      previewContent: state => {
+        const file = state.selectedPath ? files.get(state.selectedPath) : undefined;
+        return file && canRenderFile(file) && !sourceViews.has(file.path) ? h("iframe", { key: file.path, attrs: { class: "files-inline-preview", title: `Preview: ${file.path}`, sandbox: "", referrerpolicy: "no-referrer" }, props: { srcdoc: workspacePreview(file) } }) : null;
+      },
+      expandRendered: state => {
+        const file = state.selectedPath ? files.get(state.selectedPath) : undefined;
+        if (!file || !canRenderFile(file) || sourceViews.has(file.path)) return false;
+        preview.openFile(file, fileTools.sortFiles().filter(canPreviewFile), true); return true;
+      },
       actions: state => h("span.browser-file-actions", [upload.render(state.directory), fileTools.render()]),
       contentActions: (state) => h("span.browser-file-actions", [
+        !state.selectedPath || !state.preview || !canRenderFile(files.get(state.selectedPath)) ? null : h("button", { attrs: { type: "button", "data-file-action": "source", "aria-pressed": String(sourceViews.has(state.selectedPath)), title: "Switch between rendered preview and selectable source text" }, on: { click: () => {
+          if (state.selectedPath) { if (!sourceViews.delete(state.selectedPath)) sourceViews.add(state.selectedPath); transport?.publish(); }
+        } } }, [uiIcon(sourceViews.has(state.selectedPath ?? "") ? "preview" : "code"), sourceViews.has(state.selectedPath ?? "") ? "Rendered" : "Source"]),
         h("button", { attrs: { type: "button", "data-file-action": "new" }, props: { disabled: transport?.busy }, on: { click: () => editor?.open(state.directory ? state.directory + "/untitled.txt" : "untitled.txt", "") } }, [uiIcon("add"), "New file"]),
         h("button", { attrs: { type: "button", "data-file-action": "edit" }, props: { disabled: !state.preview || transport?.busy }, on: { click: () => { if (state.preview) editor?.open(state.preview.path, state.preview.content, true); } } }, [uiIcon("edit"), "Edit"]),
         h("button", { attrs: { type: "button", "data-file-action": "preview" }, props: { disabled: !canPreviewFile(state.selectedPath ? files.get(state.selectedPath) : undefined) }, on: { click: () => {
@@ -120,7 +136,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   transport = new LocalTransport(application, { ...options, connections, initialSession, files,
     onFilesChanged: () => application.refreshFiles(),
     onSessionChanged: (id) => {
-      application.resetFiles(); preview.clear(); if (editor?.dialog.open) editor.dialog.close(); fileStatus = "";
+      application.resetFiles(); sourceViews.clear(); preview.clear(); if (editor?.dialog.open) editor.dialog.close(); fileStatus = "";
       if (!options.sessionRouting) return;
       const hash = `#/sessions/${id}`;
       if (hash !== location.hash) {

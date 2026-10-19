@@ -64,9 +64,6 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
   let modelOperation: AbortController | null = null;
   let models: AvailableModel[] = [];
   let destroyed = false;
-  const newDraft = Symbol("new");
-  const drafts = new Map<string | symbol, Connection>();
-  const draftKey = (): string | symbol => transport.options.connections[selected]?.name ?? newDraft;
   const modelList = field<HTMLSelectElement>(dialog, "model-list");
   const draft = (): Connection => ({ name: input("name").value.trim(), endpoint: input("endpoint").value.trim(),
     model: input("model").value.trim(), provider: field<HTMLSelectElement>(dialog, "provider").value as Connection["provider"], apiKey: input("key").value });
@@ -110,7 +107,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
         if (action === "use") { control.disabled = active || transport.busy; control.setAttribute("aria-pressed", String(active)); }
         control.addEventListener("click", () => {
           if (action === "use") activate(index);
-          else { selected = index; fill(); status(""); }
+          else { selected = index; fill(); status(""); field(dialog, "editor-title").scrollIntoView({ block: "nearest" }); input("name").focus({ preventScroll: true }); }
         });
         actions.append(control);
       }
@@ -123,7 +120,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     let valid = false;
     try { validateConnection(current); valid = true; } catch { /* Keep incomplete drafts editable. */ }
     field(dialog, "editor-title").textContent = selected < 0 ? "New connection" : `Editing ${transport.options.connections[selected]?.name ?? "connection"}`;
-    field(dialog, "edit-state").textContent = transport.busy ? "A turn is running. Finish or stop it before saving or switching connections." : changed ? "Unsaved changes — save to apply." : active ? "This connection is active for the current session." : "Saved. Use this connection to switch the current session.";
+    field(dialog, "edit-state").textContent = transport.busy ? "A turn is running. Finish or stop it before saving or switching connections." : changed ? "Unsaved changes — save before switching connections or closing." : active ? "This connection is active for the current session." : "Saved. Use this connection to switch the current session.";
     const keyChanged = (transport.options.connections[selected]?.apiKey ?? "") !== (current.apiKey ?? "");
     field(dialog, "key-state").textContent = current.apiKey ? (keyChanged ? "Key entered · not yet saved" : "Key present") : "No key provided · optional for endpoints without authentication";
     button("save").disabled = !changed || !valid || transport.busy;
@@ -148,7 +145,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
   };
   const fill = (): void => {
     cancelModels(); cancelTest();
-    const connection = drafts.get(draftKey()) ?? transport.options.connections[selected];
+    const connection = transport.options.connections[selected];
     for (const name of ["name", "endpoint", "model", "key"] as const) input(name).value = (name === "key" ? connection?.apiKey : connection?.[name]) ?? "";
     field<HTMLSelectElement>(dialog, "provider").value = connection?.provider ?? "openai";
     input("key").type = "password"; button("show-key").setAttribute("aria-pressed", "false");
@@ -164,7 +161,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
   const activate = (index: number): void => {
     try {
       transport.setConnections(transport.options.connections, index);
-      updateEditor(); renderCards();
+      selected = index; fill();
       if (transport.connection) checkConnection(transport.connection);
       status(`Now using ${transport.connection?.name} for this session. History and files are unchanged.`);
     } catch (error) { status(errorMessage(error)); updateEditor(); renderCards(); }
@@ -177,9 +174,8 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
       const connections = [...transport.options.connections];
       if (connections.some((other, index) => other.name === connection.name && index !== selected)) throw new Error("Choose a unique connection name.");
       const index = selected < 0 ? connections.length : selected;
-      const savedDraft = draftKey();
       connections[index] = connection;
-      transport.setConnections(connections, use || !transport.connection ? index : transport.selected); drafts.delete(savedDraft); selected = index;
+      transport.setConnections(connections, use || !transport.connection ? index : transport.selected); selected = index;
       fill();
       if (transport.connection && selected === transport.selected) checkConnection(transport.connection);
       status(`Connection saved. ${transport.connection?.name ?? "No connection"} is active for this session.`); persist();
@@ -200,10 +196,9 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
   });
   button("remove").addEventListener("click", () => {
     try {
-      const removedDraft = draftKey();
       const connections = transport.options.connections.filter((_item, index) => index !== selected);
       const active = transport.selected === selected ? 0 : transport.selected - (selected < transport.selected ? 1 : 0);
-      transport.setConnections(connections, active); drafts.delete(removedDraft); selected = connections.length ? transport.selected : -1;
+      transport.setConnections(connections, active); selected = connections.length ? transport.selected : -1;
       fill(); status(`Connection removed. ${transport.connection ? `Now using ${transport.connection.name}.` : "No active connection."}`); persist();
     } catch (error) { status(errorMessage(error)); }
   });
@@ -213,7 +208,6 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     button("show-key").innerHTML = buttonIconHtml("preview") + (show ? "Hide" : "Show");
   });
   for (const name of ["name", "endpoint", "key", "provider", "model"]) field(dialog, name).addEventListener("input", () => {
-    drafts.set(draftKey(), draft());
     cancelTest(); if (["endpoint", "key", "provider"].includes(name)) cancelModels(); updateEditor(); status("");
   });
   const filterModels = (): void => {
@@ -227,7 +221,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
   };
   input("model-filter").addEventListener("input", filterModels);
   button("use-model").addEventListener("click", () => {
-    if (modelList.value) { input("model").value = modelList.value; drafts.set(draftKey(), draft()); cancelTest(); updateEditor(); status("Model selected. Save to apply it."); }
+    if (modelList.value) { input("model").value = modelList.value; cancelTest(); updateEditor(); status("Model selected. Save to apply it."); }
   });
   button("fetch-models").addEventListener("click", () => {
     cancelModels(); const controller = new AbortController(); modelOperation = controller;

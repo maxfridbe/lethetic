@@ -12,3 +12,14 @@ await test("code capture handles fenced Markdown and Python inputs without captu
   assert.deepEqual(codeSnippets(call), [{ code: "print(42)", language: "python" }]);
   assert.deepEqual(codeSnippets({ ...call, tool: { ...call.tool, kind: "result" } }), []);
 });
+
+await test("Python presentation extracts exact multiline code and refuses incomplete or output payloads", async () => {
+  const { pythonToolCode } = await import("../../web/src/app/helpers.js");
+  const loss = {filtered:false,redacted:false,truncation:null} as const;
+  const code = "for value in [1, 2]:\n\tprint(value)\n# <script> is ordinary code text";
+  const tool = {kind:"call" as const,tool_name:"python",payload:JSON.stringify({code}),payload_loss:loss};
+  assert.equal(pythonToolCode({tool}),code);
+  assert.equal(pythonToolCode({tool:{...tool,kind:"result"}}),null);
+  assert.equal(pythonToolCode({tool:{...tool,payload:'{"code":'}}),null);
+  assert.equal(pythonToolCode({tool:{...tool,payload_loss:{...loss,truncation:"size_limit"}}}),null);
+});

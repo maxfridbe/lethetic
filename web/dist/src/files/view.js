@@ -110,6 +110,7 @@ function breadcrumbs(directory, live, actions, rootLabel = "Launch root") {
                 part))));
 }
 export function renderFilesPane(state, live, actions, extensions = {}) {
+    const inlinePreview = extensions.previewContent?.(state) ?? null;
     const path = state.selectedPath ?? state.directory;
     const selectedSize = state.preview?.size ?? state.listing?.entries.find(entry => entry.path === state.selectedPath)?.size ?? null;
     const entries = extensions.entries?.(state.listing?.entries ?? []) ?? state.listing?.entries ?? [];
@@ -182,7 +183,8 @@ export function renderFilesPane(state, live, actions, extensions = {}) {
                                 actions.nextPreview(event.key === "ArrowLeft" ? -1 : 1);
                             }
                         } } },
-                    h("button", { attrs: { type: "button", "data-preview-expand": "", title: state.fullPreview ? "Restore preview" : "Expand preview to fill the window", "aria-pressed": String(state.fullPreview) }, on: { click: actions.expandPreview } },
+                    h("button", { attrs: { type: "button", "data-preview-expand": "", title: state.fullPreview ? "Restore preview" : "Expand preview to fill the window", "aria-pressed": String(state.fullPreview) }, on: { click: () => { if (!extensions.expandRendered?.(state))
+                                actions.expandPreview(); } } },
                         uiIcon(state.fullPreview ? "restore" : "fullscreen"),
                         state.fullPreview ? "Restore" : "Expand"),
                     !state.fullPreview ? null : h("span", { attrs: { class: "preview-navigation", tabindex: "0", title: "Swipe here or use arrow keys to change files" }, on: { touchstart: (event) => { const touch = event.touches[0]; if (touch)
@@ -200,8 +202,8 @@ export function renderFilesPane(state, live, actions, extensions = {}) {
                         "Download File"),
                     extensions.contentActions?.(state) ?? null),
                 h("div", { attrs: { class: "files-editor-area" } },
-                    extensions.nativeText ? h("textarea", { key: "native-preview", attrs: { class: "files-native-text", readonly: true, spellcheck: "false", "aria-label": `File contents: ${state.selectedPath ?? ""}` }, props: { value: state.preview?.content ?? "" } })
-                        : h("div", { key: "monaco-host", attrs: { id: "files-monaco", class: "files-monaco", "aria-label": "Read-only Monaco editor" } }),
-                    state.preview !== null ? null : h("p", { attrs: { class: "files-preview-message", role: "status" } }, state.previewBusy ? "Loading file…" : state.previewError ?? "UTF-8 previews up to 2 MiB. File contents stay outside chat until you explicitly include them in a prompt."))),
+                    inlinePreview ?? (extensions.nativeText ? h("textarea", { key: "native-preview", attrs: { class: "files-native-text", readonly: true, spellcheck: "false", "aria-label": `File contents: ${state.selectedPath ?? ""}` }, props: { value: state.preview?.content ?? "" } })
+                        : h("div", { key: "monaco-host", attrs: { id: "files-monaco", class: "files-monaco", "aria-label": "Read-only Monaco editor" } })),
+                    state.preview !== null || inlinePreview !== null ? null : h("p", { attrs: { class: "files-preview-message", role: "status" } }, state.previewBusy ? "Loading file…" : state.previewError ?? "UTF-8 previews up to 2 MiB. File contents stay outside chat until you explicitly include them in a prompt."))),
             !state.downloadBusy ? null : h("div", { attrs: { class: "files-download-status", role: "status" } }, "Preparing download\u2026")));
 }

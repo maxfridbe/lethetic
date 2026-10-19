@@ -23,7 +23,7 @@ export function handlePaletteKeyDown(event, context) {
             return;
         }
     }
-    const commands = filteredCommands(snapshot, palette.query);
+    const commands = filteredCommands(snapshot, palette.query, context.state.paletteCommands);
     switch (event.key) {
         case "ArrowDown":
             event.preventDefault();
