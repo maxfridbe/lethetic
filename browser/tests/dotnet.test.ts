@@ -67,3 +67,12 @@ await test("invalid checkpoints preserve saved files and import failure cannot e
   await assert.rejects(Promise.resolve(tool.execute({code:"1"}, signal())), /bad import/);
   assert.equal(runtime.terminated, true);
 });
+
+await test("only explicit relay credentials reach the .NET loader", async () => {
+  const relay = {endpoint:"https://relay.example/relay", token:"relay-token-only-not-model-token"};
+  const tool = createDotnetTool({networkAccess:true,relay,loadRuntime: async options => {
+    assert.deepEqual(Object.keys(options).sort(),["networkAccess","relay","signal"]);
+    assert.deepEqual(options.relay,relay); return new Runtime();
+  }});
+  assert.equal(await tool.execute({code:"42"},signal()),"42"); tool.reset();
+});

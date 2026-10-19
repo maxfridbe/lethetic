@@ -28,6 +28,8 @@ export interface EmbedOptions {
   mode?: import("./sessions.js").AgentMode;
   /** .NET code network access; default false. Model connections are unaffected. */
   networkAccess?: boolean;
+  /** Optional .NET HTTP relay. Only its endpoint is saved with the session; token uses credentialStorage. */
+  dotnetRelay?: import("./network-route.js").DotnetRelay | null;
   pyodideIndexURL?: string;
   /** Retained for compatibility; the shared remote-mode UI is already compact. */
   compact?: boolean;
@@ -87,7 +89,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
               browser: navigator.userAgent, language: navigator.language, viewport: { width: innerWidth, height: innerHeight },
               current, busy: current && transport!.busy,
               ...(current ? { status: transport!.state.status, activity: transport!.state.activity, debugger: transport!.state.debugger } : {}),
-            }, transport!.options.connections.flatMap(connection => connection.apiKey ? [connection.apiKey] : []));
+            }, [...transport!.relaySecrets, ...transport!.options.connections.flatMap(connection => connection.apiKey ? [connection.apiKey] : [])]);
             downloadSessionBundle(bundle, id); exportStatus = "Debug bundle downloaded. Connection keys are excluded.";
           } catch (error) { exportStatus = `Export failed: ${String(error)}`; }
           finally { exporting = false; transport?.publish(); }

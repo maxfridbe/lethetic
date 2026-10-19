@@ -10,7 +10,7 @@ function clean(value: unknown, keys: readonly string[]): unknown {
   if (typeof value === "string") return redact(value, keys);
   if (Array.isArray(value)) return value.map(item => clean(item, keys));
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value)
-    .filter(([key]) => !["apiKey", "authorization", "password"].includes(key))
+    .filter(([key]) => !["apiKey", "authorization", "password", "token"].includes(key))
     .map(([key, item]) => [key, clean(item, keys)]));
   return value;
 }

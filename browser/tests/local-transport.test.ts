@@ -163,3 +163,29 @@ await test(".NET mode and its network permission persist without changing sessio
   reopened.setMode("dotnet-wasm"); assert.equal(reopened.state.session.session_id, id);
   reopened.dispose();
 });
+
+await test("relay settings preserve the session and files, restore tab keys, and exclude keys from exports", () => {
+  const values = new Map<string,string>(), keys = new Map<string,string>();
+  const storage = {getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value);}} as Storage;
+  const credentialStorage = {getItem:(key:string)=>keys.get(key)??null,setItem:(key:string,value:string)=>{keys.set(key,value);}} as Storage;
+  const make = () => { const files = new BrowserFiles(storage); return {files, transport:new LocalTransport(
+    {socketOpened(){},authenticationEpochChanged(){},transportStatus(){},protocolFault(){},serverMessage(){},commandResponse(){}},
+    {connections:[],storage,credentialStorage,files})}; };
+  let {transport,files} = make(); transport.start(); const id = transport.state.session.session_id;
+  transport.setMode("dotnet-wasm"); files.save("keep.txt", "42"); transport.setNetworkAccess(true);
+  const relay = {endpoint:"https://relay.example/relay",token:"a-private-relay-token-1234567890"};
+  transport.setDotnetRelay(relay);
+  assert.equal(transport.state.session.session_id,id); assert.equal(files.list()[0]?.content,"42");
+  assert.equal(transport.promptDetails.instructions.includes("host-configured HTTP relay"),true);
+  assert.ok(!JSON.stringify([...values]).includes(relay.token));
+  assert.ok(!JSON.stringify(transport.sessionForExport(id)).includes(relay.token));
+  transport.dispose(); ({transport,files}=make()); transport.start();
+  assert.deepEqual(transport.dotnetRelay,relay); assert.equal(transport.state.session.session_id,id);
+  transport.openSession("new"); assert.equal(JSON.stringify(transport.dotnetRelay),"null");
+  transport.openSession(id); assert.deepEqual(transport.dotnetRelay,relay);
+  assert.throws(()=>transport.setDotnetRelay({endpoint:"socks5://localhost:9050"}),/SOCKS/);
+  assert.throws(()=>transport.setDotnetRelay({endpoint:"https://bridges.torproject.org/"}),/Tor/);
+  assert.deepEqual(transport.dotnetRelay,relay); assert.equal(transport.state.session.session_id,id);
+  transport.setDotnetRelay({...relay,token:""}); assert.equal(transport.dotnetRelay?.token,"");
+  transport.dispose(); ({transport}=make()); transport.start(); assert.equal(transport.dotnetRelay?.token,""); transport.dispose();
+});

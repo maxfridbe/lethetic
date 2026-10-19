@@ -1,3 +1,5 @@
+import { RelayKeys, relayEndpoint, relayToken } from "./network-route.js";
+import type { DotnetRelay } from "./network-route.js";
 import { COMPACTION_PROMPT, summarizeContext } from "./compaction.js";
 import { WFE_PROTOCOL_SCHEMA_SHA256, WFE_PROTOCOL_VERSION } from "../../web/src/generated/contracts.js";
 import type { CommandOutcome, ICommandRequest, PanelId, WebAppSnapshot, WebCommand } from "../../web/src/generated/contracts.js";
@@ -24,6 +26,8 @@ export interface LocalOptions {
   python?: boolean;
   mode?: AgentMode;
   networkAccess?: boolean;
+  dotnetRelay?: DotnetRelay | null;
+  credentialStorage?: Storage;
   tools?: Tool[];
   systemPrompt?: string;
   pyodideIndexURL?: string;
@@ -45,6 +49,10 @@ export class LocalTransport implements ApplicationTransport {
   selected = 0;
   mode: AgentMode;
   networkAccess: boolean;
+  #relayEndpoint: string | null = null;
+  readonly #relayKeys: RelayKeys;
+  get dotnetRelay(): DotnetRelay | null { return this.#relayEndpoint ? { endpoint: this.#relayEndpoint, token: this.#relayKeys.get(this.#relayEndpoint) } : null; }
+  get relaySecrets(): string[] { return this.#relayKeys.values(); }
   get pythonEnabled(): boolean { return this.mode === "python"; }
   #revision = 0;
   #closed = false;
@@ -64,6 +72,11 @@ export class LocalTransport implements ApplicationTransport {
   constructor(readonly events: BrowserTransportEvents, readonly options: LocalOptions) {
     this.mode = options.mode ?? (options.python ? "python" : "general");
     this.networkAccess = options.networkAccess ?? false;
+    this.#relayKeys = new RelayKeys(options.credentialStorage);
+    if (options.dotnetRelay) {
+      this.#relayEndpoint = relayEndpoint(options.dotnetRelay.endpoint);
+      if (options.dotnetRelay.token) this.#relayKeys.set(this.#relayEndpoint, relayToken(options.dotnetRelay.token));
+    }
     this.#system = options.systemPrompt ?? DEFAULT_PROMPT;
     this.#sessions = new SessionStore(options.storage);
     if (options.files) {
@@ -74,7 +87,7 @@ export class LocalTransport implements ApplicationTransport {
   }
 
   get promptDetails(): { instructions: string; tools: string } {
-    return { instructions: injectedInstructions(this.mode, this.networkAccess),
+    return { instructions: injectedInstructions(this.mode, this.networkAccess, !!this.#relayEndpoint),
       tools: JSON.stringify(toolDefinitions(this.mode, this.options.tools), null, 2) };
   }
 
@@ -103,7 +116,7 @@ export class LocalTransport implements ApplicationTransport {
     this.state.status.provider_label = connection?.name ?? "Configure a connection";
     this.state.status.provider_transport = connection?.provider === "anthropic" ? "claude_code_proxy" : "open_ai_chat_completions";
     this.state.status.python.profile = this.pythonEnabled ? "python_only" : "general";
-    this.state.status.tool_use = this.pythonEnabled ? "Pyodide · browser worker" : this.mode === "dotnet-wasm" ? `.NET 11 · WASM · network ${this.networkAccess ? "on" : "off"}` : "Browser tools";
+    this.state.status.tool_use = this.pythonEnabled ? "Pyodide · browser worker" : this.mode === "dotnet-wasm" ? `.NET 11 · WASM · ${this.networkAccess ? this.#relayEndpoint ? "HTTP relay" : "direct network" : "network off"}` : "Browser tools";
     this.state.status.visible_block_count = this.state.blocks.blocks.length;
     this.events.serverMessage({ type: "state_snapshot", snapshot: { protocol_version: WFE_PROTOCOL_VERSION,
       revision: this.#revision, sequence: this.#revision, state: structuredClone(this.state) } });
@@ -186,6 +199,19 @@ export class LocalTransport implements ApplicationTransport {
     this.#runtime?.dispose(); this.#runtime = null;
     this.#dotnet?.reset(); this.#dotnet = null;
     this.networkAccess = enabled;
+    this.#saveSession(); this.publish();
+  }
+
+  setDotnetRelay(value: DotnetRelay | null): void {
+    this.#requireIdle();
+    const endpoint = value ? relayEndpoint(value.endpoint) : null;
+    const token = value ? relayToken(value.token) : "";
+    if (endpoint === this.#relayEndpoint && (!endpoint || token === this.#relayKeys.get(endpoint))) return;
+    this.#saveSession(true);
+    if (endpoint) this.#relayKeys.set(endpoint, token);
+    this.#runtime?.dispose(); this.#runtime = null;
+    this.#dotnet?.reset(); this.#dotnet = null;
+    this.#relayEndpoint = endpoint;
     this.#saveSession(); this.publish();
   }
 
@@ -375,11 +401,11 @@ export class LocalTransport implements ApplicationTransport {
           tools.push(this.#python);
         }
         if (this.mode === "dotnet-wasm") {
-          this.#dotnet ??= createDotnetTool({ networkAccess: this.networkAccess, workspace: this.#workspace,
+          this.#dotnet ??= createDotnetTool({ networkAccess: this.networkAccess, relay: this.dotnetRelay, workspace: this.#workspace,
             onWorkspace: workspace => this.#checkpointWorkspace(workspace) });
           tools.push(this.#dotnet);
         }
-        const runtime = await createRuntime({ connection, tools, systemPrompt: effectiveSystemPrompt(this.#system, this.mode, this.networkAccess), onEvent: (event) => this.#event(event) });
+        const runtime = await createRuntime({ connection, tools, systemPrompt: effectiveSystemPrompt(this.#system, this.mode, this.networkAccess, !!this.#relayEndpoint), onEvent: (event) => this.#event(event) });
         if (this.#closed) { runtime.dispose(); return; }
         try { runtime.restore(this.#savedMessages); } catch (error) { runtime.dispose(); throw error; }
         this.#runtime = runtime;
@@ -403,6 +429,7 @@ export class LocalTransport implements ApplicationTransport {
   #newSession(): void {
     this.reset(); this.#history = []; this.#workspace = emptyWorkspace();
     this.networkAccess = this.options.networkAccess ?? false;
+    this.#relayEndpoint = this.options.dotnetRelay ? relayEndpoint(this.options.dotnetRelay.endpoint) : null;
     this.state.session = { session_id: crypto.randomUUID(), display_name: null, fallback_label: "New chat" };
     this.options.onSessionChanged?.(this.state.session.session_id);
   }
@@ -420,6 +447,7 @@ export class LocalTransport implements ApplicationTransport {
       this.#workspace = structuredClone(session.workspace ?? this.#legacyWorkspace);
       this.#system = session.system; this.mode = session.mode ?? (session.python ? "python" : "general");
       this.networkAccess = session.networkAccess ?? false;
+      this.#relayEndpoint = session.dotnetRelayEndpoint ?? null;
       if (session.metrics) this.metrics.restore(session.metrics);
       for (const theme of this.state.themes) theme.selected = theme.theme_id === session.theme;
       if (session.connection) {
@@ -456,7 +484,7 @@ export class LocalTransport implements ApplicationTransport {
       this.state.session.fallback_label = label;
       this.#sessions.save({ id: this.state.session.session_id, name: this.state.session.display_name, label,
         updatedAt: new Date().toISOString(), blocks: this.state.blocks.blocks, messages: this.#savedMessages,
-        inputs: this.#history, system: this.#system, python: this.pythonEnabled, mode: this.mode, networkAccess: this.networkAccess, workspace: this.#workspace,
+        inputs: this.#history, system: this.#system, python: this.pythonEnabled, mode: this.mode, networkAccess: this.networkAccess, dotnetRelayEndpoint: this.#relayEndpoint, workspace: this.#workspace,
         metrics: this.metrics.snapshot(),
         theme: this.state.themes.find((theme) => theme.selected)?.theme_id ?? "dracula",
         connection: connection ? { name: connection.name, provider: connection.provider, endpoint: connection.endpoint, model: connection.model } : null });

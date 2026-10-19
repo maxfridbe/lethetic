@@ -23,7 +23,7 @@ export function renderBrowserStatus(transport: LocalTransport | null, pins = new
     { id: "elapsed", label: "Turn elapsed", value: started ? seconds(metrics?.elapsed ?? 0) : "—", brief: started ? seconds(metrics?.elapsed ?? 0) : "Elapsed: —" },
     { id: "modelTime", label: "Model responses", value: started ? seconds(metrics?.modelMs ?? 0) : "—" },
     { id: "toolTime", label: "Tool execution", value: started ? seconds(metrics?.toolMs ?? 0) : "—" },
-    { id: "python", label: "Code runtime", value: transport?.mode === "dotnet-wasm" ? `.NET 11 WASM · network ${transport.networkAccess ? "on" : "off"}` : transport?.pythonEnabled ? "Pyodide worker" : "Off" },
+    { id: "python", label: "Code runtime", value: transport?.mode === "dotnet-wasm" ? `.NET 11 WASM · ${transport.networkAccess ? transport.dotnetRelay ? transport.dotnetRelay.token ? "HTTP relay" : "relay token needed" : "direct network" : "network off"}` : transport?.pythonEnabled ? "Pyodide worker" : "Off" },
   ];
   return h("details.browser-status", [
     h("summary", { attrs: { "aria-label": "Usage and timing details" } }, [

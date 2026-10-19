@@ -242,3 +242,5 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
     void promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
   });
 }
+
+export type { DotnetRelay } from "./network-route.js";

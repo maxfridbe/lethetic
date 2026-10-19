@@ -134,3 +134,12 @@ dialog.browser-preview.is-full-preview {
 .browser-runtime label { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
 .browser-runtime input[type="checkbox"] { width: auto; }
 .browser-runtime .browser-note { margin: 0; font-size: .85rem; }
+
+.browser-relay-fields { display: grid; gap: .5rem; min-width: 0; }
+.browser-relay-fields[hidden] { display: none; }
+.browser-relay-fields input { width: 100%; min-width: 0; box-sizing: border-box; }
+.browser-runtime .browser-note { overflow-wrap: anywhere; }
+.browser-runtime { min-width: 0; }
+.browser-runtime select { min-width: 0; max-width: 100%; }
+
+.browser-runtime a { color: var(--theme-highlight-fg); }

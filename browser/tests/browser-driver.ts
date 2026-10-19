@@ -630,11 +630,12 @@ try {
   const dotnetScreenshot = await rpc("Page.captureScreenshot", { format: "png" });
   await writeFile(config.screenshot.replace(".png", "-dotnet.png"), Buffer.from(String(dotnetScreenshot["data"]), "base64"));
   await evaluate("document.querySelector('[data-browser-action=connections]').click()");
+  await evaluate("document.querySelector('.browser-runtime').scrollIntoView({block:'start'})");
   const securityScreenshot = await rpc("Page.captureScreenshot", { format: "png" });
   await writeFile(config.screenshot.replace(".png", "-dotnet-security.png"), Buffer.from(String(securityScreenshot["data"]), "base64"));
   await rpc("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   check(await evaluate("document.documentElement.scrollWidth <= innerWidth"), ".NET settings overflow on mobile");
-  await evaluate("document.querySelector('.browser-runtime').scrollIntoView({block:'end'})");
+  await evaluate("document.querySelector('.browser-runtime').scrollIntoView({block:'start'})");
   const mobileDotnet = await rpc("Page.captureScreenshot", { format: "png" });
   await writeFile(config.screenshot.replace(".png", "-dotnet-mobile.png"), Buffer.from(String(mobileDotnet["data"]), "base64"));
   await evaluate("globalThis.dotnetTestView.destroy()");

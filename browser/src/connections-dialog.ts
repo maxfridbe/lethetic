@@ -53,8 +53,18 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     <fieldset class="browser-runtime"><legend>Runtime &amp; security · current session</legend>
     <label>Code runtime <select data-field="mode"><option value="general">Chat</option><option value="python">Python · Pyodide</option><option value="dotnet-wasm">.NET 11 · WASM</option></select></label>
     <label><input data-field="network" type="checkbox"> Network access (.NET code)</label>
-    <p data-field="permissions" class="browser-note"></p>
-    <p class="browser-note">Mode and permission changes keep this chat and its files; code variables restart. Pyodide retains browser networking. .NET controls cover HTTP and sockets, not hostile JavaScript interop. Browser CORS still applies.</p>
+    <p data-field="permissions" class="browser-note" role="status"></p>
+    <label>.NET HTTP route <select data-field="network-route"><option value="direct">Direct · destination CORS required</option><option value="relay">HTTP relay · optional server-side SOCKS5 / Tor</option></select></label>
+    <div data-field="relay-fields" class="browser-relay-fields" hidden>
+      <label>Relay endpoint<input data-field="relay-endpoint" type="url" placeholder="https://your-relay.example/relay" autocomplete="off" spellcheck="false"></label>
+      <label>Relay token<input data-field="relay-token" type="password" autocomplete="off" spellcheck="false" maxlength="1024"></label>
+      <small data-field="relay-key-state" role="status"></small>
+      <p class="browser-note">For SOCKS5 or Tor, run the native .NET relay and configure its upstream proxy. <a href="https://github.com/maxfridbe/dotnetdide/blob/master/docs/networking.md" target="_blank" rel="noopener noreferrer">Relay &amp; Tor setup</a></p>
+      <p class="browser-note">Relay: 8 MiB bodies, no browser cookies, redirects or direct fallback. Model connections and Pyodide keep their own routes.</p>
+    </div>
+    <button type="button" data-field="apply-route">${buttonIconHtml("save")}Apply HTTP route</button>
+    <p data-field="route-state" role="status" class="browser-note"></p>
+    <p class="browser-note">Mode, permission and route changes keep this chat and its files; code variables restart. Direct HTTP needs destination CORS.</p>
     </fieldset>
     <p class="connection-hint">${credentialStorage ? "Keys stay in this tab and survive refresh." : "Keys stay in memory."} Switching connections keeps this session’s history, files, and code variables.</p>
     <p data-field="status" role="status"></p>`);
@@ -140,8 +150,23 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     input("network").checked = transport.networkAccess;
     input("network").disabled = transport.busy || transport.mode !== "dotnet-wasm";
     field(dialog, "permissions").textContent = transport.mode === "dotnet-wasm"
-      ? `Session files: read/write enabled · Network: ${transport.networkAccess ? "enabled" : "disabled"}`
+      ? `Session files: read/write enabled · Network: ${transport.networkAccess ? "enabled" : "disabled"} · Saved HTTP route: ${transport.dotnetRelay ? transport.dotnetRelay.endpoint + (transport.dotnetRelay.token ? " · token present" : " · token required") : "direct (browser CORS)"}`
       : transport.pythonEnabled ? "Session files: read/write enabled · Network: enabled (Pyodide)" : "Code execution is off.";
+  };
+  const routeEditor = (): void => {
+    const relay = select("network-route").value === "relay";
+    field(dialog,"relay-fields").hidden = !relay;
+    for (const control of [select("network-route"), input("relay-endpoint"), input("relay-token"), button("apply-route")]) control.disabled = transport.busy || transport.mode !== "dotnet-wasm";
+    const saved = transport.dotnetRelay;
+    field(dialog,"relay-key-state").textContent = input("relay-token").value
+      ? saved?.endpoint === input("relay-endpoint").value && saved.token === input("relay-token").value ? "Relay token present" : "Relay token entered · apply to save"
+      : "Relay token required before requests can run";
+  };
+  const fillRoute = (): void => {
+    const relay = transport.dotnetRelay;
+    select("network-route").value = relay ? "relay" : "direct";
+    input("relay-endpoint").value = relay?.endpoint ?? ""; input("relay-token").value = relay?.token ?? "";
+    routeEditor();
   };
   const cancelModels = (): void => {
     modelOperation?.abort(); modelOperation = null; models = [];
@@ -160,7 +185,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     field<HTMLSelectElement>(dialog, "provider").value = connection?.provider ?? "openai";
     input("key").type = "password"; button("show-key").setAttribute("aria-pressed", "false");
     button("show-key").setAttribute("aria-label", "Show API key"); button("show-key").innerHTML = buttonIconHtml("preview") + "Show";
-    updateEditor(); renderCards();
+    updateEditor(); renderCards(); fillRoute();
   };
   const persist = (): void => {
     try {
@@ -247,10 +272,25 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
       finally { clearTimeout(timer); if (modelOperation === controller) { modelOperation = null; button("fetch-models").disabled = false; } }
     })();
   });
+  select("network-route").addEventListener("change", routeEditor);
+  input("relay-endpoint").addEventListener("input", () => {
+    // Never carry a token to a different endpoint while editing.
+    input("relay-token").value = ""; routeEditor();
+  });
+  input("relay-token").addEventListener("input", routeEditor);
+  button("apply-route").addEventListener("click", () => {
+    try {
+      transport.setDotnetRelay(select("network-route").value === "relay" ? { endpoint: input("relay-endpoint").value, token: input("relay-token").value } : null);
+      const message = `HTTP route saved for this session. ${transport.dotnetRelay ? transport.dotnetRelay.token ? "Relay token present." : "Enter the relay token before running network code." : "Direct browser networking selected."} Code variables restart; chat and files are kept.`;
+      status(message); field(dialog,"route-state").textContent = message;
+      fillRoute();
+    } catch (error) { status(errorMessage(error)); field(dialog,"route-state").textContent = errorMessage(error); }
+    updateEditor(); routeEditor();
+  });
   select("mode").addEventListener("change", () => {
     try { transport.setMode(select("mode").value as import("./sessions.js").AgentMode); status(`Runtime updated for this session: ${transport.mode}.`); }
     catch (error) { status(errorMessage(error)); }
-    updateEditor();
+    updateEditor(); routeEditor();
   });
   input("network").addEventListener("change", () => {
     try { transport.setNetworkAccess(input("network").checked); status(`.NET network access ${transport.networkAccess ? "enabled" : "disabled"}.`); }

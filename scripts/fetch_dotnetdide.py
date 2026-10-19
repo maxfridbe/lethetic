@@ -31,7 +31,7 @@ def install(stage: Path) -> None:
             temporary.unlink(missing_ok=True)
     destination = stage / "runtimes/dotnetdide"
     destination.mkdir(parents=True, exist_ok=True)
-    selected = {"dotnetdide.js", "dotnetdide.worker.js", "network-policy.js", "llm.md", "LICENSE", "NOTICE", "release.json"}
+    selected = {"dotnetdide.js", "dotnetdide.worker.js", "network-policy.js", "relay-fetch.js", "docs/networking.md", "llm.md", "LICENSE", "NOTICE", "release.json"}
     with zipfile.ZipFile(cache) as archive:
         metadata = json.loads(archive.read("release.json"))
         if metadata["version"] != version:

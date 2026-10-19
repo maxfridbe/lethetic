@@ -43,14 +43,14 @@ Default script usings: System, System.IO, System.Linq, System.Collections.Generi
 
 Write File.WriteAllText("Program.cs", source), then await Dotnet.Run("Program.cs"). Dotnet.Build() builds workspace sources; Dotnet.Build("app.csproj") and await Dotnet.Run("app.csproj") support a limited SDK-style project subset, not full MSBuild. Inspect the returned Success, Output or Build.Output and ExitCode. No NuGet restore, package/project references, native binaries or shell. Script variables and script using directives are not inherited by separately compiled programs.
 
-For browser HTTP use await Dotnetdide.Net.GetStringAsync(url), GetBytesAsync(url), PostJsonAsync(url, value), or System.Net.Http.HttpClient. Browser CORS applies. Save downloaded bytes with File.WriteAllBytes. Network access is a host permission, not something code should bypass. No model credentials are passed to the worker. Do not attempt JavaScript interop to evade permissions.`;
+For browser HTTP use Dotnetdide.Net.GetStringAsync, GetBytesAsync, GetJsonAsync<T>, PostJsonAsync, PostFormAsync, HeadAsync, OptionsAsync, DeleteAsync, PostAsync, PutAsync, PatchAsync, or RequestAsync(method, url, content). SendAsync(request, new Dotnetdide.BrowserRequestOptions { Credentials = "omit", Mode = "cors", Redirect = "error" }) accepts custom headers and returns status/headers/body; dispose responses. Direct requests require destination CORS support; no-cors cannot make responses readable. OpenReadAsync returns an async System.IO.Stream; DownloadFileAsync(url, path) writes into session files. Ordinary System.Net.Http.HttpClient uses the same host route. SOCKS/HTTP proxies must be configured in the native HTTP relay or browser, not HttpClientHandler.Proxy in WASM. Raw System.Net.Sockets is unsupported. Tor bridge addresses belong in an external Tor client; bridges.torproject.org is not a proxy. Network access is a host permission, not something code should bypass. No model credentials are passed to the worker. Do not attempt JavaScript interop to evade permissions.`;
 
-export function injectedInstructions(mode: AgentMode | boolean, networkAccess = false): string {
+export function injectedInstructions(mode: AgentMode | boolean, networkAccess = false, relay = false): string {
   return [BROWSER_INSTRUCTIONS, ...(mode === true || mode === "python" ? [PYTHON_INSTRUCTIONS] : []),
-    ...(mode === "dotnet-wasm" ? [DOTNET_INSTRUCTIONS, `Network access: ${networkAccess ? "enabled; browser HTTP requests are authorized" : "disabled; use session files and local computation only. The user can enable it in Connections → Runtime & security"}.`] : [])].join("\n\n");
+    ...(mode === "dotnet-wasm" ? [DOTNET_INSTRUCTIONS, `HTTP route: ${relay ? "host-configured HTTP relay; no direct fallback, no browser cookies; bounded 8 MiB bodies and no redirects" : "direct browser fetch; destination must permit CORS"}.`, `Network access: ${networkAccess ? "enabled; browser HTTP requests are authorized" : "disabled; use session files and local computation only. The user can enable it in Connections → Runtime & security"}.`] : [])].join("\n\n");
 }
-export function effectiveSystemPrompt(editable: string, mode: AgentMode | boolean, networkAccess = false): string {
-  return [editable, injectedInstructions(mode, networkAccess)].filter(Boolean).join("\n\n");
+export function effectiveSystemPrompt(editable: string, mode: AgentMode | boolean, networkAccess = false, relay = false): string {
+  return [editable, injectedInstructions(mode, networkAccess, relay)].filter(Boolean).join("\n\n");
 }
 export function toolDefinitions(mode: AgentMode | boolean, tools: readonly Tool[] = []): Pick<Tool, "name" | "description" | "parameters">[] {
   return [...tools, ...(mode === true || mode === "python" ? [PYTHON_TOOL_DEFINITION] : mode === "dotnet-wasm" ? [DOTNET_TOOL_DEFINITION] : [])]

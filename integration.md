@@ -269,7 +269,7 @@ at `/lethetic/`, custom subpaths, and domain roots. Pages deployment requires th
 Pushing an ordinary commit deploys Pages. Pushing a `v*` tag additionally attaches
 `lethetic-browser.zip` and `lethetic-browser.zip.sha256` to the GitHub release,
 alongside the existing native release workflow. A `browser-v*` tag (for example,
-`browser-v0.5.0`) publishes an independent embedding release with those same assets.
+`browser-v0.6.0`) publishes an independent embedding release with those same assets.
 A commit does not create a version tag automatically. The ZIP contains both standalone and embedding modes; it does
 not contain API keys or downloaded Pyodide packages. Build outputs live under
 `target/` and are not committed. `manifest.json` contains per-file SHA-256 hashes.
@@ -497,7 +497,52 @@ var response = await Dotnetdide.Net.PostJsonAsync("https://example.org/api", new
 // For custom headers/methods: SendAsync(HttpRequestMessage), disposing the response.
 ```
 
-CORS and HTTPS mixed-content rules still apply. This is a capability control,
+Direct requests require destination CORS. For APIs without browser CORS, select
+**Connections → Runtime & security → .NET HTTP route → HTTP relay**, enter your
+relay's HTTPS `/relay` endpoint and token, and choose **Apply HTTP route**. The
+same session and files remain selected; code variables restart. The saved route
+and token-present state are shown explicitly. Only the endpoint is saved in
+session storage/export; the token uses `credentialStorage` (normally
+`sessionStorage`) and survives refresh in that tab. With no token, local computation
+still works and relay requests fail without falling back to direct networking.
+
+The dotnetdide release includes an optional **native .NET HTTP relay**. Configure
+its exact page-origin and target-origin allowlists, a random authentication token,
+and optionally `DOTNETDIDE_RELAY_PROXY=socks5://127.0.0.1:9050` on the server.
+The server can use HTTP(S) or SOCKS5 upstream proxies, including a Tor client's
+SOCKS5 listener. `https://bridges.torproject.org/` supplies bridge addresses, not a
+proxy endpoint: configure a bridge in your Tor client first. No Node.js server is
+needed. [Full setup and protocol](https://github.com/maxfridbe/dotnetdide/blob/master/docs/networking.md)
+are also bundled at `runtimes/dotnetdide/docs/networking.md`.
+
+```js
+mountLethetic(root, {
+  mode: 'dotnet-wasm', networkAccess: true,
+  storage: localStorage, credentialStorage: sessionStorage,
+  dotnetRelay: { endpoint: 'https://your-relay.example/relay', token: relayToken }
+});
+// Headless: createDotnetTool({ networkAccess: true, relay: { endpoint, token } }).
+```
+
+The route covers both `Dotnetdide.Net` and ordinary `System.Net.Http.HttpClient`.
+Additional helpers include `HeadAsync`, `OptionsAsync`, `DeleteAsync`, `PostAsync`,
+`PutAsync`, `PatchAsync`, `PostFormAsync` and `GetJsonAsync<T>`. Use
+`SendAsync(request, new Dotnetdide.BrowserRequestOptions { Credentials = "omit",
+Mode = "cors", Redirect = "error" })` for custom headers and browser options.
+Inspect response status/headers and dispose responses. `OpenReadAsync` returns an
+async `System.IO.Stream`; `DownloadFileAsync(url, path)` writes a session file.
+`System.IO` itself does not provide TCP networking, and raw `System.Net.Sockets`
+or `HttpClientHandler.Proxy` remain unsupported in browser WASM.
+
+Relay bodies are buffered and limited to 8 MiB, with a 30-second upstream timeout;
+Lethetic's session file limits still apply to saved downloads. Relay requests
+never forward browser cookies, reject redirects and have no direct fallback.
+WebSocket/XHR/EventSource/WebTransport are blocked on a relay route; use HTTP.
+The page must be allowed by relay CORS; use HTTPS for remote relays. The route
+does not change model connections, Pyodide or runtime bootstrap downloads, and
+is not a whole-browser Tor route.
+
+This is a capability control,
 not a hostile-code sandbox: arbitrary JavaScript interop or dynamic imports can
 reach APIs outside these wrappers. Use a dedicated origin and an appropriate
 server CSP/network isolation policy if you execute untrusted code.

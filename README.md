@@ -14,7 +14,9 @@ Desktop and phone screenshots with a demo conversation. Click either to try it.
 
 <details><summary>.NET WASM: C# compilation and shared session files</summary>
 <a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-dotnet.png" alt="Lethetic running C# with generated Program.cs and compiled DLL/PDB files in the session workspace" width="1000"></a>
-<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-dotnet-mobile.png" alt="Mobile runtime settings showing .NET WASM selected and Network access disabled" width="260"></a>
+<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-dotnet-mobile.png" alt="Mobile .NET runtime settings with the HTTP relay endpoint, token-present status and Network access switch" width="260"></a>
+
+[Runtime and proxy settings screenshot](res/browser-dotnet-security.png)
 </details>
 
 > "...so many various filters and enhancements, so many possible patterns, that it was as much an art as a craft. We didn't have the trained personnel that we needed, and as good as the lethetic intelligence engines were, they still lacked the ability to make intuitive leaps. LIs could give you statistical probabilities; they couldn't give you hunches—although the last I'd heard, they were working on adding that function too."
@@ -37,13 +39,21 @@ use **Duplicate with key** to copy a connection and **Use connection** to switch
 The standalone edition runs a Rust/WASM conversation runtime locally, with optional
 **Python · Pyodide** or **.NET 11 · WASM** in a persistent Web Worker.
 Choose the runtime in **Connections → Runtime & security**. .NET networking is off
-by default; **Network access** enables browser HTTP and sockets for generated C#
+by default; **Network access** enables HTTP and supported browser networking for generated C#
 without affecting the model connection. The setting is saved with the session.
 Both modes share session files; .NET sees them at `/home/dotnetdide`.
 C# can use `System.IO`, `await Dotnet.Run("Program.cs")`, `Dotnet.Build()`, and
 `await Dotnetdide.Net.GetStringAsync(url)` when network access is enabled.
 The bundled runtime comes from a checksum-pinned
 [dotnetdide ZIP release](https://github.com/maxfridbe/dotnetdide/releases).
+
+.NET HTTP supports GET/HEAD/OPTIONS/POST/PUT/PATCH/DELETE, custom headers, JSON,
+forms, binary uploads, streams and downloads into session files. Use direct browser
+CORS or configure an **HTTP relay** in **Runtime & security**. The optional native
+.NET relay can use SOCKS5, including a configured Tor client's SOCKS port.
+[Relay setup](https://github.com/maxfridbe/dotnetdide/blob/master/docs/networking.md).
+Tor's bridge website supplies bridge addresses; it is not a proxy endpoint.
+
 The **System prompt** dialog shows your editable instructions, the exact runtime
 additions, and tool definitions. Python mode encourages tested, reusable `.py`
 programs saved to session Files for preview and download. It needs no native Lethetic process.

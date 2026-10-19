@@ -1,3 +1,4 @@
+import { relayEndpoint } from "./network-route.js";
 import type { Connection } from "./connection.js";
 import { validateConnection } from "./connection.js";
 import type { RenderBlockView } from "../../web/src/generated/contracts.js";
@@ -16,7 +17,7 @@ export interface SavedSession {
   id: string; name: string | null; label: string; updatedAt: string;
   blocks: RenderBlockView[]; messages: unknown[]; inputs: string[];
   system: string; connection: Omit<Connection, "apiKey"> | null; python: boolean; theme: string;
-  mode?: AgentMode; networkAccess?: boolean;
+  mode?: AgentMode; networkAccess?: boolean; dotnetRelayEndpoint?: string | null;
   metrics?: MetricsSnapshot;
   workspace?: Workspace;
 }
@@ -77,6 +78,7 @@ function parseSession(value: unknown): SavedSession {
     messages: item.messages, inputs: item.inputs, system: item.system, python: item.python,
     ...(item.mode !== undefined ? { mode: item.mode } : {}),
     ...(item.networkAccess !== undefined ? { networkAccess: item.networkAccess } : {}), theme: item.theme, connection,
+    ...(item.dotnetRelayEndpoint !== undefined ? { dotnetRelayEndpoint: item.dotnetRelayEndpoint === null ? null : relayEndpoint(item.dotnetRelayEndpoint) } : {}),
     ...(item.workspace !== undefined ? { workspace: parseWorkspace(item.workspace) } : {}),
     ...(item.metrics ? { metrics: parseMetrics(item.metrics) } : {}) };
 }

@@ -1,3 +1,4 @@
+import type { DotnetRelay } from "./network-route.js";
 import { emptyWorkspace, parseWorkspace } from "./workspace.js";
 import type { Workspace } from "./workspace.js";
 import type { Tool } from "./sdk.js";
@@ -26,7 +27,7 @@ export interface DotnetRuntime {
   exportWorkspace(): Promise<unknown>;
   terminate(): void;
 }
-export type DotnetLoader = (options: { signal: AbortSignal; networkAccess: boolean }) => Promise<DotnetRuntime>;
+export type DotnetLoader = (options: { signal: AbortSignal; networkAccess: boolean; relay?: DotnetRelay | null }) => Promise<DotnetRuntime>;
 export interface DotnetTool extends Tool {
   reset(): void;
   snapshotWorkspace(): Workspace;
@@ -41,7 +42,7 @@ const loadRuntime: DotnetLoader = async options => {
 };
 
 export function createDotnetTool(options: {
-  networkAccess?: boolean; workspace?: Workspace; timeoutMs?: number;
+  networkAccess?: boolean; relay?: DotnetRelay | null; workspace?: Workspace; timeoutMs?: number;
   onWorkspace?: (workspace: Workspace) => void; loadRuntime?: DotnetLoader;
 } = {}): DotnetTool {
   let checkpoint = parseWorkspace(options.workspace ?? emptyWorkspace());
@@ -70,7 +71,7 @@ export function createDotnetTool(options: {
       controller.signal.addEventListener("abort", cancel, { once: true });
       const timer = setTimeout(() => controller.abort(new Error(".NET timed out; completed session files are kept.")), timeout);
       try {
-        runtime ??= await (options.loadRuntime ?? loadRuntime)({ signal: controller.signal, networkAccess: options.networkAccess ?? false });
+        runtime ??= await (options.loadRuntime ?? loadRuntime)({ signal: controller.signal, networkAccess: options.networkAccess ?? false, ...(options.relay ? { relay: options.relay } : {}) });
         controller.signal.throwIfAborted();
         const current = JSON.stringify(checkpoint);
         if (installed !== current) { await runtime.importWorkspace(checkpoint); installed = current; }
