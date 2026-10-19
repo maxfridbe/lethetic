@@ -308,12 +308,7 @@
 .files-content-actions .browser-file-actions { display: contents; }
 
 
-.files-dock-controls { display: inline-flex; gap: .2rem; }
-.files-dock-controls button[aria-pressed="true"] {
-  color: var(--theme-highlight-fg);
-  border-color: var(--theme-highlight-fg);
-  background: var(--surface-raised);
-}
+.files-dock-controls { display: inline-flex; }
 
 @media (min-width: 900px) {
   .conversation-column:has(> .files-pane[data-dock="left"]) {

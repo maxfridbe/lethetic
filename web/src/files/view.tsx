@@ -27,7 +27,7 @@ export interface FilePaneActions {
 export interface FilePaneExtensions {
   previewContent?: (state: FilePaneState) => VNode | null;
   expandRendered?: (state: FilePaneState) => boolean;
-  nativeText?: boolean;
+  nativeText?: () => boolean;
   count?: () => number;
   entries?: (entries: readonly FileListEntry[]) => FileListEntry[];
   entryTitle?: (path: string) => string;
@@ -182,11 +182,11 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
             props={{ disabled: !live }} on={{ click: () => actions.showTab(tab) }}>
             {uiIcon(tab === "files" ? "folder" : "code")}{tab === "files" ? "Browse" : "Changes"}</button>)}
         </span>}
-      <span attrs={{ class: "files-dock-controls", role: "group", "aria-label": "Files dock position" }}>
-        {(["top", "left"] as const).map(dock => <button key={dock}
-          attrs={{ type: "button", "data-files-dock": dock, "aria-pressed": String(state.dock === dock),
-            title: dock === "left" ? "Dock Files on the left, with code below the file list. Narrow screens use the top layout." : "Dock Files above the conversation" }}
-          on={{ click: () => actions.setDock(dock) }}>{uiIcon(dock === "left" ? "columns" : "list")}{dock === "left" ? "Left" : "Top"}</button>)}
+      <span attrs={{ class: "files-dock-controls" }}>
+        <button attrs={{ type: "button", "data-files-dock": state.dock === "top" ? "left" : "top",
+          "aria-label": state.dock === "top" ? "Dock Files left (currently top)" : "Dock Files top (currently left)",
+          title: state.dock === "top" ? "Dock Files left. Narrow screens use the top layout." : "Dock Files above the conversation" }}
+          on={{ click: () => actions.setDock(state.dock === "top" ? "left" : "top") }}>{uiIcon(state.dock === "top" ? "columns" : "list")}</button>
       </span>
       {!state.open || state.tab !== "changes" ? null : <div attrs={{ class: "files-actions" }}>
         <button attrs={{ type: "button" }} props={{ disabled: !live || state.changesBusy }}
@@ -251,7 +251,7 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
           {extensions.contentActions?.(state) ?? null}
         </div>
         <div attrs={{ class: "files-editor-area" }}>
-          {inlinePreview ?? (extensions.nativeText ? <textarea key="native-preview" attrs={{ class: "files-native-text", readonly: true, spellcheck: "false", "aria-label": `File contents: ${state.selectedPath ?? ""}` }}
+          {inlinePreview ?? (extensions.nativeText?.() ? <textarea key="native-preview" attrs={{ class: "files-native-text", readonly: true, spellcheck: "false", "aria-label": `File contents: ${state.selectedPath ?? ""}` }}
             props={{ value: state.preview?.content ?? "" }}></textarea>
             : <div key="monaco-host" attrs={{ id: "files-monaco", class: "files-monaco", "aria-label": "Read-only Monaco editor" }}></div>)}
           {state.preview !== null || inlinePreview !== null ? null : <p attrs={{ class: "files-preview-message", role: "status" }}>

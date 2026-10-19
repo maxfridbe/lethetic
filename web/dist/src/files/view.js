@@ -129,10 +129,10 @@ export function renderFilesPane(state, live, actions, extensions = {}) {
                         "aria-selected": state.tab === tab ? "true" : "false" }, props: { disabled: !live }, on: { click: () => actions.showTab(tab) } },
                     uiIcon(tab === "files" ? "folder" : "code"),
                     tab === "files" ? "Browse" : "Changes"))),
-            h("span", { attrs: { class: "files-dock-controls", role: "group", "aria-label": "Files dock position" } }, ["top", "left"].map(dock => h("button", { key: dock, attrs: { type: "button", "data-files-dock": dock, "aria-pressed": String(state.dock === dock),
-                    title: dock === "left" ? "Dock Files on the left, with code below the file list. Narrow screens use the top layout." : "Dock Files above the conversation" }, on: { click: () => actions.setDock(dock) } },
-                uiIcon(dock === "left" ? "columns" : "list"),
-                dock === "left" ? "Left" : "Top"))),
+            h("span", { attrs: { class: "files-dock-controls" } },
+                h("button", { attrs: { type: "button", "data-files-dock": state.dock === "top" ? "left" : "top",
+                        "aria-label": state.dock === "top" ? "Dock Files left (currently top)" : "Dock Files top (currently left)",
+                        title: state.dock === "top" ? "Dock Files left. Narrow screens use the top layout." : "Dock Files above the conversation" }, on: { click: () => actions.setDock(state.dock === "top" ? "left" : "top") } }, uiIcon(state.dock === "top" ? "columns" : "list"))),
             !state.open || state.tab !== "changes" ? null : h("div", { attrs: { class: "files-actions" } },
                 h("button", { attrs: { type: "button" }, props: { disabled: !live || state.changesBusy }, on: { click: actions.refreshChanges } },
                     uiIcon("refresh"),
@@ -202,7 +202,7 @@ export function renderFilesPane(state, live, actions, extensions = {}) {
                         "Download File"),
                     extensions.contentActions?.(state) ?? null),
                 h("div", { attrs: { class: "files-editor-area" } },
-                    inlinePreview ?? (extensions.nativeText ? h("textarea", { key: "native-preview", attrs: { class: "files-native-text", readonly: true, spellcheck: "false", "aria-label": `File contents: ${state.selectedPath ?? ""}` }, props: { value: state.preview?.content ?? "" } })
+                    inlinePreview ?? (extensions.nativeText?.() ? h("textarea", { key: "native-preview", attrs: { class: "files-native-text", readonly: true, spellcheck: "false", "aria-label": `File contents: ${state.selectedPath ?? ""}` }, props: { value: state.preview?.content ?? "" } })
                         : h("div", { key: "monaco-host", attrs: { id: "files-monaco", class: "files-monaco", "aria-label": "Read-only Monaco editor" } })),
                     state.preview !== null || inlinePreview !== null ? null : h("p", { attrs: { class: "files-preview-message", role: "status" } }, state.previewBusy ? "Loading file…" : state.previewError ?? "UTF-8 previews up to 2 MiB. File contents stay outside chat until you explicitly include them in a prompt."))),
             !state.downloadBusy ? null : h("div", { attrs: { class: "files-download-status", role: "status" } }, "Preparing download\u2026")));

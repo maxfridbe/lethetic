@@ -176,10 +176,17 @@ try {
     document.querySelector('[data-field=file-form]').requestSubmit()`);
   await until("document.querySelector('.files-path')?.textContent.includes('reports/analysis.py') && !document.querySelector('[data-file-action=preview]').disabled");
   check(await evaluate("!!document.querySelector('.files-preview .files-content-actions [data-file-action=preview]')"), "file actions are not beside the content viewer");
+  await until("document.querySelector('#files-monaco')?.dataset.editorReady==='true'");
+  await until("document.querySelector('#files-monaco .view-lines')?.textContent.includes('private')");
+  check(await evaluate("!!document.querySelector('#files-monaco .line-numbers') && !document.querySelector('.files-native-text')"), "Monaco is not the default code preview");
+  await evaluate("document.querySelector('[data-file-action=text-mode]').click()");
   check(await evaluate("(()=>{const text=document.querySelector('.files-native-text');text.focus();text.setSelectionRange(0,text.value.length);return text.selectionEnd>10 && text.value.includes(\"print('private snippet')\")})()"), "native multiline text selection failed");
   await evaluate("document.querySelector('[data-preview-expand]').click()");
   check(await evaluate("(()=>{const r=document.querySelector('.files-preview').getBoundingClientRect();return r.width>=innerWidth-2 && r.height>=innerHeight-2})()"), "Files preview did not expand");
   await evaluate("document.querySelector('[data-preview-expand]').click()");
+
+  await evaluate("document.querySelector('[data-file-action=text-mode]').click()");
+  await until("document.querySelector('#files-monaco')?.dataset.editorReady==='true'");
 
   check(await evaluate("!document.querySelector('[data-field=passphrase]') && !document.querySelector('[data-browser-action=code]')"), "encrypted library remains visible");
   await evaluate(`Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{globalThis.copiedText=text}}});
@@ -215,7 +222,9 @@ try {
   await until("document.querySelector('.files-path')?.textContent.includes('reports/preview.html') && !document.querySelector('[data-file-action=preview]').disabled");
   check(await evaluate("document.querySelector('.files-inline-preview')?.srcdoc.includes('Rendered local HTML')"),"HTML did not preview automatically");
   await evaluate("document.querySelector('[data-file-action=source]').click()");
-  check(await evaluate("document.querySelector('.files-native-text')?.value.includes('Rendered local HTML') && !document.querySelector('.files-inline-preview')"),"HTML source toggle failed");
+  await until("document.querySelector('#files-monaco')?.dataset.editorReady==='true'");
+  await until("document.querySelector('#files-monaco .view-lines')?.textContent.includes('Rendered')");
+  check(await evaluate("!document.querySelector('.files-inline-preview')"),"HTML source toggle failed");
   await evaluate("document.querySelector('[data-file-action=source]').click();document.querySelector('[data-file-action=preview]').click()");
   await until("!!document.querySelector('.browser-preview[open]')");
   // Resolve the open dialog's exact iframe; other inline/closed frames may coexist.
@@ -267,8 +276,9 @@ try {
   await until("!!document.querySelector('.files-entry[title=\"reports/analysis.py\"]')");
   await evaluate("document.querySelector('.files-entry[title=\"reports/analysis.py\"]').click()");
   await until("document.querySelector('.files-path small')?.textContent.includes('B')");
-  await until("!!document.querySelector('.files-native-text')");
+  await until("document.querySelector('#files-monaco')?.dataset.editorReady==='true'");
   await until("!document.querySelector('.toast')");
+  check(await evaluate("document.querySelectorAll('.files-dock-controls button').length===1"), "dock should use one toggle");
   await evaluate("document.querySelector('[data-files-dock=left]').click()");
   await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
   check(await evaluate("(()=>{const files=document.querySelector('.files-pane').getBoundingClientRect(), list=document.querySelector('.files-browser').getBoundingClientRect(), editor=document.querySelector('.files-preview').getBoundingClientRect(), chat=document.querySelector('#chat-scroll').getBoundingClientRect();return files.right<=chat.left+1 && list.bottom<=editor.top+1 && editor.width>200})()"), "left dock did not stack files above the viewer beside chat");

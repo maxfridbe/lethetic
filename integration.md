@@ -87,7 +87,7 @@ saved connection always loads its saved values.
 Use the existing **Files** directory browser. Choose **Save to Session** beneath a
 code block or Python tool call, or **New file** in Files. Enter a relative path such
 as `reports/analysis.py`. Folders are derived from these paths. Select a file to
-select and copy its source in the native text viewer, **Edit**, **Preview**, **Download File**, **Copy**,
+view its source in Monaco with syntax highlighting and line numbers (use **Plain text** for native text selection), **Edit**, **Preview**, **Download File**, **Copy**,
 or **Delete** it. Code blocks also have direct Preview, Download, and Copy buttons.
 **Expand** fills the window in both the source pane and the rendered preview. Preview
 titles show the full relative filename. In expanded rendered previews, swipe horizontally
@@ -181,7 +181,7 @@ leaves existing files unchanged. Upload is available while idle; changing sessio
 or starting a turn before reading finishes cancels the import. The upload stays in
 the browser's session workspace and does not require a native server.
 
-Use **Top** or **Left** in the Files toolbar to choose its dock. Left mode stacks
+Use the dock icon in the Files toolbar to toggle between Top and Left. Left mode stacks
 the file list above the code viewer, with the conversation on the right. When collapsed, the left dock stays as a narrow vertical bar beside the conversation.
 The choice survives refresh and session changes; narrow screens use the top layout. File-type
 icons appear to the left of filenames in Browse and Changes.
@@ -267,7 +267,7 @@ at `/lethetic/`, custom subpaths, and domain roots. Pages deployment requires th
 Pushing an ordinary commit deploys Pages. Pushing a `v*` tag additionally attaches
 `lethetic-browser.zip` and `lethetic-browser.zip.sha256` to the GitHub release,
 alongside the existing native release workflow. A `browser-v*` tag (for example,
-`browser-v0.4.10`) publishes an independent embedding release with those same assets.
+`browser-v0.4.11`) publishes an independent embedding release with those same assets.
 A commit does not create a version tag automatically. The ZIP contains both standalone and embedding modes; it does
 not contain API keys or downloaded Pyodide packages. Build outputs live under
 `target/` and are not committed. `manifest.json` contains per-file SHA-256 hashes.

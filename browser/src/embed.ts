@@ -47,6 +47,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   let transport: LocalTransport | null = null;
   let fileStatus = "";
   const sourceViews = new Set<string>();
+  let plainText = false;
   let exportStatus = "";
   let exporting = false;
   const upload = createFileUpload(files, () => transport ? { id: transport.state.session.session_id, busy: transport.busy } : null,
@@ -89,7 +90,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
           finally { exporting = false; transport?.publish(); }
         })();
       } } }, [uiIcon("download"), "Export debug (.tar.gz)"]),
-    files: { local: true, nativeText: true, count: () => files.snapshotWorkspace().files.length, entries: entries => fileTools.sort(entries), entryTitle: path => fileTools.title(path), scope: options.storage ? "Session files · synced with Python" : "Session files · this tab only", rootLabel: "Session files",
+    files: { local: true, nativeText: () => plainText, count: () => files.snapshotWorkspace().files.length, entries: entries => fileTools.sort(entries), entryTitle: path => fileTools.title(path), scope: options.storage ? "Session files · synced with Python" : "Session files · this tab only", rootLabel: "Session files",
       previewContent: state => {
         const file = state.selectedPath ? files.get(state.selectedPath) : undefined;
         return file && canRenderFile(file) && !sourceViews.has(file.path) ? h("iframe", { key: file.path, attrs: { class: "files-inline-preview", title: `Preview: ${file.path}`, sandbox: "", referrerpolicy: "no-referrer" }, props: { srcdoc: workspacePreview(file) } }) : null;
@@ -101,6 +102,10 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
       },
       actions: state => h("span.browser-file-actions", [upload.render(state.directory), fileTools.render()]),
       contentActions: (state) => h("span.browser-file-actions", [
+        !state.preview || (canRenderFile(files.get(state.preview.path)) && !sourceViews.has(state.preview.path)) ? null : h("button", {
+          attrs: { type: "button", "data-file-action": "text-mode", title: plainText ? "Use Monaco with syntax highlighting and line numbers" : "Use plain text for native selection", "aria-pressed": String(plainText) },
+          on: { click: () => { plainText = !plainText; transport?.publish(); } },
+        }, [uiIcon(plainText ? "code" : "file"), plainText ? "Monaco" : "Plain text"]),
         !state.selectedPath || !state.preview || !canRenderFile(files.get(state.selectedPath)) ? null : h("button", { attrs: { type: "button", "data-file-action": "source", "aria-pressed": String(sourceViews.has(state.selectedPath)), title: "Switch between rendered preview and selectable source text" }, on: { click: () => {
           if (state.selectedPath) { if (!sourceViews.delete(state.selectedPath)) sourceViews.add(state.selectedPath); transport?.publish(); }
         } } }, [uiIcon(sourceViews.has(state.selectedPath ?? "") ? "preview" : "code"), sourceViews.has(state.selectedPath ?? "") ? "Rendered" : "Source"]),
