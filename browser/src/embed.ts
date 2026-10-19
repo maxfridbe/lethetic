@@ -1,3 +1,4 @@
+import { createFileUpload } from "./file-upload.js";
 import { PinnedStats } from "./pinned-stats.js";
 import { sessionDebugBundle, downloadSessionBundle } from "./session-export.js";
 import { uiIcon } from "../../web/src/icons.js";
@@ -46,6 +47,8 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   let fileStatus = "";
   let exportStatus = "";
   let exporting = false;
+  const upload = createFileUpload(files, () => transport ? { id: transport.state.session.session_id, busy: transport.busy } : null,
+    message => { if (message) fileStatus = message; transport?.publish(); });
   const mount = document.createElement("div"); root.replaceChildren(mount);
   const snippetActions = (snippet: { code: string; language: string }) => h("div.browser-code-actions", [
     h("button", { attrs: { type: "button", "data-browser-action": "save-code" }, on: { click: () => editor?.open(snippetName(snippet), snippet.code) } }, [uiIcon("save"), "Save to Files"]),
@@ -81,6 +84,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
         })();
       } } }, [uiIcon("download"), "Export debug (.tar.gz)"]),
     files: { local: true, scope: options.storage ? "Session files · synced with Python" : "Session files · this tab only", rootLabel: "Session files",
+      actions: state => upload.render(state.directory),
       contentActions: (state) => h("span.browser-file-actions", [
         h("button", { attrs: { type: "button", "data-file-action": "new" }, props: { disabled: transport?.busy }, on: { click: () => editor?.open(state.directory ? state.directory + "/untitled.txt" : "untitled.txt", "") } }, [uiIcon("add"), "New file"]),
         h("button", { attrs: { type: "button", "data-file-action": "edit" }, props: { disabled: !state.preview || transport?.busy }, on: { click: () => { if (state.preview) editor?.open(state.preview.path, state.preview.content, true); } } }, [uiIcon("edit"), "Edit"]),
@@ -139,5 +143,5 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   };
   if (options.sessionRouting) globalThis.addEventListener("hashchange", navigate);
   if (!connections.length) settings.open();
-  return { destroy(): void { globalThis.removeEventListener("hashchange", navigate); transport?.dispose(); application.dispose(); settings?.destroy(); editor?.destroy(); preview.destroy(); root.replaceChildren(); } };
+  return { destroy(): void { upload.destroy(); globalThis.removeEventListener("hashchange", navigate); transport?.dispose(); application.dispose(); settings?.destroy(); editor?.destroy(); preview.destroy(); root.replaceChildren(); } };
 }

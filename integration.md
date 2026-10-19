@@ -132,6 +132,16 @@ Connection keys are excluded and known keys are redacted from text. The archive
 is assembled locally; it is not uploaded. Every turn also has **Copy** at
 its bottom-right, copying the source text or tool payload without UI labels.
 
+Use **Upload** in the Files toolbar to select one or more device files. They are
+imported into the currently open folder and synced to the active session's Pyodide
+workspace before its next call. Text and binary data are preserved. Files remain
+available after refresh when session storage is enabled. Existing names are kept;
+collisions receive numbered filenames, such as `data (2).csv`. The existing limits
+apply: 1 MiB per file, 2 MiB total and 100 files per session. A failed upload batch
+leaves existing files unchanged. Upload is available while idle; changing sessions
+or starting a turn before reading finishes cancels the import. The upload stays in
+the browser's session workspace and does not require a native server.
+
 Use **Top** or **Left** in the Files toolbar to choose its dock. Left mode stacks
 the file list above the code viewer, with the conversation on the right. When collapsed, the left dock stays as a narrow vertical bar beside the conversation.
 The choice survives refresh and session changes; narrow screens use the top layout. File-type
@@ -218,7 +228,7 @@ at `/lethetic/`, custom subpaths, and domain roots. Pages deployment requires th
 Pushing an ordinary commit deploys Pages. Pushing a `v*` tag additionally attaches
 `lethetic-browser.zip` and `lethetic-browser.zip.sha256` to the GitHub release,
 alongside the existing native release workflow. A `browser-v*` tag (for example,
-`browser-v0.4.6`) publishes an independent embedding release with those same assets.
+`browser-v0.4.7`) publishes an independent embedding release with those same assets.
 A commit does not create a version tag automatically. The ZIP contains both standalone and embedding modes; it does
 not contain API keys or downloaded Pyodide packages. Build outputs live under
 `target/` and are not committed. `manifest.json` contains per-file SHA-256 hashes.

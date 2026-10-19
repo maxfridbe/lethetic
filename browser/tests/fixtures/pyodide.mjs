@@ -19,7 +19,8 @@ export async function loadPyodide() {
         FS.writeFile('/home/pyodide/outputs/data.csv',new TextEncoder().encode('value\n42\n'));
         FS.writeFile('/home/pyodide/outputs/chart.png',Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='),c=>c.charCodeAt(0)));
         stdout('files created');
-      } else if(code.includes('# read-session-file')) stdout('read: '+new TextDecoder().decode(FS.readFile('/home/pyodide/outputs/data.csv')));
+      } else if(code.includes('# read-uploaded-files')) stdout('uploaded: '+new TextDecoder().decode(FS.readFile('/home/pyodide/outputs/upload.csv')).trim()+' / '+[...FS.readFile('/home/pyodide/outputs/raw.bin')].map(byte=>byte.toString(16).padStart(2,'0')).join(''));
+      else if(code.includes('# read-session-file')) stdout('read: '+new TextDecoder().decode(FS.readFile('/home/pyodide/outputs/data.csv')));
       else if(code.includes('# restore-session-file')) stdout('restored: '+new TextDecoder().decode(FS.readFile('/home/pyodide/outputs/data.csv')));
       else if(code.includes('# delete-session-file')) { FS.unlink('/home/pyodide/outputs/data.csv');stdout('file deleted'); }
       else if(code.includes('# list-session-files')) stdout('workspace empty: '+String(FS.readdir('/home/pyodide').length===2));

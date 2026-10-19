@@ -58,6 +58,7 @@ class Handler(SimpleHTTPRequestHandler):
             content = "Context restored" if any(m.get("content") == "hello" for m in messages[:-1]) else "Missing context"
         if data.get("tools") and messages[-1]["role"] == "user":
             snippets = {
+                "read uploads": "# read-uploaded-files\nfrom pathlib import Path\nprint('uploaded: ' + Path('outputs/upload.csv').read_text().strip() + ' / ' + Path('outputs/raw.bin').read_bytes().hex())",
                 "create files": "# create-session-files\nfrom pathlib import Path\nimport base64\nPath('outputs/empty').mkdir(parents=True, exist_ok=True)\nPath('outputs/data.csv').write_text('value\\n42\\n')\nPath('outputs/chart.png').write_bytes(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='))\nprint('files created')",
                 "read file": "# read-session-file\nfrom pathlib import Path\nprint('read: ' + Path('outputs/data.csv').read_text())",
                 "restore files": "# restore-session-file\nfrom pathlib import Path\nprint('restored: ' + Path('outputs/data.csv').read_text())",

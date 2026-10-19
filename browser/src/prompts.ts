@@ -2,7 +2,7 @@ import { PYTHON_TOOL_DEFINITION } from "./python.js";
 import type { Tool } from "./sdk.js";
 
 export const BROWSER_INSTRUCTIONS = `Browser environment
-You are running in the Lethetic web frontend. Use only the tools supplied with this request. You have no native shell or access to the user's operating-system files. Session files are visible in the Files pane, where the user can preview supported formats, copy contents, and download individual files. Only claim that a file exists after a tool has created it successfully.`;
+You are running in the Lethetic web frontend. Use only the tools supplied with this request. You have no native shell or access to the user's operating-system files. Session files are visible in the Files pane, where the user can preview supported formats, copy contents, and download individual files. Users can upload files into the current session through Files. When asked to work with uploaded data, inspect the session workspace with the available tools. Only claim that an output file exists after a tool has created it successfully.`;
 
 export const PYTHON_PROGRAM_EXAMPLE = String.raw`from pathlib import Path
 program = Path("/home/pyodide/solution.py")
@@ -20,6 +20,8 @@ export const PYTHON_INSTRUCTIONS = `Python mode
 Because you are in Python mode, the user expects you to write and run Python programs to solve their problems. Turn useful solutions into reusable .py files, execute them, check their output, and fix errors. Deliver the program as well as its results when that helps the task. Use clear filenames, small functions, and brief usage instructions.
 
 Your Python tool runs real Python through Pyodide in a browser Web Worker. Python execution, session-file reads and writes, and browser-supported networking are already authorized. Proceed with the user's task without asking for per-call permission. The user can download programs and generated results directly from the web frontend's Files pane.
+
+Uploaded files are already available beneath /home/pyodide. Use pathlib to list folders and open uploaded files; preserve binary data with read_bytes() when appropriate.
 
 Save durable programs and outputs beneath /home/pyodide, the initial working directory. For example:
 ${PYTHON_PROGRAM_EXAMPLE}

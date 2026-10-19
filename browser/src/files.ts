@@ -1,6 +1,6 @@
 import type { FileEndpoint } from "../../web/src/files/protocol.js";
 import { validFilePath } from "../../web/src/files/protocol.js";
-import { decodeBytes, encodeBytes, emptyWorkspace, parseWorkspace, textFile } from "./workspace.js";
+import { decodeBytes, encodeBytes, emptyWorkspace, parseWorkspace, textFile, FILE_BYTES } from "./workspace.js";
 import type { Workspace, WorkspaceFile } from "./workspace.js";
 import type { FileListEntry } from "../../web/src/generated/contracts.js";
 
@@ -42,6 +42,30 @@ export class BrowserFiles {
     files.push({ path, content });
     this.#write(files);
   }
+  /** Commit a whole upload batch at once, preserving binary bytes and existing files. */
+  importFiles(directory: string, incoming: readonly { name: string; bytes: Uint8Array }[]): string[] {
+    if (!this.#binding) throw new Error("Upload requires an active session workspace.");
+    if (!validFilePath(directory, true)) throw new Error("Invalid upload folder.");
+    if (incoming.length > 100) throw new Error("Choose up to 100 files.");
+    const workspace = structuredClone(this.#binding.read());
+    const occupied = new Set([...workspace.files.map(file => file.path), ...workspace.directories]);
+    const paths: string[] = [];
+    for (const file of incoming) {
+      if (file.bytes.length > FILE_BYTES) throw new Error(`${file.name} exceeds the 1 MiB per-file limit.`);
+      if (file.name.includes("/") || !validFilePath(file.name, false)) throw new Error(`Invalid filename: ${file.name}`);
+      const dot = file.name.lastIndexOf(".");
+      const stem = dot > 0 ? file.name.slice(0, dot) : file.name;
+      const extension = dot > 0 ? file.name.slice(dot) : "";
+      const prefix = directory ? directory + "/" : "";
+      let path = prefix + file.name, suffix = 2;
+      while (occupied.has(path)) path = `${prefix}${stem} (${suffix++})${extension}`;
+      occupied.add(path); paths.push(path);
+      workspace.files.push({ path, data: encodeBytes(file.bytes) });
+    }
+    if (paths.length) this.#binding.write(parseWorkspace(workspace));
+    return paths;
+  }
+
   remove(path: string): void {
     if (this.#binding) {
       const workspace = this.#binding.read(); workspace.files = workspace.files.filter((file) => file.path !== path);

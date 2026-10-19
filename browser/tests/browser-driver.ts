@@ -458,6 +458,16 @@ try {
       root.querySelector('.files-entry[title=outputs]').click();
       await wait(()=>!!root.querySelector('.files-entry[title="outputs/chart.png"]'));
       if(!root.querySelector('.files-entry[title="outputs/empty"]'))throw Error('Empty directory not visible');
+      const uploadInput=root.querySelector('[data-file-upload]');
+      uploadInput.click=()=>{}; root.querySelector('[data-file-action=upload]').click();
+      const selection=new DataTransfer();
+      selection.items.add(new File(['a,b\\n1,2\\n'],'upload.csv',{type:'text/csv'}));
+      selection.items.add(new File([new Uint8Array([0,255,1])],'raw.bin'));
+      uploadInput.files=selection.files; uploadInput.dispatchEvent(new Event('change',{bubbles:true}));
+      await wait(()=>!!root.querySelector('.files-entry[title="outputs/upload.csv"]') && !!root.querySelector('.files-entry[title="outputs/raw.bin"]'));
+      if(records()[0].workspace.files.find(file=>file.path==='outputs/raw.bin')?.data!=='AP8B')throw Error('Uploaded binary bytes changed');
+      await send('read uploads','uploaded: a,b\\n1,2 / 00ff01');
+
       root.querySelector('.files-entry[title="outputs/chart.png"]').click();
       await wait(()=>!root.querySelector('[data-file-action=preview]').disabled);
       root.querySelector('[data-file-action=preview]').click();
@@ -471,6 +481,7 @@ try {
       if(document.querySelector('dialog[open]'))throw Error('File editor stayed open: '+document.querySelector('dialog[open]').textContent);
       await send('read file','read: edited in Files');
       view.destroy(); view=mountLethetic(root,options);
+      if(!records()[0].workspace.files.some(file=>file.path==='outputs/upload.csv') || records()[0].workspace.files.find(file=>file.path==='outputs/raw.bin')?.data!=='AP8B')throw Error('Uploads lost on reopen');
       await send('restore files','restored: edited in Files');
       root.querySelector('[data-browser-action=sessions]').click();
       await wait(()=>!!root.querySelector('.sessions-panel .primary-button'));
