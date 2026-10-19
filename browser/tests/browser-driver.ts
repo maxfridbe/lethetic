@@ -297,6 +297,15 @@ try {
   await evaluate("document.querySelector('[data-files-dock=top]').click()");
   await evaluate("new Promise(resolve=>requestAnimationFrame(resolve))");
   check(await evaluate("document.querySelector('.files-pane').getBoundingClientRect().bottom<=document.querySelector('#chat-scroll').getBoundingClientRect().top+1"), "top dock did not restore above chat");
+  const topHeight = Number(await evaluate("document.querySelector('.files-pane').getBoundingClientRect().height"));
+  const topGrip = await evaluate("(()=>{const r=document.querySelector('.files-outer-splitter').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()") as {x:number;y:number};
+  await rpc('Input.dispatchMouseEvent',{type:'mousePressed',x:topGrip.x,y:topGrip.y,button:'left',clickCount:1});
+  await rpc('Input.dispatchMouseEvent',{type:'mouseMoved',x:topGrip.x,y:topGrip.y+70,button:'left',buttons:1});
+  await rpc('Input.dispatchMouseEvent',{type:'mouseReleased',x:topGrip.x,y:topGrip.y+70,button:'left',clickCount:1});
+  check(Number(await evaluate("document.querySelector('.files-pane').getBoundingClientRect().height"))>topHeight+50,"horizontal Files edge did not resize");
+  const draggedHeight = Number(await evaluate("document.querySelector('.files-pane').getBoundingClientRect().height"));
+  await evaluate("document.querySelector('.files-outer-splitter').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true}))");
+  check(Number(await evaluate("document.querySelector('.files-pane').getBoundingClientRect().height"))<draggedHeight-10,"horizontal Files edge keyboard resize failed");
   const filesImage = await rpc("Page.captureScreenshot", { format: "png" });
   await writeFile(config.screenshot.replace('.png','-files.png'), Buffer.from(String(filesImage["data"]), "base64"));
   await evaluate("document.querySelector('[data-files-dock=left]').click()");

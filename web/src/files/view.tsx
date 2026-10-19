@@ -44,26 +44,31 @@ function splitter(outer = false): VNode {
     const pane = target.closest<HTMLElement>(".files-pane")!;
     const left = pane.dataset["dock"] === "left" && matchMedia("(min-width: 900px)").matches;
     const host = outer ? pane.parentElement! : target.parentElement!;
-    const vertical = !outer && left;
-    return { host, vertical, property: outer ? "--files-width" : vertical ? "--files-list-height" : "--files-list-width" };
+    const vertical = outer ? !left : left;
+    const pixels = outer && vertical;
+    return { pane, host, vertical, pixels, property: outer ? (vertical ? "--files-height" : "--files-width") : vertical ? "--files-list-height" : "--files-list-width" };
   };
   return <div attrs={{ class: `files-splitter${outer ? " files-outer-splitter" : ""}`, role: "separator", tabindex: "0",
     "aria-label": outer ? "Resize Files pane" : "Resize file list and preview", title: "Drag to resize; arrow keys adjust the split" }}
     on={{ pointerdown: (event: PointerEvent) => {
       event.preventDefault(); const target = event.currentTarget as HTMLElement;
-      const {host, vertical, property} = context(target); const bounds = host.getBoundingClientRect();
+      const {host, vertical, pixels, property} = context(target); const bounds = host.getBoundingClientRect();
       target.setPointerCapture(event.pointerId);
       const move = (event: PointerEvent) => {
         const ratio = vertical ? (event.clientY-bounds.top)/bounds.height : (event.clientX-bounds.left)/bounds.width;
-        host.style.setProperty(property, `${Math.max(15, Math.min(80, ratio*100))}%`);
+        host.style.setProperty(property, pixels ? `${Math.max(160, Math.min(innerHeight * .55, 650, event.clientY - bounds.top))}px` : `${Math.max(15, Math.min(80, ratio*100))}%`);
       };
       const stop = () => { target.removeEventListener("pointermove", move); target.removeEventListener("lostpointercapture", stop); };
       target.addEventListener("pointermove", move); target.addEventListener("lostpointercapture", stop);
     }, keydown: (event: KeyboardEvent) => {
       if (!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(event.key)) return;
-      event.preventDefault(); const {host, property} = context(event.currentTarget as HTMLElement);
-      const current = Number.parseFloat(host.style.getPropertyValue(property)) || 34;
-      host.style.setProperty(property, `${Math.max(15,Math.min(80,current+(["ArrowRight","ArrowDown"].includes(event.key)?3:-3)))}%`);
+      const {pane, host, property, pixels, vertical} = context(event.currentTarget as HTMLElement);
+      if (!(vertical ? ["ArrowUp", "ArrowDown"] : ["ArrowLeft", "ArrowRight"]).includes(event.key)) return;
+      event.preventDefault();
+      const direction = ["ArrowRight", "ArrowDown"].includes(event.key) ? 1 : -1;
+      const current = pixels ? pane.getBoundingClientRect().height : Number.parseFloat(host.style.getPropertyValue(property)) || 34;
+      host.style.setProperty(property, pixels ? `${Math.max(160, Math.min(innerHeight * .55, 650, current + direction * 20))}px`
+        : `${Math.max(15,Math.min(80,current + direction * 3))}%`);
     } }}></div>;
 }
 
