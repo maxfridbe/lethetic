@@ -1,3 +1,4 @@
+import { createSitesDialog } from "./sites-dialog.js";
 import { createFileTools } from "./file-tools.js";
 import { createFileUpload } from "./file-upload.js";
 import { PinnedStats } from "./pinned-stats.js";
@@ -30,6 +31,8 @@ export interface EmbedOptions {
   networkAccess?: boolean;
   /** Direct NuGet.org managed package downloads and cache reuse; default false. */
   nugetAccess?: boolean;
+  /** ASP.NET virtual sites in an isolated preview; default false. */
+  siteAccess?: boolean;
   /** Optional .NET HTTP relay. Only its endpoint is saved with the session; token uses credentialStorage. */
   dotnetRelay?: import("./network-route.js").DotnetRelay | null;
   pyodideIndexURL?: string;
@@ -50,6 +53,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   const pinnedStats = new PinnedStats(options.storage);
   let editor: ReturnType<typeof createFileEditor> | null = null;
   const preview = createFilePreview();
+  let sites: ReturnType<typeof createSitesDialog> | null = null;
   let settings: ReturnType<typeof createConnectionsDialog> | null = null;
   let transport: LocalTransport | null = null;
   let fileStatus = "";
@@ -109,6 +113,12 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
       },
       actions: state => h("span.browser-file-actions", [upload.render(state.directory), fileTools.render()]),
       contentActions: (state) => h("span.browser-file-actions", [
+        state.selectedPath && /\.(cs|csproj)$/i.test(state.selectedPath) ? h("button", {
+          attrs: { type: "button", "data-file-action": "run", title: "Compile and run this file in this session's .NET worker" },
+          props: { disabled: transport?.busy }, on: { click: () => {
+            if (state.selectedPath) void transport?.runDotnetFile(state.selectedPath).catch(error => { fileStatus = String(error); transport?.publish(); });
+          } },
+        }, [uiIcon("run"), "Run"]) : null,
         !state.preview || (canRenderFile(files.get(state.preview.path)) && !sourceViews.has(state.preview.path)) ? null : h("button", {
           attrs: { type: "button", "data-file-action": "text-mode", title: plainText ? "Use Monaco with syntax highlighting and line numbers" : "Use plain text for native selection", "aria-pressed": String(plainText) },
           on: { click: () => { plainText = !plainText; transport?.publish(); } },
@@ -132,10 +142,11 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
         } } }, [uiIcon("trash"), "Delete"]),
         h("span", { attrs: { role: "status" } }, fileStatus),
       ]) },
-    headerActions: () => h("div", { attrs: { class: "browser-header-actions" } }, [
+    headerActions: () => { sites?.refresh(); return h("div", { attrs: { class: "browser-header-actions" } }, [
       h("button", { attrs: { type: "button", "data-browser-action": "connections" }, on: { click: () => settings?.open() } }, [uiIcon("connection"), "Connections"]),
       h("button", { attrs: { type: "button", "data-browser-action": "sessions" }, on: { click: () => transport?.send({ type: "invoke_command", command_id: "sessions" }, 0) } }, [uiIcon("history"), "Sessions"]),
-    ]),
+      transport?.mode === "dotnet-wasm" ? h("button", { attrs: { type: "button", "data-browser-action": "sites", title: "Open an interactive C# site" }, on: { click: () => sites?.open() } }, [uiIcon("site"), `Sites (${transport.sites.length})`]) : null,
+    ]); },
     codeActions: (code, language) => snippetActions({ code, language: language ?? "text" }),
     blockActions: (block) => block.tool?.kind === "call" && ["python", "dotnet"].includes(block.tool.tool_name)
       ? h("div", codeSnippets(block).map(snippetActions)) : null,
@@ -148,7 +159,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   transport = new LocalTransport(application, { ...options, connections, initialSession, files,
     onFilesChanged: () => application.refreshFiles(),
     onSessionChanged: (id) => {
-      application.resetFiles(); sourceViews.clear(); preview.clear(); if (editor?.dialog.open) editor.dialog.close(); fileStatus = "";
+      application.resetFiles(); sourceViews.clear(); preview.clear(); sites?.clear(); if (editor?.dialog.open) editor.dialog.close(); fileStatus = "";
       if (!options.sessionRouting) return;
       const hash = `#/sessions/${id}`;
       if (hash !== location.hash) {
@@ -156,6 +167,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
         history[replace ? "replaceState" : "pushState"](null, "", location.pathname + location.search + hash);
       }
     } });
+  sites = createSitesDialog(transport);
   settings = createConnectionsDialog(transport, options.storage, options.credentialStorage);
   editor = createFileEditor(files, (path) => { void application.openFile(path); });
   application.attachTransport(transport); transport.start();
@@ -173,5 +185,5 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   };
   if (options.sessionRouting) globalThis.addEventListener("hashchange", navigate);
   if (!connections.length) settings.open();
-  return { destroy(): void { upload.destroy(); globalThis.removeEventListener("hashchange", navigate); transport?.dispose(); application.dispose(); settings?.destroy(); editor?.destroy(); preview.destroy(); root.replaceChildren(); } };
+  return { destroy(): void { upload.destroy(); globalThis.removeEventListener("hashchange", navigate); transport?.dispose(); application.dispose(); settings?.destroy(); sites?.destroy(); editor?.destroy(); preview.destroy(); root.replaceChildren(); } };
 }

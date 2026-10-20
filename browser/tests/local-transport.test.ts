@@ -153,13 +153,16 @@ await test(".NET mode and its network permission persist without changing sessio
   assert.equal(transport.networkAccess, false);
   assert.match(transport.promptDetails.instructions, /Network access: disabled/);
   assert.equal(JSON.parse(transport.promptDetails.tools)[0].name, "dotnet");
+  assert.equal(transport.siteAccess, false);
+  transport.setSiteAccess(true);
+  assert.match(transport.promptDetails.instructions, /Interactive sites: enabled/);
   transport.setNetworkAccess(true); transport.setNugetAccess(true); assert.equal(transport.state.session.session_id, id);
   assert.match(transport.promptDetails.instructions, /NuGet package access: enabled/);
   const saved = transport.sessionForExport(id);
-  assert.equal(saved.mode, "dotnet-wasm"); assert.equal(saved.networkAccess, true); assert.equal(saved.nugetAccess, true); assert.equal(saved.workspace?.files[0]?.path, "uploaded.txt");
+  assert.equal(saved.siteAccess, true); assert.equal(saved.mode, "dotnet-wasm"); assert.equal(saved.networkAccess, true); assert.equal(saved.nugetAccess, true); assert.equal(saved.workspace?.files[0]?.path, "uploaded.txt");
   transport.dispose();
   const reopened = new LocalTransport(events, {connections:[],storage,initialSession:id}); reopened.start();
-  assert.equal(reopened.mode, "dotnet-wasm"); assert.equal(reopened.networkAccess, true); assert.equal(reopened.nugetAccess, true);
+  assert.equal(reopened.siteAccess, true); assert.equal(reopened.mode, "dotnet-wasm"); assert.equal(reopened.networkAccess, true); assert.equal(reopened.nugetAccess, true);
   reopened.setPythonMode(true); assert.equal(reopened.sessionForExport(id).workspace?.files[0]?.path, "uploaded.txt");
   reopened.setMode("dotnet-wasm"); assert.equal(reopened.state.session.session_id, id);
   reopened.dispose();

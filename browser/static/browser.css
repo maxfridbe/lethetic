@@ -143,3 +143,13 @@ dialog.browser-preview.is-full-preview {
 .browser-runtime select { min-width: 0; max-width: 100%; }
 
 .browser-runtime a { color: var(--theme-highlight-fg); }
+
+.browser-sites { width: min(96vw, 1300px); max-width: 96vw; }
+.browser-sites .overlay-body { display: flex; flex-direction: column; gap: .5rem; }
+.browser-site-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; }
+.browser-site-toolbar label { display: flex; flex: 1 1 130px; flex-direction: column; gap: .2rem; min-width: 0; margin: 0; max-width: 280px; }
+.browser-site-toolbar input, .browser-site-toolbar select { max-width: 100%; }
+.browser-sites iframe { box-sizing: border-box; width: 100%; height: min(65dvh, 800px); min-height: 220px; border: 1px solid var(--border-color, #555); background: white; }
+.browser-sites [data-field="site-status"] { overflow-wrap: anywhere; margin: 0; }
+.browser-sites .browser-note { margin: 0; }
+.browser-sites .browser-note summary { cursor: pointer; }

@@ -25,6 +25,9 @@ Click a screenshot to try the browser edition.
 <a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-dotnet.png" alt="C# compilation with Program.cs and generated DLL/PDB files in the session workspace" width="1000"></a>
 <a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-dotnet-mobile.png" alt="Mobile .NET settings with HTTP relay configuration and the Network access switch" width="260"></a>
 
+<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-sites.png" alt="Interactive ASP.NET site calling C# routes and saving a session file" width="760"></a>
+<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-sites-mobile.png" alt="Interactive C# site preview on a phone with compact controls" width="260"></a>
+
 [Runtime and proxy settings](res/browser-dotnet-security.png)
 
 </details>
@@ -76,6 +79,13 @@ HTTP. The release ZIP includes the standalone site, WASM runtime, embedding SDK,
 TypeScript declarations and integration guide. See [build requirements](integration.md#build-and-test),
 [embedding examples](integration.md#embed-the-complete-ui) and
 [Pages/release instructions](integration.md#github-pages-and-releases).
+
+Save a `.cs` or `.csproj` in **Files** and press **▶ Run** to compile it in the
+current session. For interactive C# sites, enable **Interactive sites** in
+Connections → Runtime & security, run a `DotnetDide.Wire` program, then open
+**Sites**. HTML/JavaScript can call its ASP.NET routes and create session files.
+The permission is separate and off by default. See the
+[site example and limits](integration.md#run-saved-programs-and-interactive-sites).
 
 ### Native application
 

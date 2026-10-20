@@ -231,8 +231,10 @@ try {
   await until("!!document.querySelector('.browser-preview[open]')");
   // Resolve the open dialog's exact iframe; other inline/closed frames may coexist.
   const previewInput = async (expression: string, full = true): Promise<unknown> => {
-    await until(`document.querySelector('.browser-preview[open] [data-field=preview-frame]').dataset.navigationReady==='${String(full)}'`);
-    const handle=await rpc('Runtime.evaluate',{expression:"document.querySelector('.browser-preview[open] iframe')"});
+    const interactive = await evaluate("!!document.querySelector('.browser-sites[open] iframe')");
+    if (!interactive) await until(`document.querySelector('.browser-preview[open] [data-field=preview-frame]').dataset.navigationReady==='${String(full)}'`);
+    const selector = interactive ? '.browser-sites[open] iframe' : '.browser-preview[open] iframe';
+    const handle=await rpc('Runtime.evaluate',{expression:`document.querySelector(${JSON.stringify(selector)})`});
     const node=await rpc('DOM.describeNode',{objectId:(handle['result'] as {objectId:string}).objectId});
     const frameId=(node['node'] as {frameId:string}).frameId;
     const targets=await rpc('Target.getTargets');
@@ -625,8 +627,16 @@ try {
   }
   await evaluate('globalThis.mediaView.destroy()');
   process.stdout.write('Automatic audio/video previews decoded in the browser with native controls.\n');
-  await testDotnetBrowser(evaluate, previewInput);
-  process.stdout.write("Released .NET runtime: session files, state, cancellation, network permissions and UI reload passed.\n");
+  await testDotnetBrowser(evaluate, previewInput, async () => {
+    const image = await rpc("Page.captureScreenshot", {format:"png"});
+    await writeFile(config.screenshot.replace('.png','-sites.png'),Buffer.from(String(image['data']),'base64'));
+    await rpc("Emulation.setDeviceMetricsOverride", {width:390,height:844,deviceScaleFactor:1,mobile:true});
+    check(await evaluate("document.querySelector('.browser-sites .overlay-body').scrollWidth<=document.querySelector('.browser-sites .overlay-body').clientWidth+1"), "Interactive sites overflow on mobile");
+    const mobile = await rpc("Page.captureScreenshot", {format:"png"});
+    await writeFile(config.screenshot.replace('.png','-sites-mobile.png'),Buffer.from(String(mobile['data']),'base64'));
+    await rpc("Emulation.clearDeviceMetricsOverride");
+  });
+  process.stdout.write("Released .NET runtime: files, state, cancellation, permissions, C# file/project Run, interactive sites, request checkpoints and UI reload passed.\n");
   const dotnetScreenshot = await rpc("Page.captureScreenshot", { format: "png" });
   await writeFile(config.screenshot.replace(".png", "-dotnet.png"), Buffer.from(String(dotnetScreenshot["data"]), "base64"));
   await evaluate("document.querySelector('[data-browser-action=connections]').click()");

@@ -451,10 +451,11 @@ const view = mountLethetic(document.querySelector('#app'), {
   mode: 'dotnet-wasm',
   networkAccess: false, // .NET code only; does not disable model connections
   nugetAccess: false, // separate permission for optional managed package downloads
+  siteAccess: false, // separate permission for interactive C# sites
 });
 ```
 
-Headless hosts can import `createDotnetTool({ networkAccess, nugetAccess, workspace, onWorkspace })`
+Headless hosts can import `createDotnetTool({ networkAccess, nugetAccess, siteAccess, workspace, onWorkspace })`
 from `src/sdk.js`, use it in `createRuntime({ tools: [dotnet], ... })`, and call
 `dotnet.reset()` on disposal. `setWorkspace()` imports browser edits before the next
 call; `snapshotWorkspace()` returns the last completed checkpoint. Execution has a
@@ -462,7 +463,7 @@ call; `snapshotWorkspace()` returns the last completed checkpoint. Execution has
 session limits as Python: 100 files, 256 folders, 1 MiB/file, 2 MiB total. An invalid
 or oversized snapshot is reported without replacing the last saved checkpoint.
 The mount composes C# instructions automatically; headless hosts can use
-`effectiveSystemPrompt(editable, 'dotnet-wasm', networkAccess, !!relay, nugetAccess)`
+`effectiveSystemPrompt(editable, 'dotnet-wasm', networkAccess, !!relay, nugetAccess, siteAccess)`
 from `src/prompts.js` so its permission instructions match the worker options.
 
 ```csharp
@@ -489,6 +490,49 @@ execution of the outer script does not imply that its compiled program succeeded
 Programs run in their source/project directory, and successful builds write
 `bin/<name>.dll` and `bin/<name>.pdb` there. These managed artifacts also count
 toward session file limits.
+
+### Run saved programs and interactive sites
+
+Select a `.cs` or `.csproj` in **Files** and press **▶ Run** next to its content.
+This compiles and runs it in the current session's .NET worker, displays build
+output in the transcript and saves generated files. It works without a model
+connection, keeps the session ID and enables .NET mode when necessary. It does
+not automatically grant Network, NuGet or Interactive sites permissions.
+
+Enable **Interactive sites** in **Connections → Runtime & security** to use
+`DotnetDide.Wire`. This is off by default and saved per session. The injected
+system prompt shows its current permission and includes a runnable site example.
+Create an ASP.NET middleware pipeline with `Wire.CreateApplication()`, register
+explicit async `HttpContext` routes, and await `Wire.ListenAsync(8080, app, "site")`.
+Return immediately: there is no listening socket, blocking host loop or Kestrel.
+Save the program and run it with Files → Run or `await Dotnet.Run(path)`.
+
+**Sites (n)** in the header lists active virtual ports, opens the isolated iframe,
+accepts a page path and offers Reload/Stop. It serves index.html and classic JS/CSS,
+images/media and `fetch('/api/...')` through C# routes. Requests are serialized,
+checkpoint modified files after each response, and import file edits before the
+next request. Model turns and site requests share the worker; retry when a turn
+finishes. Request timeout/Stop terminates the worker, retaining the last completed
+checkpoint. Stop a port and rerun the program to update compiled handlers.
+
+The SDK's preview document keeps its own restrictive CSP. Keep `frame-src 'self'`
+in the parent and `wire-preview-host.html` beside the SDK; the helper sets
+`sandbox="allow-scripts allow-forms"` with no same-origin access. Form events work,
+but native form navigation is blocked: use preventDefault and fetch. The child
+cannot access parent DOM/storage/keys or external networking. General outbound
+C# HTTP remains controlled separately by Network access.
+
+ES modules, dynamic asset URLs, XHR, CSS @import, WebSockets and streaming are
+not implemented in this message transport. Use explicit JSON serialization with
+`Response.WriteAsync(JsonSerializer.Serialize(value))`; .NET 11 RC2 WASM has a
+known failure in the tested automatic object-response/WriteAsJsonAsync path.
+Read the bundled `runtimes/dotnetdide/docs/wire.md` and executable
+`runtimes/dotnetdide/examples/site.cs` for .cs/.csproj examples and limits.
+
+Embedding hosts can pass `siteAccess: true` to `mountLethetic` or `createDotnetTool`.
+The tool exposes `sites()` and `requestSite(request, signal)` alongside its existing
+checkpoint APIs. Permission/session/mode changes and reload stop sites and reset
+variables, while saved files and the conversation remain. They are not replayed.
 
 ### Bundled media and optional NuGet packages
 

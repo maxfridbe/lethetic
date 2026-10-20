@@ -103,12 +103,36 @@ When NuGet package access is enabled, submit await DotnetDide.Nuget.Load("Newton
 
 For browser HTTP use Dotnetdide.Net.GetStringAsync, GetBytesAsync, GetJsonAsync<T>, PostJsonAsync, PostFormAsync, HeadAsync, OptionsAsync, DeleteAsync, PostAsync, PutAsync, PatchAsync, or RequestAsync(method, url, content). SendAsync(request, new Dotnetdide.BrowserRequestOptions { Credentials = "omit", Mode = "cors", Redirect = "error" }) accepts custom headers and returns status/headers/body; dispose responses. Direct requests require destination CORS support; no-cors cannot make responses readable. OpenReadAsync returns an async System.IO.Stream; DownloadFileAsync(url, path) writes into session files. Ordinary System.Net.Http.HttpClient uses the same host route. SOCKS/HTTP proxies must be configured in the native HTTP relay or browser, not HttpClientHandler.Proxy in WASM. Raw System.Net.Sockets is unsupported. Tor bridge addresses belong in an external Tor client; bridges.torproject.org is not a proxy. Network access is a host permission, not something code should bypass. No model credentials are passed to the worker. Do not attempt JavaScript interop to evade permissions.`;
 
-export function injectedInstructions(mode: AgentMode | boolean, networkAccess = false, relay = false, nugetAccess = false): string {
+export const DOTNET_SITE_EXAMPLE = String.raw`using System;
+using System.IO;
+using DotnetDide;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+Directory.CreateDirectory("site");
+File.WriteAllText("site/index.html", "<h1>My C# site</h1><button onclick=\"fetch('/api/hello').then(r=>r.text()).then(t=>document.querySelector('output').textContent=t)\">Call C#</button><output></output>");
+var app = Wire.CreateApplication();
+app.UseRouting();
+app.UseEndpoints(routes => routes.MapGet("/api/hello", async context => {
+    await context.Response.WriteAsync("Hello from C#");
+}));
+await Wire.ListenAsync(8080, app, "site");
+Console.WriteLine("Open Sites → :8080 to use the page.");`;
+
+export const DOTNET_SITE_INSTRUCTIONS = `Interactive browser sites use the bundled ASP.NET Core IServer adapter DotnetDide.Wire, not TCP sockets or Kestrel. Add explicit using DotnetDide; using Microsoft.AspNetCore.Builder; using Microsoft.AspNetCore.Http;. Create a middleware pipeline with Wire.CreateApplication(), UseRouting and UseEndpoints; MapGet/MapPost handlers take HttpContext. Await Wire.ListenAsync(port, app, optionalWebRoot) and return immediately. Do not block with app.Run(), WaitForShutdown or an infinite loop. Ports are virtual labels scoped to this worker, not localhost network listeners. Eight sites maximum. Stop an old port with Wire.Stop(port) before rerunning its program.
+Save a reusable .cs file (or a supported Microsoft.NET.Sdk .csproj) and await Dotnet.Run(path), or the user can press Run beside that file in Files. Sites remain available after the program returns. Open Sites in the header to view index.html and interact with C# routes. Files written by handlers sync into this session after each request. Imported/edited files are synced before the next request; compiled handlers require rerunning the program. Reload, stop, session/mode/permission changes discard sites and variables, while completed files remain saved.
+Use explicit async HttpContext handlers with Response.WriteAsync. For JSON set Response.ContentType = "application/json" and write System.Text.Json.JsonSerializer.Serialize(value). Automatic minimal-API object results/WriteAsJsonAsync have a .NET 11 RC2 WASM runtime limitation. Do not use them. No WebApplication builder, full ASP.NET host, Razor, MVC or FrameworkReference is bundled.
+The opaque sandbox preview supports classic scripts, linked CSS, images/audio/video and fetch('/api/...', { method:'POST', body:... }). Use fetch from form submit listeners with preventDefault(). ES module imports, XHR, WebSockets, streaming, cookies, external requests, dynamic asset URLs and CSS @import are not supported. Inline or link classic assets; fetch other session data through routes. Preview JavaScript cannot access the parent UI or its storage/keys. Network access only controls outbound C# HTTP and is separate from Interactive sites. Bodies are buffered with a 2 MiB ceiling (Lethetic files retain their smaller session limits); requests run serially and time out. Keep handlers short and respect context.RequestAborted. See runtimes/dotnetdide/docs/wire.md and examples/site.cs.
+Example (C# source, suitable for a saved program):
+\`\`\`csharp
+${DOTNET_SITE_EXAMPLE}
+\`\`\``;
+
+export function injectedInstructions(mode: AgentMode | boolean, networkAccess = false, relay = false, nugetAccess = false, siteAccess = false): string {
   return [BROWSER_INSTRUCTIONS, ...(mode === true || mode === "python" ? [PYTHON_INSTRUCTIONS] : []),
-    ...(mode === "dotnet-wasm" ? [DOTNET_INSTRUCTIONS, `HTTP route: ${relay ? "host-configured HTTP relay; no direct fallback, no browser cookies; bounded 8 MiB bodies and no redirects" : "direct browser fetch; destination must permit CORS"}.`, `NuGet package access: ${nugetAccess ? "enabled; direct NuGet.org managed-package downloads are authorized" : "disabled; bundled media libraries still work. The user can enable it in Connections → Runtime & security"}.`, `Network access: ${networkAccess ? "enabled; browser HTTP requests are authorized" : "disabled for general HTTP; use session files and local computation. NuGet downloads have a separate permission. The user can enable it in Connections → Runtime & security"}.`] : [])].join("\n\n");
+    ...(mode === "dotnet-wasm" ? [DOTNET_INSTRUCTIONS, DOTNET_SITE_INSTRUCTIONS, `Interactive sites: ${siteAccess ? "enabled; virtual ports and isolated previews are authorized" : "disabled; the user can enable it in Connections → Runtime & security"}.`, `HTTP route: ${relay ? "host-configured HTTP relay; no direct fallback, no browser cookies; bounded 8 MiB bodies and no redirects" : "direct browser fetch; destination must permit CORS"}.`, `NuGet package access: ${nugetAccess ? "enabled; direct NuGet.org managed-package downloads are authorized" : "disabled; bundled media libraries still work. The user can enable it in Connections → Runtime & security"}.`, `Network access: ${networkAccess ? "enabled; browser HTTP requests are authorized" : "disabled for general HTTP; use session files and local computation. NuGet downloads have a separate permission. The user can enable it in Connections → Runtime & security"}.`] : [])].join("\n\n");
 }
-export function effectiveSystemPrompt(editable: string, mode: AgentMode | boolean, networkAccess = false, relay = false, nugetAccess = false): string {
-  return [editable, injectedInstructions(mode, networkAccess, relay, nugetAccess)].filter(Boolean).join("\n\n");
+export function effectiveSystemPrompt(editable: string, mode: AgentMode | boolean, networkAccess = false, relay = false, nugetAccess = false, siteAccess = false): string {
+  return [editable, injectedInstructions(mode, networkAccess, relay, nugetAccess, siteAccess)].filter(Boolean).join("\n\n");
 }
 export function toolDefinitions(mode: AgentMode | boolean, tools: readonly Tool[] = []): Pick<Tool, "name" | "description" | "parameters">[] {
   return [...tools, ...(mode === true || mode === "python" ? [PYTHON_TOOL_DEFINITION] : mode === "dotnet-wasm" ? [DOTNET_TOOL_DEFINITION] : [])]

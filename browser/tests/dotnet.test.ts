@@ -19,7 +19,7 @@ const signal = (): AbortSignal => new AbortController().signal;
 await test(".NET tool loads lazily without credentials and reuses its workspace/runtime", async () => {
   const runtime = new Runtime(); let loads = 0;
   const tool = createDotnetTool({ workspace: { ...emptyWorkspace(), files: [textFile("input.txt", "uploaded")] },
-    loadRuntime: options => { loads++; assert.deepEqual(Object.keys(options).sort(), ["networkAccess", "nugetAccess", "signal"]); assert.equal(options.networkAccess, false); assert.equal(options.nugetAccess, false); return Promise.resolve(runtime); } });
+    loadRuntime: options => { loads++; assert.deepEqual(Object.keys(options).sort(), ["networkAccess", "nugetAccess", "signal", "siteAccess"]); assert.equal(options.networkAccess, false); assert.equal(options.nugetAccess, false); return Promise.resolve(runtime); } });
   assert.equal(loads, 0);
   assert.equal(await tool.execute({code:"Console.Write(42);"}, signal()), "42");
   assert.equal(runtime.files.files[0]?.path, "input.txt");
@@ -71,8 +71,31 @@ await test("invalid checkpoints preserve saved files and import failure cannot e
 await test("only explicit relay credentials reach the .NET loader", async () => {
   const relay = {endpoint:"https://relay.example/relay", token:"relay-token-only-not-model-token"};
   const tool = createDotnetTool({networkAccess:true,relay,loadRuntime: async options => {
-    assert.deepEqual(Object.keys(options).sort(),["networkAccess","nugetAccess","relay","signal"]);
+    assert.deepEqual(Object.keys(options).sort(),["networkAccess","nugetAccess","relay","signal","siteAccess"]);
     assert.deepEqual(options.relay,relay); return new Runtime();
   }});
   assert.equal(await tool.execute({code:"42"},signal()),"42"); tool.reset();
+});
+
+await test("interactive requests enforce permission, serialize work, and checkpoint request-created files", async () => {
+  const runtime = new Runtime(); let saved: Workspace | undefined;
+  const worker: DotnetRuntime = Object.assign(runtime, {
+    listSites: async () => [{port:8080,webRoot:"site"}],
+    requestSite: async () => {
+      runtime.files.files.push(textFile("request.txt", "written by C#"));
+      return {status:201,headers:{},body:btoa("saved")};
+    },
+  });
+  const tool = createDotnetTool({siteAccess:true,loadRuntime: async options => {
+    assert.equal(options.siteAccess,true); assert.equal(options.networkAccess,false); return worker;
+  }, onWorkspace: value => {saved=value;}});
+  assert.deepEqual(tool.sites(), []);
+  await tool.execute({code:"start site"},signal());
+  assert.equal(tool.sites()[0]?.port,8080);
+  const response=await tool.requestSite({port:8080,method:"POST",path:"/save"},signal());
+  assert.equal(response.status,201); assert.equal(saved?.files[0]?.path,"request.txt");
+  tool.reset(); assert.deepEqual(tool.sites(),[]);
+  await assert.rejects(tool.requestSite({port:8080,method:"GET",path:"/"},signal()), /first/);
+  const denied=createDotnetTool({loadRuntime:async()=>{throw Error("must not load");}});
+  await assert.rejects(denied.requestSite({port:8080,method:"GET",path:"/"},signal()), /disabled/);
 });

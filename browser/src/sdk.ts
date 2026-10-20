@@ -5,7 +5,7 @@ export type { ProviderUsage } from "./usage.js";
 import type { Connection } from "./connection.js";
 export type { Connection } from "./connection.js";
 export { createDotnetTool } from "./dotnet.js";
-export type { DotnetTool, DotnetRuntime, DotnetLoader } from "./dotnet.js";
+export type { DotnetTool, DotnetRuntime, DotnetLoader, WireSite, WireRequest, WireResponse } from "./dotnet.js";
 export { createPythonTool } from "./python.js";
 export type { PythonTool, Workspace } from "./python.js";
 

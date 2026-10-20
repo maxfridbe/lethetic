@@ -8,7 +8,7 @@ import { createRuntime, DEFAULT_PROMPT } from "./sdk.js";
 import type { Connection, LetheticRuntime, RuntimeEvent, Tool } from "./sdk.js";
 import { effectiveSystemPrompt, injectedInstructions, toolDefinitions } from "./prompts.js";
 import { createDotnetTool } from "./dotnet.js";
-import type { DotnetTool } from "./dotnet.js";
+import type { DotnetTool, WireRequest, WireResponse, WireSite } from "./dotnet.js";
 import type { AgentMode } from "./sessions.js";
 import { createPythonTool } from "./python.js";
 import type { PythonTool } from "./python.js";
@@ -25,7 +25,7 @@ export interface LocalOptions {
   connections: Connection[];
   python?: boolean;
   mode?: AgentMode;
-  networkAccess?: boolean; nugetAccess?: boolean;
+  networkAccess?: boolean; nugetAccess?: boolean; siteAccess?: boolean;
   dotnetRelay?: DotnetRelay | null;
   credentialStorage?: Storage;
   tools?: Tool[];
@@ -50,6 +50,7 @@ export class LocalTransport implements ApplicationTransport {
   mode: AgentMode;
   networkAccess: boolean;
   nugetAccess: boolean;
+  siteAccess: boolean;
   #relayEndpoint: string | null = null;
   readonly #relayKeys: RelayKeys;
   get dotnetRelay(): DotnetRelay | null { return this.#relayEndpoint ? { endpoint: this.#relayEndpoint, token: this.#relayKeys.get(this.#relayEndpoint) } : null; }
@@ -74,6 +75,7 @@ export class LocalTransport implements ApplicationTransport {
     this.mode = options.mode ?? (options.python ? "python" : "general");
     this.networkAccess = options.networkAccess ?? false;
     this.nugetAccess = options.nugetAccess ?? false;
+    this.siteAccess = options.siteAccess ?? false;
     this.#relayKeys = new RelayKeys(options.credentialStorage);
     if (options.dotnetRelay) {
       this.#relayEndpoint = relayEndpoint(options.dotnetRelay.endpoint);
@@ -89,7 +91,7 @@ export class LocalTransport implements ApplicationTransport {
   }
 
   get promptDetails(): { instructions: string; tools: string } {
-    return { instructions: injectedInstructions(this.mode, this.networkAccess, !!this.#relayEndpoint, this.nugetAccess),
+    return { instructions: injectedInstructions(this.mode, this.networkAccess, !!this.#relayEndpoint, this.nugetAccess, this.siteAccess),
       tools: JSON.stringify(toolDefinitions(this.mode, this.options.tools), null, 2) };
   }
 
@@ -213,6 +215,70 @@ export class LocalTransport implements ApplicationTransport {
     this.#dotnet?.reset(); this.#dotnet = null;
     this.nugetAccess = enabled;
     this.#saveSession(); this.publish();
+  }
+
+  setSiteAccess(enabled: boolean): void {
+    this.#requireIdle();
+    if (typeof enabled !== "boolean") throw new Error("Interactive sites permission must be a boolean.");
+    if (enabled === this.siteAccess) return;
+    this.#saveSession(true);
+    this.#runtime?.dispose(); this.#runtime = null;
+    this.#dotnet?.reset(); this.#dotnet = null;
+    this.siteAccess = enabled;
+    this.#saveSession(); this.publish();
+  }
+
+  get sites(): WireSite[] { return this.#dotnet?.sites() ?? []; }
+
+  #dotnetTool(): DotnetTool {
+    return this.#dotnet ??= createDotnetTool({ networkAccess: this.networkAccess, nugetAccess: this.nugetAccess,
+      siteAccess: this.siteAccess, relay: this.dotnetRelay, workspace: this.#workspace,
+      onWorkspace: workspace => this.#checkpointWorkspace(workspace) });
+  }
+
+  async runDotnetFile(path: string): Promise<void> {
+    this.#requireIdle();
+    if (!/\.(cs|csproj)$/i.test(path) || !this.#workspace.files.some(file => file.path === path)) throw new Error("Select a session .cs or .csproj file to run.");
+    this.setMode("dotnet-wasm");
+    await this.#executeDotnet(`var fileRun = await Dotnet.Run(${JSON.stringify(path)});
+if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program failed with exit code {fileRun.ExitCode}. See compilation output above.");`, `Run ${path}`);
+  }
+
+  async stopSite(port: number): Promise<void> {
+    this.#requireIdle();
+    if (!Number.isInteger(port) || !this.sites.some(site => site.port === port)) throw new Error("Site is no longer running.");
+    await this.#executeDotnet(`DotnetDide.Wire.Stop(${port});`, `Stop virtual port ${port}`);
+  }
+
+  async #executeDotnet(code: string, title: string): Promise<void> {
+    const controller = new AbortController(); this.#operation = controller;
+    this.state.activity = { kind: "processing", fully_idle: false, cancellable: true, cancel_id: crypto.randomUUID(), progress_percent: null };
+    this.state.status.stop_reason = title; this.publish();
+    try {
+      const output = await this.#dotnetTool().execute({ code }, controller.signal);
+      this.state.blocks.blocks.push(block("text", output, title));
+      this.state.status.stop_reason = "Ready";
+    } catch (error) {
+      this.state.blocks.blocks.push({ ...block("text", String(error), title), success: false });
+      this.state.status.stop_reason = String(error); throw error;
+    } finally {
+      this.#operation = null;
+      this.state.activity = { kind: "idle", fully_idle: true, cancellable: false, cancel_id: null, progress_percent: null };
+      if (!this.#closed) this.#saveSession(); this.publish();
+    }
+  }
+
+  async requestSite(request: WireRequest, sessionId: string): Promise<WireResponse> {
+    this.#requireIdle();
+    if (sessionId !== this.state.session.session_id || this.mode !== "dotnet-wasm" || !this.siteAccess || !this.#dotnet) throw new Error("This session's interactive site is no longer available.");
+    const controller = new AbortController(); this.#operation = controller;
+    this.state.activity = { kind: "processing", fully_idle: false, cancellable: true, cancel_id: crypto.randomUUID(), progress_percent: null };
+    this.state.status.stop_reason = `Site :${request.port} · ${request.method} ${request.path}`; this.publish();
+    try { return await this.#dotnet.requestSite(request, controller.signal); }
+    finally { this.#operation = null;
+      this.state.activity = { kind: "idle", fully_idle: true, cancellable: false, cancel_id: null, progress_percent: null };
+      this.state.status.stop_reason = "Ready";
+      if (!this.#closed) this.#saveSession(); this.publish(); }
   }
 
   setDotnetRelay(value: DotnetRelay | null): void {
@@ -414,11 +480,9 @@ export class LocalTransport implements ApplicationTransport {
           tools.push(this.#python);
         }
         if (this.mode === "dotnet-wasm") {
-          this.#dotnet ??= createDotnetTool({ networkAccess: this.networkAccess, nugetAccess: this.nugetAccess, relay: this.dotnetRelay, workspace: this.#workspace,
-            onWorkspace: workspace => this.#checkpointWorkspace(workspace) });
-          tools.push(this.#dotnet);
+          tools.push(this.#dotnetTool());
         }
-        const runtime = await createRuntime({ connection, tools, systemPrompt: effectiveSystemPrompt(this.#system, this.mode, this.networkAccess, !!this.#relayEndpoint, this.nugetAccess), onEvent: (event) => this.#event(event) });
+        const runtime = await createRuntime({ connection, tools, systemPrompt: effectiveSystemPrompt(this.#system, this.mode, this.networkAccess, !!this.#relayEndpoint, this.nugetAccess, this.siteAccess), onEvent: (event) => this.#event(event) });
         if (this.#closed) { runtime.dispose(); return; }
         try { runtime.restore(this.#savedMessages); } catch (error) { runtime.dispose(); throw error; }
         this.#runtime = runtime;
@@ -443,6 +507,7 @@ export class LocalTransport implements ApplicationTransport {
     this.reset(); this.#history = []; this.#workspace = emptyWorkspace();
     this.networkAccess = this.options.networkAccess ?? false;
     this.nugetAccess = this.options.nugetAccess ?? false;
+    this.siteAccess = this.options.siteAccess ?? false;
     this.#relayEndpoint = this.options.dotnetRelay ? relayEndpoint(this.options.dotnetRelay.endpoint) : null;
     this.state.session = { session_id: crypto.randomUUID(), display_name: null, fallback_label: "New chat" };
     this.options.onSessionChanged?.(this.state.session.session_id);
@@ -462,6 +527,7 @@ export class LocalTransport implements ApplicationTransport {
       this.#system = session.system; this.mode = session.mode ?? (session.python ? "python" : "general");
       this.networkAccess = session.networkAccess ?? false;
       this.nugetAccess = session.nugetAccess ?? false;
+      this.siteAccess = session.siteAccess ?? false;
       this.#relayEndpoint = session.dotnetRelayEndpoint ?? null;
       if (session.metrics) this.metrics.restore(session.metrics);
       for (const theme of this.state.themes) theme.selected = theme.theme_id === session.theme;
@@ -499,7 +565,7 @@ export class LocalTransport implements ApplicationTransport {
       this.state.session.fallback_label = label;
       this.#sessions.save({ id: this.state.session.session_id, name: this.state.session.display_name, label,
         updatedAt: new Date().toISOString(), blocks: this.state.blocks.blocks, messages: this.#savedMessages,
-        inputs: this.#history, system: this.#system, python: this.pythonEnabled, mode: this.mode, networkAccess: this.networkAccess, nugetAccess: this.nugetAccess, dotnetRelayEndpoint: this.#relayEndpoint, workspace: this.#workspace,
+        inputs: this.#history, system: this.#system, python: this.pythonEnabled, mode: this.mode, networkAccess: this.networkAccess, nugetAccess: this.nugetAccess, siteAccess: this.siteAccess, dotnetRelayEndpoint: this.#relayEndpoint, workspace: this.#workspace,
         metrics: this.metrics.snapshot(),
         theme: this.state.themes.find((theme) => theme.selected)?.theme_id ?? "dracula",
         connection: connection ? { name: connection.name, provider: connection.provider, endpoint: connection.endpoint, model: connection.model } : null });

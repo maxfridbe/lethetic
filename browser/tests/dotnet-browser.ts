@@ -1,5 +1,5 @@
 /** Real released .NET WASM, not a worker fixture. Runs under the site's actual CSP/subpath. */
-export async function testDotnetBrowser(evaluate: (expression: string) => Promise<unknown>, previewInput: (expression: string, full?: boolean) => Promise<unknown>): Promise<void> {
+export async function testDotnetBrowser(evaluate: (expression: string) => Promise<unknown>, previewInput: (expression: string, full?: boolean) => Promise<unknown>, captureSite?: () => Promise<void>): Promise<void> {
   await evaluate(`(async () => {
     // Apply the shipped policy before loading the runtime in the embedding fixture.
     const html=await (await fetch('./index.html')).text();
@@ -52,6 +52,15 @@ export async function testDotnetBrowser(evaluate: (expression: string) => Promis
       if((await run(tool,'File.ReadAllText("answer.txt")')).trim()!=='42')throw Error('Files not restored after stop');
       if(!(await run(tool,'answer')).includes('CS0103'))throw Error('Variables survived worker termination');
     } finally {tool.reset()}
+    const sitesTool=createDotnetTool({siteAccess:true});
+    try {
+      const {DOTNET_SITE_EXAMPLE}=await import('./src/prompts.js');
+      const create='Directory.CreateDirectory("promptsite"); File.WriteAllText("promptsite/Program.cs", '+JSON.stringify(DOTNET_SITE_EXAMPLE)+'); var siteRun=await Dotnet.Run("promptsite/Program.cs"); Console.WriteLine(siteRun.Success);';
+      const output=await run(sitesTool,create);
+      if(!output.includes('True') || !sitesTool.sites().some(site=>site.port===8080))throw Error('Site prompt example failed: '+output);
+      const response=await sitesTool.requestSite({port:8080,method:'GET',path:'/api/hello'},new AbortController().signal);
+      if(response.status!==200 || !atob(response.body).includes('Hello from C#'))throw Error('Compiled prompt route failed: '+JSON.stringify(response));
+    } finally {sitesTool.reset()}
     const online=createDotnetTool({networkAccess:true});
     try { if(!(await run(online,'await Dotnetdide.Net.GetStringAsync("'+location.origin+'/v1/models")')).includes('deepseek/test'))throw Error('Enabled .NET network failed'); }
     finally {online.reset()}
@@ -135,5 +144,67 @@ export async function testDotnetBrowser(evaluate: (expression: string) => Promis
     if(!decoded)throw Error('Generated .NET file did not preview: '+name);
     await evaluate("document.querySelector('.browser-preview[open]').close()");
   }
+
+  await evaluate(`(async()=>{
+    globalThis.wireWait=async predicate=>{for(let end=Date.now()+60000;Date.now()<end;){if(predicate())return;await new Promise(r=>setTimeout(r,50))}throw Error('Wire UI timed out: '+document.body.innerText.slice(-2500))};
+    const wait=globalThis.wireWait;
+    globalThis.wireSaved=()=>JSON.parse(localStorage.getItem('lethetic.sessions.v1')).sessions[0];
+    const saved=globalThis.wireSaved, id=saved().id;
+    // Existing connection/session remains intact. Run a project directly through Files.
+    document.querySelector('[data-browser-action=connections]').click();
+    const permission=document.querySelector('[data-field=sites]');
+    if(permission.checked)throw Error('Interactive sites must default off');
+    permission.checked=true;permission.dispatchEvent(new Event('change'));
+    if(saved().id!==id || !saved().siteAccess || saved().networkAccess)throw Error('Sites grant changed session or network');
+    document.querySelector('dialog[open]').close();
+    const source=await (await fetch('./runtimes/dotnetdide/examples/site.cs')).text();
+    const create=async(path,content)=>{
+      document.querySelector('[data-file-action=new]').click();
+      document.querySelector('[data-field=file-path]').value=path;
+      document.querySelector('[data-field=file-content]').value=content;
+      document.querySelector('[data-field=file-form]').requestSubmit();
+      await wait(()=>document.querySelector('.files-path')?.textContent.includes(path));
+    };
+    await create('wireapp/Program.cs',source);
+    if(!document.querySelector('[data-file-action=run] .ui-icon'))throw Error('C# Run icon missing');
+    await create('wireapp/Site.csproj','<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net11.0</TargetFramework></PropertyGroup></Project>');
+    document.querySelector('[data-file-action=run]').click();
+    await wait(()=>document.querySelector('[data-browser-action=sites]')?.textContent.includes('(1)'));
+    await wait(()=>!!document.querySelector('.activity-idle'));
+    if(saved().id!==id || !saved().workspace.files.some(file=>file.path==='wireapp/bin/Site.dll'))throw Error('Project Run lost files/session');
+    if(!document.body.innerText.includes('Site ready on virtual port'))throw Error('Run output missing');
+    document.querySelector('[data-browser-action=sites]').click();
+    await wait(()=>document.querySelector('[data-field=site-frame]')?.src.includes('wire-preview-host.html'));
+    await new Promise(r=>setTimeout(r,300));
+  })()`);
+  const interacted=await previewInput(`(async()=>{
+    const wait=async predicate=>{for(let end=Date.now()+10000;Date.now()<end;){if(predicate())return;await new Promise(r=>setTimeout(r,50))}throw Error('Site interaction timeout')};
+    await wait(()=>!!document.querySelector('#hello'));
+    document.querySelector('#hello').click();await wait(()=>document.querySelector('#answer').textContent.includes('IServer'));
+    document.querySelector('input').value='Lethetic request checkpoint';document.querySelector('#note').requestSubmit();
+    await wait(()=>document.querySelector('#saved').textContent.includes('Saved note.txt'));
+    let opaque=false;try{parent.document.body}catch{opaque=true}
+    return opaque;
+  })()`);
+  if(!interacted)throw Error('Interactive site could access parent');
+  await captureSite?.();
+  await evaluate(`(async()=>{
+    const wait=globalThis.wireWait,saved=globalThis.wireSaved,id=saved().id;
+    await wait(()=>saved().workspace.files.some(file=>file.path==='wireapp/note.txt' && atob(file.data)==='Lethetic request checkpoint'));
+    document.querySelector('[data-field=site-stop]').click();
+    await wait(()=>document.querySelector('[data-browser-action=sites]')?.textContent.includes('(0)'));
+    document.querySelector('dialog[open]').close();
+    // The single-file button also compiles; the old virtual port has been released.
+    document.querySelector('.files-entry[title="wireapp/Program.cs"]').click();
+    await wait(()=>document.querySelector('.files-path')?.textContent.includes('Program.cs'));
+    document.querySelector('[data-file-action=run]').click();
+    await wait(()=>document.querySelector('[data-browser-action=sites]')?.textContent.includes('(1)'));
+    await wait(()=>!!document.querySelector('.activity-idle'));
+    document.querySelector('[data-browser-action=connections]').click();
+    const permission=document.querySelector('[data-field=sites]');permission.checked=false;permission.dispatchEvent(new Event('change'));
+    if(saved().siteAccess || saved().id!==id || !saved().workspace.files.some(file=>file.path==='wireapp/note.txt'))throw Error('Revocation lost session/files');
+    if(!document.querySelector('[data-browser-action=sites]').textContent.includes('(0)'))throw Error('Revocation kept site running');
+    document.querySelector('dialog[open]').close();
+  })()`);
 
 }
