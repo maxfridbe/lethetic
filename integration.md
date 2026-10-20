@@ -663,6 +663,25 @@ not a hostile-code sandbox: arbitrary JavaScript interop or dynamic imports can
 reach APIs outside these wrappers. Use a dedicated origin and an appropriate
 server CSP/network isolation policy if you execute untrusted code.
 
+### Errata: custom HTTP request headers
+
+Direct browser HTTP differs from desktop `HttpClient`. Leave `User-Agent` to
+the browser: Firefox can preflight a custom value and fail where Chrome silently
+drops it. This caused the reproduced Wire weather-site failure.
+
+Add only API-required custom headers, on individual requests where possible.
+`Authorization`, `X-*` headers and JSON Content-Type can trigger a preflight;
+the destination must permit the origin, method and headers. Avoid Content-Type
+on a bodyless GET. Do not manually set `Host`, `Origin`, `Cookie` or
+`Content-Length`, or send Access-Control-Allow-* as a supposed client-side fix.
+Network permission does not bypass CORS, and `no-cors` makes responses unreadable.
+
+Preserve the original exception and test the actual request in the affected
+browser. [Header restrictions](https://developer.mozilla.org/en-US/docs/Glossary/Forbidden_request_header),
+[CORS header rules](https://developer.mozilla.org/en-US/docs/Glossary/CORS-safelisted_request_header)
+and [server header approval](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Access-Control-Allow-Headers)
+explain the browser behavior.
+
 ### Released runtime delivery
 
 `browser/dotnetdide-release.json` pins the GitHub ZIP version and SHA-256.

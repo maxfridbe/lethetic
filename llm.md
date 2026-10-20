@@ -93,6 +93,24 @@ Structured `context_limits` metadata is exact-model-scoped. Legacy `context_size
 -   **Native Tool Calling**: Handles Anthropic `tool_use`, OpenAI structured deltas, and raw Gemma/Qwen marker formats behind one canonical transport surface.
 -   **Empirical Verification**: Every tool backed by integration tests in `tests/`.
 
+## Browser .NET errata: custom HTTP headers
+
+For direct browser `HttpClient` and `Dotnetdide.Net` calls, leave `User-Agent`,
+`Host`, `Origin`, `Cookie` and `Content-Length` to the browser. A custom
+`User-Agent` caused the reproduced Firefox geocoding failure; Chrome silently
+dropped it, masking the problem.
+
+Custom headers are supported when the destination permits them. Add only headers
+required by the API, preferably on its individual `HttpRequestMessage`.
+`Authorization`, `X-*` headers and `Content-Type: application/json` can require
+CORS preflight approval. Do not add Content-Type to a bodyless GET or add
+Access-Control-Allow-* request headers to try to fix CORS. Network permission and
+`no-cors` do not override the destination's policy. Preserve original exceptions
+and test the actual request in the affected browser.
+
+See [browser integration guidance](integration.md#errata-custom-http-request-headers)
+and Dotnetdide's bundled `docs/networking.md`.
+
 ## Python Runtime Security Model
 
 [`docs/python-isolation.md`](docs/python-isolation.md) is the complete source of truth for Python modes, shared-cwd masking, notebook auditing, `lethetic_todo`, retained layers, and operational troubleshooting. [`docs/web-remote-control.md`](docs/web-remote-control.md) documents the optional browser controller, TLS/authentication profiles, protocol, frontend build, and TUI-equivalent authority.
