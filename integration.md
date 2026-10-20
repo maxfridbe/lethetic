@@ -432,6 +432,99 @@ For CSP, allow `data:` in `media-src` for session audio/video previews. Allow yo
 The standalone app includes an appropriate meta CSP for its default CDN. Adapt it
 when self-hosting Pyodide. No `unsafe-eval` or cross-origin isolation is required.
 
+### Interactive Python sites
+
+Select **Python · Pyodide**, enable **Interactive sites** in Connections →
+Runtime & security, and run a saved `.py` file with **Files → Run**. The
+permission is off by default and saved per session. **Sites** opens the same
+isolated interactive preview used by .NET. Download and run the complete
+[Python notebook example](https://maxfridbe.github.io/lethetic/python/site_example.py),
+also included as `python/site_example.py` in the browser ZIP.
+
+```python
+from pathlib import Path
+from lethetic_wire import listen, Response
+
+Path("site").mkdir(exist_ok=True)
+Path("site/index.html").write_text("""
+<button onclick="fetch('/api/hello').then(r=>r.json()).then(x=>document.querySelector('output').textContent=x.message)">Call Python</button>
+<output></output>
+""", encoding="utf-8")
+
+async def handle(request):
+    if request.path == "/api/hello":
+        return Response.json({"message": "Hello from Python"})
+    return Response("Not found", status=404)
+
+listen(8080, handler=handle, web_root="site")
+print("Open Sites → :8080")
+```
+
+`listen` returns immediately. The virtual port belongs to this worker; it does
+not open a TCP socket or expose localhost to other devices. Do not start
+`http.server.serve_forever()`, `app.run()`, Uvicorn or a blocking server loop.
+Use `stop(8080)` or **Stop site** before rerunning the program.
+
+| API | Behavior |
+| --- | --- |
+| `listen(port, handler=callable, web_root=None)` | Sync or async function receiving a `Request`, returning `Response` |
+| `listen(port, wsgi_app, web_root=None)` | Synchronous WSGI app, including Flask |
+| `listen(port, web_root="site")` | Static files, with directory `index.html` |
+| `Response(body, status=200, headers={...})` | UTF-8 text or bytes; headers map names to strings or lists |
+| `Response.json(value, status=200)` | JSON response with Content-Type |
+| `stop(port)` | Unregister a site |
+| `await run_file(path)` | Run a session Python file, supporting top-level await |
+
+`Request` exposes `method`, decoded `path`, `query` (dictionary of lists),
+`query_string`, `headers` (lowercase dictionary of lists), and `body` (bytes).
+`request.text()` decodes UTF-8; `request.json()` parses JSON. GET/HEAD responses
+with status 404 fall back to `web_root` files. Traversal and symlinks are rejected.
+Run sets cwd to the program's folder, and handlers retain that folder. Bundled
+imports are loaded before running a file. Package installation remains explicit.
+
+For Flask, install it first, then register the app object instead of starting its
+development server:
+
+```python
+import micropip
+await micropip.install("flask==3.1.2")
+from flask import Flask, request, jsonify
+from lethetic_wire import listen
+
+app = Flask("my_site", root_path="/home/pyodide")
+@app.post("/echo")
+def echo():
+    return jsonify(value=request.get_json())
+
+listen(8080, app)  # Optionally add web_root="site" for an existing static directory.
+```
+
+For external APIs, use `await pyodide.http.pyfetch(url)` in an async handler;
+the preview calls that handler with `fetch('/api/...')`. Existing Pyodide network
+access remains authorized and independent of the .NET Network access switch.
+Destination CORS and the [custom-header errata](#errata-custom-http-request-headers)
+still apply. [Pyodide's HTTP guide](https://pyodide.org/en/0.29.3/usage/api/python-api/http.html)
+describes browser networking.
+
+Requests run serially with code execution, import pending file edits first, and
+checkpoint generated files afterward. Reload, cancellation, mode/session changes,
+and changing Interactive sites terminate the worker and its sites while keeping
+completed session files. Sites are never replayed automatically on reload.
+
+The shared preview supports classic scripts, CSS, media and local fetch calls.
+Forms must preventDefault and use fetch. Cookies, direct external preview fetch,
+ES modules, XHR, ASGI, WebSockets and streaming are unsupported. Request/response
+bodies are buffered up to 2 MiB, with a 15-second cooperative deadline and a
+20-second worker timeout; existing smaller session-file limits still apply.
+The iframe cannot access parent DOM/storage or model credentials. Python itself
+retains its existing authorized worker capabilities.
+
+Embedding hosts use `createPythonTool({siteAccess:true, workspace, onWorkspace})`.
+The returned tool exposes `sites()` and `requestSite(request, signal)` with the
+same request/response format as the .NET tool. `mountLethetic` also accepts
+`{mode:"python", siteAccess:true}`. Keep `python/lethetic_wire.py` alongside the
+distribution, and the shared preview assets under `runtimes/dotnetdide/`.
+
 ## .NET WASM mode
 
 Choose **Connections → Runtime & security → .NET 11 · WASM**, or select it in

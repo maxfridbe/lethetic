@@ -13,6 +13,8 @@ export async function loadPyodide() {
   };
   return { FS, setStdout(o){stdout=o.batched;},setStderr(){},setStdin(){},
     async loadPackagesFromImports(){},async runPythonAsync(code){
+      if(code.startsWith('# lethetic-wire-sites')) return '[]';
+      if(code.startsWith('# lethetic-wire-')) return undefined;
       if(code.includes('while True')){while(true){}}
       if(code.includes('# create-session-files')) {
         FS.mkdirTree('/home/pyodide/outputs/empty');

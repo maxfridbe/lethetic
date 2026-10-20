@@ -31,7 +31,7 @@ export interface EmbedOptions {
   networkAccess?: boolean;
   /** Direct NuGet.org managed package downloads and cache reuse; default false. */
   nugetAccess?: boolean;
-  /** ASP.NET virtual sites in an isolated preview; default false. */
+  /** Python or ASP.NET virtual sites in an isolated preview; default false. */
   siteAccess?: boolean;
   /** Optional .NET HTTP relay. Only its endpoint is saved with the session; token uses credentialStorage. */
   dotnetRelay?: import("./network-route.js").DotnetRelay | null;
@@ -113,10 +113,10 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
       },
       actions: state => h("span.browser-file-actions", [upload.render(state.directory), fileTools.render()]),
       contentActions: (state) => h("span.browser-file-actions", [
-        state.selectedPath && /\.(cs|csproj)$/i.test(state.selectedPath) ? h("button", {
-          attrs: { type: "button", "data-file-action": "run", title: "Compile and run this file in this session's .NET worker" },
+        state.selectedPath && /\.(cs|csproj|py)$/i.test(state.selectedPath) ? h("button", {
+          attrs: { type: "button", "data-file-action": "run", title: /\.py$/i.test(state.selectedPath) ? "Run this file in this session's Python worker" : "Compile and run this file in this session's .NET worker" },
           props: { disabled: transport?.busy }, on: { click: () => {
-            if (state.selectedPath) void transport?.runDotnetFile(state.selectedPath).catch(error => { fileStatus = String(error); transport?.publish(); });
+            if (state.selectedPath) void (/\.py$/i.test(state.selectedPath) ? transport?.runPythonFile(state.selectedPath) : transport?.runDotnetFile(state.selectedPath))?.catch(error => { fileStatus = String(error); transport?.publish(); });
           } },
         }, [uiIcon("run"), "Run"]) : null,
         !state.preview || (canRenderFile(files.get(state.preview.path)) && !sourceViews.has(state.preview.path)) ? null : h("button", {
@@ -145,7 +145,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
     headerActions: () => { sites?.refresh(); return h("div", { attrs: { class: "browser-header-actions" } }, [
       h("button", { attrs: { type: "button", "data-browser-action": "connections" }, on: { click: () => settings?.open() } }, [uiIcon("connection"), "Connections"]),
       h("button", { attrs: { type: "button", "data-browser-action": "sessions" }, on: { click: () => transport?.send({ type: "invoke_command", command_id: "sessions" }, 0) } }, [uiIcon("history"), "Sessions"]),
-      transport?.mode === "dotnet-wasm" ? h("button", { attrs: { type: "button", "data-browser-action": "sites", title: "Open an interactive C# site" }, on: { click: () => sites?.open() } }, [uiIcon("site"), `Sites (${transport.sites.length})`]) : null,
+      transport?.mode === "dotnet-wasm" || transport?.pythonEnabled ? h("button", { attrs: { type: "button", "data-browser-action": "sites", title: "Open an interactive session site" }, on: { click: () => sites?.open() } }, [uiIcon("site"), `Sites (${transport.sites.length})`]) : null,
     ]); },
     codeActions: (code, language) => snippetActions({ code, language: language ?? "text" }),
     blockActions: (block) => block.tool?.kind === "call" && ["python", "dotnet"].includes(block.tool.tool_name)

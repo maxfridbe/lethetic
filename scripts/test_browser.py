@@ -116,7 +116,7 @@ def main():
                       "screenshot": str(ROOT / "target/browser-preview.png")}
             result = subprocess.run(["node", "--experimental-default-type=module",
                                      str(temp / "tests/browser/tests/browser-driver.js")],
-                                    input=json.dumps(config), text=True, capture_output=True, timeout=300)
+                                    input=json.dumps(config), text=True, capture_output=True, timeout=480)
             sys.stdout.write(result.stdout)
             sys.stderr.write(result.stderr)
             if result.returncode and os.environ.get("GITHUB_ACTIONS"):

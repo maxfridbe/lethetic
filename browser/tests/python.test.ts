@@ -11,12 +11,12 @@ class FakeWorker extends EventTarget {
   postMessage(data: { id: number; code: string; indexURL: string; workspace: Workspace; type?: string }): void {
     if (data.type === "hello") {
       this.handshakes++;
-      this.dispatchEvent(new MessageEvent("message", { data: { id: data.id, type: "ready", protocol: 1 } }));
+      this.dispatchEvent(new MessageEvent("message", { data: { id: data.id, type: "ready", protocol: 1, capabilities: ["sites"] } }));
     } else this.requests.push(data);
   }
   terminate(): void { this.terminated = true; }
-  answer(output: string, workspace = emptyWorkspace()): void {
-    this.dispatchEvent(new MessageEvent("message", { data: { id: this.requests.at(-1)?.id, protocol: 1, output, workspace } }));
+  answer(output: string, workspace = emptyWorkspace(), extra: Record<string, unknown> = {}): void {
+    this.dispatchEvent(new MessageEvent("message", { data: { id: this.requests.at(-1)?.id, protocol: 1, output, workspace, ...extra } }));
   }
 }
 
@@ -30,7 +30,7 @@ await test("Python worker is lazy, persistent, and receives no model credentials
   assert.equal(workers.length, 0);
   const running = python.execute({ code: "x = 40" }, new AbortController().signal);
   const worker = workers[0]; assert.ok(worker);
-  assert.deepEqual(Object.keys(worker.requests[0] ?? {}).sort(), ["code", "id", "indexURL", "protocol", "workspace"]);
+  assert.deepEqual(Object.keys(worker.requests[0] ?? {}).sort(), ["code", "id", "indexURL", "protocol", "siteAccess", "workspace"]);
   worker.answer("ok");
   assert.equal(await running, "ok");
   const again = python.execute({ code: "x + 2" }, new AbortController().signal);
@@ -116,4 +116,48 @@ await test("stale workers never receive user code or overwrite saved files", asy
   assert.deepEqual(requests,[{type:"hello",id:1,protocol:1}]);
   assert.deepEqual(python.snapshotWorkspace(),workspace);
   assert.equal(worker.terminated,true);
+});
+
+await test("Python sites require permission and a running worker", async () => {
+  assert.throws(()=>createPythonTool({siteAccess:"false" as unknown as boolean}),/boolean/);
+  const request = {port:8080,method:"GET",path:"/"};
+  await assert.rejects(createPythonTool().requestSite(request,new AbortController().signal),/disabled/);
+  await assert.rejects(createPythonTool({siteAccess:true}).requestSite(request,new AbortController().signal),/Run.*Python/);
+});
+
+await test("Python site requests import edits, checkpoint writes, and serialize with execution", async () => {
+  const worker = new FakeWorker(), sites = [{port:8080,webRoot:"site"}];
+  const tool = createPythonTool({siteAccess:true,workerFactory:()=>worker as unknown as Worker});
+  const run = tool.execute({code:"start site"},new AbortController().signal);
+  worker.answer("ready",emptyWorkspace(),{sites});await run;
+  assert.deepEqual(tool.sites(),sites);
+  const edited = parseWorkspace({version:1,directories:[],files:[{path:"index.html",data:"aGk="}]});
+  tool.setWorkspace(edited);
+  const request = {port:8080,method:"POST",path:"/note",body:"YQ=="};
+  const pending = tool.requestSite(request,new AbortController().signal);
+  assert.deepEqual(worker.requests.at(-1)?.workspace,edited);
+  assert.equal((worker.requests.at(-1) as unknown as {siteAccess:boolean}).siteAccess,true);
+  assert.deepEqual((worker.requests.at(-1) as unknown as {siteRequest:unknown}).siteRequest,request);
+  await assert.rejects(tool.execute({code:"concurrent"},new AbortController().signal),/already running/);
+  const saved = parseWorkspace({version:1,directories:[],files:[...edited.files,{path:"note.txt",data:"YQ=="}]});
+  const response = {status:201,headers:{"Content-Type":["text/plain"]},body:"c2F2ZWQ="};
+  worker.answer("",saved,{sites,response});
+  assert.deepEqual(await pending,response);
+  assert.deepEqual(tool.snapshotWorkspace(),saved);
+  const controller = new AbortController();
+  const stopped = tool.requestSite(request,controller.signal);controller.abort();
+  await assert.rejects(stopped,/stopped/);
+  assert.deepEqual(tool.sites(),[]);
+  assert.deepEqual(tool.snapshotWorkspace(),saved);
+});
+
+await test("Python site permission detects workers without site support before sending code", async () => {
+  const worker = new FakeWorker();
+  worker.postMessage = data => worker.dispatchEvent(new MessageEvent("message",{
+    data:{id:data.id,protocol:1,type:"ready"},
+  }));
+  const tool=createPythonTool({siteAccess:true,workerFactory:()=>worker as unknown as Worker});
+  await assert.rejects(tool.execute({code:"listen"},new AbortController().signal),/out of date/);
+  assert.equal(worker.terminated,true);
+  assert.equal(worker.requests.length,0);
 });

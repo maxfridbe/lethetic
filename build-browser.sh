@@ -15,6 +15,7 @@ done
 
 cargo test -p lethetic-wasm --locked
 cargo build -p lethetic-wasm --target wasm32-unknown-unknown --release --locked
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s browser/tests -p 'test_python_*.py'
 stage="$(mktemp -d "$ROOT/target/browser-build.XXXXXX")"
 tests="$(mktemp -d "$ROOT/target/browser-tests.XXXXXX")"
 trap 'rm -rf -- "$stage" "$tests"' EXIT

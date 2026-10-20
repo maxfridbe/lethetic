@@ -224,11 +224,17 @@ export class LocalTransport implements ApplicationTransport {
     this.#saveSession(true);
     this.#runtime?.dispose(); this.#runtime = null;
     this.#dotnet?.reset(); this.#dotnet = null;
+    this.#python?.reset(); this.#python = null;
     this.siteAccess = enabled;
     this.#saveSession(); this.publish();
   }
 
-  get sites(): WireSite[] { return this.#dotnet?.sites() ?? []; }
+  get sites(): WireSite[] { return (this.pythonEnabled ? this.#python : this.#dotnet)?.sites() ?? []; }
+
+  #pythonTool(): PythonTool {
+    return this.#python ??= createPythonTool({ indexURL: this.options.pyodideIndexURL, siteAccess: this.siteAccess,
+      workspace: this.#workspace, onWorkspace: workspace => this.#checkpointWorkspace(workspace) });
+  }
 
   #dotnetTool(): DotnetTool {
     return this.#dotnet ??= createDotnetTool({ networkAccess: this.networkAccess, nugetAccess: this.nugetAccess,
@@ -240,23 +246,30 @@ export class LocalTransport implements ApplicationTransport {
     this.#requireIdle();
     if (!/\.(cs|csproj)$/i.test(path) || !this.#workspace.files.some(file => file.path === path)) throw new Error("Select a session .cs or .csproj file to run.");
     this.setMode("dotnet-wasm");
-    await this.#executeDotnet(`var fileRun = await Dotnet.Run(${JSON.stringify(path)});
+    await this.#executeCode(`var fileRun = await Dotnet.Run(${JSON.stringify(path)});
 if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program failed with exit code {fileRun.ExitCode}. See compilation output above.");`, `Run ${path}`);
+  }
+
+  async runPythonFile(path: string): Promise<void> {
+    this.#requireIdle();
+    if (!/\.py$/i.test(path) || !this.#workspace.files.some(file => file.path === path)) throw new Error("Select a session .py file to run.");
+    this.setMode("python");
+    await this.#executeCode(`await __import__("lethetic_wire").run_file(${JSON.stringify("/home/pyodide/" + path)})`, `Run ${path}`);
   }
 
   async stopSite(port: number): Promise<void> {
     this.#requireIdle();
     if (!Number.isInteger(port) || !this.sites.some(site => site.port === port)) throw new Error("Site is no longer running.");
-    await this.#executeDotnet(`DotnetDide.Wire.Stop(${port});`, `Stop virtual port ${port}`);
+    await this.#executeCode(this.pythonEnabled ? `__import__("lethetic_wire").stop(${port})` : `DotnetDide.Wire.Stop(${port});`, `Stop virtual port ${port}`);
   }
 
-  async #executeDotnet(code: string, title: string): Promise<void> {
+  async #executeCode(code: string, title: string): Promise<void> {
     const controller = new AbortController(); this.#operation = controller;
     this.state.activity = { kind: "processing", fully_idle: false, cancellable: true, cancel_id: crypto.randomUUID(), progress_percent: null };
     this.state.status.stop_reason = title; this.publish();
     try {
-      const output = await this.#dotnetTool().execute({ code }, controller.signal);
-      this.state.blocks.blocks.push(block("text", output, title));
+      const output = await (this.pythonEnabled ? this.#pythonTool() : this.#dotnetTool()).execute({ code }, controller.signal);
+      this.state.blocks.blocks.push(block("text", String(output), title));
       this.state.status.stop_reason = "Ready";
     } catch (error) {
       this.state.blocks.blocks.push({ ...block("text", String(error), title), success: false });
@@ -270,11 +283,12 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
 
   async requestSite(request: WireRequest, sessionId: string): Promise<WireResponse> {
     this.#requireIdle();
-    if (sessionId !== this.state.session.session_id || this.mode !== "dotnet-wasm" || !this.siteAccess || !this.#dotnet) throw new Error("This session's interactive site is no longer available.");
+    const tool = this.pythonEnabled ? this.#python : this.mode === "dotnet-wasm" ? this.#dotnet : null;
+    if (sessionId !== this.state.session.session_id || !this.siteAccess || !tool) throw new Error("This session's interactive site is no longer available.");
     const controller = new AbortController(); this.#operation = controller;
     this.state.activity = { kind: "processing", fully_idle: false, cancellable: true, cancel_id: crypto.randomUUID(), progress_percent: null };
     this.state.status.stop_reason = `Site :${request.port} · ${request.method} ${request.path}`; this.publish();
-    try { return await this.#dotnet.requestSite(request, controller.signal); }
+    try { return await tool.requestSite(request, controller.signal); }
     finally { this.#operation = null;
       this.state.activity = { kind: "idle", fully_idle: true, cancellable: false, cancel_id: null, progress_percent: null };
       this.state.status.stop_reason = "Ready";
@@ -475,9 +489,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
         if (!connection) throw new Error("No connection selected.");
         const tools = [...(this.options.tools ?? [])];
         if (this.pythonEnabled) {
-          this.#python ??= createPythonTool({ indexURL: this.options.pyodideIndexURL, workspace: this.#workspace,
-            onWorkspace: (workspace) => this.#checkpointWorkspace(workspace) });
-          tools.push(this.#python);
+          tools.push(this.#pythonTool());
         }
         if (this.mode === "dotnet-wasm") {
           tools.push(this.#dotnetTool());

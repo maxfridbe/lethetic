@@ -93,6 +93,25 @@ Structured `context_limits` metadata is exact-model-scoped. Legacy `context_size
 -   **Native Tool Calling**: Handles Anthropic `tool_use`, OpenAI structured deltas, and raw Gemma/Qwen marker formats behind one canonical transport surface.
 -   **Empirical Verification**: Every tool backed by integration tests in `tests/`.
 
+## Browser Python sites
+
+Pyodide supports interactive virtual sites through the bundled `lethetic_wire`
+module, with the same per-session Interactive sites permission and Sites preview
+as .NET. Use `listen(port, handler=async_handler, web_root="site")`, return a
+`Response` or `Response.json(value)`, and let the program finish. Alternatively,
+pass a synchronous WSGI app such as Flask or just a static web root. Do not start
+a socket server or blocking `app.run()`. Files → Run supports `.py` files,
+top-level await and program-relative cwd. Use `pyodide.http.pyfetch` in async
+handlers for external APIs; browser CORS applies.
+
+Handler-created files sync to the session after requests. Stops, reloads and
+mode/session/site-permission changes discard running sites while retaining saved
+files. ASGI, streaming, cookies, WebSockets and direct external preview requests
+are unsupported. See [the Python site guide](integration.md#interactive-python-sites)
+and `browser/static/python/site_example.py`. Real browser coverage lives in
+`browser/tests/python-sites-browser.ts`; native protocol tests are in
+`browser/tests/test_python_sites.py`.
+
 ## Browser .NET errata: custom HTTP headers
 
 For direct browser `HttpClient` and `Dotnetdide.Net` calls, leave `User-Agent`,

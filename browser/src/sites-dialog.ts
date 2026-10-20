@@ -9,7 +9,7 @@ type PreviewFactory = (options: { iframe: HTMLIFrameElement; port: number; path:
 
 export function createSitesDialog(transport: LocalTransport): { open(): void; refresh(): void; clear(): void; destroy(): void } {
   const dialog = createDialog("Interactive sites", `
-    <p class="browser-note">Local C# sites. Files created here stay in this session.</p>
+    <p class="browser-note">Local Python and C# sites. Files created here stay in this session.</p>
     <p class="browser-note" data-field="site-network" role="status"></p>
     <div class="browser-site-toolbar">
       <label>Site <select data-field="site-port" aria-label="Virtual port"></select></label>
@@ -20,7 +20,7 @@ export function createSitesDialog(transport: LocalTransport): { open(): void; re
     </div>
     <p data-field="site-status" role="status"></p>
     <iframe hidden data-field="site-frame" title="Interactive session site" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer"></iframe>
-    <details class="browser-note"><summary>Preview support</summary><p>Classic JavaScript, CSS, images and fetch to C# routes work here. For external APIs, call a C# route that uses HttpClient with Network access enabled. Direct external requests from preview JavaScript, ES modules and WebSockets are unavailable. Files created by requests appear in Files.</p></details>`);
+    <details class="browser-note"><summary>Preview support</summary><p>Classic JavaScript, CSS, images and fetch to Python or C# routes work here. For external APIs, use pyodide.http.pyfetch in an async Python handler, or HttpClient in a C# route with Network access enabled. Direct external requests from preview JavaScript, ES modules and WebSockets are unavailable. Files created by requests appear in Files.</p></details>`);
   dialog.classList.add("browser-sites");
   const select = field<HTMLSelectElement>(dialog, "site-port");
   const path = field<HTMLInputElement>(dialog, "site-path");
@@ -35,7 +35,9 @@ export function createSitesDialog(transport: LocalTransport): { open(): void; re
   }
   function refresh(): void {
     if (!dialog.open) return;
-    field(dialog, "site-network").textContent = transport.networkAccess
+    field(dialog, "site-network").textContent = transport.pythonEnabled
+      ? "Python network: enabled through Pyodide; destination must allow CORS. Preview JavaScript can fetch this site's Python routes."
+      : transport.networkAccess
       ? `C# Network access: enabled · ${transport.dotnetRelay ? "HTTP relay" : "direct requests; destination must allow CORS"}. Preview JavaScript can fetch this site's C# routes.`
       : "C# Network access: disabled. External API calls from HttpClient are blocked. Enable Network access in Connections → Runtime & security, then run the site file again.";
     const sites = transport.sites;
@@ -43,14 +45,16 @@ export function createSitesDialog(transport: LocalTransport): { open(): void; re
     const choices = sites.map(site => String(site.port));
     if (Array.from(select.options).map(option => option.value).join() !== choices.join()) {
       const previous = select.value;
-      select.replaceChildren(...sites.map(site => new Option(`:${site.port} · ${site.webRoot ?? "C# routes"}`, String(site.port))));
+      select.replaceChildren(...sites.map(site => new Option(`:${site.port} · ${site.webRoot ?? (transport.pythonEnabled ? "Python routes" : "C# routes")}`, String(site.port))));
       if (choices.includes(previous)) select.value = previous;
     }
     button("open").disabled = opening || transport.busy || !sites.length;
     button("reload").disabled = opening || transport.busy || !preview;
     button("stop").disabled = opening || transport.busy || !sites.length;
     if (!transport.siteAccess) status("Interactive sites are off. Enable them in Connections → Runtime & security.");
-    else if (!sites.length) status("No site is running. Run a .cs or .csproj that calls DotnetDide.Wire.ListenAsync.");
+    else if (!sites.length) status(transport.pythonEnabled
+      ? "No site is running. Run a .py file that calls lethetic_wire.listen."
+      : "No site is running. Run a .cs or .csproj that calls DotnetDide.Wire.ListenAsync.");
   }
   async function openPreview(): Promise<void> {
     if (opening || transport.busy || !select.value) return;

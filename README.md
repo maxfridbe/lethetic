@@ -18,7 +18,7 @@ the same UI.
 Click a screenshot to try the browser edition.
 
 <details>
-<summary>Native terminal and .NET WASM screenshots</summary>
+<summary>Native terminal, .NET WASM and Python site screenshots</summary>
 
 ![Lethetic terminal UI](res/Screenshot.webp)
 
@@ -27,6 +27,9 @@ Click a screenshot to try the browser edition.
 
 <a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-sites.png" alt="Interactive ASP.NET site calling C# routes and saving a session file" width="760"></a>
 <a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-sites-mobile.png" alt="Interactive C# site preview on a phone with compact controls" width="260"></a>
+
+<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-python-sites.png" alt="Interactive Pyodide site calling Python routes and saving a session file" width="760"></a>
+<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-python-sites-mobile.png" alt="Interactive Python site preview on a phone" width="260"></a>
 
 [Runtime and proxy settings](res/browser-dotnet-security.png)
 
@@ -86,6 +89,11 @@ Connections → Runtime & security, run a `DotnetDide.Wire` program, then open
 **Sites**. HTML/JavaScript can call its ASP.NET routes and create session files.
 The permission is separate and off by default. See the
 [site example and limits](integration.md#run-saved-programs-and-interactive-sites).
+
+Python can host sites too: run a `.py` file using `lethetic_wire.listen`, then
+open **Sites**. Async Python handlers, static files and Flask/WSGI applications
+share the same preview and session-file synchronization.
+See [Python hosting and the runnable example](integration.md#interactive-python-sites).
 
 ### Native application
 

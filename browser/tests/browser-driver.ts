@@ -1,4 +1,5 @@
 import { testDotnetBrowser } from "./dotnet-browser.js";
+import { testPythonSites } from "./python-sites-browser.js";
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { PREVIEW_WEBM } from "./media-fixture.js";
@@ -677,6 +678,15 @@ try {
       } finally {python.reset()}
     })()`);
     check(JSON.stringify(actual) === JSON.stringify({ value: "42\n", error: true, stopped: true, restarted: "False\n", restoredFile: "00ff\n" }), `real Pyodide failed: ${JSON.stringify(actual)}`);
+    await testPythonSites(evaluate, previewInput, async () => {
+      const mobile=await rpc("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
+      await writeFile(config.screenshot.replace(".png","-python-sites-mobile.png"),Buffer.from(String(mobile["data"]),"base64"));
+      await rpc("Emulation.setDeviceMetricsOverride",{width:1280,height:1000,deviceScaleFactor:1,mobile:false});
+      await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+      const desktop=await rpc("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
+      await writeFile(config.screenshot.replace(".png","-python-sites.png"),Buffer.from(String(desktop["data"]),"base64"));
+    });
+    process.stdout.write("Real Pyodide sites: async HTTP, Flask WSGI, .py Run, iframe forms, checkpoints and revocation passed.\n");
   }
   process.stdout.write(`Browser acceptance passed${config.pyodide ? " (including real Pyodide)" : ""}.\n`);
 } finally {

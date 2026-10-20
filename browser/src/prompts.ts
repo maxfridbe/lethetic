@@ -36,6 +36,28 @@ ${PYODIDE_CHECK}
 
 sys.platform == "emscripten" identifies an Emscripten Python build, not exclusively Pyodide. For another package, importlib.util.find_spec("package_name") checks whether it is currently importable, not whether it can be installed. The tool automatically loads packages bundled with Pyodide from imports in the submitted code. For additional compatible wheels, use import micropip followed by await micropip.install("package-name"). Native desktop binaries, subprocesses, and OS shell commands are unavailable. Network requests remain subject to browser CORS; use async browser-compatible APIs such as pyodide.http.pyfetch. Use print() to report useful output, and inspect exceptions before claiming success.`;
 
+export const PYTHON_SITE_EXAMPLE = String.raw`from pathlib import Path
+from lethetic_wire import listen, Response
+Path("site").mkdir(exist_ok=True)
+Path("site/index.html").write_text("""<button onclick="fetch('/api/hello').then(r=>r.json()).then(x=>document.querySelector('output').textContent=x.message)">Call Python</button><output></output>""", encoding="utf-8")
+async def handle(request):
+    if request.path == "/api/hello":
+        return Response.json({"message": "Hello from Python"})
+    return Response("Not found", status=404)
+listen(8080, handler=handle, web_root="site")
+print("Open Sites → :8080")`;
+
+export const PYTHON_SITE_INSTRUCTIONS = `Interactive Python sites
+The bundled lethetic_wire module hosts virtual HTTP ports in this Pyodide worker. Use listen(port, handler=handler, web_root="site") for a sync or async function accepting Request and returning Response, listen(port, wsgi_app, web_root="site") for a synchronous WSGI application such as Flask, or listen(port, web_root="site") for static files. It returns immediately; do not call app.run(), http.server.serve_forever(), uvicorn.run(), or open listening sockets. ASGI, WebSockets and streaming are not supported. Install Flask separately with micropip if needed, then pass the app object to listen.
+Request has method, decoded path, query (dict of lists), headers (lowercase dict of lists), body (bytes), text(), and json(). Use Response(body, status=200, headers={...}) or Response.json(value, status=200). An unhandled route should return Response("Not found", status=404), allowing GET/HEAD static fallback under web_root. Eight sites maximum; stop(port) before rerunning the same port.
+Save a reusable .py file and use Files → Run, or await lethetic_wire.run_file("/home/pyodide/app.py"). Run supports top-level await and loads bundled imports; cwd is the file's directory. Site handlers retain that directory. Open Sites to view index.html. Files written by requests sync to this session; edited files are imported before the next request. Reload, Stop, mode/session switches and changing Interactive sites terminate sites and variables; saved files remain. Bodies are buffered up to 2 MiB, with a 15-second cooperative request deadline and 20-second worker timeout; session file limits still apply.
+Preview scripts can fetch('/api/...') through Python. Use await pyodide.http.pyfetch inside async handlers for external APIs; Pyodide's existing browser networking remains authorized independently of the .NET Network access switch. Destination CORS still applies: do not set User-Agent or browser-controlled headers, and preserve original errors. Preview JavaScript cannot fetch external URLs or access parent DOM/storage/keys. Cookies, ES modules and XHR are unsupported. Use classic scripts and preventDefault() with fetch for forms. Ordinary Files HTML preview stays static; use Sites for interactive pages.
+Example:
+\`\`\`python
+${PYTHON_SITE_EXAMPLE}
+\`\`\`
+The complete notebook example is available at python/site_example.py in the browser distribution.`;
+
 export const DOTNET_PROGRAM_EXAMPLE = String.raw`{
     Directory.CreateDirectory("demo");
     File.WriteAllText("demo/Program.cs", """
@@ -128,7 +150,7 @@ ${DOTNET_SITE_EXAMPLE}
 \`\`\``;
 
 export function injectedInstructions(mode: AgentMode | boolean, networkAccess = false, relay = false, nugetAccess = false, siteAccess = false): string {
-  return [BROWSER_INSTRUCTIONS, ...(mode === true || mode === "python" ? [PYTHON_INSTRUCTIONS] : []),
+  return [BROWSER_INSTRUCTIONS, ...(mode === true || mode === "python" ? [PYTHON_INSTRUCTIONS, PYTHON_SITE_INSTRUCTIONS, `Interactive sites: ${siteAccess ? "enabled; Python virtual ports and isolated previews are authorized" : "disabled; the user can enable it in Connections → Runtime & security"}.`] : []),
     ...(mode === "dotnet-wasm" ? [DOTNET_INSTRUCTIONS, DOTNET_SITE_INSTRUCTIONS, `Interactive sites: ${siteAccess ? "enabled; virtual ports and isolated previews are authorized" : "disabled; the user can enable it in Connections → Runtime & security"}.`, `HTTP route: ${relay ? "host-configured HTTP relay; no direct fallback, no browser cookies; bounded 8 MiB bodies and no redirects" : "direct browser fetch; destination must permit CORS"}.`, `NuGet package access: ${nugetAccess ? "enabled; direct NuGet.org managed-package downloads are authorized" : "disabled; bundled media libraries still work. The user can enable it in Connections → Runtime & security"}.`, `Network access: ${networkAccess ? "enabled; browser HTTP requests are authorized" : "disabled for general HTTP; use session files and local computation. NuGet downloads have a separate permission. The user can enable it in Connections → Runtime & security"}.`] : [])].join("\n\n");
 }
 export function effectiveSystemPrompt(editable: string, mode: AgentMode | boolean, networkAccess = false, relay = false, nugetAccess = false, siteAccess = false): string {
