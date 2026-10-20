@@ -7,15 +7,21 @@ import { LocalTransport } from "../src/local-transport.js";
 import { SessionStore } from "../src/sessions.js";
 import { BrowserFiles } from "../src/files.js";
 
-await test("compaction uses bounded passes, retains carried context and checks cancellation", async () => {
-  const controller=new AbortController(), requests:string[]=[], progress:number[]=[];
-  let clears=0;
-  const summary=await summarizeContext({clear(){clears++}, async send(prompt){requests.push(prompt);return 'retained '+requests.length}},
-    [{role:'user',content:'x'.repeat(100000)}],controller.signal,current=>progress.push(current));
-  assert.equal(summary,'retained 3'); assert.equal(clears,3); assert.deepEqual(progress,[1,2,3]);
-  assert.ok(requests[1]!.includes('retained 1')); assert.ok(requests.every(prompt=>prompt.length<49000));
-  await assert.rejects(()=>summarizeContext({clear(){},async send(){return ''}},[{}],controller.signal,()=>{}),/empty/);
-  controller.abort(); await assert.rejects(()=>summarizeContext({clear(){throw Error('should not run')},async send(){return ''}},[{}],controller.signal,()=>{}));
+await test("compaction uses shared bounded passes and checks cancellation", async () => {
+  const wasm=await readFile(new URL('../wasm/lethetic_wasm_bg.wasm',import.meta.url));
+  const controller=new AbortController(), requests:any[]=[], progress:number[]=[];
+  const connection={name:'Test',provider:'openai' as const,endpoint:'https://example.com/v1/chat/completions',model:'test',apiKey:'secret'};
+  const options={connection,wasm,providerRetries:0,fetch:async (_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body));requests.push(body);
+    return Response.json({choices:[{finish_reason:'stop',message:{role:'assistant',content:'retained '+requests.length}}]});
+  }};
+  const summary=await summarizeContext(options,[{role:'user',content:'x'.repeat(100000)}],controller.signal,current=>progress.push(current));
+  assert.equal(summary,'retained 3'); assert.deepEqual(progress,[1,2,3]);
+  assert.ok(requests[2]!.messages[1].content.includes('retained 1'));
+  assert.ok(requests[2]!.messages[1].content.includes('retained 2'));
+  assert.ok(requests.every(body=>!body.tools?.length && body.messages[1].content.length<81000));
+  await assert.rejects(()=>summarizeContext({...options,fetch:async()=>Response.json({choices:[{finish_reason:'stop',message:{role:'assistant',content:''}}]})},[{role:'user',content:'goal'}],controller.signal,()=>{}),/empty/);
+  controller.abort(); await assert.rejects(()=>summarizeContext({...options,fetch:async()=>{throw Error('should not run')}},[],controller.signal,()=>{}));
 });
 
 await test("compaction commits context in place, preserves files and transcript, and rolls back failures", async () => {

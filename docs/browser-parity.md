@@ -19,6 +19,7 @@ into the root crate alone does not make its behavior shared with the native CLI.
 | Provider message serialization | `src/engine/messages.rs` |
 | Context budgeting, older tool-output shortening, call-ID repair | `src/context.rs`, `src/context/api.rs` |
 | Transient error classification and retry backoff | `gemma-chat/src/retry.rs` |
+| Manual compaction planning, prompts, file-body elision, bounded merges and summary validation | `src/engine/compaction.rs`, `src/engine/compaction_plan.rs` |
 | Thinking-loop detection | `src/loop_detector.rs` |
 | Transcript UI, composer, files, panels and command protocol | `web/src`, generated WFE contracts |
 
@@ -33,6 +34,23 @@ The existing CLI text/tool-tag parser, accounting types and calculator also comp
 in the portable library. Compilation alone does not mean their complete UI/tool
 features are exposed in the browser.
 
+## Shared manual compaction
+
+Native CLI and browser use the same prompts, UTF-8-safe transcript windows and
+hierarchical merge plan. Requests contain no executable tools. Each pass uses the configured output budget up to
+8,192 tokens, including hidden reasoning. The browser default is 4,096 tokens;
+low output budgets can cause reasoning models to exhaust the budget before
+producing a summary. Truncated responses fail rather than replace history. Input windows respect the configured input budget and
+an 80,000-byte ceiling. Empty, oversized or non-shrinking summaries fail without
+replacing the original context. Reasoning text is excluded from the summary.
+
+The native adapter runs up to four independent passes concurrently and streams
+the final merge to the compaction dialog. The browser executes passes sequentially
+using its fetch adapter; its turn timeout covers the entire compaction. Browser
+compaction commits in the current session after persistence succeeds. The native
+CLI retains its existing compacted-session workflow and settings inheritance.
+Cancellation and provider failures leave source history intact in both hosts.
+
 ## Remaining work
 
 - Unify native application/headless and browser turn orchestration, cancellation,
@@ -46,8 +64,8 @@ features are exposed in the browser.
   synchronize session files, but do not provide the CLI filesystem tool surface.
 - Port task/TODO/skill and approval state machines with browser storage and tool
   authority adapters; keep the same remote command contracts where applicable.
-- Share automatic compaction and provider retry UI state. Manual browser compaction
-  is available, but still uses its existing bounded-pass browser coordinator.
+- Share automatic compaction triggers and provider retry UI state. Manual
+  compaction now uses the same Rust coordinator in both hosts.
 - Add native connection selection to the standalone host only with the existing
   authenticated remote-control origin/session protections preserved.
 
@@ -65,3 +83,8 @@ shared UI, streaming, settings persistence, real Pyodide and .NET workers.
 Native `cargo test -p lethetic --lib` and strict all-target Clippy guard the existing
 CLI behavior. Live-provider tests supplement deterministic tests; provider keys
 belong in private process environments, never fixtures, screenshots or Git.
+
+For an opt-in native provider check, set `LETHETIC_TEST_ENDPOINT`,
+`LETHETIC_TEST_MODEL` and `LETHETIC_TEST_API_KEY` in a private environment, then run
+`cargo test -p lethetic --lib live_environment_compaction -- --ignored`. This makes
+a provider request and may incur charges; it is excluded from normal CI.

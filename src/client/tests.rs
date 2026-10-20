@@ -1581,3 +1581,123 @@ fn native_tool_calls_keep_provider_assigned_ids() {
         "model-supplied"
     );
 }
+
+#[tokio::test]
+async fn compaction_hosts_use_shared_passes_without_tools() {
+    for streaming in [false, true] {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let mut bodies = Vec::new();
+            for index in 0..3 {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let body: serde_json::Value =
+                    serde_json::from_slice(&read_http_request(&mut socket).await).unwrap();
+                assert!(
+                    body.get("tools")
+                        .is_none_or(|tools| tools.as_array().is_some_and(Vec::is_empty))
+                );
+                let text = if index < 2 {
+                    format!("summary {index}")
+                } else {
+                    "merged summary".into()
+                };
+                let (content_type, response) = if body["stream"] == true {
+                    assert_eq!(index, 2);
+                    (
+                        "text/event-stream",
+                        format!(
+                            "data: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
+                            serde_json::json!({"choices":[{"delta":{"content":text}}]}),
+                            serde_json::json!({"choices":[{"delta":{},"finish_reason":"stop"}]})
+                        ),
+                    )
+                } else {
+                    ("application/json", serde_json::json!({"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":text}}]}).to_string())
+                };
+                socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}", response.len()).as_bytes()).await.unwrap();
+                bodies.push(body);
+            }
+            bodies
+        });
+        let config = Config {
+            server_url: format!("http://{address}/v1"),
+            model: "test".into(),
+            context_size: 32768,
+            connection_kind: ConnectionKind::OpenAiChatCompletions,
+            tool_profile: crate::config::ToolProfile::PythonOnly,
+            ..Default::default()
+        };
+        let log = format!("=== USER ===\n{}", "x".repeat(100_000));
+        let client = Client::new();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let summary = if streaming {
+            compact_llm_streaming(&client, &config, &log, &tx, &CancellationToken::new()).await
+        } else {
+            compact_llm(&client, &config, &log).await
+        }
+        .unwrap();
+        assert_eq!(summary, "merged summary");
+        let bodies = server.await.unwrap();
+        assert!(
+            bodies[0]["messages"][0]["content"]
+                .as_str()
+                .unwrap()
+                .contains("compacting one section")
+        );
+        let merge = bodies[2]["messages"][1]["content"].as_str().unwrap();
+        assert!(merge.contains("summary 0") && merge.contains("summary 1"));
+        if streaming {
+            let mut chunks = String::new();
+            while let Ok(event) = rx.try_recv() {
+                if let StreamEvent::CompactionChunk(text) = event {
+                    chunks.push_str(&text);
+                }
+            }
+            assert!(chunks.contains("merged summary"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn cancelled_native_compaction_never_contacts_provider() {
+    let config = Config {
+        server_url: "http://127.0.0.1:1/v1".into(),
+        ..Default::default()
+    };
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    let (tx, _) = mpsc::unbounded_channel();
+    assert_eq!(
+        compact_llm_streaming(&Client::new(), &config, "user goal", &tx, &cancel)
+            .await
+            .unwrap_err(),
+        "Cancelled"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires private LETHETIC_TEST_ENDPOINT/MODEL/API_KEY environment and makes a paid provider request"]
+async fn live_environment_compaction_retains_latest_user_correction() {
+    let config = Config {
+        server_url: std::env::var("LETHETIC_TEST_ENDPOINT").expect("private test endpoint"),
+        model: std::env::var("LETHETIC_TEST_MODEL").expect("private test model"),
+        api_key: Some(std::env::var("LETHETIC_TEST_API_KEY").expect("private test key")),
+        connection_kind: ConnectionKind::OpenAiChatCompletions,
+        context_size: 32768,
+        ..Default::default()
+    };
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .unwrap();
+    let result = compact_llm(&client, &config,
+        "=== USER ===\nCreate weather-report.txt with code 123456.\n=== TEXT ===\nI will create it.\n=== USER ===\nCorrection: the final code is 734829. Preserve this exact code and filename in your continuation notes.\n").await;
+    // Never print provider errors or request configuration in a credentialed test.
+    assert!(result.is_ok(), "live native compaction failed");
+    let summary = result.unwrap();
+    assert!(
+        summary.contains("734829") && summary.contains("weather-report.txt"),
+        "live summary lost the latest correction"
+    );
+}

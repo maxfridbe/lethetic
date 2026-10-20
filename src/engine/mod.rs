@@ -2,6 +2,7 @@
 //! No filesystem, process, credentials, or native runtime dependencies are included.
 
 pub(crate) mod anthropic;
+pub mod compaction;
 mod context;
 pub(crate) mod messages;
 mod provider;

@@ -155,6 +155,27 @@ pub async fn stream(
     stream_prepared(client, config, request).await
 }
 
+/// Stream a plain completion with its own output budget and no tools.
+/// Agent turns must continue through `stream` and its prepared-request checks.
+pub async fn stream_completion(
+    client: &Client,
+    config: &Config,
+    messages: &[Message],
+    max_tokens: u32,
+) -> Result<EventStream, String> {
+    if max_tokens == 0 || max_tokens > config.maximum_output_tokens() {
+        return Err("Completion output budget exceeds the active configuration".into());
+    }
+    match config.active_connection_kind() {
+        ConnectionKind::OpenAiChatCompletions => {
+            openai::stream(client, config, messages, &[], max_tokens).await
+        }
+        ConnectionKind::ClaudeCodeProxy => {
+            anthropic::stream(client, config, messages, &[], max_tokens).await
+        }
+    }
+}
+
 pub async fn complete(
     client: &Client,
     config: &Config,

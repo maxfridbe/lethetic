@@ -69,7 +69,11 @@ interface WasmRuntime {
   restore(history: string): void;
   free(): void;
 }
+export interface WasmCompaction {
+  requests(): string; accept(id: number, text: string): void; progress(): string; result(): string | undefined; free(): void;
+}
 interface WasmModule {
+  BrowserCompaction: new (history: string, context: number, output: number) => WasmCompaction;
   check_loop(text: string, mode: string): string | undefined;
   retryable_error(error: string): boolean;
   retry_delay_ms(attempt: number): number;
@@ -93,6 +97,13 @@ function loadRuntimeModule(wasm?: BufferSource): Promise<WasmModule> {
     return module;
   })().catch(error => { moduleReady = null; throw error; });
   return moduleReady;
+}
+
+/** Host binding to the same compaction coordinator used by the native CLI. */
+export async function createCompactionPlan(messages: readonly unknown[], options: Pick<RuntimeOptions, "wasm" | "contextTokens" | "maxOutputTokens">): Promise<WasmCompaction> {
+  const module = await loadRuntimeModule(options.wasm);
+  return new module.BrowserCompaction(JSON.stringify(messages), options.contextTokens ?? DEFAULT_TURN_LIMITS.contextTokens,
+    options.maxOutputTokens ?? DEFAULT_TURN_LIMITS.maxOutputTokens);
 }
 
 /** Load the real Rust/WASM runtime. No native Lethetic server is required. */

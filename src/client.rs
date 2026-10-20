@@ -1275,153 +1275,8 @@ pub async fn get_single_response_with_usage_and_hook(
 
 // ───────────────────────── Session compaction ─────────────────────────
 
-/// Strip large file bodies out of a `ui_log.txt` before compaction:
-/// - Large `content` / `new_string` / `old_string` / `patch` fields in
-///   write/edit/replace/apply_patch tool calls are elided.
-/// - The entire TOOL RESULT block that follows a `read_file` or
-///   `read_file_lines` call, since those files will be re-read dynamically.
-///
-/// Everything else (user messages, shell output, build results, todo updates,
-/// short tool results) is preserved so the model understands what happened.
-pub fn strip_file_content_from_log(log: &str) -> String {
-    fn is_file_read_tool(name: &str) -> bool {
-        matches!(name, "read_file" | "read_file_lines")
-    }
-
-    fn is_file_write_tool(name: &str) -> bool {
-        matches!(
-            name,
-            "write_file" | "edit_file" | "replace_text" | "apply_patch"
-        )
-    }
-
-    const LARGE_FIELDS: &[&str] = &[
-        "content",
-        "new_string",
-        "old_string",
-        "new_content",
-        "patch",
-    ];
-
-    fn elide_field(line: &str, field: &str) -> String {
-        let needle = format!("\"{}\":\"", field);
-        let Some(start) = line.find(&needle) else {
-            return line.to_string();
-        };
-        let val_start = start + needle.len();
-        let bytes = line.as_bytes();
-        let mut pos = val_start;
-        while pos < bytes.len() {
-            if bytes[pos] == b'\\' {
-                pos += 2;
-            } else if bytes[pos] == b'"' {
-                break;
-            } else {
-                pos += 1;
-            }
-        }
-        let pos = pos.min(bytes.len());
-        let original_len = pos - val_start;
-        if original_len < 120 {
-            return line.to_string();
-        }
-        format!(
-            "{}\"[elided {} chars]\"{}",
-            &line[..val_start],
-            original_len,
-            if pos < line.len() {
-                &line[pos + 1..]
-            } else {
-                ""
-            }
-        )
-    }
-
-    let mut out = String::with_capacity(log.len() / 2);
-    let mut last_tool: Option<String> = None;
-    let mut skip_until_next_section = false;
-
-    for line in log.lines() {
-        if line.starts_with("=== ") {
-            skip_until_next_section = false;
-            if line.starts_with("=== TOOL RESULT ===") {
-                let is_read = last_tool.as_deref().map(is_file_read_tool).unwrap_or(false);
-                out.push_str(line);
-                out.push('\n');
-                if is_read {
-                    out.push_str("[file content elided — will be re-read dynamically]\n");
-                    skip_until_next_section = true;
-                }
-                continue;
-            }
-            out.push_str(line);
-            out.push('\n');
-            continue;
-        }
-        if skip_until_next_section {
-            continue;
-        }
-        if let Some(rest) = line.strip_prefix("call:") {
-            let tool_name = rest.split(['{', ' ']).next().unwrap_or("").to_string();
-            last_tool = Some(tool_name.clone());
-            if is_file_write_tool(&tool_name) {
-                let mut elided = line.to_string();
-                for field in LARGE_FIELDS {
-                    elided = elide_field(&elided, field);
-                }
-                out.push_str(&elided);
-            } else {
-                out.push_str(line);
-            }
-            out.push('\n');
-            continue;
-        }
-        out.push_str(line);
-        out.push('\n');
-    }
-    out
-}
-
-/// Window size for multipass compaction (chars after stripping).
-const COMPACT_WINDOW: usize = 80_000;
-const COMPACT_OVERLAP: usize = 8_000;
-
-/// Split `text` into overlapping windows of at most `window` chars, stepping by
-/// `window - overlap`. Splits only on newline boundaries.
-fn sliding_windows(text: &str, window: usize, overlap: usize) -> Vec<&str> {
-    let step = window.saturating_sub(overlap).max(1);
-    let mut windows = Vec::new();
-    let mut start = 0;
-    while start < text.len() {
-        let end = (start + window).min(text.len());
-        let end = if end < text.len() {
-            text[..end].rfind('\n').map(|p| p + 1).unwrap_or(end)
-        } else {
-            end
-        };
-        if end <= start {
-            // Degenerate single line longer than a window: take it whole.
-            let end = text[start..]
-                .find('\n')
-                .map(|p| start + p + 1)
-                .unwrap_or(text.len());
-            windows.push(&text[start..end]);
-            start = end;
-            continue;
-        }
-        windows.push(&text[start..end]);
-        if end >= text.len() {
-            break;
-        }
-        start += step;
-        if start < text.len()
-            && let Some(nl) = text[start..].find('\n')
-        {
-            start += nl + 1;
-        }
-    }
-    windows
-}
+pub use crate::engine::compaction::strip_file_content_from_log;
+use crate::engine::compaction::{Compaction, CompactionPass};
 
 /// Compaction always runs as a plain completion on the General tool profile,
 /// with no tools, so the Python-only request policy never applies.
@@ -1449,168 +1304,139 @@ async fn run_pass(
         _ = cancel.cancelled() => return Err("Cancelled".to_string()),
         result = fut => result?,
     };
-    Ok(truncate_at_repetition(&strip_think_tags(&raw)))
+    Ok(raw)
 }
 
 async fn run_pass_streaming(
     client: &Client,
     config: &Config,
-    system: &str,
-    user: &str,
+    pass: &CompactionPass,
     tx: &mpsc::UnboundedSender<StreamEvent>,
     cancel: &CancellationToken,
 ) -> Result<String, String> {
-    let messages = vec![
-        transport::Message::system(system),
-        transport::Message::user(user),
+    let messages = [
+        transport::Message::system(&pass.system),
+        transport::Message::user(&pass.user),
     ];
-    let mut stream = transport::stream(
-        client,
-        config,
-        &messages,
-        &[],
-        config.request_output_tokens(),
-    )
-    .await?;
-
-    let mut accumulated = String::new();
-    let mut line_counts: std::collections::HashMap<String, usize> =
-        std::collections::HashMap::new();
-    let mut last_checked = 0usize;
-    let mut loop_detected = false;
-
+    let mut stream = tokio::select! {
+        _ = cancel.cancelled() => return Err("Cancelled".into()),
+        result = transport::stream_completion(client, config, &messages, pass.max_tokens) => result?,
+    };
+    let mut text = String::new();
     loop {
         let event = tokio::select! {
-            _ = cancel.cancelled() => return Err("Cancelled".to_string()),
-            ev = stream.next() => ev,
+            _ = cancel.cancelled() => return Err("Cancelled".into()),
+            event = stream.next() => event,
         };
         match event {
-            Some(transport::StreamEvent::TextDelta(text))
-            | Some(transport::StreamEvent::ReasoningDelta { text, .. }) => {
-                let _ = tx.send(StreamEvent::CompactionChunk(text.clone()));
-                accumulated.push_str(&text);
-                let slice = &accumulated[last_checked..];
-                if let Some(nl) = slice.rfind('\n') {
-                    for line in slice[..nl].lines() {
-                        let t = line.trim();
-                        if t.is_empty() {
-                            continue;
-                        }
-                        let c = line_counts.entry(t.to_string()).or_insert(0);
-                        *c += 1;
-                        if *c >= 3 {
-                            loop_detected = true;
-                            break;
-                        }
-                    }
-                    last_checked += nl + 1;
+            Some(transport::StreamEvent::TextDelta(delta)) => {
+                text.push_str(&delta);
+                if text.len() > 65536 {
+                    return Err("compaction response exceeds 64 KiB".into());
                 }
-                if loop_detected {
-                    break;
-                }
+                let _ = tx.send(StreamEvent::CompactionChunk(delta));
             }
-            Some(transport::StreamEvent::Done { .. }) | None => break,
-            Some(transport::StreamEvent::Error(e)) => return Err(e),
+            Some(transport::StreamEvent::Done { .. }) => return Ok(text),
+            Some(transport::StreamEvent::ToolCalls { .. }) => {
+                return Err("compaction cannot execute tools".into());
+            }
+            Some(transport::StreamEvent::Error(error)) => return Err(error),
+            None => return Err("compaction stream ended without a terminal event".into()),
+            // Reasoning is not the summary, including for providers returning
+            // readable thinking on a separate channel.
             Some(_) => {}
         }
     }
-    Ok(truncate_at_repetition(&strip_think_tags(
-        accumulated.trim(),
-    )))
 }
 
-const WINDOW_SYSTEM: &str = "\
-You are summarizing one section of a coding session log. \
-Capture what happened: user requests, files created/modified (exact paths), \
-key decisions, errors encountered, and state at the end of this section.\n\
-Rules: output ONLY the summary, begin immediately, no preamble, no planning. \
-Preserve exact file paths, function names, and command lines. Be terse.";
-
-const MERGE_SYSTEM: &str = "\
-You are merging partial summaries of a coding session into one complete summary.\n\
-Produce a single concise summary covering: the user's original goal, all files \
-created or modified (exact paths), key decisions and reasoning, current project \
-state (done / pending / blocked), important errors and how they were resolved.\n\
-Rules: output ONLY the merged summary, begin immediately, no preamble, no planning. \
-Preserve exact paths, names, and command lines. The result must be shorter than \
-the combined partials.";
-
-/// Run all window passes in parallel, returning ordered partial summaries and
-/// reporting each completion through `on_done`.
-async fn run_windows_parallel(
+/// Native host adapter: bounded parallel I/O, with all planning and validation
+/// owned by the same Rust compactor used by the browser binding.
+async fn run_compaction(
     client: &Client,
     config: &Config,
-    windows: &[&str],
+    log: &str,
+    tx: Option<&mpsc::UnboundedSender<StreamEvent>>,
     cancel: &CancellationToken,
-    mut on_done: impl FnMut(usize, usize),
-) -> Result<Vec<String>, String> {
-    let n = windows.len();
-    let mut set = tokio::task::JoinSet::new();
-    for (i, window) in windows.iter().enumerate() {
-        let client = client.clone();
-        let config = config.clone();
-        let cancel = cancel.clone();
-        let user = format!("Section {}/{} of the session log:\n\n{}", i + 1, n, window);
-        set.spawn(async move {
-            run_pass(&client, &config, WINDOW_SYSTEM, &user, 1024, &cancel)
-                .await
-                .map(|r| (i, r))
-        });
+) -> Result<String, String> {
+    if cancel.is_cancelled() {
+        return Err("Cancelled".into());
     }
-    let mut partials = vec![String::new(); n];
-    let mut done = 0usize;
-    while let Some(join_result) = set.join_next().await {
-        if cancel.is_cancelled() {
-            set.abort_all();
-            return Err("Cancelled".to_string());
-        }
-        let (i, text) = join_result.map_err(|e| e.to_string())??;
-        partials[i] = text;
-        done += 1;
-        on_done(done, n);
-    }
-    Ok(partials)
-}
-
-fn combine_partials(partials: &[String]) -> String {
-    partials
-        .iter()
-        .enumerate()
-        .map(|(i, p)| format!("=== Section {} ===\n{}", i + 1, p))
-        .collect::<Vec<_>>()
-        .join("\n\n")
-}
-
-/// CLI variant: window passes run in parallel, merge pass sequential.
-pub async fn compact_llm(client: &Client, config: &Config, log: &str) -> Result<String, String> {
     let config = compaction_config(config);
-    let cancel = CancellationToken::new();
-    let stripped = strip_file_content_from_log(log);
-    let window_strs = sliding_windows(&stripped, COMPACT_WINDOW, COMPACT_OVERLAP);
-    let n = window_strs.len();
-    eprintln!("Compacting: {} windows in parallel", n);
-    let mut partials = run_windows_parallel(client, &config, &window_strs, &cancel, |done, n| {
-        eprintln!("  pass {done}/{n} complete");
-    })
-    .await?;
-    if partials.len() == 1 {
-        return Ok(partials.remove(0));
+    let mut plan = Compaction::new(
+        log,
+        config.input_token_budget(),
+        config.maximum_output_tokens(),
+    )?;
+    let mut streamed_final = false;
+    while plan.result().is_none() {
+        if cancel.is_cancelled() {
+            return Err("Cancelled".into());
+        }
+        let passes = plan.requests();
+        if passes.len() == 1
+            && passes[0].merge
+            && let Some(tx) = tx
+        {
+            let _ = tx.send(StreamEvent::CompactionChunk(
+                "\nMerging summaries…\n".into(),
+            ));
+            let result = run_pass_streaming(client, &config, &passes[0], tx, cancel).await?;
+            if cancel.is_cancelled() {
+                return Err("Cancelled".into());
+            }
+            plan.accept(passes[0].id, &result)?;
+            streamed_final = true;
+            continue;
+        }
+        for batch in passes.chunks(4) {
+            let mut tasks = tokio::task::JoinSet::new();
+            for pass in batch {
+                let (pass, client, config, cancel) =
+                    (pass.clone(), client.clone(), config.clone(), cancel.clone());
+                tasks.spawn(async move {
+                    let result = run_pass(
+                        &client,
+                        &config,
+                        &pass.system,
+                        &pass.user,
+                        pass.max_tokens,
+                        &cancel,
+                    )
+                    .await?;
+                    Ok::<_, String>((pass.id, result))
+                });
+            }
+            while let Some(result) = tasks.join_next().await {
+                if cancel.is_cancelled() {
+                    return Err("Cancelled".into());
+                }
+                let (id, text) = result.map_err(|error| error.to_string())??;
+                plan.accept(id, &text)?;
+                let (done, total) = plan.progress();
+                if let Some(tx) = tx {
+                    let _ = tx.send(StreamEvent::CompactionChunk(format!(
+                        "  ✓ Pass {done}/{total} complete\n"
+                    )));
+                } else {
+                    eprintln!("  pass {done}/{total} complete");
+                }
+            }
+        }
     }
-    eprintln!("  All passes done, merging…");
-    let combined = combine_partials(&partials);
-    run_pass(
-        client,
-        &config,
-        MERGE_SYSTEM,
-        &format!("Partial summaries to merge:\n\n{}", combined),
-        2048,
-        &cancel,
-    )
-    .await
+    let summary = plan
+        .result()
+        .ok_or("compaction did not produce a summary")?
+        .to_owned();
+    if !streamed_final && let Some(tx) = tx {
+        let _ = tx.send(StreamEvent::CompactionChunk(format!("\n{summary}\n")));
+    }
+    Ok(summary)
 }
 
-/// UI variant: window passes run in parallel (reporting completions), then the
-/// merge pass streams live into the popup.
+pub async fn compact_llm(client: &Client, config: &Config, log: &str) -> Result<String, String> {
+    run_compaction(client, config, log, None, &CancellationToken::new()).await
+}
+
 pub async fn compact_llm_streaming(
     client: &Client,
     config: &Config,
@@ -1618,136 +1444,7 @@ pub async fn compact_llm_streaming(
     tx: &mpsc::UnboundedSender<StreamEvent>,
     cancel: &CancellationToken,
 ) -> Result<String, String> {
-    let config = compaction_config(config);
-    let stripped = strip_file_content_from_log(log);
-    let window_strs = sliding_windows(&stripped, COMPACT_WINDOW, COMPACT_OVERLAP);
-    let n = window_strs.len();
-    let _ = tx.send(StreamEvent::CompactionChunk(format!(
-        "Log: {} chars → {} chars after stripping file content\nRunning {} window pass{} in parallel…\n",
-        log.len(),
-        stripped.len(),
-        n,
-        if n == 1 { "" } else { "es" }
-    )));
-    let progress_tx = tx.clone();
-    let mut partials = run_windows_parallel(client, &config, &window_strs, cancel, |done, n| {
-        let _ = progress_tx.send(StreamEvent::CompactionChunk(format!(
-            "  ✓ Pass {}/{} complete\n",
-            done, n
-        )));
-    })
-    .await?;
-    if partials.len() == 1 {
-        let summary = partials.remove(0);
-        let _ = tx.send(StreamEvent::CompactionChunk(format!("\n{summary}\n")));
-        return Ok(summary);
-    }
-    let _ = tx.send(StreamEvent::CompactionChunk(format!(
-        "\n── Merging {} sections (streaming) ──\n",
-        n
-    )));
-    let combined = combine_partials(&partials);
-    run_pass_streaming(
-        client,
-        &config,
-        MERGE_SYSTEM,
-        &format!("Partial summaries to merge:\n\n{}", combined),
-        tx,
-        cancel,
-    )
-    .await
-}
-
-/// Detect repeated-line loops and truncate before the third occurrence of any line.
-fn truncate_at_repetition(text: &str) -> String {
-    let mut seen: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
-    let mut out = Vec::new();
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            out.push(line);
-            continue;
-        }
-        let count = seen.entry(trimmed).or_insert(0);
-        *count += 1;
-        if *count >= 3 {
-            break;
-        }
-        out.push(line);
-    }
-    out.join("\n").trim_end().to_string()
-}
-
-/// Remove `<think>…</think>` blocks from model output.
-fn strip_think_tags(text: &str) -> String {
-    let mut result = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(start) = rest.find("<think>") {
-        result.push_str(&rest[..start]);
-        match rest[start..].find("</think>") {
-            Some(rel_end) => rest = &rest[start + rel_end + "</think>".len()..],
-            None => return result.trim().to_string(),
-        }
-    }
-    result.push_str(rest);
-    result.trim().to_string()
-}
-
-#[cfg(test)]
-mod compaction_tests {
-    use super::{
-        sliding_windows, strip_file_content_from_log, strip_think_tags, truncate_at_repetition,
-    };
-
-    #[test]
-    fn strips_write_file_content() {
-        let body = "using System;\\n".repeat(20);
-        let log = format!(
-            "=== TOOL CALL: Write CLI ===\ncall:write_file{{\"content\":\"{body}\",\"path\":\"/foo/Bar.cs\",\"tool_call_id\":\"w1\"}}\n=== TOOL RESULT ===\nSuccessfully wrote to /foo/Bar.cs\n"
-        );
-        let out = strip_file_content_from_log(&log);
-        assert!(!out.contains("using System"), "file body should be elided");
-        assert!(out.contains("elided"));
-        assert!(out.contains("/foo/Bar.cs"));
-    }
-
-    #[test]
-    fn strips_read_file_result() {
-        let log = "=== TOOL CALL: Read config ===\ncall:read_file{\"path\":\"/foo/x.csproj\",\"tool_call_id\":\"r1\"}\n=== TOOL RESULT ===\n<Project Sdk=\"...\"><lots of xml/></Project>\n=== THOUGHT ===\n\n";
-        let out = strip_file_content_from_log(log);
-        assert!(!out.contains("<Project"));
-        assert!(out.contains("elided"));
-        assert!(out.contains("=== THOUGHT ==="));
-    }
-
-    #[test]
-    fn keeps_short_tool_fields_and_shell_results() {
-        let log = "=== TOOL CALL: Shell ===\ncall:run_shell_command{\"command\":\"dotnet build\",\"tool_call_id\":\"sh1\"}\n=== TOOL RESULT ===\nBuild succeeded.\n";
-        let out = strip_file_content_from_log(log);
-        assert!(out.contains("dotnet build"));
-        assert!(out.contains("Build succeeded"));
-    }
-
-    #[test]
-    fn windows_overlap_and_cover_everything() {
-        let text = (0..2000).map(|i| format!("line {i}\n")).collect::<String>();
-        let windows = sliding_windows(&text, 4000, 500);
-        assert!(windows.len() > 1);
-        assert!(windows[0].starts_with("line 0\n"));
-        assert!(windows.last().unwrap().ends_with("line 1999\n"));
-        for w in &windows {
-            assert!(w.len() <= 4000);
-            assert!(w.ends_with('\n'));
-        }
-    }
-
-    #[test]
-    fn think_tags_and_repetition_are_removed() {
-        assert_eq!(strip_think_tags("<think>plan</think>result"), "result");
-        assert_eq!(strip_think_tags("head<think>unclosed"), "head");
-        let looped = "a\nb\na\nb\na\nc";
-        assert_eq!(truncate_at_repetition(looped), "a\nb\na\nb");
-    }
+    run_compaction(client, config, log, Some(tx), cancel).await
 }
 
 #[cfg(test)]

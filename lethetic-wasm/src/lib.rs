@@ -76,3 +76,27 @@ pub fn check_loop(text: &str, mode: &str) -> Result<Option<String>, String> {
 pub fn calculate(expression: &str) -> Result<f64, String> {
     lethetic::calculator::evaluate(expression)
 }
+
+#[wasm_bindgen]
+pub struct BrowserCompaction(lethetic::engine::compaction::Compaction);
+#[wasm_bindgen]
+impl BrowserCompaction {
+    #[wasm_bindgen(constructor)]
+    pub fn new(history: &str, input_tokens: usize, output_tokens: u32) -> Result<Self, String> {
+        let source = lethetic::engine::compaction::browser_transcript(history)?;
+        lethetic::engine::compaction::Compaction::new(&source, input_tokens, output_tokens)
+            .map(Self)
+    }
+    pub fn requests(&self) -> Result<String, String> {
+        serde_json::to_string(&self.0.requests()).map_err(|error| error.to_string())
+    }
+    pub fn accept(&mut self, id: usize, text: &str) -> Result<(), String> {
+        self.0.accept(id, text)
+    }
+    pub fn progress(&self) -> Result<String, String> {
+        serde_json::to_string(&self.0.progress()).map_err(|error| error.to_string())
+    }
+    pub fn result(&self) -> Option<String> {
+        self.0.result().map(str::to_owned)
+    }
+}

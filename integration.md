@@ -103,6 +103,15 @@ Responses API endpoints, native filesystem tools, shells, LSP, native skills, an
 Podman are not available in the browser host. Use the authenticated `lethetic --rc`
 connection for those capabilities through the same UI.
 
+## Compact context
+
+Choose **Ctrl+P → Compact session** to summarize the model context while retaining
+the browser session, transcript and files. The CLI and WASM host use one Rust
+compaction coordinator: the same prompts, bounded UTF-8 windows, file-body elision
+and hierarchical merges. No tools run during summarization. Cancellation, provider
+errors or failed persistence preserve the previous history. The session turn
+timeout covers the entire browser compaction, including all passes.
+
 ## Turn limits and loop detection
 
 Choose **Ctrl+P → Turn limits**. Settings belong to the current session, survive

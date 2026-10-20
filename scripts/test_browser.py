@@ -79,7 +79,7 @@ class Handler(SimpleHTTPRequestHandler):
             content = "Connected" if "single word Connected" in messages[-1]["content"] else "Hello from the browser test\n\n```python\nprint('private snippet')\n```"
         if messages[-1]["role"] == "user" and messages[-1]["content"] == "remember earlier":
             content = "Context restored" if any(m.get("content") == "hello" for m in messages[:-1]) else "Missing context"
-        if messages and "You compact a conversation" in str(messages[0].get("content", "")):
+        if messages and "You are compacting one section" in str(messages[0].get("content", "")):
             content = "Continue the Python file task. Files in outputs include edited data.csv and uploaded binary files. Keep the session and files."
         if data.get("tools") and messages[-1]["role"] == "user":
             snippets = {
