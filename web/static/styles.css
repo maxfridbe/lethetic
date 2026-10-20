@@ -862,7 +862,8 @@ progress {
 
 .composer {
   display: grid;
-  grid-template-rows: auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
   gap: 0.45rem;
   padding: 0.65rem max(0.75rem, env(safe-area-inset-right)) 0.65rem max(0.75rem, env(safe-area-inset-left));
   border-top: 1px solid var(--border);
@@ -870,6 +871,7 @@ progress {
 }
 
 .composer textarea {
+  min-width: 0;
   min-height: 3.5rem;
   max-height: 34dvh;
   field-sizing: content;
@@ -889,10 +891,10 @@ progress {
   gap: 0.55rem;
 }
 
-.composer-help {
-  margin-right: auto;
-  color: var(--theme-system-fg);
-  font-size: 0.7rem;
+.composer-actions {
+  flex-direction: column;
+  align-items: stretch;
+  flex-wrap: nowrap;
 }
 
 .primary-button {
@@ -1522,10 +1524,6 @@ progress {
     padding-bottom: 0.8rem;
     border-right: 0;
     border-bottom: 1px solid var(--border);
-  }
-
-  .composer-help {
-    display: none;
   }
 
   .overlay-backdrop {

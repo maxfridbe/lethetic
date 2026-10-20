@@ -408,7 +408,6 @@ function renderComposer(context: ChatViewContext): VNode {
           placeholder: live
             ? context.state.promptPlaceholder ?? "Type a prompt. Enter submits; Shift+Enter adds a line. Ctrl+P opens commands."
             : "Waiting for a synchronized connection…",
-          "aria-describedby": "composer-help",
         }}
         props={{ value: draft, disabled: !live || snapshot === null }}
         on={{
@@ -427,9 +426,6 @@ function renderComposer(context: ChatViewContext): VNode {
         }}
       ></textarea>
       <div attrs={{ class: "composer-actions" }}>
-        <span attrs={{ id: "composer-help", class: "composer-help" }}>
-          Draft stays in this browser and is never persisted.
-        </span>
         {snapshot?.activity.cancellable === true ? (
           <button
             attrs={{ type: "button", class: "danger-button" }}
