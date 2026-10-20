@@ -28,6 +28,8 @@ export interface EmbedOptions {
   mode?: import("./sessions.js").AgentMode;
   /** .NET code network access; default false. Model connections are unaffected. */
   networkAccess?: boolean;
+  /** Direct NuGet.org managed package downloads and cache reuse; default false. */
+  nugetAccess?: boolean;
   /** Optional .NET HTTP relay. Only its endpoint is saved with the session; token uses credentialStorage. */
   dotnetRelay?: import("./network-route.js").DotnetRelay | null;
   pyodideIndexURL?: string;

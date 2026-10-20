@@ -65,6 +65,12 @@ optional native .NET relay. The relay supports upstream SOCKS5, including a Tor
 client's SOCKS port. See the [relay setup guide](https://github.com/maxfridbe/dotnetdide/blob/master/docs/networking.md).
 The runtime is bundled from a checksum-pinned [dotnetdide release](https://github.com/maxfridbe/dotnetdide/releases).
 
+.NET includes image, WAV and Ogg Opus libraries; generated files appear in Files
+for preview and download. Enable **NuGet package access** separately to use
+`await DotnetDide.Nuget.Load("name", "version")`. Compatible managed packages download
+in the browser and persist in Cache Storage for reuse. See the
+[media and package guide](integration.md#bundled-media-and-optional-nuget-packages).
+
 For local hosting, build with `./build-browser.sh` and serve `target/browser` over
 HTTP. The release ZIP includes the standalone site, WASM runtime, embedding SDK,
 TypeScript declarations and integration guide. See [build requirements](integration.md#build-and-test),

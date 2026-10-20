@@ -12,7 +12,7 @@ export const DOTNET_TOOL_DEFINITION = {
     "A .cs path builds only that file; a directory or .csproj builds multiple files. Builds emit bin/*.dll and bin/*.pdb. " +
     "Default usings: System, System.IO, System.Linq, System.Collections.Generic, System.Threading.Tasks. " +
     "Add explicit using directives for other available .NET libraries. Dotnetdide.Net provides async HTTP when the host enables Network access; browser CORS applies. " +
-    "No shell, native OS, NuGet restore or full MSBuild. No third-party image/audio packages are bundled; SVG text and PCM WAV can be written with System.IO. " +
+    "No shell, native OS or full MSBuild/NuGet project restore. StbImageSharp/StbImageWriteSharp, NAudio.Core and Concentus/Oggfile are bundled for images, WAV and Ogg Opus. Await DotnetDide.Nuget.Load(name, optionalVersion) in a separate call before using extra managed packages; requires NuGet package access. " +
     "Variables reset on stop, reload or mode switch; completed files survive. " +
     "Workspace limits: 100 files, 256 folders, 1 MiB per file, 2 MiB total; no symlinks.",
   parameters: { type: "object", properties: { code: { type: "string", description: "C# script source, including top-level await" } },
@@ -30,7 +30,7 @@ export interface DotnetRuntime {
   exportWorkspace(): Promise<unknown>;
   terminate(): void;
 }
-export type DotnetLoader = (options: { signal: AbortSignal; networkAccess: boolean; relay?: DotnetRelay | null }) => Promise<DotnetRuntime>;
+export type DotnetLoader = (options: { signal: AbortSignal; networkAccess: boolean; nugetAccess: boolean; relay?: DotnetRelay | null }) => Promise<DotnetRuntime>;
 export interface DotnetTool extends Tool {
   reset(): void;
   snapshotWorkspace(): Workspace;
@@ -45,7 +45,7 @@ const loadRuntime: DotnetLoader = async options => {
 };
 
 export function createDotnetTool(options: {
-  networkAccess?: boolean; relay?: DotnetRelay | null; workspace?: Workspace; timeoutMs?: number;
+  networkAccess?: boolean; nugetAccess?: boolean; relay?: DotnetRelay | null; workspace?: Workspace; timeoutMs?: number;
   onWorkspace?: (workspace: Workspace) => void; loadRuntime?: DotnetLoader;
 } = {}): DotnetTool {
   let checkpoint = parseWorkspace(options.workspace ?? emptyWorkspace());
@@ -74,7 +74,7 @@ export function createDotnetTool(options: {
       controller.signal.addEventListener("abort", cancel, { once: true });
       const timer = setTimeout(() => controller.abort(new Error(".NET timed out; completed session files are kept.")), timeout);
       try {
-        runtime ??= await (options.loadRuntime ?? loadRuntime)({ signal: controller.signal, networkAccess: options.networkAccess ?? false, ...(options.relay ? { relay: options.relay } : {}) });
+        runtime ??= await (options.loadRuntime ?? loadRuntime)({ signal: controller.signal, networkAccess: options.networkAccess ?? false, nugetAccess: options.nugetAccess ?? false, ...(options.relay ? { relay: options.relay } : {}) });
         controller.signal.throwIfAborted();
         const current = JSON.stringify(checkpoint);
         if (installed !== current) { await runtime.importWorkspace(checkpoint); installed = current; }

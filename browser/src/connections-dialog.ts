@@ -53,6 +53,9 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     <fieldset class="browser-runtime"><legend>Runtime &amp; security · current session</legend>
     <label>Code runtime <select data-field="mode"><option value="general">Chat</option><option value="python">Python · Pyodide</option><option value="dotnet-wasm">.NET 11 · WASM</option></select></label>
     <label><input data-field="network" type="checkbox"> Network access (.NET code)</label>
+    <label><input data-field="nuget" type="checkbox"> NuGet package access (direct downloads from NuGet.org)</label>
+    <a href="${new URL("../../runtimes/dotnetdide/llm.md", import.meta.url).href}" target="_blank" rel="noopener">.NET usage guide</a>
+    <a href="${new URL("../../runtimes/dotnetdide/docs/media-and-packages.md", import.meta.url).href}" target="_blank" rel="noopener">Media libraries &amp; NuGet guide</a>
     <p data-field="permissions" class="browser-note" role="status"></p>
     <label>.NET HTTP route <select data-field="network-route"><option value="direct">Direct · destination CORS required</option><option value="relay">HTTP relay · optional server-side SOCKS5 / Tor</option></select></label>
     <div data-field="relay-fields" class="browser-relay-fields" hidden>
@@ -147,10 +150,12 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     button("test").disabled = !valid || operation !== null;
     field(dialog, "test-state").replaceChildren(healthBadge(current));
     select("mode").value = transport.mode; select("mode").disabled = transport.busy;
+    input("nuget").checked = transport.nugetAccess;
+    input("nuget").disabled = transport.busy || transport.mode !== "dotnet-wasm";
     input("network").checked = transport.networkAccess;
     input("network").disabled = transport.busy || transport.mode !== "dotnet-wasm";
     field(dialog, "permissions").textContent = transport.mode === "dotnet-wasm"
-      ? `Session files: read/write enabled · Network: ${transport.networkAccess ? "enabled" : "disabled"} · Saved HTTP route: ${transport.dotnetRelay ? transport.dotnetRelay.endpoint + (transport.dotnetRelay.token ? " · token present" : " · token required") : "direct (browser CORS)"}`
+      ? `Session files: read/write enabled · Network: ${transport.networkAccess ? "enabled" : "disabled"} · NuGet: ${transport.nugetAccess ? "enabled (NuGet.org)" : "disabled"} · Saved HTTP route: ${transport.dotnetRelay ? transport.dotnetRelay.endpoint + (transport.dotnetRelay.token ? " · token present" : " · token required") : "direct (browser CORS)"}`
       : transport.pythonEnabled ? "Session files: read/write enabled · Network: enabled (Pyodide)" : "Code execution is off.";
   };
   const routeEditor = (): void => {
@@ -294,6 +299,11 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
   });
   input("network").addEventListener("change", () => {
     try { transport.setNetworkAccess(input("network").checked); status(`.NET network access ${transport.networkAccess ? "enabled" : "disabled"}.`); }
+    catch (error) { status(errorMessage(error)); }
+    updateEditor();
+  });
+  input("nuget").addEventListener("change", () => {
+    try { transport.setNugetAccess(input("nuget").checked); status(`.NET NuGet package access ${transport.nugetAccess ? "enabled" : "disabled"}.`); }
     catch (error) { status(errorMessage(error)); }
     updateEditor();
   });

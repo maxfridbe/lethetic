@@ -8,7 +8,7 @@ process.stdin.setEncoding("utf8");
 let input = "";
 for await (const chunk of process.stdin) input += chunk;
 const config = JSON.parse(input) as Config;
-const browser = spawn(config.browser, ["--headless=new", "--no-sandbox", "--remote-debugging-pipe",
+const browser = spawn(config.browser, ["--headless=new", "--password-store=basic", "--use-mock-keychain", "--no-sandbox", "--remote-debugging-pipe",
   `--user-data-dir=${config.profile}`, "--no-first-run", "--disable-background-networking",
   "--disable-component-update", "--disable-sync", "--window-size=1440,1100", "about:blank"],
 { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] });
@@ -625,7 +625,7 @@ try {
   }
   await evaluate('globalThis.mediaView.destroy()');
   process.stdout.write('Automatic audio/video previews decoded in the browser with native controls.\n');
-  await testDotnetBrowser(evaluate);
+  await testDotnetBrowser(evaluate, previewInput);
   process.stdout.write("Released .NET runtime: session files, state, cancellation, network permissions and UI reload passed.\n");
   const dotnetScreenshot = await rpc("Page.captureScreenshot", { format: "png" });
   await writeFile(config.screenshot.replace(".png", "-dotnet.png"), Buffer.from(String(dotnetScreenshot["data"]), "base64"));

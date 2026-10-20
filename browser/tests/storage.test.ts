@@ -93,8 +93,9 @@ await test("tab credentials survive reload without entering saved metadata and a
 await test("session mode/permissions round-trip and reject non-boolean grants", () => {
   const store = new SessionStore(); const session = saved();
   store.save(session); assert.equal(store.list()[0]?.mode, undefined); // Legacy sessions remain readable.
-  store.save({...session, mode:"dotnet-wasm", networkAccess:false});
-  assert.equal(store.list()[0]?.mode, "dotnet-wasm"); assert.equal(store.list()[0]?.networkAccess, false);
+  store.save({...session, mode:"dotnet-wasm", networkAccess:false, nugetAccess:true});
+  assert.equal(store.list()[0]?.mode, "dotnet-wasm"); assert.equal(store.list()[0]?.networkAccess, false); assert.equal(store.list()[0]?.nugetAccess, true);
+  assert.throws(() => store.save({...session, nugetAccess:"true" as unknown as boolean}), /NuGet permission/);
   assert.throws(() => store.save({...session, networkAccess:"true" as unknown as boolean}), /network permission/);
-  assert.equal(store.list()[0]?.networkAccess, false);
+  assert.equal(store.list()[0]?.networkAccess, false); assert.equal(store.list()[0]?.nugetAccess, true);
 });

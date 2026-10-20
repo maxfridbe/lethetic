@@ -19,7 +19,7 @@ const signal = (): AbortSignal => new AbortController().signal;
 await test(".NET tool loads lazily without credentials and reuses its workspace/runtime", async () => {
   const runtime = new Runtime(); let loads = 0;
   const tool = createDotnetTool({ workspace: { ...emptyWorkspace(), files: [textFile("input.txt", "uploaded")] },
-    loadRuntime: options => { loads++; assert.deepEqual(Object.keys(options).sort(), ["networkAccess", "signal"]); assert.equal(options.networkAccess, false); return Promise.resolve(runtime); } });
+    loadRuntime: options => { loads++; assert.deepEqual(Object.keys(options).sort(), ["networkAccess", "nugetAccess", "signal"]); assert.equal(options.networkAccess, false); assert.equal(options.nugetAccess, false); return Promise.resolve(runtime); } });
   assert.equal(loads, 0);
   assert.equal(await tool.execute({code:"Console.Write(42);"}, signal()), "42");
   assert.equal(runtime.files.files[0]?.path, "input.txt");
@@ -71,7 +71,7 @@ await test("invalid checkpoints preserve saved files and import failure cannot e
 await test("only explicit relay credentials reach the .NET loader", async () => {
   const relay = {endpoint:"https://relay.example/relay", token:"relay-token-only-not-model-token"};
   const tool = createDotnetTool({networkAccess:true,relay,loadRuntime: async options => {
-    assert.deepEqual(Object.keys(options).sort(),["networkAccess","relay","signal"]);
+    assert.deepEqual(Object.keys(options).sort(),["networkAccess","nugetAccess","relay","signal"]);
     assert.deepEqual(options.relay,relay); return new Runtime();
   }});
   assert.equal(await tool.execute({code:"42"},signal()),"42"); tool.reset();

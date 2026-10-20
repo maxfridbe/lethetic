@@ -450,10 +450,11 @@ const view = mountLethetic(document.querySelector('#app'), {
   storage: localStorage,
   mode: 'dotnet-wasm',
   networkAccess: false, // .NET code only; does not disable model connections
+  nugetAccess: false, // separate permission for optional managed package downloads
 });
 ```
 
-Headless hosts can import `createDotnetTool({ networkAccess, workspace, onWorkspace })`
+Headless hosts can import `createDotnetTool({ networkAccess, nugetAccess, workspace, onWorkspace })`
 from `src/sdk.js`, use it in `createRuntime({ tools: [dotnet], ... })`, and call
 `dotnet.reset()` on disposal. `setWorkspace()` imports browser edits before the next
 call; `snapshotWorkspace()` returns the last completed checkpoint. Execution has a
@@ -461,7 +462,8 @@ call; `snapshotWorkspace()` returns the last completed checkpoint. Execution has
 session limits as Python: 100 files, 256 folders, 1 MiB/file, 2 MiB total. An invalid
 or oversized snapshot is reported without replacing the last saved checkpoint.
 The mount composes C# instructions automatically; headless hosts can use
-`effectiveSystemPrompt(editable, 'dotnet-wasm', networkAccess)` from `src/prompts.js`.
+`effectiveSystemPrompt(editable, 'dotnet-wasm', networkAccess, !!relay, nugetAccess)`
+from `src/prompts.js` so its permission instructions match the worker options.
 
 ```csharp
 File.WriteAllText("Program.cs", "Console.WriteLine(6 * 7);");
@@ -488,13 +490,47 @@ Programs run in their source/project directory, and successful builds write
 `bin/<name>.dll` and `bin/<name>.pdb` there. These managed artifacts also count
 toward session file limits.
 
-The pinned runtime currently bundles no third-party image or audio codecs.
-Namespace listings include type forwarders and do not imply browser support for
-`System.Drawing.Bitmap`, `Graphics`, or desktop sound playback. SVG text and
-PCM WAV files can be generated with `System.IO`; existing encoded media can be
-written with `File.WriteAllBytes` and opened in Files. Additional image/audio
-libraries must be bundled and tested in a new Dotnetdide release before prompts
-can advertise them; adding a `using` directive does not install a package.
+### Bundled media and optional NuGet packages
+
+The runtime bundles StbImageSharp/StbImageWriteSharp for images, NAudio.Core for
+WAV and signal processing, and Concentus/Oggfile for playable Ogg Opus. These work
+without NuGet or general network permission. Generated PNG/JPEG and WAV files
+preview in Files; Opus playback depends on browser support. Dispose output streams
+and finish Ogg writers before the tool returns. Complete examples ship at
+`runtimes/dotnetdide/examples/images.cs` and `examples/audio.cs`.
+
+Additional managed packages can be downloaded directly in the browser:
+
+```csharp
+// First tool call (requires NuGet package access):
+await DotnetDide.Nuget.Load("Newtonsoft.Json", "13.0.4");
+// Next tool call:
+Console.WriteLine(Newtonsoft.Json.JsonConvert.SerializeObject(new { answer = 42 }));
+```
+
+Enable **NuGet package access** in Connections → Runtime & security, or pass
+`nugetAccess: true` to `mountLethetic` / `createDotnetTool`. It defaults off and is
+saved per session, independently of `networkAccess`. Direct NuGet.org downloads
+bypass the general HTTP relay without sending relay/model credentials. Restricted
+embedding CSPs must allow `https://api.nuget.org` in `connect-src`. Managed
+compatible dependencies are resolved; native/runtime-specific assets, build
+targets, analyzers and version conflicts are rejected. Loaded libraries are also
+available to subsequent `Dotnet.Build/Run` calls without PackageReference items.
+
+Exact-version archives persist in browser **Cache Storage**, not localStorage or
+session exports (32 archives / 64 MiB total, 16 MiB each). Permission is checked
+before cached reuse. Storage restrictions fall back to downloads. After worker
+restart, call Load again to reload cached assemblies. To clear persisted archives:
+
+```javascript
+const { clearNugetCache } = await import('./runtimes/dotnetdide/dotnetdide.js');
+await clearNugetCache();
+```
+
+Clearing storage does not unload an active worker; stopping it does. Lethetic
+permission changes restart the worker while preserving the session and its files.
+The Connections screen links to the bundled `llm.md` and
+`docs/media-and-packages.md`, which document API usage, limits and permissions.
 
 ### Runtime security
 

@@ -31,7 +31,7 @@ def install(stage: Path) -> None:
             temporary.unlink(missing_ok=True)
     destination = stage / "runtimes/dotnetdide"
     destination.mkdir(parents=True, exist_ok=True)
-    selected = {"dotnetdide.js", "dotnetdide.worker.js", "network-policy.js", "relay-fetch.js", "docs/networking.md", "llm.md", "LICENSE", "NOTICE", "release.json"}
+    selected = {"dotnetdide.js", "dotnetdide.worker.js", "network-policy.js", "relay-fetch.js", "package-cache.js", "docs/media-and-packages.md", "examples/images.cs", "examples/audio.cs", "docs/networking.md", "llm.md", "LICENSE", "NOTICE", "release.json"}
     with zipfile.ZipFile(cache) as archive:
         metadata = json.loads(archive.read("release.json"))
         if metadata["version"] != version:
@@ -41,7 +41,7 @@ def install(stage: Path) -> None:
             if path.is_absolute() or ".." in path.parts:
                 raise ValueError("Unsafe release archive path")
             relative = member.filename.removeprefix("wwwroot/")
-            if member.is_dir() or not (relative in selected or relative.startswith(("_framework/", "docs/runtime-"))):
+            if member.is_dir() or not (relative in selected or relative.startswith(("_framework/", "docs/runtime-", "docs/licenses/"))):
                 continue
             target = destination / relative
             target.parent.mkdir(parents=True, exist_ok=True)

@@ -17,7 +17,7 @@ export interface SavedSession {
   id: string; name: string | null; label: string; updatedAt: string;
   blocks: RenderBlockView[]; messages: unknown[]; inputs: string[];
   system: string; connection: Omit<Connection, "apiKey"> | null; python: boolean; theme: string;
-  mode?: AgentMode; networkAccess?: boolean; dotnetRelayEndpoint?: string | null;
+  mode?: AgentMode; networkAccess?: boolean; nugetAccess?: boolean; dotnetRelayEndpoint?: string | null;
   metrics?: MetricsSnapshot;
   workspace?: Workspace;
 }
@@ -65,6 +65,7 @@ function parseSession(value: unknown): SavedSession {
     throw new Error("Invalid saved session.");
   }
   if (item.mode !== undefined && !["general", "python", "dotnet-wasm"].includes(item.mode)) throw new Error("Invalid saved mode.");
+  if (item.nugetAccess !== undefined && typeof item.nugetAccess !== "boolean") throw new Error("Invalid saved NuGet permission.");
   if (item.networkAccess !== undefined && typeof item.networkAccess !== "boolean") throw new Error("Invalid saved network permission.");
   const state = initialState(); state.blocks = { blocks: item.blocks, omitted_before: 0, truncated: false };
   if (!parseServerMessage(JSON.stringify({ type: "state_snapshot", snapshot: {
@@ -77,7 +78,8 @@ function parseSession(value: unknown): SavedSession {
   return { id: item.id, name: item.name, label: item.label, updatedAt: item.updatedAt, blocks: item.blocks,
     messages: item.messages, inputs: item.inputs, system: item.system, python: item.python,
     ...(item.mode !== undefined ? { mode: item.mode } : {}),
-    ...(item.networkAccess !== undefined ? { networkAccess: item.networkAccess } : {}), theme: item.theme, connection,
+    ...(item.networkAccess !== undefined ? { networkAccess: item.networkAccess } : {}),
+    ...(item.nugetAccess !== undefined ? { nugetAccess: item.nugetAccess } : {}), theme: item.theme, connection,
     ...(item.dotnetRelayEndpoint !== undefined ? { dotnetRelayEndpoint: item.dotnetRelayEndpoint === null ? null : relayEndpoint(item.dotnetRelayEndpoint) } : {}),
     ...(item.workspace !== undefined ? { workspace: parseWorkspace(item.workspace) } : {}),
     ...(item.metrics ? { metrics: parseMetrics(item.metrics) } : {}) };
