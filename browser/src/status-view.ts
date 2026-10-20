@@ -9,6 +9,7 @@ export function renderBrowserStatus(transport: LocalTransport | null, pins = new
   const metrics = transport?.metrics, turn = metrics?.turn;
   const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)}s`;
   const started = (turn?.requests ?? 0) > 0;
+  const network = !transport?.networkAccess ? "network off" : transport.dotnetRelay ? transport.dotnetRelay.token ? "HTTP relay" : "relay token needed" : "direct network";
   const entries: { id: StatId; label: string; value: string; brief?: string }[] = [
     { id: "connection", label: "Connection", value: transport?.connection?.name ?? "None" },
     { id: "model", label: "Model", value: transport?.connection?.model ?? "None" },
@@ -23,7 +24,7 @@ export function renderBrowserStatus(transport: LocalTransport | null, pins = new
     { id: "elapsed", label: "Turn elapsed", value: started ? seconds(metrics?.elapsed ?? 0) : "—", brief: started ? seconds(metrics?.elapsed ?? 0) : "Elapsed: —" },
     { id: "modelTime", label: "Model responses", value: started ? seconds(metrics?.modelMs ?? 0) : "—" },
     { id: "toolTime", label: "Tool execution", value: started ? seconds(metrics?.toolMs ?? 0) : "—" },
-    { id: "python", label: "Code runtime", value: transport?.mode === "dotnet-wasm" ? `.NET 11 WASM · ${transport.networkAccess ? transport.dotnetRelay ? transport.dotnetRelay.token ? "HTTP relay" : "relay token needed" : "direct network" : "network off"}` : transport?.pythonEnabled ? "Pyodide worker" : "Off" },
+    { id: "python", label: "Code runtime", value: transport?.mode === "dotnet-wasm" ? `.NET 11 WASM · ${network}` : transport?.pythonEnabled ? `Pyodide · ${network}` : "Off" },
   ];
   return h("details.browser-status", [
     h("summary", { attrs: { "aria-label": "Usage and timing details" } }, [

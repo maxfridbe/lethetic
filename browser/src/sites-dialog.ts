@@ -35,11 +35,10 @@ export function createSitesDialog(transport: LocalTransport): { open(): void; re
   }
   function refresh(): void {
     if (!dialog.open) return;
-    field(dialog, "site-network").textContent = transport.pythonEnabled
-      ? "Python network: enabled through Pyodide; destination must allow CORS. Preview JavaScript can fetch this site's Python routes."
-      : transport.networkAccess
-      ? `C# Network access: enabled · ${transport.dotnetRelay ? "HTTP relay" : "direct requests; destination must allow CORS"}. Preview JavaScript can fetch this site's C# routes.`
-      : "C# Network access: disabled. External API calls from HttpClient are blocked. Enable Network access in Connections → Runtime & security, then run the site file again.";
+    const language = transport.pythonEnabled ? "Python" : "C#";
+    field(dialog, "site-network").textContent = transport.networkAccess
+      ? `${language} Network access: enabled · ${transport.dotnetRelay ? "HTTP relay" : "direct requests; destination must allow CORS"}. Preview JavaScript can fetch this site's ${language} routes.`
+      : `${language} Network access: disabled. External API calls are blocked. Enable Network access in Connections → Runtime & security, then run the site file again.`;
     const sites = transport.sites;
     if (activeSession && (activeSession !== transport.state.session.session_id || !transport.siteAccess || !sites.some(site => site.port === activePort))) clear();
     const choices = sites.map(site => String(site.port));

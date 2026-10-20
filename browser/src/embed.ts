@@ -27,13 +27,13 @@ export interface EmbedOptions {
   systemPrompt?: string;
   python?: boolean;
   mode?: import("./sessions.js").AgentMode;
-  /** .NET code network access; default false. Model connections are unaffected. */
+  /** Python and .NET code network access; default false. Model connections are unaffected. */
   networkAccess?: boolean;
   /** Direct NuGet.org managed package downloads and cache reuse; default false. */
   nugetAccess?: boolean;
   /** Python or ASP.NET virtual sites in an isolated preview; default false. */
   siteAccess?: boolean;
-  /** Optional .NET HTTP relay. Only its endpoint is saved with the session; token uses credentialStorage. */
+  /** Optional HTTP relay for both Python and .NET (legacy option name). Only its endpoint is saved with the session; token uses credentialStorage. */
   dotnetRelay?: import("./network-route.js").DotnetRelay | null;
   pyodideIndexURL?: string;
   /** Retained for compatibility; the shared remote-mode UI is already compact. */

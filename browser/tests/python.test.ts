@@ -11,7 +11,7 @@ class FakeWorker extends EventTarget {
   postMessage(data: { id: number; code: string; indexURL: string; workspace: Workspace; type?: string }): void {
     if (data.type === "hello") {
       this.handshakes++;
-      this.dispatchEvent(new MessageEvent("message", { data: { id: data.id, type: "ready", protocol: 1, capabilities: ["sites"] } }));
+      this.dispatchEvent(new MessageEvent("message", { data: { id: data.id, type: "ready", protocol: 1, capabilities: ["sites", "network-v1"] } }));
     } else this.requests.push(data);
   }
   terminate(): void { this.terminated = true; }
@@ -30,7 +30,7 @@ await test("Python worker is lazy, persistent, and receives no model credentials
   assert.equal(workers.length, 0);
   const running = python.execute({ code: "x = 40" }, new AbortController().signal);
   const worker = workers[0]; assert.ok(worker);
-  assert.deepEqual(Object.keys(worker.requests[0] ?? {}).sort(), ["code", "id", "indexURL", "protocol", "siteAccess", "workspace"]);
+  assert.deepEqual(Object.keys(worker.requests[0] ?? {}).sort(), ["code", "id", "indexURL", "networkAccess", "protocol", "relay", "siteAccess", "workspace"]);
   worker.answer("ok");
   assert.equal(await running, "ok");
   const again = python.execute({ code: "x + 2" }, new AbortController().signal);
@@ -160,4 +160,28 @@ await test("Python site permission detects workers without site support before s
   await assert.rejects(tool.execute({code:"listen"},new AbortController().signal),/out of date/);
   assert.equal(worker.terminated,true);
   assert.equal(worker.requests.length,0);
+});
+
+await test("Python networking validates permissions and requires a policy-capable worker", async () => {
+  assert.throws(()=>createPythonTool({networkAccess:"false" as unknown as boolean}),/boolean/);
+  assert.throws(()=>createPythonTool({relay:{endpoint:"socks5://localhost:9050"}}),/SOCKS/);
+  const worker=new FakeWorker();
+  worker.postMessage=data=>worker.dispatchEvent(new MessageEvent("message",{data:{id:data.id,protocol:1,type:"ready",capabilities:["sites"]}}));
+  const tool=createPythonTool({networkAccess:false,workerFactory:()=>worker as unknown as Worker});
+  await assert.rejects(tool.execute({code:"must not run"},new AbortController().signal),/network permission/);
+  assert.equal(worker.terminated,true);
+});
+
+await test("Python sends the fixed permission and relay for execution and site requests", async () => {
+  const worker=new FakeWorker(), relay={endpoint:"https://relay.example/relay",token:"test-relay-token-123456789"};
+  const tool=createPythonTool({networkAccess:true,relay,siteAccess:true,workerFactory:()=>worker as unknown as Worker});
+  const running=tool.execute({code:"start"},new AbortController().signal);
+  assert.equal((worker.requests[0] as unknown as {networkAccess:boolean}).networkAccess,true);
+  assert.deepEqual((worker.requests[0] as unknown as {relay:unknown}).relay,relay);
+  worker.answer("ready");await running;
+  const request=tool.requestSite({port:8080,method:"GET",path:"/"},new AbortController().signal);
+  assert.equal((worker.requests[1] as unknown as {networkAccess:boolean}).networkAccess,true);
+  assert.deepEqual((worker.requests[1] as unknown as {relay:unknown}).relay,relay);
+  worker.answer("",emptyWorkspace(),{response:{status:200,headers:{},body:""}});await request;
+  tool.reset();
 });

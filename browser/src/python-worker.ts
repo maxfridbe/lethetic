@@ -1,10 +1,12 @@
-// Only source, a runtime URL and this session's workspace cross the worker boundary.
+// Runtime settings and relay credentials belong to this session; no model keys enter Python.
+import { installPythonNetworkPolicy, pythonPackageDownloads, PYTHON_NETWORK_DENIED } from "./python-network.js";
+import type { DotnetRelay } from "./network-route.js";
 import { captureWorkspace, restoreWorkspace } from "./python-filesystem.js";
 import type { PythonFS } from "./python-filesystem.js";
 import { emptyWorkspace, parseWorkspace } from "./workspace.js";
 import type { Workspace } from "./workspace.js";
 import type { WireRequest, WireResponse, WireSite } from "./dotnet.js";
-interface PythonRequest { id: number; code: string; indexURL: string; workspace?: Workspace; protocol?: number; type?: string; siteAccess?: boolean; siteRequest?: WireRequest }
+interface PythonRequest { id: number; code: string; indexURL: string; workspace?: Workspace; protocol?: number; type?: string; siteAccess?: boolean; networkAccess?: boolean; relay?: DotnetRelay | null; siteRequest?: WireRequest }
 interface Pyodide {
   FS: PythonFS;
   runPythonAsync(code: string): Promise<unknown>;
@@ -13,7 +15,7 @@ interface Pyodide {
   setStderr(options: { batched: (text: string) => void }): void;
   setStdin(options: { stdin: () => undefined }): void;
 }
-interface PyodideModule { loadPyodide(options: { indexURL: string }): Promise<Pyodide> }
+interface PyodideModule { loadPyodide(options: { indexURL: string; lockFileContents: string; packageBaseUrl: string }): Promise<Pyodide> }
 const scope = globalThis as unknown as {
   onmessage: ((event: MessageEvent<PythonRequest>) => void) | null;
   postMessage(data: unknown): void;
@@ -21,19 +23,21 @@ const scope = globalThis as unknown as {
 let python: Promise<Pyodide> | null = null;
 let busy = false;
 let installedWorkspace = "";
+let networkDenied = false;
 
 scope.onmessage = (event): void => {
   const request = event.data;
   if (request.type === "hello") {
-    scope.postMessage({ id: request.id, type: "ready", protocol: 1, capabilities: ["sites"] });
+    scope.postMessage({ id: request.id, type: "ready", protocol: 1, capabilities: ["sites", "network-v1"] });
     return;
   }
   void execute(request);
 };
 
-async function execute({ id, code, indexURL, workspace, protocol, siteAccess = false, siteRequest }: PythonRequest): Promise<void> {
+async function execute({ id, code, indexURL, workspace, protocol, siteAccess = false, networkAccess = false, relay = null, siteRequest }: PythonRequest): Promise<void> {
   if (busy) { scope.postMessage({ id, protocol: 1, output: "Python is already running." }); return; }
   busy = true;
+  networkDenied = false;
   let output = "";
   let runtime: Pyodide | undefined;
   let restored = false;
@@ -53,17 +57,26 @@ async function execute({ id, code, indexURL, workspace, protocol, siteAccess = f
     const legacy = protocol === undefined && workspace === undefined;
     const incoming = legacy ? null : parseWorkspace(workspace);
     python ??= (async () => {
-      const module: PyodideModule = await import(new URL("pyodide.mjs", indexURL).href);
-      const loaded = await module.loadPyodide({ indexURL });
+      const lockResponse = await fetch(new URL("pyodide-lock.json", indexURL), { credentials: "omit", redirect: "error" });
+      if (!lockResponse.ok) throw new Error("Could not load Pyodide package manifest. Reload this page.");
+      const lockFileContents = await lockResponse.text();
+      const downloads = pythonPackageDownloads(JSON.parse(lockFileContents), indexURL);
+      for (const file of ["pyodide.asm.wasm", "python_stdlib.zip"]) downloads.add(new URL(file, indexURL).href);
       const source = await fetch(new URL("../../python/lethetic_wire.py", import.meta.url));
       if (!source.ok) throw new Error("Could not load Python site support. Reload this page.");
+      const sourceText = await source.text();
+      const relayModule: Pick<Parameters<typeof installPythonNetworkPolicy>[0], "relayFetch"> = relay
+        ? await import(new URL("../../runtimes/dotnetdide/relay-fetch.js", import.meta.url).href) : {};
+      installPythonNetworkPolicy({ networkAccess, relay, downloads, ...relayModule, onDenied: () => { networkDenied = true; } });
+      const module: PyodideModule = await import(new URL("pyodide.mjs", indexURL).href);
+      const loaded = await module.loadPyodide({ indexURL, lockFileContents, packageBaseUrl: indexURL });
       await loaded.runPythonAsync(`# lethetic-wire-bootstrap
 import importlib.util as _wire_util, sys as _wire_sys
 _wire_module = _wire_util.module_from_spec(_wire_util.spec_from_loader("lethetic_wire", loader=None))
 _wire_sys.modules["lethetic_wire"] = _wire_module
-exec(${JSON.stringify(await source.text())}, _wire_module.__dict__)`);
+exec(${JSON.stringify(sourceText)}, _wire_module.__dict__)`);
       return loaded;
-    })().catch((error: unknown) => { python = null; throw error; });
+    })();
     runtime = await python;
     if (incoming || !installedWorkspace) {
       const next = incoming ?? emptyWorkspace();
@@ -89,6 +102,9 @@ exec(${JSON.stringify(await source.text())}, _wire_module.__dict__)`);
     }
   } catch (error) { append(String(error)); }
   finally {
+    // Some libraries replace fetch's error (micropip reports "package not found").
+    // Keep the real permission failure visible even if Python caught it.
+    if (networkDenied && !output.includes(PYTHON_NETWORK_DENIED)) append(PYTHON_NETWORK_DENIED);
     if (runtime && restored) {
       try { sites = JSON.parse(String(await runtime.runPythonAsync('# lethetic-wire-sites\n__import__("lethetic_wire")._sites_json()'))) as WireSite[]; }
       catch (error) { append(`Could not list Python sites: ${String(error)}`); }

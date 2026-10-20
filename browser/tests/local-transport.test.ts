@@ -190,6 +190,12 @@ await test("relay settings preserve the session and files, restore tab keys, and
   assert.throws(()=>transport.setDotnetRelay({endpoint:"socks5://localhost:9050"}),/SOCKS/);
   assert.throws(()=>transport.setDotnetRelay({endpoint:"https://bridges.torproject.org/"}),/Tor/);
   assert.deepEqual(transport.dotnetRelay,relay); assert.equal(transport.state.session.session_id,id);
+  transport.setMode("python");
+  assert.ok(transport.promptDetails.instructions.includes("Network access: enabled; Python"));
+  assert.ok(transport.promptDetails.instructions.includes("host-configured HTTP relay"));
+  transport.setNetworkAccess(false);
+  assert.ok(transport.promptDetails.instructions.includes("Network access: disabled; use session files"));
+  assert.equal(transport.state.session.session_id,id);assert.equal(files.list()[0]?.content,"42");
   transport.setDotnetRelay({...relay,token:""}); assert.equal(transport.dotnetRelay?.token,"");
   transport.dispose(); ({transport}=make()); transport.start(); assert.equal(transport.dotnetRelay?.token,""); transport.dispose();
 });

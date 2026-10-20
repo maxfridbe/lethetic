@@ -145,7 +145,7 @@ records are also left untouched; no encrypted library or passphrase UI is involv
 
 **Sessions** uses the existing session screen to resume, name, create, or delete
 chats. Completed turns automatically save their transcript, model context, usage
-stats, system prompt, code mode, .NET network permission, theme and connection metadata in
+stats, system prompt, code mode, code network permission, theme and connection metadata in
 `lethetic.sessions.v1`. API keys are excluded. Reopening a chat restores its context
 without rerunning tools. Its files and empty directories are restored before the
 next Python call. Python variables are recreated, so save durable results to files.
@@ -378,11 +378,13 @@ are a separate build and are not required by this package.
 The browser tool uses [Pyodide 0.29.3](https://pyodide.org/en/0.29.3/usage/quickstart.html),
 loaded lazily from `https://cdn.jsdelivr.net/pyodide/v0.29.3/full/`. It runs in a
 dedicated module Web Worker with persistent globals and a virtual filesystem.
-Enabling Python authorizes execution, virtual file access, and browser-supported
-networking without per-call approval. Browser CORS/TLS rules still apply.
+Enabling Python authorizes execution and virtual file access. **Network access**
+is off by default for both Python and .NET; enable it in Connections → Runtime &
+security for outbound requests, including requests from site handlers. The saved
+HTTP route applies to Python too. Direct requests require destination CORS/TLS.
 
-The worker accepts older open tabs and negotiates workspace support before a new
-client sends code. If you see an out-of-date worker error, reload the page; keep
+The worker negotiates workspace, sites and network-policy support before a new
+client sends code; stale workers receive no user code. If you see an out-of-date worker error, reload the page; keep
 site storage so saved sessions and files remain available. The older
 `Invalid Python workspace.` error from mixed deployed assets is fixed in 0.4.1.
 Use it for calculations, CSV/JSON processing, NumPy/pandas analysis, and Matplotlib
@@ -405,7 +407,11 @@ Stdout, stderr, and the final expression are returned to the model, capped at 64
 Python exceptions are returned as tool output. Standard input receives EOF.
 Packages bundled with Pyodide are loaded from imports; arbitrary native pip packages
 and OS processes are not available. The initial load can take time and needs network
-access. Self-host a complete compatible distribution and pass `indexURL` to
+connectivity even with the code Network access switch off. Exact bundled package
+files from the host-selected Pyodide manifest remain allowed; this exemption
+strips caller headers/cookies and rejects redirects, query strings and uploads.
+Additional `micropip` packages require Network access and use the selected route.
+Self-host a complete compatible distribution and pass `indexURL` to
 `createPythonTool` or `pyodideIndexURL` to `mountLethetic` to control asset delivery.
 
 Cancellation and the 120-second Python timeout terminate the worker, so even an
@@ -423,8 +429,8 @@ in the headless SDK; the complete UI handles it through its session store.
 
 Python code can access browser networking and JavaScript worker APIs. A worker is
 an execution isolation mechanism, not a security boundary for hostile code. It
-receives source, a runtime asset URL, and the active session's files, never model API
-keys or conversation history. Enable Python only when you intend to run model-generated code. Embedded
+receives source, a runtime asset URL, the active session's files, network settings
+and any configured relay credential, never model API keys or conversation history. Enable Python only when you intend to run model-generated code. Embedded
 hosts should apply their own approval policy if they require per-call consent.
 
 For CSP, allow `data:` in `media-src` for session audio/video previews. Allow your own scripts, `'wasm-unsafe-eval'`, the Pyodide module origin,
@@ -500,15 +506,20 @@ listen(8080, app)  # Optionally add web_root="site" for an existing static direc
 ```
 
 For external APIs, use `await pyodide.http.pyfetch(url)` in an async handler;
-the preview calls that handler with `fetch('/api/...')`. Existing Pyodide network
-access remains authorized and independent of the .NET Network access switch.
-Destination CORS and the [custom-header errata](#errata-custom-http-request-headers)
-still apply. [Pyodide's HTTP guide](https://pyodide.org/en/0.29.3/usage/api/python-api/http.html)
+the preview calls that handler with `fetch('/api/...')`. Enable **Network access**
+for the session. Both ordinary Python calls and site handlers use this permission
+and the selected direct/relay route. With it off, local routes and static files
+still work. Changing the permission or route stops the worker and its sites;
+run the saved `.py` again. Chat and completed files remain saved.
+Direct requests require destination CORS; relay requests require the configured
+page-origin and target-origin allowlists. The [custom-header errata](#errata-custom-http-request-headers)
+still applies. [Pyodide's HTTP guide](https://pyodide.org/en/0.29.3/usage/api/python-api/http.html)
 describes browser networking.
 
 Requests run serially with code execution, import pending file edits first, and
 checkpoint generated files afterward. Reload, cancellation, mode/session changes,
-and changing Interactive sites terminate the worker and its sites while keeping
+and changing Interactive sites, Network access or HTTP route terminate the worker
+and its sites while keeping
 completed session files. Sites are never replayed automatically on reload.
 
 The shared preview supports classic scripts, CSS, media and local fetch calls.
@@ -517,9 +528,11 @@ ES modules, XHR, ASGI, WebSockets and streaming are unsupported. Request/respons
 bodies are buffered up to 2 MiB, with a 15-second cooperative deadline and a
 20-second worker timeout; existing smaller session-file limits still apply.
 The iframe cannot access parent DOM/storage or model credentials. Python itself
-retains its existing authorized worker capabilities.
+has the session network permission and route applied to fetch, XHR and browser
+sockets; the worker policy is a cooperative capability control, not a sandbox
+against hostile JavaScript interop or dynamic imports.
 
-Embedding hosts use `createPythonTool({siteAccess:true, workspace, onWorkspace})`.
+Embedding hosts use `createPythonTool({siteAccess:true, networkAccess:false, relay, workspace, onWorkspace})`.
 The returned tool exposes `sites()` and `requestSite(request, signal)` with the
 same request/response format as the .NET tool. `mountLethetic` also accepts
 `{mode:"python", siteAccess:true}`. Keep `python/lethetic_wire.py` alongside the
@@ -542,9 +555,9 @@ const view = mountLethetic(document.querySelector('#app'), {
   connections: myConnections,
   storage: localStorage,
   mode: 'dotnet-wasm',
-  networkAccess: false, // .NET code only; does not disable model connections
+  networkAccess: false, // Python and .NET code; does not disable model connections
   nugetAccess: false, // separate permission for optional managed package downloads
-  siteAccess: false, // separate permission for interactive C# sites
+  siteAccess: false, // separate permission for interactive Python/C# sites
 });
 ```
 
@@ -690,11 +703,14 @@ The Connections screen links to the bundled `llm.md` and
 
 ### Runtime security
 
-**Network access** is off by default for .NET and is stored per session.
-The switch covers worker fetch/HTTP (`Dotnetdide.Net` and ordinary `HttpClient`),
-XHR and browser sockets. Runtime assets may load during bootstrap. Changing the
-setting restarts the .NET worker, preserving chat and completed files. Pyodide
-retains its existing authorized browser networking; the UI explicitly shows this.
+**Network access** is off by default for Python and .NET and is stored per session.
+Existing sessions use their saved value (missing means off). The switch covers
+worker fetch/HTTP (`pyodide.http.pyfetch`, `js.fetch`, `Dotnetdide.Net` and ordinary
+`HttpClient`), XHR and browser sockets, including requests from site handlers.
+Runtime assets and Pyodide bundled packages still load. Changing the setting or
+HTTP route restarts code workers and stops sites, preserving chat and completed
+files. Run the saved program again. The model prompt and Sites dialog show the
+current permission and route; local interactive sites work with outbound access off.
 Session filesystem read/write is enabled for both code modes. Neither receives
 model keys or conversation history. Custom embedding tools remain host-authorized.
 
@@ -707,7 +723,7 @@ var response = await Dotnetdide.Net.PostJsonAsync("https://example.org/api", new
 ```
 
 Direct requests require destination CORS. For APIs without browser CORS, select
-**Connections → Runtime & security → .NET HTTP route → HTTP relay**, enter your
+**Connections → Runtime & security → HTTP route → HTTP relay**, enter your
 relay's HTTPS `/relay` endpoint and token, and choose **Apply HTTP route**. The
 same session and files remain selected; code variables restart. The saved route
 and token-present state are shown explicitly. Only the endpoint is saved in
@@ -731,7 +747,27 @@ mountLethetic(root, {
   dotnetRelay: { endpoint: 'https://your-relay.example/relay', token: relayToken }
 });
 // Headless: createDotnetTool({ networkAccess: true, relay: { endpoint, token } }).
+// Python: createPythonTool({ networkAccess: true, relay: { endpoint, token } }).
+// mountLethetic with mode: 'python' uses the same dotnetRelay option (legacy name).
 ```
+
+
+For Python external APIs, prefer the async API; the relay supports GET, HEAD,
+OPTIONS, POST, PUT, PATCH and DELETE, explicit target headers and binary bodies:
+
+```python
+from pyodide.http import pyfetch
+response = await pyfetch("https://api.example/data", method="POST",
+                         headers={"Content-Type": "application/json"},
+                         body='{"value":42}')
+print(response.status, await response.string())
+```
+
+`pyxhr`/`open_url` and libraries using XMLHttpRequest cannot use the HTTP relay;
+use `pyfetch` instead. Relay failures and missing credentials produce an error,
+never a direct retry. The relay's target allowlist must include any extra package
+repositories needed by `micropip`. Leave browser-controlled headers such as
+`User-Agent` unset; see the [header errata](#errata-custom-http-request-headers).
 
 The route covers both `Dotnetdide.Net` and ordinary `System.Net.Http.HttpClient`.
 Additional helpers include `HeadAsync`, `OptionsAsync`, `DeleteAsync`, `PostAsync`,
@@ -748,7 +784,7 @@ Lethetic's session file limits still apply to saved downloads. Relay requests
 never forward browser cookies, reject redirects and have no direct fallback.
 WebSocket/XHR/EventSource/WebTransport are blocked on a relay route; use HTTP.
 The page must be allowed by relay CORS; use HTTPS for remote relays. The route
-does not change model connections, Pyodide or runtime bootstrap downloads, and
+does not change model connections or bundled runtime/package downloads, and
 is not a whole-browser Tor route.
 
 This is a capability control,

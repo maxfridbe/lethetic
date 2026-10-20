@@ -102,7 +102,24 @@ as .NET. Use `listen(port, handler=async_handler, web_root="site")`, return a
 pass a synchronous WSGI app such as Flask or just a static web root. Do not start
 a socket server or blocking `app.run()`. Files → Run supports `.py` files,
 top-level await and program-relative cwd. Use `pyodide.http.pyfetch` in async
-handlers for external APIs; browser CORS applies.
+handlers for external APIs. **Network access** is off by default and must be
+explicitly enabled per session; both ordinary code and handlers obey it. Direct
+requests require browser CORS. The shared HTTP route can use the configured relay
+(including its server-side SOCKS/Tor proxy), with no direct fallback. Use async
+`pyfetch` for GET/HEAD/OPTIONS/POST/PUT/PATCH/DELETE and explicit headers/bodies;
+XHR/pyxhr and browser sockets are blocked when relaying. Do not set `User-Agent`
+or other browser-controlled headers. Preserve the actual exception details.
+
+Runtime assets and exact bundled Pyodide packages load even with networking off.
+Additional `micropip` downloads require Network access and follow the HTTP route;
+relay target allowlists must include those repositories. Local sites and files
+work with outbound access off. Network/route changes restart Python and stop its
+sites without changing session identity or saved files; run the `.py` again.
+The current permission and route are injected into the prompt. Headless hosts use
+`createPythonTool({networkAccess:true, relay:{endpoint,token}, siteAccess:true})`;
+`mountLethetic` retains the legacy `dotnetRelay` option name for both runtimes.
+The worker network policy controls cooperative code; it is not a security boundary
+against hostile JS interop or dynamic imports.
 
 Handler-created files sync to the session after requests. Stops, reloads and
 mode/session/site-permission changes discard running sites while retaining saved

@@ -1,13 +1,15 @@
 import { emptyWorkspace, parseWorkspace } from "./workspace.js";
 import type { Workspace } from "./workspace.js";
 export type { Workspace } from "./workspace.js";
+import { relayEndpoint, relayToken } from "./network-route.js";
+import type { DotnetRelay } from "./network-route.js";
 import type { Tool } from "./sdk.js";
 import type { WireRequest, WireResponse, WireSite } from "./dotnet.js";
 
 export const PYTHON_TOOL_DEFINITION = {
     name: "python",
     description: "Run Python in a persistent Pyodide browser worker. Use print() for output. " +
-      "Python execution, virtual file reads/writes, and browser-supported networking are already authorized; do not ask for per-call approval. Variables persist while the worker runs. Write session files under /home/pyodide (the initial working directory); files there sync with Files after each call and restore after reload or stop. Create CSV, HTML, SVG or PNG outputs for the user to preview or download in Files. Other directories are temporary. No shell or native files are available. " +
+      "Python execution and virtual file reads/writes are authorized. Outbound networking requires this session's Network access permission; use await pyodide.http.pyfetch. The configured HTTP relay is used without direct fallback. Do not ask for per-call approval when enabled. Variables persist while the worker runs. Write session files under /home/pyodide (the initial working directory); files there sync with Files after each call and restore after reload or stop. Create CSV, HTML, SVG or PNG outputs for the user to preview or download in Files. Other directories are temporary. No shell or native files are available. " +
       "With Interactive sites enabled, lethetic_wire.listen(port, handler=async_handler, web_root='site') or listen(port, wsgi_app) hosts a site in the isolated Sites preview; return immediately. Request handlers return lethetic_wire.Response; request-created files sync to the session. Users can Run saved .py files from Files. " +
       "Packages bundled with Pyodide are loaded from imports. Stopping resets variables and discards unfinished file changes. Workspace limits: 100 files, 256 folders, 1 MiB per file, 2 MiB total; no symlinks.",
     parameters: { type: "object", properties: { code: { type: "string", description: "Python source" } },
@@ -27,11 +29,14 @@ export interface PythonTool extends Tool {
 }
 
 /** A persistent Python tool in a dedicated worker. Stop/timeout resets the worker.
- * Python has browser network access; this is not an untrusted-code security boundary.
- * No API keys, host tools, or conversation history are passed to the worker.
+ * Network access defaults off; this is not an untrusted-code security boundary.
+ * No model API keys, host tools, or conversation history are passed to the worker.
+ * The worker receives any configured relay credential.
  */
 export function createPythonTool(options: {
   siteAccess?: boolean;
+  networkAccess?: boolean;
+  relay?: DotnetRelay | null;
   indexURL?: string;
   timeoutMs?: number;
   workerFactory?: () => Worker;
@@ -39,6 +44,9 @@ export function createPythonTool(options: {
   onWorkspace?: (workspace: Workspace) => void;
 } = {}): PythonTool {
   if (options.siteAccess !== undefined && typeof options.siteAccess !== "boolean") throw new Error("Interactive sites permission must be a boolean.");
+  if (options.networkAccess !== undefined && typeof options.networkAccess !== "boolean") throw new Error("Network access must be a boolean.");
+  const networkAccess = options.networkAccess ?? false;
+  const relay = options.relay ? { endpoint: relayEndpoint(options.relay.endpoint), token: relayToken(options.relay.token) } : null;
   const indexURL = new URL(options.indexURL ?? PYODIDE_INDEX_URL);
   if (!indexURL.pathname.endsWith("/")) throw new Error("Pyodide indexURL must end in /.");
   if (indexURL.protocol !== "https:" && !(indexURL.protocol === "http:" &&
@@ -80,7 +88,7 @@ export function createPythonTool(options: {
       const abort = (): void => fail(new DOMException("Python stopped; session reset.", "AbortError"));
       const error = (): void => fail(new Error("Python worker could not load. Check Pyodide access and CSP."));
       const run = (): void => {
-        try { activeWorker.postMessage({ id, protocol: 1, code, indexURL: indexURL.href, workspace: checkpoint, siteAccess: options.siteAccess ?? false, ...(siteRequest ? { siteRequest } : {}) }); }
+        try { activeWorker.postMessage({ id, protocol: 1, code, indexURL: indexURL.href, workspace: checkpoint, siteAccess: options.siteAccess ?? false, networkAccess, relay, ...(siteRequest ? { siteRequest } : {}) }); }
         catch { fail(new Error("Could not start Python execution.")); }
       };
       const message = (event: MessageEvent<unknown>): void => {
@@ -92,8 +100,8 @@ export function createPythonTool(options: {
         }
         if (!ready) {
           if (data.type !== "ready") return;
-          if (!data.capabilities?.includes("sites")) {
-            fail(new Error("Python worker is out of date. Reload to update Python file and site support; saved files are kept.")); return;
+          if (!data.capabilities?.includes("sites") || !data.capabilities.includes("network-v1")) {
+            fail(new Error("Python worker is out of date. Reload to update Python network permission, file and site support; saved files are kept.")); return;
           }
           ready = true; run(); return;
         }

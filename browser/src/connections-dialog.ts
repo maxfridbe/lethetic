@@ -52,20 +52,20 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     </div>
     <fieldset class="browser-runtime"><legend>Runtime &amp; security · current session</legend>
     <label>Code runtime <select data-field="mode"><option value="general">Chat</option><option value="python">Python · Pyodide</option><option value="dotnet-wasm">.NET 11 · WASM</option></select></label>
-    <label><input data-field="network" type="checkbox"> Network access (.NET code)</label>
-    <p class="browser-note">Required for HttpClient calls to external APIs, including calls inside site routes. Changing this setting stops running .NET sites; run the site file again afterward. Session files and chat are kept.</p>
+    <label><input data-field="network" type="checkbox"> Network access (Python and .NET code)</label>
+    <p class="browser-note">Required for Python pyfetch and C# HttpClient calls to external APIs, including site routes and additional Python package downloads. Bundled runtime packages still load with it off. Changing this setting stops running sites; run the site file again afterward. Session files and chat are kept.</p>
     <label><input data-field="sites" type="checkbox"> Interactive sites (Python or ASP.NET virtual ports and isolated preview)</label>
     <label><input data-field="nuget" type="checkbox"> NuGet package access (direct downloads from NuGet.org)</label>
     <a href="${new URL("../../runtimes/dotnetdide/llm.md", import.meta.url).href}" target="_blank" rel="noopener">.NET usage guide</a>
     <a href="${new URL("../../runtimes/dotnetdide/docs/media-and-packages.md", import.meta.url).href}" target="_blank" rel="noopener">Media libraries &amp; NuGet guide</a>
     <p data-field="permissions" class="browser-note" role="status"></p>
-    <label>.NET HTTP route <select data-field="network-route"><option value="direct">Direct · destination CORS required</option><option value="relay">HTTP relay · optional server-side SOCKS5 / Tor</option></select></label>
+    <label>HTTP route (Python and .NET) <select data-field="network-route"><option value="direct">Direct · destination CORS required</option><option value="relay">HTTP relay · optional server-side SOCKS5 / Tor</option></select></label>
     <div data-field="relay-fields" class="browser-relay-fields" hidden>
       <label>Relay endpoint<input data-field="relay-endpoint" type="url" placeholder="https://your-relay.example/relay" autocomplete="off" spellcheck="false"></label>
       <label>Relay token<input data-field="relay-token" type="password" autocomplete="off" spellcheck="false" maxlength="1024"></label>
       <small data-field="relay-key-state" role="status"></small>
       <p class="browser-note">For SOCKS5 or Tor, run the native .NET relay and configure its upstream proxy. <a href="https://github.com/maxfridbe/dotnetdide/blob/master/docs/networking.md" target="_blank" rel="noopener noreferrer">Relay &amp; Tor setup</a></p>
-      <p class="browser-note">Relay: 8 MiB bodies, no browser cookies, redirects or direct fallback. Model connections and Pyodide keep their own routes.</p>
+      <p class="browser-note">Relay: 8 MiB bodies, no browser cookies, redirects or direct fallback. Model connections and bundled runtime packages keep their own routes.</p>
     </div>
     <button type="button" data-field="apply-route">${buttonIconHtml("save")}Apply HTTP route</button>
     <p data-field="route-state" role="status" class="browser-note"></p>
@@ -157,15 +157,15 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     input("nuget").checked = transport.nugetAccess;
     input("nuget").disabled = transport.busy || transport.mode !== "dotnet-wasm";
     input("network").checked = transport.networkAccess;
-    input("network").disabled = transport.busy || transport.mode !== "dotnet-wasm";
-    field(dialog, "permissions").textContent = transport.mode === "dotnet-wasm"
-      ? `Session files: read/write enabled · Network: ${transport.networkAccess ? "enabled" : "disabled"} · Sites: ${transport.siteAccess ? "enabled" : "disabled"} · NuGet: ${transport.nugetAccess ? "enabled (NuGet.org)" : "disabled"} · Saved HTTP route: ${transport.dotnetRelay ? transport.dotnetRelay.endpoint + (transport.dotnetRelay.token ? " · token present" : " · token required") : "direct (browser CORS)"}`
-      : transport.pythonEnabled ? `Session files: read/write enabled · Network: enabled (Pyodide) · Sites: ${transport.siteAccess ? "enabled" : "disabled"}` : "Code execution is off.";
+    input("network").disabled = transport.busy || transport.mode === "general";
+    field(dialog, "permissions").textContent = transport.mode !== "general"
+      ? `Session files: read/write enabled · Network: ${transport.networkAccess ? "enabled" : "disabled"} · Sites: ${transport.siteAccess ? "enabled" : "disabled"}${transport.pythonEnabled ? "" : ` · NuGet: ${transport.nugetAccess ? "enabled (NuGet.org)" : "disabled"}`} · Saved HTTP route: ${transport.dotnetRelay ? transport.dotnetRelay.endpoint + (transport.dotnetRelay.token ? " · token present" : " · token required") : "direct (browser CORS)"}`
+      : "Code execution is off.";
   };
   const routeEditor = (): void => {
     const relay = select("network-route").value === "relay";
     field(dialog,"relay-fields").hidden = !relay;
-    for (const control of [select("network-route"), input("relay-endpoint"), input("relay-token"), button("apply-route")]) control.disabled = transport.busy || transport.mode !== "dotnet-wasm";
+    for (const control of [select("network-route"), input("relay-endpoint"), input("relay-token"), button("apply-route")]) control.disabled = transport.busy || transport.mode === "general";
     const saved = transport.dotnetRelay;
     field(dialog,"relay-key-state").textContent = input("relay-token").value
       ? saved?.endpoint === input("relay-endpoint").value && saved.token === input("relay-token").value ? "Relay token present" : "Relay token entered · apply to save"
@@ -302,7 +302,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     updateEditor(); routeEditor();
   });
   input("network").addEventListener("change", () => {
-    try { transport.setNetworkAccess(input("network").checked); status(`.NET network access ${transport.networkAccess ? "enabled" : "disabled"}. Run your site file again to restart its routes with this setting.`); }
+    try { transport.setNetworkAccess(input("network").checked); status(`Code network access ${transport.networkAccess ? "enabled" : "disabled"}. Run your site file again to restart its routes with this setting.`); }
     catch (error) { status(errorMessage(error)); }
     updateEditor();
   });

@@ -13,7 +13,7 @@ export async function testPythonSites(
       const output=await denied.execute({code:PYTHON_SITE_EXAMPLE},signal());
       if(!output.includes('Interactive sites are disabled') || denied.sites().length)throw Error('Site permission not enforced: '+output);
     } finally {denied.reset()}
-    const tool=createPythonTool({siteAccess:true});
+    const tool=createPythonTool({siteAccess:true,networkAccess:true});
     const run=code=>tool.execute({code},signal());
     try {
       const started=await run(PYTHON_SITE_EXAMPLE);
@@ -45,13 +45,13 @@ export async function testPythonSites(
     const {encodeBytes}=await import('./src/workspace.js');
     const source=await (await fetch('./python/site_example.py')).text();
     const store=new SessionStore(localStorage), saved=store.list()[0];
-    saved.mode='python';saved.python=true;saved.siteAccess=true;
+    saved.mode='python';saved.python=true;saved.siteAccess=true;saved.networkAccess=true;
     saved.workspace={version:1,directories:['pyapp'],files:[{path:'pyapp/server.py',data:encodeBytes(new TextEncoder().encode(source))}]};
     store.save(saved);
     globalThis.pythonSiteSaved=()=>new SessionStore(localStorage).list().find(item=>item.id===saved.id);
     globalThis.pythonSiteWait=async predicate=>{for(let end=Date.now()+120000;Date.now()<end;){if(predicate())return;await new Promise(r=>setTimeout(r,50))}throw Error('Python site UI timeout: '+document.body.innerText.slice(-2500))};
     const root=document.createElement('div');root.style.height='900px';document.body.replaceChildren(root);
-    globalThis.pythonSiteView=mountLethetic(root,{storage:localStorage,initialSession:saved.id,
+    globalThis.pythonSiteView=mountLethetic(root,{storage:localStorage,credentialStorage:sessionStorage,initialSession:saved.id,
       connections:[{name:'Python sites',provider:'openai',endpoint:location.origin+'/v1/chat/completions',model:'test'}]});
     if(!root.querySelector('.files-entry'))root.querySelector('#files-toggle').click();
     await pythonSiteWait(()=>!!root.querySelector('.files-entry[title=pyapp]'));
@@ -65,7 +65,7 @@ export async function testPythonSites(
     await pythonSiteWait(()=>!!root.querySelector('.activity-idle'));
     root.querySelector('[data-browser-action=sites]').click();
     await pythonSiteWait(()=>document.querySelector('[data-field=site-frame]')?.src.includes('wire-preview-host.html'));
-    if(!document.querySelector('[data-field=site-network]').textContent.includes('Python network: enabled'))throw Error('Python network status missing');
+    if(!document.querySelector('[data-field=site-network]').textContent.includes('Python Network access: enabled'))throw Error('Python network status missing');
   })()`);
   const result = await previewInput(`(async()=>{
     const wait=async predicate=>{for(let end=Date.now()+10000;Date.now()<end;){if(predicate())return;await new Promise(r=>setTimeout(r,25))}throw Error('Python iframe interaction timeout')};
@@ -90,6 +90,30 @@ export async function testPythonSites(
     await pythonSiteWait(()=>document.querySelector('[data-browser-action=sites]').textContent.includes('(1)'));
     await pythonSiteWait(()=>!!document.querySelector('.activity-idle'));
     document.querySelector('[data-browser-action=connections]').click();
+    const network=document.querySelector('[data-field=network]');
+    const route=document.querySelector('[data-field=network-route]');
+    if(network.disabled || !network.checked || route.disabled)throw Error('Python network controls unavailable');
+    const id=pythonSiteSaved().id;
+    network.checked=false;network.dispatchEvent(new Event('change'));
+    if(pythonSiteSaved().id!==id || pythonSiteSaved().networkAccess || !document.querySelector('[data-browser-action=sites]').textContent.includes('(0)'))throw Error('Network revocation did not stop the Python site');
+    if(!pythonSiteSaved().workspace.files.some(file=>file.path==='pyapp/note.txt'))throw Error('Network revocation lost files');
+    network.checked=true;network.dispatchEvent(new Event('change'));
+    document.querySelector('dialog[open]').close();
+    document.querySelector('[data-file-action=run]').click();
+    await pythonSiteWait(()=>document.querySelector('[data-browser-action=sites]').textContent.includes('(1)'));
+    await pythonSiteWait(()=>!!document.querySelector('.activity-idle'));
+    document.querySelector('[data-browser-action=connections]').click();
+    document.querySelector('[data-field=network-route]').value='relay';
+    document.querySelector('[data-field=network-route]').dispatchEvent(new Event('change'));
+    document.querySelector('[data-field=relay-endpoint]').value=location.origin+'/python-relay';
+    document.querySelector('[data-field=relay-token]').value='python-test-relay-token-123456789';
+    document.querySelector('[data-field=apply-route]').click();
+    if(pythonSiteSaved().id!==id || pythonSiteSaved().dotnetRelayEndpoint!==location.origin+'/python-relay' || !document.querySelector('[data-browser-action=sites]').textContent.includes('(0)'))throw Error('Python route change did not persist and stop sites');
+    document.querySelector('dialog[open]').close();
+    document.querySelector('[data-file-action=run]').click();
+    await pythonSiteWait(()=>document.querySelector('[data-browser-action=sites]').textContent.includes('(1)'));
+    await pythonSiteWait(()=>!!document.querySelector('.activity-idle'));
+    document.querySelector('[data-browser-action=connections]').click();
     const sites=document.querySelector('[data-field=sites]');
     if(sites.disabled || !sites.checked)throw Error('Python permission checkbox unavailable');
     sites.checked=false;sites.dispatchEvent(new Event('change'));
@@ -98,10 +122,13 @@ export async function testPythonSites(
     pythonSiteView.destroy();
     const {mountLethetic}=await import('./src/embed.js');
     const root=document.createElement('div');document.body.replaceChildren(root);
-    const restored=mountLethetic(root,{storage:localStorage,initialSession:pythonSiteSaved().id,
+    const restored=mountLethetic(root,{storage:localStorage,credentialStorage:sessionStorage,initialSession:pythonSiteSaved().id,
       connections:[{name:'Python sites',provider:'openai',endpoint:location.origin+'/v1/chat/completions',model:'test'}]});
     if(!root.querySelector('[data-browser-action=sites]').textContent.includes('(0)'))throw Error('Reload replayed a Python site');
     if(!pythonSiteSaved().workspace.files.some(file=>file.path==='pyapp/note.txt'))throw Error('Reload lost saved Python request files');
+    root.querySelector('[data-browser-action=connections]').click();
+    if(!document.querySelector('[data-field=network]').checked || document.querySelector('[data-field=network-route]').value!=='relay' || document.querySelector('[data-field=relay-token]').value!=='python-test-relay-token-123456789')throw Error('Reload lost Python network settings');
+    document.querySelector('dialog[open]').close();
     restored.destroy();
   })()`);
 }

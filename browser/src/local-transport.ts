@@ -120,7 +120,7 @@ export class LocalTransport implements ApplicationTransport {
     this.state.status.provider_label = connection?.name ?? "Configure a connection";
     this.state.status.provider_transport = connection?.provider === "anthropic" ? "claude_code_proxy" : "open_ai_chat_completions";
     this.state.status.python.profile = this.pythonEnabled ? "python_only" : "general";
-    this.state.status.tool_use = this.pythonEnabled ? "Pyodide · browser worker" : this.mode === "dotnet-wasm" ? `.NET 11 · WASM · ${this.networkAccess ? this.#relayEndpoint ? "HTTP relay" : "direct network" : "network off"}` : "Browser tools";
+    this.state.status.tool_use = this.pythonEnabled ? `Pyodide · ${this.networkAccess ? this.#relayEndpoint ? "HTTP relay" : "direct network" : "network off"}` : this.mode === "dotnet-wasm" ? `.NET 11 · WASM · ${this.networkAccess ? this.#relayEndpoint ? "HTTP relay" : "direct network" : "network off"}` : "Browser tools";
     this.state.status.visible_block_count = this.state.blocks.blocks.length;
     this.events.serverMessage({ type: "state_snapshot", snapshot: { protocol_version: WFE_PROTOCOL_VERSION,
       revision: this.#revision, sequence: this.#revision, state: structuredClone(this.state) } });
@@ -202,6 +202,7 @@ export class LocalTransport implements ApplicationTransport {
     this.#saveSession(true);
     this.#runtime?.dispose(); this.#runtime = null;
     this.#dotnet?.reset(); this.#dotnet = null;
+    this.#python?.reset(); this.#python = null;
     this.networkAccess = enabled;
     this.#saveSession(); this.publish();
   }
@@ -232,7 +233,7 @@ export class LocalTransport implements ApplicationTransport {
   get sites(): WireSite[] { return (this.pythonEnabled ? this.#python : this.#dotnet)?.sites() ?? []; }
 
   #pythonTool(): PythonTool {
-    return this.#python ??= createPythonTool({ indexURL: this.options.pyodideIndexURL, siteAccess: this.siteAccess,
+    return this.#python ??= createPythonTool({ indexURL: this.options.pyodideIndexURL, siteAccess: this.siteAccess, networkAccess: this.networkAccess, relay: this.dotnetRelay,
       workspace: this.#workspace, onWorkspace: workspace => this.#checkpointWorkspace(workspace) });
   }
 
@@ -304,6 +305,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
     if (endpoint) this.#relayKeys.set(endpoint, token);
     this.#runtime?.dispose(); this.#runtime = null;
     this.#dotnet?.reset(); this.#dotnet = null;
+    this.#python?.reset(); this.#python = null;
     this.#relayEndpoint = endpoint;
     this.#saveSession(); this.publish();
   }

@@ -33,6 +33,13 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+        elif self.path == "/pyodide/pyodide-lock.json":
+            body = b'{"packages":{}}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
         elif self.path == "/pyodide/pyodide.mjs":
             body = (ROOT / "browser/tests/fixtures/pyodide.mjs").read_bytes()
             self.send_response(200)
@@ -47,6 +54,20 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
+        if self.path == "/python-relay":
+            payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            if self.headers.get("Authorization") != "Bearer python-test-relay-token-123456789":
+                self.send_error(401)
+                return
+            import base64
+            body = json.dumps({"status": 200, "headers": {"Content-Type": "application/json"},
+                               "bodyBase64": base64.b64encode(json.dumps(payload).encode()).decode()}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path != "/v1/chat/completions":
             self.send_error(404)
             return

@@ -65,11 +65,11 @@ available in the native application.
 | Python · Pyodide | Persistent Python worker; session files at `/home/pyodide` | [Python mode](integration.md#python-mode-with-pyodide) |
 | .NET 11 · WASM | C# scripts, `Dotnet.Build()`, `Dotnet.Run("Program.cs")`; session files at `/home/dotnetdide` | [.NET mode](integration.md#net-wasm-mode) |
 
-.NET network access is off by default and can be enabled per session. HTTP methods,
+Python and .NET network access is off by default and can be enabled per session. HTTP methods,
 JSON/forms, binary transfers, streams and file downloads use browser CORS or an
 optional native .NET relay. The relay supports upstream SOCKS5, including a Tor
 client's SOCKS port. See the [relay setup guide](https://github.com/maxfridbe/dotnetdide/blob/master/docs/networking.md).
-The runtime is bundled from a checksum-pinned [dotnetdide release](https://github.com/maxfridbe/dotnetdide/releases).
+The .NET runtime is bundled from a checksum-pinned [dotnetdide release](https://github.com/maxfridbe/dotnetdide/releases).
 
 .NET includes image, WAV and Ogg Opus libraries; generated files appear in Files
 for preview and download. Enable **NuGet package access** separately to use

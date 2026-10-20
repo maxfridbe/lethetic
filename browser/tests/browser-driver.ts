@@ -1,4 +1,5 @@
 import { testDotnetBrowser } from "./dotnet-browser.js";
+import { testPythonNetwork } from "./python-network-browser.js";
 import { testPythonSites } from "./python-sites-browser.js";
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
@@ -678,6 +679,8 @@ try {
       } finally {python.reset()}
     })()`);
     check(JSON.stringify(actual) === JSON.stringify({ value: "42\n", error: true, stopped: true, restarted: "False\n", restoredFile: "00ff\n" }), `real Pyodide failed: ${JSON.stringify(actual)}`);
+    await testPythonNetwork(evaluate);
+    process.stdout.write("Real Pyodide network denial, packages, relay methods, site routes and no-fallback passed.\n");
     await testPythonSites(evaluate, previewInput, async () => {
       const mobile=await rpc("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
       await writeFile(config.screenshot.replace(".png","-python-sites-mobile.png"),Buffer.from(String(mobile["data"]),"base64"));

@@ -1,4 +1,4 @@
-/** An HTTP relay for .NET code. This never changes the model connection or Pyodide. */
+/** An HTTP relay for Python and .NET code. This never changes the model connection. */
 export interface DotnetRelay { endpoint: string; token?: string }
 export function relayEndpoint(value: unknown): string {
   if (typeof value !== "string" || value.length > 2048) throw new Error("Enter an HTTPS relay endpoint.");
