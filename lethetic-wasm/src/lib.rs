@@ -1,247 +1,78 @@
-//! Browser-portable conversation state. The host owns networking and tool execution.
-//! No filesystem, process, credentials, or native runtime dependencies are included.
-
-mod provider;
-
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+//! JavaScript bindings for the CLI library. Agent logic belongs in `lethetic`.
 use wasm_bindgen::prelude::*;
 
-const MAX_BYTES: usize = 4 * 1024 * 1024;
-const MAX_MESSAGES: usize = 512;
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-struct Tool {
-    name: String,
-    description: String,
-    parameters: Value,
-}
-
-/// A validated request for a tool explicitly registered by the embedding host.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct ToolCall {
-    pub id: String,
-    pub name: String,
-    pub arguments: Value,
-}
-
-#[derive(Clone, Debug, Serialize)]
-struct Turn {
-    text: String,
-    thinking: String,
-    calls: Vec<ToolCall>,
-}
-
-/// Stateful, transactional model conversation exported to JavaScript.
-/// Call `begin`, then alternate `request`, `accept`, and `tool_result`.
-/// `rollback` discards an incomplete turn after a network error or cancellation.
 #[wasm_bindgen]
-pub struct BrowserRuntime {
-    system: String,
-    tools: Vec<Tool>,
-    messages: Vec<Value>,
-    pending: Vec<String>,
-    checkpoint: Option<usize>,
-    awaiting_response: bool,
-}
-
+pub struct BrowserRuntime(lethetic::engine::Conversation);
 #[wasm_bindgen]
 impl BrowserRuntime {
-    /// Create a runtime with a system prompt and JSON array of tool definitions.
-    /// Returns an error for malformed, duplicate, or oversized definitions.
     #[wasm_bindgen(constructor)]
-    pub fn new(system: &str, tools_json: &str) -> Result<BrowserRuntime, String> {
-        bounded(system)?;
-        bounded(tools_json)?;
-        let tools: Vec<Tool> = serde_json::from_str(tools_json).map_err(|e| e.to_string())?;
-        if tools.len() > 64 {
-            return Err("at most 64 tools may be registered".into());
-        }
-        for (index, tool) in tools.iter().enumerate() {
-            if tool.name.is_empty()
-                || tool.name.len() > 64
-                || !tool
-                    .name
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-                || tools[..index].iter().any(|other| other.name == tool.name)
-                || tool.parameters.get("type").and_then(Value::as_str) != Some("object")
-            {
-                return Err("tools need unique names and object parameter schemas".into());
-            }
-        }
-        Ok(Self {
-            system: system.into(),
-            tools,
-            messages: Vec::new(),
-            pending: Vec::new(),
-            checkpoint: None,
-            awaiting_response: false,
-        })
+    pub fn new(system: &str, tools: &str) -> Result<Self, String> {
+        lethetic::engine::Conversation::new(system, tools).map(Self)
     }
-
-    /// Start a user turn. Concurrent turns and empty prompts are rejected.
+    pub fn set_limits(&mut self, context: usize, output: u32) -> Result<(), String> {
+        self.0.set_limits(context, output)
+    }
     pub fn begin(&mut self, prompt: &str) -> Result<(), String> {
-        if self.checkpoint.is_some() {
-            return Err("a turn is already active".into());
-        }
-        if prompt.trim().is_empty() {
-            return Err("enter a message".into());
-        }
-        bounded(prompt)?;
-        self.checkpoint = Some(self.messages.len());
-        self.messages
-            .push(json!({"role": "user", "content": prompt}));
-        Ok(())
+        self.0.begin(prompt)
     }
-
-    /// Serialize an OpenAI Chat Completions or Anthropic Messages request.
     pub fn request(&mut self, provider: &str, model: &str) -> Result<String, String> {
-        if self.checkpoint.is_none() || !self.pending.is_empty() || self.awaiting_response {
-            return Err("the conversation is not ready for a model request".into());
-        }
-        if model.trim().is_empty() {
-            return Err("a model is required".into());
-        }
-        if self.messages.len() > MAX_MESSAGES {
-            return Err("conversation is full; start a new chat".into());
-        }
-        let body = provider::request(provider, model, &self.system, &self.tools, &self.messages)?;
-        let encoded = body.to_string();
-        bounded(&encoded)?;
-        self.awaiting_response = true;
-        Ok(encoded)
+        self.0.request(provider, model)
     }
-
-    /// Validate a model response before committing it to conversation history.
-    /// Unknown tools, duplicate IDs, and malformed argument objects are rejected.
     pub fn accept(&mut self, provider: &str, response: &str) -> Result<String, String> {
-        if !self.awaiting_response {
-            return Err("no model response is expected".into());
-        }
-        bounded(response)?;
-        let value: Value = serde_json::from_str(response).map_err(|e| e.to_string())?;
-        let (message, turn) = provider::response(provider, &value)?;
-        if turn.calls.len() > 64 {
-            return Err("model requested too many tools".into());
-        }
-        for (index, call) in turn.calls.iter().enumerate() {
-            if call.id.is_empty()
-                || turn.calls[..index].iter().any(|other| other.id == call.id)
-                || !call.arguments.is_object()
-                || !self.tools.iter().any(|tool| tool.name == call.name)
-            {
-                return Err("model returned an invalid or unregistered tool call".into());
-            }
-        }
-        self.pending = turn.calls.iter().map(|call| call.id.clone()).collect();
-        self.messages.push(message);
-        self.awaiting_response = false;
-        if self.pending.is_empty() {
-            self.checkpoint = None;
-        }
-        serde_json::to_string(&turn).map_err(|e| e.to_string())
+        self.0.accept(provider, response)
     }
-
-    /// Add exactly one result for a pending call. Tool output is plain text.
     pub fn tool_result(&mut self, id: &str, output: &str) -> Result<(), String> {
-        bounded(output)?;
-        let position = self
-            .pending
-            .iter()
-            .position(|pending| pending == id)
-            .ok_or("tool call is unknown or already completed")?;
-        self.pending.remove(position);
-        self.messages
-            .push(json!({"role":"tool", "tool_call_id":id, "content":output}));
-        Ok(())
+        self.0.tool_result(id, output)
     }
-
-    /// Discard an unfinished turn. This does not undo host tool side effects.
     pub fn rollback(&mut self) {
-        if let Some(checkpoint) = self.checkpoint.take() {
-            self.messages.truncate(checkpoint);
-        }
-        self.pending.clear();
-        self.awaiting_response = false;
+        self.0.rollback();
     }
-
-    /// Clear the conversation, retaining the system prompt and registered tools.
     pub fn clear(&mut self) {
-        self.messages.clear();
-        self.rollback();
+        self.0.clear();
     }
-
-    /// Export conversation messages as JSON. Credentials never enter the runtime.
     pub fn history(&self) -> String {
-        Value::Array(self.messages.clone()).to_string()
+        self.0.history()
     }
-
-    /// Restore complete turns without executing tools or accepting system messages.
-    /// Invalid or incomplete histories leave the current conversation unchanged.
     pub fn restore(&mut self, history: &str) -> Result<(), String> {
-        if self.checkpoint.is_some() {
-            return Err("stop the active turn before restoring history".into());
-        }
-        bounded(history)?;
-        let messages: Vec<Value> = serde_json::from_str(history).map_err(|e| e.to_string())?;
-        if messages.len() > MAX_MESSAGES {
-            return Err("saved conversation exceeds the message limit".into());
-        }
-        let definitions = serde_json::to_string(&self.tools).map_err(|e| e.to_string())?;
-        let mut candidate = Self::new(&self.system, &definitions)?;
-        for message in messages {
-            match message["role"].as_str() {
-                Some("user") => {
-                    candidate.begin(message["content"].as_str().ok_or("invalid user message")?)?
-                }
-                Some("assistant") => {
-                    let is_anthropic = message.get("anthropic_content").is_some();
-                    let has_calls = message["tool_calls"]
-                        .as_array()
-                        .is_some_and(|calls| !calls.is_empty());
-                    let (provider, response) = if is_anthropic {
-                        (
-                            "anthropic",
-                            json!({"role":"assistant", "content":message["anthropic_content"],
-                            "stop_reason":if has_calls { "tool_use" } else { "end_turn" }}),
-                        )
-                    } else {
-                        (
-                            "openai",
-                            json!({"choices":[{"message":message,
-                            "finish_reason":if has_calls { "tool_calls" } else { "stop" }}]}),
-                        )
-                    };
-                    candidate.request(provider, "restore")?;
-                    candidate.accept(provider, &response.to_string())?;
-                }
-                Some("tool") => candidate.tool_result(
-                    message["tool_call_id"]
-                        .as_str()
-                        .ok_or("invalid tool result id")?,
-                    message["content"]
-                        .as_str()
-                        .ok_or("invalid tool result content")?,
-                )?,
-                _ => return Err("unsupported saved message role".into()),
-            }
-        }
-        if candidate.checkpoint.is_some() {
-            return Err("saved conversation contains an incomplete turn".into());
-        }
-        self.messages = candidate.messages;
-        Ok(())
+        self.0.restore(history)
     }
 }
 
-fn bounded(value: &str) -> Result<(), String> {
-    if value.len() > MAX_BYTES {
-        Err("conversation data exceeds the 4 MiB limit".into())
-    } else {
-        Ok(())
+#[wasm_bindgen]
+pub struct BrowserStream(lethetic::engine::ProviderStream);
+#[wasm_bindgen]
+impl BrowserStream {
+    #[wasm_bindgen(constructor)]
+    pub fn new(provider: &str) -> Result<Self, String> {
+        lethetic::engine::ProviderStream::new(provider).map(Self)
+    }
+    pub fn push(&mut self, data: &str) -> Result<String, String> {
+        self.0.push(data)
+    }
+    pub fn finish(&mut self) -> Result<String, String> {
+        self.0.finish()
     }
 }
 
-#[cfg(test)]
-mod tests;
+#[wasm_bindgen]
+pub fn retryable_error(error: &str) -> bool {
+    lethetic::engine::retryable_error(error)
+}
+#[wasm_bindgen]
+pub fn retry_delay_ms(attempt: u32) -> u32 {
+    lethetic::engine::retry_delay_ms(attempt)
+}
+#[wasm_bindgen]
+pub fn check_loop(text: &str, mode: &str) -> Result<Option<String>, String> {
+    use lethetic::loop_detector::{LoopDetector, LoopDetectorConfig};
+    let mode = serde_json::from_value(serde_json::json!(mode)).map_err(|e| e.to_string())?;
+    let detector = LoopDetector::new(LoopDetectorConfig {
+        mode,
+        ..Default::default()
+    });
+    Ok(detector.check(text).map(|detection| detection.reason))
+}
+#[wasm_bindgen]
+pub fn calculate(expression: &str) -> Result<f64, String> {
+    lethetic::calculator::evaluate(expression)
+}

@@ -99,7 +99,7 @@ impl PricingConfig {
         if self.provenance.kind.trim().is_empty() {
             return Err("pricing.provenance.kind cannot be empty".to_string());
         }
-        let url = reqwest::Url::parse(&self.provenance.url)
+        let url = url::Url::parse(&self.provenance.url)
             .map_err(|error| format!("pricing.provenance.url is invalid: {error}"))?;
         if !matches!(url.scheme(), "http" | "https") {
             return Err("pricing.provenance.url must use http or https".to_string());

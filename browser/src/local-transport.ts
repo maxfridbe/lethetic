@@ -1,3 +1,5 @@
+import { DEFAULT_TURN_LIMITS, parseTurnLimits, LOOP_MODES, parseLoopMode } from "./turn-limits.js";
+import type { TurnLimits } from "./turn-limits.js";
 import { RelayKeys, relayEndpoint, relayToken } from "./network-route.js";
 import { connectionMetadata } from "./connection.js";
 import type { DotnetRelay } from "./network-route.js";
@@ -45,6 +47,7 @@ export class LocalTransport implements ApplicationTransport {
   readonly state: WebAppSnapshot = initialState();
   readonly metrics = new BrowserMetrics();
   #ticker: ReturnType<typeof setInterval> | null = null;
+  #streamPublish: ReturnType<typeof setTimeout> | null = null;
   pendingCount = 0;
   lastSendFailure: string | null = null;
   selected = 0;
@@ -65,7 +68,11 @@ export class LocalTransport implements ApplicationTransport {
   #operation: AbortController | null = null;
   #history: string[] = [];
   #system: string;
+  loopDetection = "combined";
+  turnLimits: TurnLimits = {...DEFAULT_TURN_LIMITS};
   #requestCount = 0;
+  #responseStart = 0;
+  #streamBlocks = new Map<"thinking" | "assistant", number>();
   readonly #sessions: SessionStore;
   #savedMessages: unknown[] = [];
   #workspace = emptyWorkspace();
@@ -111,6 +118,7 @@ export class LocalTransport implements ApplicationTransport {
   }
 
   publish(): void {
+    if (this.#streamPublish !== null) { clearTimeout(this.#streamPublish); this.#streamPublish = null; }
     if (this.#closed) return;
     this.#revision++;
     const connection = this.connection;
@@ -122,6 +130,7 @@ export class LocalTransport implements ApplicationTransport {
     this.state.status.provider_transport = connection?.provider === "anthropic" ? "claude_code_proxy" : "open_ai_chat_completions";
     this.state.status.python.profile = this.pythonEnabled ? "python_only" : "general";
     this.state.status.tool_use = this.pythonEnabled ? `Pyodide · ${this.networkAccess ? this.#relayEndpoint ? "HTTP relay" : "direct network" : "network off"}` : this.mode === "dotnet-wasm" ? `.NET 11 · WASM · ${this.networkAccess ? this.#relayEndpoint ? "HTTP relay" : "direct network" : "network off"}` : "Browser tools";
+    this.state.status.context_limit_tokens = String(this.turnLimits.contextTokens);
     this.state.status.visible_block_count = this.state.blocks.blocks.length;
     this.events.serverMessage({ type: "state_snapshot", snapshot: { protocol_version: WFE_PROTOCOL_VERSION,
       revision: this.#revision, sequence: this.#revision, state: structuredClone(this.state) } });
@@ -142,7 +151,7 @@ export class LocalTransport implements ApplicationTransport {
     this.state.status.stop_reason = "Compacting context…"; this.metrics.begin(); this.publish();
     let summarizer: LetheticRuntime | null = null;
     try {
-      summarizer = await createRuntime({ connection, systemPrompt: COMPACTION_PROMPT, tools: [], onEvent: event => {
+      summarizer = await createRuntime({ connection, ...this.turnLimits, systemPrompt: COMPACTION_PROMPT, tools: [], onEvent: event => {
         if (event.type === "request" || event.type === "response") { this.metrics.event(event); this.publish(); }
       } });
       const summary = await summarizeContext(summarizer, original.messages, controller.signal, (part, total) => {
@@ -168,12 +177,24 @@ export class LocalTransport implements ApplicationTransport {
     }
   }
 
+  setTurnLimits(value: TurnLimits): void {
+    this.#requireIdle();
+    const limits = parseTurnLimits(value);
+    this.#saveSession(true);
+    const previous = this.turnLimits;
+    this.turnLimits = limits;
+    try { this.#saveSession(true); }
+    catch (error) { this.turnLimits = previous; throw error; }
+    this.#runtime?.dispose(); this.#runtime = null;
+    this.publish();
+  }
+
   setConnections(connections: Connection[], selected: number): void {
     this.#requireIdle();
     const before = this.connection, after = connections[selected];
     this.#saveSession(true);
     if (before?.endpoint !== after?.endpoint || before?.provider !== after?.provider ||
-        before?.model !== after?.model || before?.apiKey !== after?.apiKey) {
+        before?.model !== after?.model || before?.apiKey !== after?.apiKey || before?.thinking !== after?.thinking) {
       this.#runtime?.dispose(); this.#runtime = null;
     }
     this.options.connections = connections;
@@ -358,6 +379,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
   closePermanently(): void { this.dispose(); }
   dispose(): void {
     if (this.#ticker !== null) clearInterval(this.#ticker);
+    if (this.#streamPublish !== null) clearTimeout(this.#streamPublish);
     this.#closed = true; this.#operation?.abort(); this.#runtime?.dispose(); this.#python?.reset(); this.#dotnet?.reset();
   }
 
@@ -444,6 +466,15 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
       }
       case "new_session": this.#requireIdle(); this.#saveSession(true); this.#newSession();
         return { type: "session_created", session_id: this.state.session.session_id };
+      case "set_loop_detection": {
+        this.#requireIdle();
+        const mode = parseLoopMode(command.mode_id);
+        this.#saveSession(true);
+        const previous = this.loopDetection; this.loopDetection = mode;
+        try { this.#saveSession(true); } catch (error) { this.loopDetection = previous; throw error; }
+        this.#runtime?.dispose(); this.#runtime = null;
+        this.#invoke("loop-detection"); break;
+      }
       case "invoke_command": return this.#invoke(command.command_id);
       default: throw new Error("This command requires the native runtime.");
     }
@@ -452,11 +483,12 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
 
   #invoke(id: string): CommandOutcome {
     const panels: Record<string, PanelId> = { hotkeys: "hotkeys", themes: "themes", models: "models",
-      sessions: "sessions",
+      sessions: "sessions", "loop-detection": "loop_detection",
       "input-history": "input_history", "name-session": "name_session", "agent-mode": "agent_mode", "system-prompt": "system_prompt" };
     const panel = panels[id];
     if (panel) {
       this.state.overlay = { active_panel: panel, data: null };
+      if (panel === "loop_detection") this.state.overlay.data = { type: "loop_modes", modes: LOOP_MODES.map(([mode_id, label]) => ({mode_id, label, selected: mode_id === this.loopDetection, enabled: !this.busy, disabled_reason: this.busy ? "Stop the current turn first" : null})) };
       if (panel === "hotkeys") this.state.overlay.data = { type: "hotkeys", shortcuts: [
         { keys: "Ctrl+P", label: "Command palette" }, { keys: "Ctrl+P → H", label: "Hotkeys" },
         { keys: "Ctrl+P → D", label: "Debugger" }, { keys: "Enter", label: "Send prompt" },
@@ -497,7 +529,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
         if (this.mode === "dotnet-wasm") {
           tools.push(this.#dotnetTool());
         }
-        const runtime = await createRuntime({ connection, tools, systemPrompt: effectiveSystemPrompt(this.#system, this.mode, this.networkAccess, !!this.#relayEndpoint, this.nugetAccess, this.siteAccess), onEvent: (event) => this.#event(event) });
+        const runtime = await createRuntime({ connection, ...this.turnLimits, loopDetection: this.loopDetection, tools, systemPrompt: effectiveSystemPrompt(this.#system, this.mode, this.networkAccess, !!this.#relayEndpoint, this.nugetAccess, this.siteAccess), onEvent: (event) => this.#event(event) });
         if (this.#closed) { runtime.dispose(); return; }
         try { runtime.restore(this.#savedMessages); } catch (error) { runtime.dispose(); throw error; }
         this.#runtime = runtime;
@@ -519,6 +551,8 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
   }
 
   #newSession(): void {
+    this.loopDetection = "combined";
+    this.turnLimits = {...DEFAULT_TURN_LIMITS};
     this.reset(); this.#history = []; this.#workspace = emptyWorkspace();
     this.networkAccess = this.options.networkAccess ?? false;
     this.nugetAccess = this.options.nugetAccess ?? false;
@@ -539,6 +573,8 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
       this.state.session = { session_id: session.id, display_name: session.name, fallback_label: session.label };
       this.state.blocks.blocks = session.blocks; this.#savedMessages = session.messages; this.#history = session.inputs;
       this.#workspace = structuredClone(session.workspace ?? this.#legacyWorkspace);
+      this.loopDetection = session.loopDetection ?? "combined";
+      this.turnLimits = {...(session.turnLimits ?? DEFAULT_TURN_LIMITS)};
       this.#system = session.system; this.mode = session.mode ?? (session.python ? "python" : "general");
       this.networkAccess = session.networkAccess ?? false;
       this.nugetAccess = session.nugetAccess ?? false;
@@ -581,7 +617,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
       this.#sessions.save({ id: this.state.session.session_id, name: this.state.session.display_name, label,
         updatedAt: new Date().toISOString(), blocks: this.state.blocks.blocks, messages: this.#savedMessages,
         inputs: this.#history, system: this.#system, python: this.pythonEnabled, mode: this.mode, networkAccess: this.networkAccess, nugetAccess: this.nugetAccess, siteAccess: this.siteAccess, dotnetRelayEndpoint: this.#relayEndpoint, workspace: this.#workspace,
-        metrics: this.metrics.snapshot(),
+        metrics: this.metrics.snapshot(), turnLimits: this.turnLimits, loopDetection: this.loopDetection,
         theme: this.state.themes.find((theme) => theme.selected)?.theme_id ?? "dracula",
         connection: connection ? connectionMetadata(connection) : null });
       if (this.options.storage) this.persistenceStatus = "Chats and files are saved unencrypted on this device. API keys are excluded from saved chats. Session files sync with the selected code runtime. Variables reset on reload, stop, mode/permission changes or session switch.";
@@ -622,11 +658,25 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
     this.metrics.event(event);
     switch (event.type) {
       case "request":
+        this.#responseStart = this.state.blocks.blocks.length; this.#streamBlocks.clear();
         this.#requestCount++;
         this.state.usage.session.request_count = String(this.#requestCount);
         this.state.activity.kind = "processing"; this.state.status.stop_reason = `Thinking · request ${event.round}`; break;
-      case "thinking": this.state.blocks.blocks.push(block("thought", event.text, "Thinking")); break;
-      case "assistant": this.state.blocks.blocks.push(block("markdown", event.text, "Lethetic")); break;
+      case "retry":
+        this.state.status.stop_reason = `Retry ${event.attempt} in ${Math.ceil(event.delayMs / 1000)}s · ${event.error}`; break;
+      case "response_reset":
+        this.state.blocks.blocks.splice(this.#responseStart); this.#streamBlocks.clear(); break;
+      case "thinking_delta": case "assistant_delta": case "thinking": case "assistant": {
+        const thinking = event.type === "thinking" || event.type === "thinking_delta";
+        const key = thinking ? "thinking" : "assistant", index = this.#streamBlocks.get(key);
+        const item = index === undefined ? undefined : this.state.blocks.blocks[index];
+        if (item) item.content = event.type.endsWith("_delta") ? item.content + event.text : event.text;
+        else {
+          this.#streamBlocks.set(key, this.state.blocks.blocks.length);
+          this.state.blocks.blocks.push(block(thinking ? "thought" : "markdown", event.text, thinking ? "Thinking" : "Lethetic"));
+        }
+        break;
+      }
       case "tool_start": case "tool_end": {
         const content = event.type === "tool_start" ? JSON.stringify(event.call.arguments, null, 2) : event.output;
         // Shared tool blocks keep their text only in tool.payload.
@@ -637,6 +687,9 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
         break;
       }
     }
-    this.publish();
+    if (event.type === "assistant_delta" || event.type === "thinking_delta") {
+      // Coalesce token bursts; final events flush immediately through publish().
+      if (this.#streamPublish === null) this.#streamPublish = setTimeout(() => this.publish(), 32);
+    } else this.publish();
   }
 }

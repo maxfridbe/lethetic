@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 mod api;
-pub use api::PreparedApiContext;
+#[cfg(feature = "native")]
+mod filesystem;
+pub use api::{FileRead, PreparedApiContext};
 
 const CHARS_PER_TOKEN: usize = 4;
 const ACTIVE_FILE_TURNS: usize = 3;
@@ -106,7 +108,7 @@ pub struct Message {
     pub tool_result_is_error: bool,
 }
 
-pub(crate) fn migrate_legacy_tool_result_errors(messages: &mut [Message]) -> usize {
+pub fn migrate_legacy_tool_result_errors(messages: &mut [Message]) -> usize {
     let mut migrated = 0;
     let mut index = 0;
     while index < messages.len() {
@@ -178,10 +180,10 @@ fn has_canonical_tool_result_envelope(
 }
 
 fn legacy_message_tool_result_is_error(function_name: &str, payload: &str) -> bool {
-    if crate::tools::legacy_output_is_error(payload)
+    if crate::engine::tool_errors::legacy_output_is_error(payload)
         || payload
             .lines()
-            .any(crate::tools::legacy_large_output_storage_error_line)
+            .any(crate::engine::tool_errors::legacy_large_output_storage_error_line)
     {
         return true;
     }
@@ -193,7 +195,7 @@ fn legacy_message_tool_result_is_error(function_name: &str, payload: &str) -> bo
         }),
         "get_pdf_text" => payload
             .lines()
-            .any(crate::tools::legacy_tool_error_line_is_marker),
+            .any(crate::engine::tool_errors::legacy_tool_error_line_is_marker),
         _ => false,
     }
 }
@@ -264,19 +266,7 @@ pub fn repair_interrupted_tool_calls(messages: &mut Vec<Message>) -> usize {
     repair_interrupted_tool_calls_with_details(messages).len()
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct ToolCall {
-    pub id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider_id: Option<String>,
-    pub function: FunctionCall,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct FunctionCall {
-    pub name: String,
-    pub arguments: serde_json::Value,
-}
+pub use crate::engine_types::{FunctionCall, ToolCall};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -290,13 +280,18 @@ pub enum ContextMode {
 #[derive(Debug, Clone)]
 pub struct CachedFile {
     pub content: String,
+    #[cfg(feature = "native")]
     pub timestamp: std::time::Instant,
+    #[cfg(not(feature = "native"))]
+    pub timestamp: u64,
     pub tokens: usize,
     /// Turn number when this file was last accessed (used for active→latest promotion)
     pub access_turn: usize,
 }
 
+#[derive(Clone)]
 pub struct ContextManager {
+    file_revision: u64,
     /// Current todo list rendered for the request, set by the app whenever
     /// `.lethetic/todos.json` changes.
     pub(crate) todo_summary: Option<String>,
@@ -317,6 +312,7 @@ pub struct ContextManager {
 impl ContextManager {
     pub fn new(max_tokens: usize, system_prompt: Option<String>) -> Self {
         Self {
+            file_revision: 0,
             todo_summary: None,
             background_summary: None,
             max_tokens,
@@ -370,6 +366,7 @@ impl ContextManager {
 
     /// Called when a file is read or written. Places it in active_files (highest attention tier).
     pub fn update_latest_file(&mut self, path: String, content: String) {
+        self.file_revision = self.file_revision.saturating_add(1);
         let tokens = estimate_tokens(&content);
         // Remove from latest_files if it was demoted there previously
         self.latest_files.remove(&path);
@@ -377,7 +374,10 @@ impl ContextManager {
             path,
             CachedFile {
                 content,
+                #[cfg(feature = "native")]
                 timestamp: std::time::Instant::now(),
+                #[cfg(not(feature = "native"))]
+                timestamp: self.file_revision,
                 tokens,
                 access_turn: self.turn_count,
             },
@@ -416,7 +416,7 @@ impl ContextManager {
         }
 
         // Collect latest_files by age (oldest first)
-        let mut latest_by_age: Vec<(std::time::Instant, String)> = self
+        let mut latest_by_age: Vec<_> = self
             .latest_files
             .iter()
             .map(|(k, v)| (v.timestamp, k.clone()))
@@ -430,7 +430,7 @@ impl ContextManager {
         }
 
         // Still over budget — evict active_files oldest first
-        let mut active_by_age: Vec<(std::time::Instant, String)> = self
+        let mut active_by_age: Vec<_> = self
             .active_files
             .iter()
             .map(|(k, v)| (v.timestamp, k.clone()))
@@ -749,7 +749,7 @@ impl ContextManager {
         prompt
     }
 
-    pub fn get_tools_for_api(&self) -> Vec<crate::transport::ToolDefinition> {
+    pub fn get_tools_for_api(&self) -> Vec<crate::engine::transport_types::ToolDefinition> {
         let sys = match &self.system_prompt {
             Some(s) => s.as_str(),
             None => return vec![],
@@ -773,7 +773,7 @@ impl ContextManager {
                         .unwrap_or("")
                         .to_string();
                     let params = obj.get("parameters").cloned().unwrap_or(json!({}));
-                    tools.push(crate::transport::ToolDefinition {
+                    tools.push(crate::engine::transport_types::ToolDefinition {
                         name,
                         description: desc,
                         input_schema: params,
@@ -787,12 +787,26 @@ impl ContextManager {
         tools
     }
 
+    /// Project the CLI context using an explicit host filesystem adapter.
+    pub fn prepare_api_context_with_files(
+        &self,
+        read_file: &dyn Fn(&str, usize) -> FileRead,
+    ) -> PreparedApiContext {
+        api::prepare(self, read_file)
+    }
+
     pub fn prepare_api_context(&self) -> PreparedApiContext {
-        api::prepare(self)
+        #[cfg(feature = "native")]
+        let read_file = |path: &str, limit| {
+            filesystem::read_complete_file(&std::path::Path::new(&self.cwd).join(path), limit)
+        };
+        #[cfg(not(feature = "native"))]
+        let read_file = |_: &str, _| FileRead::Unavailable;
+        self.prepare_api_context_with_files(&read_file)
     }
 
     /// Compatibility wrapper for callers that only need the projected messages.
-    pub fn get_messages_for_api(&self) -> Vec<crate::transport::Message> {
+    pub fn get_messages_for_api(&self) -> Vec<crate::engine::transport_types::Message> {
         self.prepare_api_context().into_messages()
     }
 
@@ -934,7 +948,7 @@ pub(crate) fn sanitize_file_content(content: &str) -> String {
     s
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "native"))]
 mod tests {
     use super::*;
 

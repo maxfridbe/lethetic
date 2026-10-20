@@ -2476,6 +2476,7 @@ dependencies = [
 name = "lethetic-wasm"
 version = "0.6.0"
 dependencies = [
+ "lethetic",
  "serde",
  "serde_json",
  "wasm-bindgen",

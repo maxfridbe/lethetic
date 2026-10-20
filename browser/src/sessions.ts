@@ -1,3 +1,5 @@
+import { parseTurnLimits, parseLoopMode } from "./turn-limits.js";
+import type { TurnLimits } from "./turn-limits.js";
 import { relayEndpoint } from "./network-route.js";
 import type { Connection } from "./connection.js";
 import { validateConnection, connectionMetadata } from "./connection.js";
@@ -14,6 +16,8 @@ import type { Workspace } from "./workspace.js";
 export type AgentMode = "general" | "python" | "dotnet-wasm";
 
 export interface SavedSession {
+  turnLimits?: TurnLimits;
+  loopDetection?: string;
   id: string; name: string | null; label: string; updatedAt: string;
   blocks: RenderBlockView[]; messages: unknown[]; inputs: string[];
   system: string; connection: Omit<Connection, "apiKey"> | null; python: boolean; theme: string;
@@ -78,6 +82,8 @@ function parseSession(value: unknown): SavedSession {
   }
   return { id: item.id, name: item.name, label: item.label, updatedAt: item.updatedAt, blocks: item.blocks,
     messages: item.messages, inputs: item.inputs, system: item.system, python: item.python,
+    ...(item.loopDetection !== undefined ? {loopDetection: parseLoopMode(item.loopDetection)} : {}),
+    ...(item.turnLimits !== undefined ? {turnLimits: parseTurnLimits(item.turnLimits)} : {}),
     ...(item.mode !== undefined ? { mode: item.mode } : {}),
     ...(item.networkAccess !== undefined ? { networkAccess: item.networkAccess } : {}),
     ...(item.siteAccess !== undefined ? { siteAccess: item.siteAccess } : {}),

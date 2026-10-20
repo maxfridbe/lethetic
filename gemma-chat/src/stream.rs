@@ -195,6 +195,21 @@ impl StreamParser {
             self.is_reasoning = true;
             events.push(StreamEvent::ReasoningDelta(reasoning.to_string()));
         }
+        if delta.reasoning().is_none_or(str::is_empty)
+            && let Some(details) = &delta.reasoning_details
+        {
+            for detail in details {
+                let text = match detail["type"].as_str() {
+                    Some("reasoning.text") => detail["text"].as_str(),
+                    Some("reasoning.summary") => detail["summary"].as_str(),
+                    _ => None,
+                };
+                if let Some(text) = text.filter(|s| !s.is_empty()) {
+                    self.is_reasoning = true;
+                    events.push(StreamEvent::ReasoningDelta(text.to_owned()));
+                }
+            }
+        }
         if let Some(text) = &delta.content
             && !text.is_empty()
         {

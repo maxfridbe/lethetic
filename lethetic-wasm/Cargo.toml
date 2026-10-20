@@ -11,3 +11,4 @@ crate-type = ["cdylib", "rlib"]
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 wasm-bindgen = "=0.2.128"
+lethetic = { path = "..", default-features = false }

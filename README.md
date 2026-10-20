@@ -6,7 +6,8 @@
 
 Lethetic is a Rust terminal coding agent and browser workspace for your own LLM
 connections. The standalone browser edition and native remote controller share
-the same UI.
+the same UI. The CLI library also builds for WASM; see the
+[shared-core status and remaining differences](docs/browser-parity.md).
 
 **[Try it now in your browser](https://maxfridbe.github.io/lethetic/) · [Embed it in your app](integration.md#embed-the-complete-ui) · [Run it locally](integration.md#build-and-test)**
 
@@ -48,7 +49,8 @@ Click a screenshot to try the browser edition.
    preview supported documents and media, or download results.
 
 For OpenRouter models, enable **Thinking · OpenRouter** in the connection editor
-and save. Returned reasoning appears in **Thinking** blocks when the response completes.
+and save. Text and available reasoning stream live. **Ctrl+P → Turn limits** adjusts
+timeout, model rounds, retries, and token budgets; **Loop detection** uses the CLI detector.
 
 The conversation runtime and code workers run locally in your browser. Python
 and .NET share each session's files. Chats, files and settings survive refresh;

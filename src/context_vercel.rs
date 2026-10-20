@@ -140,7 +140,9 @@ pub fn get_raw_prompt_vercel(ctx: &ContextManager) -> String {
 ///
 /// New request paths should use `ContextManager::prepare_api_context` so the
 /// selected messages and their fresh estimate remain one snapshot.
-pub fn get_messages_for_api_vercel(ctx: &ContextManager) -> Vec<crate::transport::Message> {
+pub fn get_messages_for_api_vercel(
+    ctx: &ContextManager,
+) -> Vec<crate::engine::transport_types::Message> {
     debug_assert_eq!(ctx.mode, crate::context::ContextMode::Vercel);
     ctx.prepare_api_context().into_messages()
 }

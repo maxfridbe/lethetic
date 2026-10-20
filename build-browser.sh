@@ -13,6 +13,8 @@ done
   echo 'Install TypeScript 7.0.2 (npm install --global typescript@7.0.2)' >&2; exit 1;
 }
 
+cargo test -p lethetic --no-default-features --lib --locked
+cargo test -p gemma-chat --no-default-features --lib --locked
 cargo test -p lethetic-wasm --locked
 cargo build -p lethetic-wasm --target wasm32-unknown-unknown --release --locked
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s browser/tests -p 'test_python_*.py'
@@ -26,6 +28,8 @@ cp -R web/lib "$stage/web/lib"
 cp web/static/styles.css web/static/files.css "$stage/web/"
 cp -R browser/static/. "$stage/"
 cp integration.md "$stage/integration.md"
+mkdir -p "$stage/docs"
+cp docs/browser-parity.md "$stage/docs/browser-parity.md"
 touch "$stage/.nojekyll"
 python3 scripts/fetch_dotnetdide.py "$stage"
 

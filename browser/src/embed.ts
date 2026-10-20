@@ -1,3 +1,4 @@
+import { createTurnLimitsDialog } from "./turn-limits-dialog.js";
 import { createSitesDialog } from "./sites-dialog.js";
 import { createFileTools } from "./file-tools.js";
 import { createFileUpload } from "./file-upload.js";
@@ -54,6 +55,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   let editor: ReturnType<typeof createFileEditor> | null = null;
   const preview = createFilePreview();
   let sites: ReturnType<typeof createSitesDialog> | null = null;
+  let limits: ReturnType<typeof createTurnLimitsDialog> | null = null;
   let settings: ReturnType<typeof createConnectionsDialog> | null = null;
   let transport: LocalTransport | null = null;
   let fileStatus = "";
@@ -76,7 +78,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
     } } }, [uiIcon("copy"), "Copy"]),
   ]);
   const application = new SpaApplication(mount, {
-    paletteCommands: () => [{ id: "local:compact-session", label: "Compact session context", description: "Summarize model context; keep this session, transcript, files and runtime state", icon: "command", behavior: "execute", accelerator: null,
+    paletteCommands: () => [{ id: "local:turn-limits", label: "Turn limits", description: "Timeout, maximum model/tool rounds and transient retries for this session", icon: "command", behavior: "open_panel", accelerator: null, enabled: true, disabled_reason: null, run: () => limits?.open() }, { id: "local:compact-session", label: "Compact session context", description: "Summarize model context; keep this session, transcript, files and runtime state", icon: "command", behavior: "execute", accelerator: null,
       enabled: transport?.canCompact ?? false, disabled_reason: transport?.busy ? "Finish or stop the running turn first" : "Send a message with a configured connection first",
       run: () => { void transport?.compact().catch(error => { if (transport) { transport.persistenceStatus = `Compaction: ${String(error)}`; transport.publish(); } }); } }],
     status: () => renderBrowserStatus(transport, pinnedStats, () => transport?.publish()),
@@ -167,6 +169,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
         history[replace ? "replaceState" : "pushState"](null, "", location.pathname + location.search + hash);
       }
     } });
+  limits = createTurnLimitsDialog(transport);
   sites = createSitesDialog(transport);
   settings = createConnectionsDialog(transport, options.storage, options.credentialStorage);
   editor = createFileEditor(files, (path) => { void application.openFile(path); });
@@ -185,5 +188,5 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   };
   if (options.sessionRouting) globalThis.addEventListener("hashchange", navigate);
   if (!connections.length) settings.open();
-  return { destroy(): void { upload.destroy(); globalThis.removeEventListener("hashchange", navigate); transport?.dispose(); application.dispose(); settings?.destroy(); sites?.destroy(); editor?.destroy(); preview.destroy(); root.replaceChildren(); } };
+  return { destroy(): void { upload.destroy(); globalThis.removeEventListener("hashchange", navigate); transport?.dispose(); application.dispose(); settings?.destroy(); limits?.destroy(); sites?.destroy(); editor?.destroy(); preview.destroy(); root.replaceChildren(); } };
 }

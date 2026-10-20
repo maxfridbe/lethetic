@@ -13,6 +13,7 @@ function accounting(): AccountingTotalsView {
     incomplete_usage_request_count: "0" };
 }
 const COMMANDS: [CommandId, string, CommandView["behavior"], string | null][] = [
+  ["loop-detection", "Loop detection", "open_panel", null],
   ["hotkeys", "Hotkeys", "open_panel", "h"], ["themes", "Themes", "open_panel", "t"],
   ["models", "Models / saved connections", "open_panel", null],
   ["input-history", "Input history", "open_panel", null], ["system-prompt", "System prompt", "open_panel", null],

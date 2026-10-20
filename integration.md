@@ -88,11 +88,47 @@ Keys are excluded from saved chats and device-local connection metadata. Chats a
 Changing connections, updating a key, or toggling Python keeps the current session,
 history, and files. Use **New session** to start a separate chat. Clearing context resets the current conversation and Python runtime. Editing connection fields takes effect when you save them.
 
-Responses appear when each model request completes; this edition currently uses
-non-streaming Chat Completions and Messages, including Thinking blocks. Responses API endpoints, native
-filesystem tools, shells, LSP, native skills, and Podman are not part of the browser
-runtime. The existing `lethetic --rc` browser controller remains available for those
-native capabilities through the same UI backed by its authenticated native connection.
+Text and available thinking stream live using the CLI's OpenAI and Anthropic
+stream parsers, compiled to WASM. Encrypted reasoning is preserved for provider
+continuation but never displayed. A provider can report reasoning-token usage
+without returning readable reasoning. JSON responses are also accepted for
+endpoints that ignore streaming. Tools execute only after a validated terminal
+response; interrupted tool streams never authorize execution.
+
+The browser uses the CLI context projection: older tool results are shortened,
+older context is trimmed to the input budget, and reused tool-call IDs are repaired
+in outgoing requests. Saved transcript/history is retained. See
+[shared-core status](docs/browser-parity.md) for the precise architecture and gaps.
+Responses API endpoints, native filesystem tools, shells, LSP, native skills, and
+Podman are not available in the browser host. Use the authenticated `lethetic --rc`
+connection for those capabilities through the same UI.
+
+## Turn limits and loop detection
+
+Choose **Ctrl+P → Turn limits**. Settings belong to the current session, survive
+refresh, and apply to its next turn without changing its files or worker variables:
+
+| Setting | Default | Range |
+| --- | --- | --- |
+| Entire-turn timeout | 10 minutes | 0–1,440 minutes; 0 disables it |
+| Model requests per turn | 32 | 1–1,000 |
+| Transient retries per request | 2 | 0–10 |
+| Context input budget | 32,768 tokens | 256–2,000,000 |
+| Maximum output, including reasoning | 4,096 tokens | 1–131,072 |
+
+Choose budgets supported by the model. Context estimates use the CLI's approximate
+byte-based accounting, not the provider's tokenizer. The current user turn is
+protected from trimming; an oversized current turn can still exceed a model's
+limit. **Stop** works even with an unlimited turn timeout. Python and .NET worker
+execution deadlines remain separate (120 seconds by default).
+
+Retries cover transient network failures, HTTP 429/5xx and interrupted streams,
+using the CLI's backoff (3, 6, 12 seconds, capped at 30) or a bounded Retry-After.
+Only the failed model request is resent: completed tools are not rerun. Failed
+partial text is removed before retrying. HTTP authentication and validation errors
+are not retried. **Ctrl+P → Loop detection** uses the existing remote UI panel and
+CLI repetition detector for streamed thinking; Combined is the default, Off is
+available, and a pure block-length cap is opt-in.
 
 ## Compacting context
 
@@ -385,15 +421,21 @@ try {
 ```
 
 For an OpenRouter connection, set `connection.thinking: "enabled"` (or `"disabled"`);
-omit it for Model default. `onEvent` receives `{ type: "thinking", text }` before
-the corresponding assistant/tool events, while `send()` still returns only the
-final answer. Returned reasoning is displayed even with Model default when the
+omit it for Model default. `onEvent` receives `thinking_delta` and
+`assistant_delta` as text arrives, then authoritative `thinking` and `assistant`
+texts at request completion. Replace accumulated text with those final values;
+do not append it again. `response_reset` discards the current partial response
+before a retry/failure, and `retry` reports attempt, delay and error. `send()`
+returns the final answer. Set `stream: false` only for endpoints without streaming.
+SDK options `timeoutMs` (0 disables), `maxRounds`, `providerRetries`, `contextTokens`
+and `maxOutputTokens` match the session controls above. Returned reasoning is displayed even with Model default when the
 provider includes it. `history()` includes provider reasoning details needed for
 tool continuation; retain these unchanged when restoring a conversation.
 
 Host tool handlers must validate argument fields and authorize their effects.
 WASM verifies registered tool names, unique call IDs, JSON objects, and result
-ordering; it does not implement full JSON Schema validation. Tools run sequentially.
+ordering; it does not implement full JSON Schema validation. Restoring history allows
+completed calls to previously enabled tools without registering or executing them. Tools run sequentially.
 Thrown tool errors stop the turn. Return an error string if the model should recover.
 Stopping, timeout, malformed responses, or exhausting the round limit rolls back the
 incomplete user turn. Already executed host effects are not undone or automatically

@@ -1,3 +1,7 @@
+import { DEFAULT_TURN_LIMITS, parseTurnLimits, LOOP_MODES, parseLoopMode } from "./turn-limits.js";
+import { abortable, delay } from "./async.js";
+import { readModelResponse } from "./stream.js";
+import type { WasmStream, StreamDelta } from "./stream.js";
 import { validateConnection, modelAuthHeaders } from "./connection.js";
 import { readUsage } from "./usage.js";
 import type { ProviderUsage } from "./usage.js";
@@ -18,6 +22,9 @@ export interface Tool {
   execute(arguments_: Record<string, unknown>, signal: AbortSignal): Promise<string> | string;
 }
 export type RuntimeEvent =
+  | StreamDelta
+  | { type: "response_reset" }
+  | { type: "retry"; attempt: number; delayMs: number; error: string }
   | { type: "request"; round: number }
   | { type: "response"; usage: ProviderUsage; durationMs: number }
   | { type: "assistant"; text: string }
@@ -30,10 +37,20 @@ export interface RuntimeOptions {
   systemPrompt?: string;
   tools?: readonly Tool[];
   onEvent?: (event: RuntimeEvent) => void;
-  /** Defaults to 12 model requests per user turn. */
+  /** Defaults to 32 model requests per user turn. */
   maxRounds?: number;
-  /** Timeout for the entire turn, including tools; defaults to 180 seconds. */
+  /** Disable only for endpoints without streaming; defaults to true. */
+  stream?: boolean;
+  /** Timeout for the entire turn including tools; defaults to 10 minutes. Zero disables. */
   timeoutMs?: number;
+  /** Transient retries per model request, default 2; no completed tool is replayed. */
+  providerRetries?: number;
+  /** CLI context input budget, estimated at four bytes per token; default 32768. */
+  contextTokens?: number;
+  /** Model output budget, including reasoning; default 4096. */
+  maxOutputTokens?: number;
+  /** CLI loop detection mode; default combined. */
+  loopDetection?: string;
   /** Optional injected fetch for an embedding host or tests. */
   fetch?: typeof globalThis.fetch;
   /** Optional bytes for hosts that load WASM themselves (including Node). */
@@ -41,6 +58,7 @@ export interface RuntimeOptions {
 }
 
 interface WasmRuntime {
+  set_limits(context: number, output: number): void;
   begin(prompt: string): void;
   request(provider: string, model: string): string;
   accept(provider: string, response: string): string;
@@ -52,6 +70,10 @@ interface WasmRuntime {
   free(): void;
 }
 interface WasmModule {
+  check_loop(text: string, mode: string): string | undefined;
+  retryable_error(error: string): boolean;
+  retry_delay_ms(attempt: number): number;
+  BrowserStream: new (provider: string) => WasmStream;
   default(options?: { module_or_path: BufferSource }): Promise<unknown>;
   BrowserRuntime: new (system: string, tools: string) => WasmRuntime;
 }
@@ -105,45 +127,90 @@ export class LetheticRuntime {
     const cancel = (): void => controller.abort(signal?.reason);
     signal?.addEventListener("abort", cancel, { once: true });
     if (signal?.aborted) cancel();
-    const timeoutMs = this.#options.timeoutMs ?? 180_000;
-    const maxRounds = this.#options.maxRounds ?? 12;
-    if (!Number.isInteger(maxRounds) || maxRounds < 1 || maxRounds > 100 ||
-        !Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 3_600_000) {
-      signal?.removeEventListener("abort", cancel);
-      throw new Error("Use 1–100 rounds and a timeout between 1 ms and one hour.");
-    }
-    const timer = setTimeout(() => controller.abort(new Error("Turn timed out.")), timeoutMs);
+    let limits, loopMode: string;
+    try { limits = parseTurnLimits({ timeoutMs: this.#options.timeoutMs ?? DEFAULT_TURN_LIMITS.timeoutMs,
+      maxRounds: this.#options.maxRounds ?? DEFAULT_TURN_LIMITS.maxRounds,
+      providerRetries: this.#options.providerRetries ?? DEFAULT_TURN_LIMITS.providerRetries,
+      contextTokens: this.#options.contextTokens ?? DEFAULT_TURN_LIMITS.contextTokens,
+      maxOutputTokens: this.#options.maxOutputTokens ?? DEFAULT_TURN_LIMITS.maxOutputTokens });
+      loopMode = LOOP_MODES.find(mode => mode[0] === parseLoopMode(this.#options.loopDetection ?? "combined"))![2]; }
+    catch (error) { signal?.removeEventListener("abort", cancel); throw error; }
+    const { timeoutMs, maxRounds, providerRetries } = limits;
+    const timer = timeoutMs === 0 ? null : setTimeout(() => controller.abort(new Error(
+      `Turn timed out after ${Math.round(timeoutMs / 1000)} seconds. Change Ctrl+P → Turn limits for longer work.`)), timeoutMs);
+    let responsePending = false;
     this.#active = controller;
     try {
       controller.signal.throwIfAborted();
+      this.#wasm.set_limits(limits.contextTokens, limits.maxOutputTokens);
       this.#wasm.begin(prompt);
       const connection = this.#options.connection;
       for (let round = 1; round <= maxRounds; round++) {
         controller.signal.throwIfAborted();
-        let body = this.#wasm.request(connection.provider, connection.model);
+        const request = JSON.parse(this.#wasm.request(connection.provider, connection.model)) as Record<string, unknown>;
+        request["stream"] = this.#options.stream !== false;
+        if (!request["stream"]) delete request["stream_options"];
+        if (request["stream"] && connection.provider === "openai") request["stream_options"] = { include_usage: true };
         if (connection.thinking !== undefined) {
-          const request = JSON.parse(body) as Record<string, unknown>;
           request["reasoning"] = connection.thinking === "enabled" ? { enabled: true, exclude: false } : { enabled: false };
-          body = JSON.stringify(request);
         }
-        this.#emit({ type: "request", round });
+        const body = JSON.stringify(request);
+        const module = await loadRuntimeModule(this.#options.wasm);
+        const checkLoop = (text: string): void => {
+          const reason = module.check_loop(text, loopMode);
+          if (reason) throw new Error(`Loop detected: ${reason}. Change Ctrl+P → Loop detection if needed.`);
+        };
+        let responseText = "";
         const started = performance.now();
-        const response = await abortable((this.#options.fetch ?? globalThis.fetch)(connection.endpoint, {
-          method: "POST", mode: "cors", credentials: "omit", redirect: "error",
-          referrerPolicy: "no-referrer", cache: "no-store", signal: controller.signal,
-          headers: requestHeaders(connection), body,
-        }), controller.signal);
-        if (!response.ok) {
-          await response.body?.cancel();
-          throw new Error(`Model request failed (HTTP ${response.status}). Check your endpoint, model, and key.`);
+        responsePending = true;
+        for (let attempt = 0; ; attempt++) {
+          controller.signal.throwIfAborted();
+          this.#emit({ type: "request", round });
+          let retryAfter: number | null = null;
+          try {
+            let thinking = "", checked = 0;
+            const response = await abortable((this.#options.fetch ?? globalThis.fetch)(connection.endpoint, {
+              method: "POST", mode: "cors", credentials: "omit", redirect: "error",
+              referrerPolicy: "no-referrer", cache: "no-store", signal: controller.signal,
+              headers: requestHeaders(connection), body,
+            }), controller.signal);
+            if (!response.ok) {
+              const header = response.headers.get("Retry-After");
+              if (header !== null) {
+                const seconds = Number(header);
+                const duration = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - Date.now();
+                if (Number.isFinite(duration)) retryAfter = Math.max(0, Math.min(60_000, duration));
+              }
+              await response.body?.cancel();
+              throw new Error(`Model request failed (HTTP ${response.status}). Check your endpoint, model, and key.`);
+            }
+            responseText = await readModelResponse(response, controller.signal,
+              () => new module.BrowserStream(connection.provider), event => {
+                if (event.type === "thinking_delta") {
+                  thinking += event.text;
+                  if (thinking.length - checked >= 512) { checked = thinking.length; checkLoop(thinking); }
+                }
+                this.#emit(event);
+              });
+            if (thinking) checkLoop(thinking);
+            break;
+          } catch (error) {
+            controller.signal.throwIfAborted();
+            const message = error instanceof Error ? error.message : String(error);
+            if (attempt >= providerRetries || !(error instanceof TypeError || module.retryable_error(message))) throw error;
+            this.#emit({ type: "response_reset" });
+            const delayMs = retryAfter ?? module.retry_delay_ms(attempt + 1);
+            this.#emit({ type: "retry", attempt: attempt + 1, delayMs, error: message });
+            await delay(delayMs, controller.signal);
+          }
         }
-        const responseText = await readResponse(response, controller.signal);
         controller.signal.throwIfAborted();
         this.#emit({ type: "response", usage: readUsage(connection.provider, JSON.parse(responseText)),
           durationMs: performance.now() - started });
         const turn = JSON.parse(this.#wasm.accept(connection.provider, responseText)) as {
           text: string; thinking: string; calls: ToolCall[];
         };
+        responsePending = false;
         if (turn.thinking) this.#emit({ type: "thinking", text: turn.thinking });
         if (turn.text) this.#emit({ type: "assistant", text: turn.text });
         if (turn.calls.length === 0) return turn.text;
@@ -164,6 +231,7 @@ export class LetheticRuntime {
       }
       throw new Error("Tool round limit reached. Start a new turn with a smaller task.");
     } catch (error) {
+      if (responsePending) this.#emit({ type: "response_reset" });
       this.#wasm.rollback();
       if (controller.signal.aborted) throw controller.signal.reason;
       if (error instanceof TypeError) {
@@ -171,7 +239,7 @@ export class LetheticRuntime {
       }
       throw error instanceof Error ? error : new Error(String(error));
     } finally {
-      clearTimeout(timer);
+      if (timer !== null) clearTimeout(timer);
       signal?.removeEventListener("abort", cancel);
       this.#active = null;
       if (this.#disposed) this.#wasm.free();
@@ -211,37 +279,6 @@ export class LetheticRuntime {
 
 function requestHeaders(connection: Connection): Record<string, string> {
   return { "Content-Type": "application/json", ...modelAuthHeaders(connection) };
-}
-
-async function readResponse(response: Response, signal: AbortSignal): Promise<string> {
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error("The model returned an empty response.");
-  const decoder = new TextDecoder();
-  let size = 0;
-  let text = "";
-  try {
-    while (true) {
-      signal.throwIfAborted();
-      const { done, value } = await abortable(reader.read(), signal);
-      if (done) return text + decoder.decode();
-      size += value.byteLength;
-      if (size > 4 * 1024 * 1024) throw new Error("Model response exceeds 4 MiB.");
-      text += decoder.decode(value, { stream: true });
-    }
-  } finally { await reader.cancel(); reader.releaseLock(); }
-}
-
-/** Race a host operation against cancellation even if the host ignores the signal. */
-function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const abort = (): void => {
-      signal.removeEventListener("abort", abort);
-      reject(signal.reason);
-    };
-    signal.addEventListener("abort", abort, { once: true });
-    if (signal.aborted) abort();
-    void promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
-  });
 }
 
 export type { DotnetRelay } from "./network-route.js";

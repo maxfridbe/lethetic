@@ -246,6 +246,8 @@ pub(crate) struct ChunkChoice {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Delta {
+    pub reasoning: Option<String>,
+    pub reasoning_details: Option<Vec<Value>>,
     pub content: Option<String>,
     /// Gemma 4 / llama.cpp reasoning field
     pub reasoning_content: Option<String>,
@@ -260,6 +262,8 @@ impl Delta {
     /// delta on their trailing usage chunk.
     pub fn is_empty(&self) -> bool {
         self.content.as_deref().unwrap_or("").is_empty()
+            && self.reasoning.as_deref().unwrap_or("").is_empty()
+            && self.reasoning_details.as_ref().is_none_or(Vec::is_empty)
             && self.reasoning_content.as_deref().unwrap_or("").is_empty()
             && self.reasoning_text.as_deref().unwrap_or("").is_empty()
             && self
@@ -269,9 +273,10 @@ impl Delta {
     }
 
     pub fn reasoning(&self) -> Option<&str> {
-        self.reasoning_content
+        self.reasoning.as_deref().filter(|s| !s.is_empty()).or(self
+            .reasoning_content
             .as_deref()
-            .or(self.reasoning_text.as_deref())
+            .or(self.reasoning_text.as_deref()))
     }
 }
 

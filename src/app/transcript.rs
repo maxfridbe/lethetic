@@ -21,19 +21,7 @@ fn is_legacy_empty_session_provider_error(block: &RenderBlock) -> bool {
                 ))
 }
 
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
-pub enum BlockType {
-    Text,
-    ProviderError,
-    User,
-    Thought,
-    Markdown,
-    ToolCall,
-    ToolResult,
-    ToolError,
-    Divider,
-    Formulating,
-}
+pub use crate::engine_types::BlockType;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RenderBlock {

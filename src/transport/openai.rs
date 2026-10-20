@@ -1,12 +1,13 @@
 use futures_util::StreamExt;
 use reqwest::Client;
-use serde_json::{Value, json};
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
 
 use crate::accounting::Usage;
 use crate::config::Config;
 use crate::transport::{
-    Completion, Content, ContentPart, EventStream, Message, ModelInfo, Role, StreamEvent, ToolCall,
-    ToolDefinition,
+    Completion, EventStream, Message, ModelInfo, StreamEvent, ToolCall, ToolDefinition,
 };
 
 pub fn base_url(server_url: &str) -> String {
@@ -18,66 +19,7 @@ pub fn base_url(server_url: &str) -> String {
     server_url.to_string()
 }
 
-fn to_gemma_message(message: &Message) -> gemma_chat::Message {
-    let role = match message.role {
-        Role::System => gemma_chat::Role::System,
-        Role::User => gemma_chat::Role::User,
-        Role::Assistant => gemma_chat::Role::Assistant,
-        Role::Tool => gemma_chat::Role::Tool,
-    };
-    let content = match &message.content {
-        Content::Text(text) => Value::String(text.clone()),
-        Content::Parts(parts) => Value::Array(
-            parts
-                .iter()
-                .map(|part| match part {
-                    ContentPart::Text(text) => json!({"type": "text", "text": text}),
-                    ContentPart::Image { media_type, data } => json!({
-                        "type": "image_url",
-                        "image_url": {
-                            "url": format!("data:{media_type};base64,{data}")
-                        }
-                    }),
-                })
-                .collect(),
-        ),
-    };
-    let tool_calls = (!message.tool_calls.is_empty()).then(|| {
-        message
-            .tool_calls
-            .iter()
-            .map(|call| gemma_chat::AssistantToolCall {
-                id: call.id.clone(),
-                kind: "function".to_string(),
-                function: gemma_chat::FunctionCall {
-                    name: call.name.clone(),
-                    arguments: serde_json::to_string(&call.arguments).unwrap_or_default(),
-                },
-            })
-            .collect()
-    });
-
-    gemma_chat::Message {
-        role,
-        content,
-        tool_call_id: message.tool_call_id.clone(),
-        tool_calls,
-        reasoning_content: None,
-    }
-}
-
-fn to_gemma_tools(tools: &[ToolDefinition]) -> Vec<gemma_chat::ToolDefinition> {
-    tools
-        .iter()
-        .map(|tool| {
-            gemma_chat::ToolDefinition::new(
-                tool.name.clone(),
-                tool.description.clone(),
-                tool.input_schema.clone(),
-            )
-        })
-        .collect()
-}
+use crate::engine::messages::{to_gemma_message, to_gemma_tools};
 
 pub fn build_request(
     config: &Config,

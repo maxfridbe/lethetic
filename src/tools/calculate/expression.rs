@@ -4,7 +4,7 @@ use evalexpr::{
     Node, Operator, Value,
 };
 
-pub(super) fn evaluate(expression: &str) -> Result<f64, String> {
+pub fn evaluate(expression: &str) -> Result<f64, String> {
     let mut tree = evalexpr::build_operator_tree(&without_unary_plus(expression))
         .map_err(|error| error.to_string())?;
     // Validate arity before rotating powers; malformed input must be an error,

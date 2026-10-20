@@ -1,8 +1,8 @@
 /// Parsed tool calls and their end offset, or a parse error at an offset.
 pub type ToolCallParseResult = Result<(Vec<ToolCall>, usize), (String, usize)>;
 
-use crate::app::BlockType;
-use crate::context::ToolCall;
+use crate::engine_types::BlockType;
+use crate::engine_types::ToolCall;
 use serde_json::{Map, Value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -819,7 +819,7 @@ pub fn parse_native_block(block: &str) -> Result<ToolCall, String> {
                 .unwrap_or("unknown")
                 .to_string(),
             provider_id: None,
-            function: crate::context::FunctionCall {
+            function: crate::engine_types::FunctionCall {
                 name,
                 arguments: Value::Object(args_map),
             },
@@ -844,7 +844,7 @@ pub fn parse_native_block(block: &str) -> Result<ToolCall, String> {
                     .unwrap_or("unknown")
                     .to_string(),
                 provider_id: None,
-                function: crate::context::FunctionCall {
+                function: crate::engine_types::FunctionCall {
                     name: func_name,
                     arguments: Value::Object(map),
                 },

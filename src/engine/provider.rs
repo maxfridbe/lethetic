@@ -1,60 +1,68 @@
 use serde_json::{Value, json};
 
-use crate::{Tool, ToolCall, Turn};
+use super::{Tool, ToolCall, Turn};
 
 pub(crate) fn request(
     provider: &str,
     model: &str,
-    system: &str,
     tools: &[Tool],
-    history: &[Value],
+    max_tokens: u32,
+    history: &[super::transport_types::Message],
 ) -> Result<Value, String> {
+    let definitions = tools
+        .iter()
+        .map(|tool| super::transport_types::ToolDefinition {
+            name: tool.name.clone(),
+            description: tool.description.clone(),
+            input_schema: tool.parameters.clone(),
+        })
+        .collect::<Vec<_>>();
     match provider {
         "openai" => {
-            let mut messages = vec![json!({"role":"system", "content":system})];
-            messages.extend(history.iter().map(|message| {
-                let mut message = message.clone();
-                if let Some(object) = message.as_object_mut() {
-                    object.remove("anthropic_content");
+            let messages = history
+                .iter()
+                .map(super::messages::to_gemma_message)
+                .collect::<Vec<_>>();
+            let mut body = gemma_chat::build_request(
+                model,
+                &messages,
+                &super::messages::to_gemma_tools(&definitions),
+                max_tokens,
+                None,
+                None,
+            )?;
+            // OpenRouter requires signed/opaque reasoning to be replayed exactly.
+            for (source, target) in history
+                .iter()
+                .zip(body["messages"].as_array_mut().ok_or("invalid messages")?)
+            {
+                if let Some(metadata) = source
+                    .provider_content
+                    .as_ref()
+                    .and_then(|blocks| blocks.first())
+                    .and_then(Value::as_object)
+                {
+                    for key in [
+                        "reasoning",
+                        "reasoning_content",
+                        "reasoning_text",
+                        "reasoning_details",
+                    ] {
+                        if let Some(value) = metadata.get(key) {
+                            target[key] = value.clone();
+                        }
+                    }
                 }
-                message
-            }));
-            let mut body = json!({"model":model, "messages":messages, "stream":false});
-            if !tools.is_empty() {
-                body["tools"] = Value::Array(
-                    tools
-                        .iter()
-                        .map(|tool| {
-                            json!({
-                                "type":"function", "function":tool
-                            })
-                        })
-                        .collect(),
-                );
             }
             Ok(body)
         }
         "anthropic" => {
-            let mut messages: Vec<Value> = Vec::new();
-            for message in history {
-                if message["role"] == "tool" {
-                    let block = json!({"type":"tool_result", "tool_use_id":message["tool_call_id"],
-                        "content":message["content"]});
-                    if let Some(last) = messages.last_mut().filter(|m| m["role"] == "user")
-                        && let Some(content) = last["content"].as_array_mut()
-                    {
-                        content.push(block);
-                        continue;
-                    }
-                    messages.push(json!({"role":"user", "content":[block]}));
-                } else if let Some(blocks) = message.get("anthropic_content") {
-                    messages.push(json!({"role":"assistant", "content":blocks}));
-                } else {
-                    messages.push(json!({"role":message["role"], "content":message["content"]}));
-                }
+            let (system, messages) = super::messages::anthropic_messages(history);
+            let mut body =
+                json!({"model":model, "messages":messages, "max_tokens":max_tokens, "stream":true});
+            if let Some(system) = system {
+                body["system"] = system.into();
             }
-            let mut body = json!({"model":model, "system":system, "messages":messages,
-                "max_tokens":4096, "stream":false});
             if !tools.is_empty() {
                 body["tools"] = Value::Array(tools.iter().map(|tool| json!({
                     "name":tool.name, "description":tool.description, "input_schema":tool.parameters
@@ -90,6 +98,7 @@ pub(crate) fn response(provider: &str, value: &Value) -> Result<(Value, Turn), S
                 .as_str()
                 .filter(|text| !text.is_empty())
                 .or_else(|| message["reasoning_content"].as_str())
+                .or_else(|| message["reasoning_text"].as_str())
                 .unwrap_or_default()
                 .to_owned();
             if let Some(details) = message.get("reasoning_details").filter(|v| !v.is_null()) {
@@ -177,7 +186,12 @@ pub(crate) fn response(provider: &str, value: &Value) -> Result<(Value, Turn), S
     let mut message = json!({"role":"assistant", "content":text});
     if provider == "openai" {
         let source = &value["choices"][0]["message"];
-        for key in ["reasoning", "reasoning_content", "reasoning_details"] {
+        for key in [
+            "reasoning",
+            "reasoning_content",
+            "reasoning_text",
+            "reasoning_details",
+        ] {
             if let Some(value) = source.get(key).filter(|v| !v.is_null()) {
                 if key != "reasoning_details" && !value.is_string() {
                     return Err(format!("invalid {key}"));

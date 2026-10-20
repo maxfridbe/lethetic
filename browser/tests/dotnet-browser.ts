@@ -98,7 +98,7 @@ export async function testDotnetBrowser(evaluate: (expression: string) => Promis
     change('[data-field=network-route]','relay');
     const endpoint=document.querySelector('[data-field=relay-endpoint]'),token=document.querySelector('[data-field=relay-token]');
     endpoint.value='socks5://localhost:9050';document.querySelector('[data-field=apply-route]').click();
-    if(!document.querySelector('[data-field=status]').textContent.includes('SOCKS') || saved().dotnetRelayEndpoint)throw Error('Direct SOCKS route was accepted');
+    if(!document.querySelector('.browser-connections [data-field=status]').textContent.includes('SOCKS') || saved().dotnetRelayEndpoint)throw Error('Direct SOCKS route was accepted');
     endpoint.value='https://relay.example/relay';endpoint.dispatchEvent(new Event('input'));
     token.value='private-relay-token-for-browser-test';token.dispatchEvent(new Event('input'));
     document.querySelector('[data-field=apply-route]').click();

@@ -201,3 +201,27 @@ await test("relay settings preserve the session and files, restore tab keys, and
   transport.setDotnetRelay({...relay,token:""}); assert.equal(transport.dotnetRelay?.token,"");
   transport.dispose(); ({transport}=make()); transport.start(); assert.equal(transport.dotnetRelay?.token,""); transport.dispose();
 });
+
+await test("turn limits and shared loop controls persist per session without replacing files or history", async () => {
+  const values=new Map<string,string>();let quota=false;
+  const storage={getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{if(quota)throw Error("quota");values.set(key,value);}} as Storage;
+  const make=()=>{
+    const files=new BrowserFiles(storage);
+    const transport=new LocalTransport({socketOpened(){},authenticationEpochChanged(){},transportStatus(){},protocolFault(){},serverMessage(){},commandResponse(){}},{connections:[],storage,files});
+    transport.start();return {transport,files};
+  };
+  let {transport,files}=make();const id=transport.state.session.session_id;
+  files.save("kept.txt","keep");
+  const limits={timeoutMs:0,maxRounds:80,providerRetries:4,contextTokens:64000,maxOutputTokens:8192};
+  transport.setTurnLimits(limits);
+  transport.send({type:"set_loop_detection",session_id:id,mode_id:"off"},0);await Promise.resolve();
+  assert.equal(transport.loopDetection,"off");
+  quota=true;assert.throws(()=>transport.setTurnLimits({...limits,timeoutMs:60_000}),/quota/);quota=false;
+  assert.deepEqual(transport.turnLimits,limits);assert.equal(transport.state.session.session_id,id);
+  transport.dispose();({transport,files}=make());
+  assert.equal(transport.state.session.session_id,id);assert.deepEqual(transport.turnLimits,limits);
+  assert.equal(transport.loopDetection,"off");assert.equal(files.list()[0]?.content,"keep");
+  transport.openSession("new");assert.equal(transport.turnLimits.timeoutMs,600_000);assert.equal(transport.loopDetection,"combined");
+  transport.openSession(id);assert.deepEqual(transport.turnLimits,limits);assert.equal(transport.loopDetection,"off");
+  transport.dispose();
+});

@@ -1,4 +1,4 @@
-mod expression;
+use crate::calculator as expression;
 
 use super::icons;
 use crate::tools::{FunctionDefinition, Tool, ToolExecution};

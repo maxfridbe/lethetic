@@ -19,6 +19,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+          components: clippy
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -27,6 +28,8 @@ jobs:
         run: |
           npm install --global typescript@7.0.2
           cargo install wasm-bindgen-cli --version 0.2.128 --locked
+      - name: Check the CLI core on the browser target
+        run: cargo clippy -p lethetic --no-default-features --lib --target wasm32-unknown-unknown --locked -- -D warnings
       - name: Build and test WASM, SDK, and Python worker lifecycle
         env:
           RELEASE_REF: ${{ github.ref_name }}

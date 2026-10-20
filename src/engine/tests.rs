@@ -1,7 +1,7 @@
 use super::*;
 
-fn runtime() -> BrowserRuntime {
-    BrowserRuntime::new(
+fn runtime() -> Conversation {
+    Conversation::new(
         "Be helpful",
         r#"[{"name":"python","description":"Python","parameters":{"type":"object"}}]"#,
     )
@@ -203,7 +203,7 @@ fn anthropic_multiple_results_are_grouped_and_thinking_is_preserved() {
         )
         .unwrap();
     let history = runtime.history();
-    let mut restored = super::BrowserRuntime::new(
+    let mut restored = super::Conversation::new(
         "Be helpful",
         r#"[{"name":"python","description":"Python","parameters":{"type":"object"}}]"#,
     )
@@ -214,9 +214,9 @@ fn anthropic_multiple_results_are_grouped_and_thinking_is_preserved() {
 
 #[test]
 fn input_limits_and_tool_definitions_are_checked() {
-    assert!(BrowserRuntime::new("", "not json").is_err());
+    assert!(Conversation::new("", "not json").is_err());
     assert!(
-        BrowserRuntime::new(
+        Conversation::new(
             "",
             r#"[{"name":"bad name","description":"","parameters":{}}]"#
         )
@@ -272,4 +272,138 @@ fn invalid_restore_is_atomic_and_active_turns_cannot_be_replaced() {
     assert!(saved.restore("[]").is_err());
     saved.rollback();
     assert_eq!(saved.history(), history);
+}
+
+#[test]
+fn cli_context_projection_repairs_reused_ids_without_changing_saved_history() {
+    let mut runtime = runtime();
+    for _ in 0..2 {
+        runtime.begin("calculate").unwrap();
+        runtime.request("openai", "model").unwrap();
+        runtime
+            .accept("openai", &tool_response("python", r#"{"code":"1+1"}"#))
+            .unwrap();
+        runtime.tool_result("call-1", "2").unwrap();
+        runtime.request("openai", "model").unwrap();
+        runtime.accept("openai", &response("2")).unwrap();
+    }
+    let saved = runtime.history();
+    runtime.begin("continue").unwrap();
+    let request: Value =
+        serde_json::from_str(&runtime.request("openai", "model").unwrap()).unwrap();
+    let messages = request["messages"].as_array().unwrap();
+    let ids = messages
+        .iter()
+        .filter_map(|message| message["tool_call_id"].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(ids, ["call-1", "call-1-2"]);
+    runtime.rollback();
+    assert_eq!(runtime.history(), saved);
+}
+
+#[test]
+fn cli_context_budget_trims_requests_but_preserves_history_and_latest_turn() {
+    let mut runtime = runtime();
+    runtime.set_limits(256, 100).unwrap();
+    runtime.begin(&"old context ".repeat(100)).unwrap();
+    runtime.request("openai", "model").unwrap();
+    runtime.accept("openai", &response("old answer")).unwrap();
+    let saved = runtime.history();
+    runtime.begin("latest question").unwrap();
+    let request: Value =
+        serde_json::from_str(&runtime.request("openai", "model").unwrap()).unwrap();
+    assert_eq!(
+        request["messages"].as_array().unwrap().last().unwrap()["content"],
+        "latest question"
+    );
+    assert!(!request.to_string().contains("old context"));
+    assert_eq!(request["max_tokens"], 100);
+    runtime.rollback();
+    assert_eq!(runtime.history(), saved);
+}
+
+#[test]
+fn cli_context_uses_host_file_snapshots_with_the_same_budget_rules() {
+    use crate::context::{ContextManager, FileRead};
+    let mut context = ContextManager::new(2048, Some("system".into()));
+    context.update_latest_file("result.txt".into(), "cached".into());
+    context.add_message("user", "read it");
+    let projected = context.prepare_api_context_with_files(&|path, limit| {
+        assert_eq!(path, "result.txt");
+        assert!(limit > 6);
+        FileRead::Complete("fresh virtual contents".into())
+    });
+    let text = projected
+        .messages()
+        .iter()
+        .map(|message| message.content.text())
+        .collect::<String>();
+    assert!(text.contains("fresh virtual contents"));
+    assert!(!text.contains("cached\n"));
+}
+
+#[test]
+fn switching_tools_keeps_completed_history_but_never_authorizes_old_tools() {
+    let mut previous = runtime();
+    previous.begin("calculate").unwrap();
+    previous.request("openai", "model").unwrap();
+    previous
+        .accept("openai", &tool_response("python", r#"{"code":"1+1"}"#))
+        .unwrap();
+    previous.tool_result("call-1", "2").unwrap();
+    previous.request("openai", "model").unwrap();
+    previous.accept("openai", &response("2")).unwrap();
+    let mut chat = Conversation::new("chat only", "[]").unwrap();
+    chat.restore(&previous.history()).unwrap();
+    assert_eq!(chat.history(), previous.history());
+    chat.begin("continue").unwrap();
+    let request: Value = serde_json::from_str(&chat.request("openai", "model").unwrap()).unwrap();
+    assert!(request.get("tools").is_none());
+    assert!(
+        chat.accept("openai", &tool_response("python", r#"{"code":"2+2"}"#))
+            .is_err()
+    );
+    chat.rollback();
+    assert_eq!(chat.history(), previous.history());
+}
+
+#[test]
+fn anthropic_reused_ids_match_results_and_keep_thinking_signatures() {
+    let mut runtime = runtime();
+    let tool = json!({"role":"assistant","stop_reason":"tool_use","content":[
+        {"type":"thinking","thinking":"plan","signature":"original"},
+        {"type":"tool_use","id":"reused","name":"python","input":{"code":"2"}}
+    ]})
+    .to_string();
+    let answer =
+        json!({"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"2"}]})
+            .to_string();
+    for _ in 0..2 {
+        runtime.begin("calculate").unwrap();
+        runtime.request("anthropic", "model").unwrap();
+        runtime.accept("anthropic", &tool).unwrap();
+        runtime.tool_result("reused", "2").unwrap();
+        runtime.request("anthropic", "model").unwrap();
+        runtime.accept("anthropic", &answer).unwrap();
+    }
+    runtime.begin("continue").unwrap();
+    let request: Value =
+        serde_json::from_str(&runtime.request("anthropic", "model").unwrap()).unwrap();
+    let blocks = request["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|message| message["content"].as_array().unwrap());
+    let mut ids = Vec::new();
+    let mut results = Vec::new();
+    for block in blocks {
+        match block["type"].as_str() {
+            Some("thinking") => assert_eq!(block["signature"], "original"),
+            Some("tool_use") => ids.push(block["id"].as_str().unwrap()),
+            Some("tool_result") => results.push(block["tool_use_id"].as_str().unwrap()),
+            _ => {}
+        }
+    }
+    assert_eq!(ids, ["reused", "reused-2"]);
+    assert_eq!(ids, results);
 }

@@ -1,0 +1,42 @@
+/** Real shared UI with a deliberately paused provider stream. */
+export async function testStreamingControls(evaluate: (source: string) => Promise<unknown>): Promise<void> {
+  await evaluate(`(async()=>{
+    const {mountLethetic}=await import('./src/embed.js');
+    const root=document.createElement('div');root.style.height='900px';document.body.replaceChildren(root);
+    const records=new Map(),storage={getItem:key=>records.get(key)??null,setItem:(key,value)=>records.set(key,value)};
+    const originalFetch=window.fetch;let controller,view;
+    const assert=(ok,message)=>{if(!ok)throw Error(message);};
+    const wait=async check=>{for(let i=0;i<400;i++){if(check())return;await new Promise(resolve=>setTimeout(resolve,25));}throw Error('Streaming UI condition timed out');};
+    const frame=value=>'data: '+(typeof value==='string'?value:JSON.stringify(value))+'\\n\\n';
+    const chunk=(delta,finish_reason=null)=>({choices:[{index:0,delta,finish_reason}]});
+    const emit=value=>controller.enqueue(new TextEncoder().encode(frame(value)));
+    window.fetch=(url,init)=>String(url)===location.origin+'/stream-test' ? Promise.resolve(new Response(new ReadableStream({start(value){controller=value;}}),{headers:{'Content-Type':'text/event-stream'}})) : originalFetch(url,init);
+    const options={storage,connections:[{name:'Stream test',provider:'openai',endpoint:location.origin+'/stream-test',model:'test'}]};
+    try {
+      view=mountLethetic(root,options);
+      root.querySelector('[aria-label="Open command palette"]').click();
+      root.querySelector('[id="palette-command-local:turn-limits"]').click();
+      const dialog=document.querySelector('dialog[open]');assert(dialog,'Turn limits not opened');
+      const field=name=>dialog.querySelector('[data-field="'+name+'"]');
+      field('timeout').value='0';field('rounds').value='64';field('retries').value='0';field('context').value='64000';field('output').value='8192';
+      field('limits-form').requestSubmit();assert(field('status').textContent.includes('Saved'),'Limits were not saved');dialog.close();
+      const id=JSON.parse(records.get('lethetic.sessions.v1')).sessions[0].id;
+      const input=root.querySelector('#composer-input');input.value='stream';input.dispatchEvent(new Event('input',{bubbles:true}));root.querySelector('form.composer').requestSubmit();
+      await wait(()=>!!controller);
+      emit(chunk({reasoning:'Visible thought'}));await wait(()=>root.textContent.includes('Visible thought'));
+      emit(chunk({content:'Partial '}));await wait(()=>root.textContent.includes('Partial'));
+      assert(!root.querySelector('.activity-idle'),'Turn finished before terminal marker');
+      emit(chunk({content:'answer'},'stop'));emit({choices:[],usage:{prompt_tokens:20,completion_tokens:6}});emit('[DONE]');
+      await wait(()=>!!root.querySelector('.activity-idle'));
+      assert(root.querySelectorAll('.block-thought').length===1,'Duplicate thinking blocks');
+      const saved=JSON.parse(records.get('lethetic.sessions.v1')).sessions.find(session=>session.id===id);
+      assert(saved.messages.at(-1).content==='Partial answer','Final streamed text duplicated or incomplete');
+      assert(saved.turnLimits.timeoutMs===0 && saved.turnLimits.contextTokens===64000,'Limits not persisted');
+      view.destroy();view=mountLethetic(root,options);
+      root.querySelector('[aria-label="Open command palette"]').click();root.querySelector('[id="palette-command-local:turn-limits"]').click();
+      assert(document.querySelector('dialog[open] [data-field=timeout]').value==='0','Reload lost timeout');document.querySelector('dialog[open]').close();
+      root.querySelector('[aria-label="Open command palette"]').click();root.querySelector('#palette-command-loop-detection').click();
+      await wait(()=>root.textContent.includes('Combined'));
+    } finally {view?.destroy();window.fetch=originalFetch;root.remove();}
+  })()`);
+}

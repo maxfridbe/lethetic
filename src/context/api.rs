@@ -2,9 +2,7 @@ use super::{
     CHARS_PER_TOKEN, ContextManager, ContextMode, estimate_byte_len_tokens, sanitize_file_content,
     strip_delimited,
 };
-use crate::transport::{Content, ContentPart, Message, Role, ToolCall};
-use std::io::Read;
-use std::path::Path;
+use crate::engine::transport_types::{Content, ContentPart, Message, Role, ToolCall};
 
 #[derive(Debug, Clone)]
 pub struct PreparedApiContext {
@@ -146,7 +144,8 @@ fn grouped_bytes(entries: &[String], opening: &str, closing: &str) -> usize {
         .saturating_add(2)
 }
 
-enum FileRead {
+#[derive(Debug)]
+pub enum FileRead {
     Complete(String),
     TooLarge,
     Unavailable,
@@ -211,7 +210,10 @@ fn shorten_old_tool_results(conversation: &mut [Message]) {
     }
 }
 
-pub(super) fn prepare(ctx: &ContextManager) -> PreparedApiContext {
+pub(super) fn prepare(
+    ctx: &ContextManager,
+    read_file: &dyn Fn(&str, usize) -> FileRead,
+) -> PreparedApiContext {
     let mut projection = project_messages(ctx);
     shorten_old_tool_results(&mut projection.conversation);
     let base_messages = assemble_messages(ctx.mode, &projection, &FileSections::default());
@@ -228,7 +230,7 @@ pub(super) fn prepare(ctx: &ContextManager) -> PreparedApiContext {
     let available = ctx.max_tokens.saturating_sub(base_estimate);
     let file_tokens = file_ceiling.min(available);
     let file_byte_budget = file_tokens.saturating_mul(CHARS_PER_TOKEN);
-    let mut files = prepare_files(ctx, file_byte_budget);
+    let mut files = prepare_files(ctx, file_byte_budget, read_file);
     files.todos = ctx.todo_summary.clone();
     files.background = ctx.background_summary.clone();
     let messages = assemble_messages(ctx.mode, &projection, &files);
@@ -356,7 +358,7 @@ fn project_messages(ctx: &ContextManager) -> Projection {
             }
             "assistant" => {
                 call_ids.begin_turn();
-                let calls = message
+                let calls: Vec<ToolCall> = message
                     .tool_calls
                     .as_deref()
                     .unwrap_or_default()
@@ -367,10 +369,22 @@ fn project_messages(ctx: &ContextManager) -> Projection {
                         arguments: call.function.arguments.clone(),
                     })
                     .collect();
+                let mut provider_content = message.provider_content.clone();
+                if let Some(blocks) = &mut provider_content {
+                    for (block, call) in blocks
+                        .iter_mut()
+                        .filter(|block| block["type"] == "tool_use")
+                        .zip(&calls)
+                    {
+                        // Native blocks and portable calls must use the same
+                        // repaired ID. Thinking/signatures remain byte-for-byte intact.
+                        block["id"] = call.id.clone().into();
+                    }
+                }
                 conversation.push(Message::assistant_with_tools(
                     ctx.strip_thinking(&message.content),
                     calls,
-                    message.provider_content.clone(),
+                    provider_content,
                 ));
             }
             "tool" => {
@@ -476,7 +490,11 @@ fn assemble_messages(
     messages
 }
 
-fn prepare_files(ctx: &ContextManager, byte_budget: usize) -> FileSections {
+fn prepare_files(
+    ctx: &ContextManager,
+    byte_budget: usize,
+    read_file: &dyn Fn(&str, usize) -> FileRead,
+) -> FileSections {
     if byte_budget == 0 {
         return FileSections::default();
     }
@@ -518,8 +536,7 @@ fn prepare_files(ctx: &ContextManager, byte_budget: usize) -> FileSections {
             }
             continue;
         }
-        let absolute = Path::new(&ctx.cwd).join(path);
-        let read = read_complete_file(&absolute, remaining);
+        let read = read_file(path, remaining);
         let entry = render_file_entry(ctx.mode, path, read);
         if sections.try_push(tier, entry, ctx.mode, byte_budget) {
             continue;
@@ -557,111 +574,6 @@ fn prepare_files(ctx: &ContextManager, byte_budget: usize) -> FileSections {
     }
 
     sections
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct FileSnapshot {
-    len: u64,
-    modified: Option<std::time::SystemTime>,
-    #[cfg(unix)]
-    device: u64,
-    #[cfg(unix)]
-    inode: u64,
-    #[cfg(unix)]
-    modified_seconds: i64,
-    #[cfg(unix)]
-    modified_nanoseconds: i64,
-    #[cfg(unix)]
-    changed_seconds: i64,
-    #[cfg(unix)]
-    changed_nanoseconds: i64,
-}
-
-fn snapshot_metadata(metadata: &std::fs::Metadata) -> FileSnapshot {
-    #[cfg(unix)]
-    use std::os::unix::fs::MetadataExt;
-
-    FileSnapshot {
-        len: metadata.len(),
-        modified: metadata.modified().ok(),
-        #[cfg(unix)]
-        device: metadata.dev(),
-        #[cfg(unix)]
-        inode: metadata.ino(),
-        #[cfg(unix)]
-        modified_seconds: metadata.mtime(),
-        #[cfg(unix)]
-        modified_nanoseconds: metadata.mtime_nsec(),
-        #[cfg(unix)]
-        changed_seconds: metadata.ctime(),
-        #[cfg(unix)]
-        changed_nanoseconds: metadata.ctime_nsec(),
-    }
-}
-
-#[cfg(unix)]
-fn open_for_bounded_read(path: &Path) -> std::io::Result<std::fs::File> {
-    use std::os::unix::fs::OpenOptionsExt;
-
-    std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NONBLOCK)
-        .open(path)
-}
-
-#[cfg(not(unix))]
-fn open_for_bounded_read(path: &Path) -> std::io::Result<std::fs::File> {
-    std::fs::File::open(path)
-}
-
-fn read_complete_file(path: &Path, byte_limit: usize) -> FileRead {
-    // Open once, then budget and verify that exact handle. O_NONBLOCK prevents a
-    // path replacement with a FIFO from stalling Unix request preparation.
-    let mut file = match open_for_bounded_read(path) {
-        Ok(file) => file,
-        Err(_) => return FileRead::Unavailable,
-    };
-    let initial_metadata = match file.metadata() {
-        Ok(metadata) if metadata.is_file() => metadata,
-        _ => return FileRead::Unavailable,
-    };
-    let initial = snapshot_metadata(&initial_metadata);
-    if initial.len > u64::try_from(byte_limit).unwrap_or(u64::MAX) {
-        return FileRead::TooLarge;
-    }
-
-    let read_limit = u64::try_from(byte_limit)
-        .unwrap_or(u64::MAX - 1)
-        .saturating_add(1);
-    let initial_capacity = usize::try_from(initial.len)
-        .unwrap_or(byte_limit)
-        .min(byte_limit)
-        .min(64 * 1024);
-    let mut bytes = Vec::with_capacity(initial_capacity);
-    if file
-        .by_ref()
-        .take(read_limit)
-        .read_to_end(&mut bytes)
-        .is_err()
-    {
-        return FileRead::Unavailable;
-    }
-    if bytes.len() > byte_limit {
-        return FileRead::TooLarge;
-    }
-    let final_metadata = match file.metadata() {
-        Ok(metadata) if metadata.is_file() => metadata,
-        _ => return FileRead::Changed,
-    };
-    let final_snapshot = snapshot_metadata(&final_metadata);
-    if final_snapshot != initial || initial.len != u64::try_from(bytes.len()).unwrap_or(u64::MAX) {
-        return FileRead::Changed;
-    }
-
-    match String::from_utf8(bytes) {
-        Ok(content) => FileRead::Complete(content),
-        Err(_) => FileRead::NonUtf8,
-    }
 }
 
 fn render_file_entry(mode: ContextMode, path: &str, read: FileRead) -> String {

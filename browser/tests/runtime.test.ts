@@ -88,7 +88,8 @@ await test("actual WASM sends provider requests and keeps separate conversations
     const body = JSON.parse(String(init?.body));
     assert.equal(body.model, "test-model");
     assert.equal(body.messages[1].content, "hello");
-    assert.equal(body.stream, false);
+    assert.equal(body.stream, true);
+    assert.deepEqual(body.stream_options, {include_usage: true});
     assert.doesNotMatch(String(init?.body), /test-secret/);
     return answer("world");
   } });
