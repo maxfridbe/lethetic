@@ -7,6 +7,21 @@ import { fetchModels } from "../src/models.js";
 const connection = {name: "Example", provider: "openai" as const, endpoint: "https://models.example/v1/chat/completions", model: "test"};
 const sessionURL = "https://maxfridbe.github.io/lethetic/#/sessions/00000000-0000-4000-8000-000000000001";
 
+await test("thinking is saved per connection without affecting tab credentials or old settings", () => {
+  const memory = new Map<string, string>();
+  const storage = {getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); }};
+  saveConnectionKeys(storage, [{...connection, apiKey: "thinking-test-key"}]);
+  for (const thinking of [undefined, "enabled", "disabled"] as const) {
+    saveConnections(storage, [{...connection, thinking, apiKey: "never-save-this"}]);
+    const restored = restoreConnectionKeys(storage, loadConnections(storage))[0]!;
+    assert.equal(restored.thinking, thinking);
+    assert.equal(restored.apiKey, "thinking-test-key");
+    assert.doesNotMatch(memory.get("lethetic.connections.v1")!, /apiKey|never-save/);
+  }
+  assert.throws(() => validateConnection({...connection, thinking: "invalid" as "enabled"}), /thinking/);
+  assert.throws(() => validateConnection({...connection, provider: "anthropic", thinking: "enabled"}), /OpenRouter/);
+});
+
 await test("URLs, session links and copied authorization headers cannot become model credentials", async () => {
   for (const apiKey of [sessionURL, " \n" + sessionURL + "\n", "HTTPS://example.com/key", "#/sessions/example",
     "/sessions/example", "Bearer secret-test", "Authorization: Bearer secret-test", "token\ninjection", "token with spaces"]) {

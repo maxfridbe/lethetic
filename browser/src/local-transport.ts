@@ -1,4 +1,5 @@
 import { RelayKeys, relayEndpoint, relayToken } from "./network-route.js";
+import { connectionMetadata } from "./connection.js";
 import type { DotnetRelay } from "./network-route.js";
 import { COMPACTION_PROMPT, summarizeContext } from "./compaction.js";
 import { WFE_PROTOCOL_SCHEMA_SHA256, WFE_PROTOCOL_VERSION } from "../../web/src/generated/contracts.js";
@@ -582,7 +583,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
         inputs: this.#history, system: this.#system, python: this.pythonEnabled, mode: this.mode, networkAccess: this.networkAccess, nugetAccess: this.nugetAccess, siteAccess: this.siteAccess, dotnetRelayEndpoint: this.#relayEndpoint, workspace: this.#workspace,
         metrics: this.metrics.snapshot(),
         theme: this.state.themes.find((theme) => theme.selected)?.theme_id ?? "dracula",
-        connection: connection ? { name: connection.name, provider: connection.provider, endpoint: connection.endpoint, model: connection.model } : null });
+        connection: connection ? connectionMetadata(connection) : null });
       if (this.options.storage) this.persistenceStatus = "Chats and files are saved unencrypted on this device. API keys are excluded from saved chats. Session files sync with the selected code runtime. Variables reset on reload, stop, mode/permission changes or session switch.";
       this.state.sessions = { sessions: this.#sessions.list().map((item) => ({ session_id: item.id,
         display_name: item.name, fallback_label: item.label, selected: item.id === this.state.session.session_id })), has_more: false };
@@ -624,6 +625,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
         this.#requestCount++;
         this.state.usage.session.request_count = String(this.#requestCount);
         this.state.activity.kind = "processing"; this.state.status.stop_reason = `Thinking · request ${event.round}`; break;
+      case "thinking": this.state.blocks.blocks.push(block("thought", event.text, "Thinking")); break;
       case "assistant": this.state.blocks.blocks.push(block("markdown", event.text, "Lethetic")); break;
       case "tool_start": case "tool_end": {
         const content = event.type === "tool_start" ? JSON.stringify(event.call.arguments, null, 2) : event.output;

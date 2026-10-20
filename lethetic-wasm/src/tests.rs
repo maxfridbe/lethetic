@@ -102,6 +102,66 @@ fn truncated_and_filtered_responses_do_not_complete_turns() {
 }
 
 #[test]
+fn reasoning_details_survive_tool_rounds_and_restore_without_exposing_encrypted_data() {
+    let mut original = runtime();
+    original.begin("calculate").unwrap();
+    original.request("openai", "model").unwrap();
+    let details = json!([
+        {"type":"reasoning.text","text":"Use Python","signature":"signed","index":0},
+        {"type":"reasoning.encrypted","data":"opaque-secret","id":"r1","index":1}
+    ]);
+    let mut reply: Value =
+        serde_json::from_str(&tool_response("python", r#"{"code":"1+1"}"#)).unwrap();
+    reply["choices"][0]["message"]["reasoning_details"] = details.clone();
+    let turn: Value =
+        serde_json::from_str(&original.accept("openai", &reply.to_string()).unwrap()).unwrap();
+    assert_eq!(turn["thinking"], "Use Python");
+    original.tool_result("call-1", "2").unwrap();
+    let request: Value =
+        serde_json::from_str(&original.request("openai", "model").unwrap()).unwrap();
+    assert_eq!(request["messages"][2]["reasoning_details"], details);
+    original.accept("openai", &response("2")).unwrap();
+    let mut restored = runtime();
+    restored.restore(&original.history()).unwrap();
+    assert_eq!(restored.history(), original.history());
+}
+
+#[test]
+fn reasoning_display_handles_provider_fields_without_duplicates() {
+    for (fields, expected) in [
+        (
+            json!({"reasoning":"plain", "reasoning_details":[{"type":"reasoning.text","text":"plain"}]}),
+            "plain",
+        ),
+        (
+            json!({"reasoning_content":"DeepSeek thinking"}),
+            "DeepSeek thinking",
+        ),
+        (
+            json!({"reasoning_details":[{"type":"reasoning.summary","summary":"Summary"}]}),
+            "Summary",
+        ),
+        (
+            json!({"reasoning_details":[{"type":"reasoning.encrypted","data":"secret"}]}),
+            "",
+        ),
+    ] {
+        let mut runtime = runtime();
+        runtime.begin("hello").unwrap();
+        runtime.request("openai", "model").unwrap();
+        let mut reply: Value = serde_json::from_str(&response("answer")).unwrap();
+        reply["choices"][0]["message"]
+            .as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
+        let turn: Value =
+            serde_json::from_str(&runtime.accept("openai", &reply.to_string()).unwrap()).unwrap();
+        assert_eq!(turn["thinking"], expected);
+        assert_eq!(turn["text"], "answer");
+    }
+}
+
+#[test]
 fn anthropic_multiple_results_are_grouped_and_thinking_is_preserved() {
     let mut runtime = runtime();
     runtime.begin("calculate").unwrap();
@@ -114,12 +174,16 @@ fn anthropic_multiple_results_are_grouped_and_thinking_is_preserved() {
         {"type":"tool_use","id":"a","name":"python","input":{"code":"1"}},
         {"type":"tool_use","id":"b","name":"python","input":{"code":"2"}}
     ]);
-    runtime
+    let turn = runtime
         .accept(
             "anthropic",
             &json!({"role":"assistant","stop_reason":"tool_use","content":content}).to_string(),
         )
         .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&turn).unwrap()["thinking"],
+        "reasoning"
+    );
     runtime.tool_result("a", "1").unwrap();
     runtime.tool_result("b", "2").unwrap();
     let request: Value =

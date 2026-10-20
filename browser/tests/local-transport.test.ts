@@ -104,7 +104,9 @@ await test("connection, prompt edits and Python toggles preserve the resumed ses
   assert.equal(new SessionStore(storage).list()[0]?.system, "Be practical");
   assert.deepEqual(new SessionStore(storage).list()[0]?.messages, messages);
   assert.ok(!transport.promptDetails.instructions.includes("Because you are in Python mode"));
-  transport.setConnections([{...connection,apiKey:"replacement"}],0);
+  transport.setConnections([{...connection,apiKey:"replacement",thinking:"enabled"}],0);
+  assert.equal(new SessionStore(storage).list()[0]?.connection?.thinking, "enabled");
+  assert.equal(transport.sessionForExport(id).connection?.thinking, "enabled");
   transport.setPythonMode(true);
   assert.ok(transport.promptDetails.instructions.includes("Because you are in Python mode"));
   assert.equal(JSON.parse(transport.promptDetails.tools)[0].name, "python");

@@ -2,6 +2,7 @@ import { testDotnetBrowser } from "./dotnet-browser.js";
 import { testPythonNetwork } from "./python-network-browser.js";
 import { testPythonSites } from "./python-sites-browser.js";
 import { testConnectionCredentials } from "./connection-browser.js";
+import { testConnectionThinking } from "./thinking-browser.js";
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { PREVIEW_WEBM } from "./media-fixture.js";
@@ -653,6 +654,8 @@ try {
   const mobileDotnet = await rpc("Page.captureScreenshot", { format: "png" });
   await writeFile(config.screenshot.replace(".png", "-dotnet-mobile.png"), Buffer.from(String(mobileDotnet["data"]), "base64"));
   await evaluate("globalThis.dotnetTestView.destroy()");
+  await testConnectionThinking(evaluate);
+  process.stdout.write("Thinking preferences, transcript, tool continuation and reload passed.\n");
   if (config.pyodide) {
     await evaluate(`(async () => {
       const {createPythonTool}=await import('./src/sdk.js');

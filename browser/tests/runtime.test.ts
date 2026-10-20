@@ -15,6 +15,27 @@ const call = (name: string, arguments_ = "{}"): Response => Response.json({ choi
     { id: "one", type: "function", function: { name, arguments: arguments_ } },
   ] } }] });
 
+await test("thinking preference reaches model requests and returned reasoning has its own event", async () => {
+  for (const thinking of [undefined, "enabled", "disabled"] as const) {
+    const events: import("../src/sdk.js").RuntimeEvent[] = [];
+    const runtime = await createRuntime({connection: {...connection, thinking}, wasm, onEvent: event => events.push(event),
+      fetch: async (_url, init) => {
+        const body = JSON.parse(String(init?.body));
+        assert.deepEqual(body.reasoning, thinking === "enabled" ? {enabled: true, exclude: false} : thinking === "disabled" ? {enabled: false} : undefined);
+        return Response.json({choices: [{finish_reason: "stop", message: {role: "assistant", content: "Answer",
+          reasoning: "Visible reasoning", reasoning_details: [{type: "reasoning.text", text: "Visible reasoning", signature: "opaque"}]}}]});
+      }});
+    try {
+      assert.equal(await runtime.send("Question"), "Answer");
+      assert.deepEqual(events.filter(event => event.type === "thinking" || event.type === "assistant"),
+        [{type: "thinking", text: "Visible reasoning"}, {type: "assistant", text: "Answer"}]);
+      const restored = await createRuntime({connection, wasm});
+      try { restored.restore(runtime.history()); assert.deepEqual(restored.history(), runtime.history()); }
+      finally { restored.dispose(); }
+    } finally { runtime.dispose(); }
+  }
+});
+
 await test("chat refuses a session URL as its key before fetching or loading a conversation", async () => {
   let requests = 0;
   await assert.rejects(createRuntime({connection: {...connection, apiKey: "https://maxfridbe.github.io/lethetic/#/sessions/example"},

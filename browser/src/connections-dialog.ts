@@ -9,7 +9,7 @@ import { createDialog, errorMessage, field } from "./dialog.js";
 
 type Health = { state: "testing" | "valid" | "invalid"; message: string };
 // Compare actual request settings, including the key. Never put this identity in the DOM or storage.
-const identity = (connection: Connection): string => JSON.stringify([connection.provider, connection.endpoint, connection.model, connection.apiKey?.trim() ?? ""]);
+const identity = (connection: Connection): string => JSON.stringify([connection.provider, connection.endpoint, connection.model, connection.apiKey?.trim() ?? "", connection.thinking ?? "default"]);
 
 export function createConnectionsDialog(transport: LocalTransport, storage?: Storage, credentialStorage?: Storage): {
   dialog: HTMLDialogElement; open(): void; destroy(): void;
@@ -29,6 +29,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
           <label>Protocol<select data-field="provider"><option value="openai">OpenAI-compatible</option><option value="anthropic">Anthropic Messages</option></select></label>
           <label>Endpoint URL<input data-field="endpoint" type="url" required placeholder="https://your-server/v1/chat/completions" autocomplete="off" spellcheck="false"></label>
           <label>Model<input data-field="model" required autocomplete="off" spellcheck="false"></label>
+          <label>Thinking · OpenRouter<select data-field="thinking"><option value="default">Model default</option><option value="enabled">On · request thinking</option><option value="disabled">Off</option></select><small>For OpenRouter or endpoints supporting its reasoning parameter. Returned reasoning appears in Thinking blocks. Some models do not expose it; others require it. Leave Model default for other endpoints.</small></label>
           <label>API key (optional)<span class="connection-key-input"><input data-field="key" name="model-api-key" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Provider API key — not a session URL"><button type="button" data-field="show-key" aria-label="Show API key" aria-pressed="false">${buttonIconHtml("preview")}Show</button></span><small data-field="key-state" role="status"></small></label>
           <div class="panel-toolbar">
             <button class="primary-button" type="submit" data-field="save">${buttonIconHtml("save")}Save changes</button>
@@ -87,7 +88,8 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
   let destroyed = false;
   const modelList = field<HTMLSelectElement>(dialog, "model-list");
   const draft = (): Connection => ({ name: input("name").value.trim(), endpoint: input("endpoint").value.trim(),
-    model: input("model").value.trim(), provider: field<HTMLSelectElement>(dialog, "provider").value as Connection["provider"], apiKey: input("key").value });
+    model: input("model").value.trim(), provider: select("provider").value as Connection["provider"], apiKey: input("key").value,
+    ...(select("provider").value === "openai" && select("thinking").value !== "default" ? { thinking: select("thinking").value as Connection["thinking"] } : {}) });
   const dirty = (): boolean => {
     const saved = transport.options.connections[selected], current = draft();
     return !saved || saved.name !== current.name || identity(saved) !== identity(current);
@@ -109,7 +111,8 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     summary.replaceChildren(node("small", "ACTIVE FOR THIS SESSION"));
     if (active) {
       summary.append(node("strong", active.name), healthBadge(active), node("span", active.model, "connection-active-model"),
-        node("span", active.apiKey ? "Key present" : "No key provided", "connection-key-badge"));
+        node("span", active.apiKey ? "Key present" : "No key provided", "connection-key-badge"),
+        node("span", `Thinking: ${active.thinking === "enabled" ? "On" : active.thinking === "disabled" ? "Off" : "Model default"}`));
     } else summary.append(node("strong", "No active connection"), node("span", "Add a connection to start chatting."));
   };
   const renderCards = (): void => {
@@ -138,6 +141,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     if (!transport.options.connections.length) list.append(node("p", "No saved connections yet.", "connection-hint"));
   };
   const updateEditor = (): void => {
+    select("thinking").disabled = select("provider").value !== "openai";
     const current = draft(), changed = dirty(), active = selected >= 0 && selected === transport.selected;
     let valid = false;
     try { validateConnection(current); valid = true; } catch { /* Keep incomplete drafts editable. */ }
@@ -197,6 +201,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     const connection = transport.options.connections[selected];
     for (const name of ["name", "endpoint", "model", "key"] as const) input(name).value = (name === "key" ? connection?.apiKey : connection?.[name]) ?? "";
     field<HTMLSelectElement>(dialog, "provider").value = connection?.provider ?? "openai";
+    select("thinking").value = connection?.thinking ?? "default";
     input("key").type = "password"; button("show-key").setAttribute("aria-pressed", "false");
     button("show-key").setAttribute("aria-label", "Show API key"); button("show-key").innerHTML = buttonIconHtml("preview") + "Show";
     updateEditor(); renderCards(); fillRoute();
@@ -257,7 +262,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     button("show-key").setAttribute("aria-pressed", String(show)); button("show-key").setAttribute("aria-label", show ? "Hide API key" : "Show API key");
     button("show-key").innerHTML = buttonIconHtml("preview") + (show ? "Hide" : "Show");
   });
-  for (const name of ["name", "endpoint", "key", "provider", "model"]) for (const event of ["input", "change"]) field(dialog, name).addEventListener(event, () => {
+  for (const name of ["name", "endpoint", "key", "provider", "model", "thinking"]) for (const event of ["input", "change"]) field(dialog, name).addEventListener(event, () => {
     cancelTest(); if (["endpoint", "key", "provider"].includes(name)) cancelModels(); updateEditor(); status("");
   });
   const filterModels = (): void => {

@@ -70,6 +70,7 @@ pub(crate) fn response(provider: &str, value: &Value) -> Result<(Value, Turn), S
     if value.get("error").is_some() {
         return Err("provider returned an error response".into());
     }
+    let mut thinking = String::new();
     let (text, calls, blocks) = match provider {
         "openai" => {
             let choice = &value["choices"][0];
@@ -82,6 +83,32 @@ pub(crate) fn response(provider: &str, value: &Value) -> Result<(Value, Turn), S
             let message = &choice["message"];
             if message["role"] != "assistant" {
                 return Err("expected an assistant message".into());
+            }
+            // Providers may return the same reasoning in both forms. Prefer the
+            // plain-text field for display; preserve structured details verbatim.
+            thinking = message["reasoning"]
+                .as_str()
+                .filter(|text| !text.is_empty())
+                .or_else(|| message["reasoning_content"].as_str())
+                .unwrap_or_default()
+                .to_owned();
+            if let Some(details) = message.get("reasoning_details").filter(|v| !v.is_null()) {
+                let details = details.as_array().ok_or("invalid reasoning_details")?;
+                if thinking.is_empty() {
+                    for detail in details {
+                        let text = match detail["type"].as_str() {
+                            Some("reasoning.text") => detail["text"].as_str(),
+                            Some("reasoning.summary") => detail["summary"].as_str(),
+                            _ => None, // Encrypted reasoning must never be rendered.
+                        };
+                        if let Some(text) = text {
+                            if !thinking.is_empty() {
+                                thinking.push('\n');
+                            }
+                            thinking.push_str(text);
+                        }
+                    }
+                }
             }
             let text = match &message["content"] {
                 Value::String(text) => text.clone(),
@@ -132,7 +159,8 @@ pub(crate) fn response(provider: &str, value: &Value) -> Result<(Value, Turn), S
                         name: required_string(block, "name")?.into(),
                         arguments: block["input"].clone(),
                     }),
-                    Some("thinking" | "redacted_thinking") => {}
+                    Some("thinking") => thinking.push_str(required_string(block, "thinking")?),
+                    Some("redacted_thinking") => {}
                     _ => return Err("unsupported model content block".into()),
                 }
             }
@@ -147,6 +175,17 @@ pub(crate) fn response(provider: &str, value: &Value) -> Result<(Value, Turn), S
         return Err("model returned an empty response".into());
     }
     let mut message = json!({"role":"assistant", "content":text});
+    if provider == "openai" {
+        let source = &value["choices"][0]["message"];
+        for key in ["reasoning", "reasoning_content", "reasoning_details"] {
+            if let Some(value) = source.get(key).filter(|v| !v.is_null()) {
+                if key != "reasoning_details" && !value.is_string() {
+                    return Err(format!("invalid {key}"));
+                }
+                message[key] = value.clone();
+            }
+        }
+    }
     if !calls.is_empty() {
         message["tool_calls"] = Value::Array(
             calls
@@ -164,7 +203,14 @@ pub(crate) fn response(provider: &str, value: &Value) -> Result<(Value, Turn), S
     if let Some(blocks) = blocks {
         message["anthropic_content"] = blocks;
     }
-    Ok((message, Turn { text, calls }))
+    Ok((
+        message,
+        Turn {
+            text,
+            thinking,
+            calls,
+        },
+    ))
 }
 
 fn required_string<'a>(value: &'a Value, key: &str) -> Result<&'a str, String> {

@@ -5,6 +5,8 @@ export interface Connection {
   /** Full /v1/chat/completions or /v1/messages URL, including any proxy prefix. */
   endpoint: string;
   model: string;
+  /** OpenRouter-compatible reasoning control. Omit to keep the model default. */
+  thinking?: "enabled" | "disabled";
   /** Kept out of saved sessions and WASM/Python. The hosted UI retains keys in sessionStorage for this tab. */
   apiKey?: string;
 }
@@ -53,6 +55,11 @@ export function validateConnection(connection: Connection): Connection {
   if (!connection.name.trim() || !connection.model.trim()) {
     throw new Error("A connection name and model are required.");
   }
+  if (connection.thinking !== undefined &&
+      !["enabled", "disabled"].includes(connection.thinking)) throw new Error("Choose a valid thinking setting.");
+  if (connection.thinking !== undefined && connection.provider !== "openai") {
+    throw new Error("The thinking preference requires an OpenRouter-compatible connection.");
+  }
   return { ...connection, endpoint: endpoint.href, model: connection.model.trim(), apiKey: normalizeApiKey(connection.apiKey) };
 }
 
@@ -60,8 +67,12 @@ const STORAGE_KEY = "lethetic.connections.v1";
 
 /** Persist endpoint metadata only; credentials use a separate optional tab store. */
 export function saveConnections(storage: Pick<Storage, "setItem">, connections: Connection[]): void {
-  storage.setItem(STORAGE_KEY, JSON.stringify(connections.map(({ name, provider, endpoint, model }) =>
-    ({ name, provider, endpoint, model }))));
+  storage.setItem(STORAGE_KEY, JSON.stringify(connections.map(connectionMetadata)));
+}
+
+/** Explicit allowlist shared by saved connections and sessions; never persist credentials. */
+export function connectionMetadata({ name, provider, endpoint, model, thinking }: Connection): Omit<Connection, "apiKey"> {
+  return { name, provider, endpoint, model, ...(thinking !== undefined ? { thinking } : {}) };
 }
 
 export function loadConnections(storage: Pick<Storage, "getItem">): Connection[] {
@@ -76,7 +87,7 @@ export function loadConnections(storage: Pick<Storage, "getItem">): Connection[]
           (item["provider"] !== "openai" && item["provider"] !== "anthropic")) return [];
       try {
         return [validateConnection({ name: item["name"], model: item["model"],
-          endpoint: item["endpoint"], provider: item["provider"] })];
+          endpoint: item["endpoint"], provider: item["provider"], thinking: item["thinking"] as Connection["thinking"] })];
       } catch { return []; }
     });
   } catch { return []; }

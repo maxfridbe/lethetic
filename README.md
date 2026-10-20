@@ -47,6 +47,9 @@ Click a screenshot to try the browser edition.
 3. Start a conversation. Use **Files** to upload inputs, edit generated programs,
    preview supported documents and media, or download results.
 
+For OpenRouter models, enable **Thinking · OpenRouter** in the connection editor
+and save. Returned reasoning appears in **Thinking** blocks when the response completes.
+
 The conversation runtime and code workers run locally in your browser. Python
 and .NET share each session's files. Chats, files and settings survive refresh;
 code variables restart. API keys stay in the current tab and are excluded from

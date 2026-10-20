@@ -21,6 +21,7 @@ export type RuntimeEvent =
   | { type: "request"; round: number }
   | { type: "response"; usage: ProviderUsage; durationMs: number }
   | { type: "assistant"; text: string }
+  | { type: "thinking"; text: string }
   | { type: "tool_start"; call: ToolCall }
   | { type: "tool_end"; call: ToolCall; output: string };
 
@@ -119,7 +120,12 @@ export class LetheticRuntime {
       const connection = this.#options.connection;
       for (let round = 1; round <= maxRounds; round++) {
         controller.signal.throwIfAborted();
-        const body = this.#wasm.request(connection.provider, connection.model);
+        let body = this.#wasm.request(connection.provider, connection.model);
+        if (connection.thinking !== undefined) {
+          const request = JSON.parse(body) as Record<string, unknown>;
+          request["reasoning"] = connection.thinking === "enabled" ? { enabled: true, exclude: false } : { enabled: false };
+          body = JSON.stringify(request);
+        }
         this.#emit({ type: "request", round });
         const started = performance.now();
         const response = await abortable((this.#options.fetch ?? globalThis.fetch)(connection.endpoint, {
@@ -136,8 +142,9 @@ export class LetheticRuntime {
         this.#emit({ type: "response", usage: readUsage(connection.provider, JSON.parse(responseText)),
           durationMs: performance.now() - started });
         const turn = JSON.parse(this.#wasm.accept(connection.provider, responseText)) as {
-          text: string; calls: ToolCall[];
+          text: string; thinking: string; calls: ToolCall[];
         };
+        if (turn.thinking) this.#emit({ type: "thinking", text: turn.thinking });
         if (turn.text) this.#emit({ type: "assistant", text: turn.text });
         if (turn.calls.length === 0) return turn.text;
         for (const call of turn.calls) {

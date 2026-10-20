@@ -56,6 +56,25 @@ Selecting a connection automatically sends a small test request. The plug icon i
 green after success, red after failure, and neutral when untested; edited settings
 must be tested again. **Test connection** tests the current editor values.
 
+For OpenRouter, choose **Thinking · OpenRouter → On · request thinking** and
+**Save changes**. **Model default** sends no override; **Off** requests disabled
+reasoning. The preference belongs to the saved connection, survives refresh and
+duplication, and updates the current session without replacing its history or files.
+Chat and Test connection use the same setting. Other OpenAI-compatible endpoints
+should stay on Model default unless they support OpenRouter's `reasoning` object;
+this control does not configure direct Anthropic Messages connections.
+
+On sends `reasoning: { enabled: true, exclude: false }`; Off sends
+`reasoning: { enabled: false }`, following the
+[OpenRouter reasoning API](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens).
+Returned `reasoning`, DeepSeek-style `reasoning_content`, or readable
+`reasoning_details` appear once in a **Thinking** block before the answer. Direct
+Anthropic thinking blocks are also displayed when returned. Signed/encrypted
+reasoning details are retained for tool continuation and session restoration, but
+encrypted data is never displayed as thinking. Some models do not expose reasoning,
+and models with mandatory reasoning may reject Off. Thinking tokens count toward
+provider output usage and may increase response time and cost.
+
 Enter the provider's token alone in **API key**, without `Bearer` or an
 `Authorization:` prefix. Chat, Test connection, and Fetch models share the same
 credential validation. Surrounding whitespace is trimmed; URLs/session links,
@@ -63,14 +82,14 @@ header prefixes, and invalid token characters are rejected before a model reques
 An invalid key saved by an older version remains visible for correction in
 Connections; replacing it and saving keeps the existing chat and files.
 
-Connection names, protocols, endpoint URLs, and model IDs are saved in localStorage.
+Connection names, protocols, endpoint URLs, model IDs, and thinking preferences are saved in localStorage.
 The hosted app keeps API keys in tab-scoped sessionStorage so refresh retains them.
 Keys are excluded from saved chats and device-local connection metadata. Chats are saved locally.
 Changing connections, updating a key, or toggling Python keeps the current session,
 history, and files. Use **New session** to start a separate chat. Clearing context resets the current conversation and Python runtime. Editing connection fields takes effect when you save them.
 
 Responses appear when each model request completes; this edition currently uses
-non-streaming Chat Completions and Messages. Responses API endpoints, native
+non-streaming Chat Completions and Messages, including Thinking blocks. Responses API endpoints, native
 filesystem tools, shells, LSP, native skills, and Podman are not part of the browser
 runtime. The existing `lethetic --rc` browser controller remains available for those
 native capabilities through the same UI backed by its authenticated native connection.
@@ -364,6 +383,13 @@ try {
   python.reset();
 }
 ```
+
+For an OpenRouter connection, set `connection.thinking: "enabled"` (or `"disabled"`);
+omit it for Model default. `onEvent` receives `{ type: "thinking", text }` before
+the corresponding assistant/tool events, while `send()` still returns only the
+final answer. Returned reasoning is displayed even with Model default when the
+provider includes it. `history()` includes provider reasoning details needed for
+tool continuation; retain these unchanged when restoring a conversation.
 
 Host tool handlers must validate argument fields and authorize their effects.
 WASM verifies registered tool names, unique call IDs, JSON objects, and result

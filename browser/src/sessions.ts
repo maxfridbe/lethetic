@@ -1,6 +1,6 @@
 import { relayEndpoint } from "./network-route.js";
 import type { Connection } from "./connection.js";
-import { validateConnection } from "./connection.js";
+import { validateConnection, connectionMetadata } from "./connection.js";
 import type { RenderBlockView } from "../../web/src/generated/contracts.js";
 import { initialState } from "./local-state.js";
 import { parseServerMessage } from "../../web/src/protocol.js";
@@ -74,7 +74,7 @@ function parseSession(value: unknown): SavedSession {
   let connection: SavedSession["connection"] = null;
   if (item.connection !== null) {
     const checked = validateConnection(item.connection);
-    connection = { name: checked.name, provider: checked.provider, endpoint: checked.endpoint, model: checked.model };
+    connection = connectionMetadata(checked);
   }
   return { id: item.id, name: item.name, label: item.label, updatedAt: item.updatedAt, blocks: item.blocks,
     messages: item.messages, inputs: item.inputs, system: item.system, python: item.python,

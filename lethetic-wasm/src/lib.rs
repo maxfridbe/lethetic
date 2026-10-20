@@ -28,6 +28,7 @@ pub struct ToolCall {
 #[derive(Clone, Debug, Serialize)]
 struct Turn {
     text: String,
+    thinking: String,
     calls: Vec<ToolCall>,
 }
 
