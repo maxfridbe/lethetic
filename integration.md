@@ -112,6 +112,34 @@ and hierarchical merges. No tools run during summarization. Cancellation, provid
 errors or failed persistence preserve the previous history. The session turn
 timeout covers the entire browser compaction, including all passes.
 
+## Context and status bar
+
+Open **Stats** to pin context used/input budget, model context maximum,
+output budget/model maximum, latest-request tokens, thinking, files and file size,
+transcript blocks, end-to-end output rate, timeout, rounds, retries and loop mode.
+Existing usage, cache, reasoning and timing pins remain available. New/default
+bars include context. Custom pin selections and the three-line bar are preserved.
+
+Context is the **latest request input**, not accumulated turn usage. Before a
+provider reports usage, it uses the CLI context engine's projected-message estimate
+(excluding tool-schema overhead). Provider usage and its source survive refresh.
+
+OpenRouter connections fetch `/api/v1/models` and the selected model's
+`/api/v1/models/{author}/{slug}/endpoints`. Advertised model maxima and individual
+provider limits are shown separately, as described in the [OpenRouter model API](https://openrouter.ai/docs/api/api-reference/models/get-models)
+and [endpoint API](https://openrouter.ai/docs/api/api-reference/endpoints/list-all-endpoints-for-a-model).
+Metadata is cached in memory for ten minutes, refreshed on connection changes,
+and can be refreshed manually. Missing metadata stays unknown; session budgets
+remain usable. No credential is saved with model metadata.
+
+Requests use the lower of your session budget and the advertised model limit,
+reserving output tokens within the total context. If the model has one provider,
+its reported input/output/context restrictions also cap requests. Saved budgets
+are preserved.
+**Ctrl+P → Turn limits → Use model context** fills the discovered context minus
+the output budget; **Save** applies it. Browser implementation ceilings still apply
+(2,000,000 input and 131,072 output tokens). Routed providers can have lower limits.
+
 ## Turn limits and loop detection
 
 Choose **Ctrl+P → Turn limits**. Settings belong to the current session, survive

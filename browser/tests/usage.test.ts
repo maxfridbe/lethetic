@@ -48,3 +48,18 @@ await test("turn and session metrics aggregate tool rounds, mark missing usage a
   metrics.finish(); metrics.reset(); assert.equal(metrics.session.requests, 0);
   assert.equal(metrics.elapsed, 0); assert.equal(metrics.turn.sums.total, null);
 });
+
+await test("context tracks the last request, not cumulative usage, and survives refresh", () => {
+  const metrics = new BrowserMetrics(); metrics.begin();
+  metrics.event({type:"request",round:1,contextTokens:250});
+  assert.deepEqual(metrics.context,{tokens:250,source:"local_estimate"});
+  metrics.event({type:"response",usage:readUsage("openai",{usage:{prompt_tokens:300,completion_tokens:10}}),durationMs:10});
+  metrics.event({type:"request",round:2,contextTokens:350});
+  metrics.event({type:"response",usage:readUsage("openai",{usage:{prompt_tokens:400,completion_tokens:20}}),durationMs:10});
+  assert.equal(metrics.turn.sums.input,700); assert.deepEqual(metrics.context,{tokens:400,source:"server_usage"});
+  const restored=new BrowserMetrics(); restored.restore(metrics.snapshot()); assert.deepEqual(restored.context,metrics.context);
+  metrics.event({type:"request",round:3,contextTokens:450});
+  metrics.event({type:"response",usage:readUsage("openai",{}),durationMs:10});
+  assert.deepEqual(metrics.context,{tokens:450,source:"local_estimate"});
+  metrics.reset(); assert.equal(metrics.context.tokens,0);
+});

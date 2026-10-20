@@ -17,7 +17,7 @@ into the root crate alone does not make its behavior shared with the native CLI.
 | Anthropic thinking/signatures, tool blocks, usage and terminal validation | `src/engine/anthropic.rs` |
 | OpenAI request builder and extra-body validation | `gemma-chat/src/request.rs` |
 | Provider message serialization | `src/engine/messages.rs` |
-| Context budgeting, older tool-output shortening, call-ID repair | `src/context.rs`, `src/context/api.rs` |
+| Context budgeting, projected token estimate, older tool-output shortening, call-ID repair | `src/context.rs`, `src/context/api.rs` |
 | Transient error classification and retry backoff | `gemma-chat/src/retry.rs` |
 | Manual compaction planning, prompts, file-body elision, bounded merges and summary validation | `src/engine/compaction.rs`, `src/engine/compaction_plan.rs` |
 | Thinking-loop detection | `src/loop_detector.rs` |
@@ -25,6 +25,11 @@ into the root crate alone does not make its behavior shared with the native CLI.
 
 The browser's saved JSON history is translated into the CLI `ContextManager` by
 `src/engine/context.rs`; the input budget affects requests, not the saved transcript.
+The browser status uses that same projected token estimate until provider input
+usage arrives; it persists the latest request count separately from cumulative
+turn/session totals. The browser host discovers OpenRouter model/provider limits
+and reserves the output budget within the advertised context ceiling. See
+[context and status controls](../integration.md#context-and-status-bar).
 Native filesystem reads are isolated in `src/context/filesystem.rs`.
 `prepare_api_context_with_files` accepts a host snapshot reader. The browser does
 not yet automatically put session files into the CLI active/latest-file cache;

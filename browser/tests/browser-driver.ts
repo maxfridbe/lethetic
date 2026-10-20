@@ -151,6 +151,10 @@ try {
   await until("document.querySelector('.app-shell').textContent.includes('Hello from the browser test')");
   await until("document.querySelector('.browser-usage-summary').textContent.includes('1,200 in')");
   check(await evaluate("document.querySelector('.browser-status').textContent.includes('1,024') && !document.querySelector('.transport-level')"), "provider cache usage or browser status failed");
+  check(await evaluate("document.querySelector('[data-pinned-stat=context]').textContent.includes('1,200 / 32,768')"), "context must use latest provider input and session input budget");
+  for (const stat of ["contextMax", "outputBudget", "requestUsage", "thinking", "files", "blocks", "timeout", "rounds", "retries"]) {
+    check(await evaluate(`!!document.querySelector('[data-stat-pin=${stat}]')`), `Missing CLI-style stat ${stat}`);
+  }
   check(await evaluate("performance.getEntriesByType('resource').some(r=>r.name.includes('/lethetic/browser/wasm/lethetic_wasm_bg.wasm'))"), "WASM was not loaded from the project subpath");
   await evaluate(`Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{globalThis.copiedTurn=text}}});
     document.querySelector('.block-user [data-copy-turn]').click()`);
@@ -278,7 +282,7 @@ try {
   await until("!document.querySelector('.files-entry[title=\"reports/preview.html\"]')");
   await evaluate("document.querySelector('#files-toggle').click()");
   await evaluate("document.querySelector('.browser-status').open=true; document.querySelectorAll('[data-stat-pin][aria-pressed=false]').forEach(button=>button.click()); document.querySelector('.browser-status').open=false");
-  check(await evaluate("document.querySelectorAll('[data-pinned-stat]').length===14"), "stats did not pin");
+  check(await evaluate("document.querySelectorAll('[data-pinned-stat]').length===document.querySelectorAll('[data-stat-pin]').length && document.querySelectorAll('[data-pinned-stat]').length>=30"), "stats did not pin");
   const originalHash = await evaluate("location.hash");
   await evaluate("document.querySelector('#files-toggle').click()");
   await until("!!document.querySelector('.files-entry[title=reports]')");
@@ -358,7 +362,7 @@ try {
   process.stdout.write("Shared UI, WASM chat, code capture, and mobile layout passed.\n");
   await rpc("Page.reload");
   await until("!!document.querySelector('[data-field=name]')");
-  check(await evaluate("document.querySelectorAll('[data-pinned-stat]').length===14"), "pins did not survive reload");
+  check(await evaluate("document.querySelectorAll('[data-pinned-stat]').length===document.querySelectorAll('[data-stat-pin]').length && document.querySelectorAll('[data-pinned-stat]').length>=30"), "pins did not survive reload");
   check(await evaluate("document.querySelector('.files-pane').dataset.dock==='left'"), "Files dock did not survive reload");
   await evaluate("document.querySelector('[data-browser-action=connections]').click()");
   check(await evaluate("document.querySelector('[data-field=name]').value==='Browser test' && document.querySelector('[data-field=key]').value==='secret-never-persisted'"), "reload did not preserve connection metadata and tab key");
@@ -367,7 +371,7 @@ try {
   await evaluate("document.querySelector('dialog[open]').close()");
   check(await evaluate("location.hash") === originalHash, "refresh switched sessions");
   await until("document.querySelector('.app-shell').textContent.includes('Hello from the browser test')");
-  check(await evaluate("document.querySelector('.browser-usage-summary').textContent.includes('1,200 in')"), "usage did not survive reload");
+  check(await evaluate("document.querySelector('.browser-usage-summary').textContent.includes('1,200 in') && document.querySelector('[data-pinned-stat=context]').textContent.includes('1,200 / 32,768')"), "usage/context did not survive reload");
   await evaluate("document.querySelector('#files-toggle').click()");
   await until("!!document.querySelector('.files-entry[title=reports]')");
   await evaluate("document.querySelector('.files-entry[title=reports]').click()");

@@ -7,13 +7,15 @@ test("pins survive reload, including an intentionally empty bar", () => {
   const storage = { getItem: () => value, setItem: (_key: string, next: string) => { value = next; } };
   const pins = new PinnedStats(storage);
   pins.toggle("python");
-  assert.deepEqual(new PinnedStats(storage).ids, ["input", "output", "elapsed", "python"]);
+  assert.deepEqual(new PinnedStats(storage).ids, ["context", "input", "output", "elapsed", "python"]);
   for (const id of [...pins.ids]) pins.toggle(id);
   assert.deepEqual(new PinnedStats(storage).ids, []);
   value = '["python","unknown","python"]';
   assert.deepEqual(new PinnedStats(storage).ids, ["python"]);
-  value = 'broken';
+  value = '["input","output","elapsed"]';
   assert.deepEqual(new PinnedStats(storage).ids, ["input", "output", "elapsed"]);
+  value = 'broken';
+  assert.deepEqual(new PinnedStats(storage).ids, ["context", "input", "output", "elapsed"]);
 });
 
 test("storage failures keep pins usable in memory", () => {
@@ -21,4 +23,11 @@ test("storage failures keep pins usable in memory", () => {
   pins.toggle("python");
   assert.ok(pins.ids.includes("python"));
   assert.ok(pins.error.includes("unavailable"));
+});
+
+test("old default pins gain context once; unpinning it remains respected", () => {
+  const values=new Map([["lethetic.pinned-stats.v1", '["input","output","elapsed"]']]);
+  const storage={getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value)}};
+  const pins=new PinnedStats(storage); assert.deepEqual(pins.ids,["context","input","output","elapsed"]);
+  pins.toggle("context"); assert.deepEqual(new PinnedStats(storage).ids,["input","output","elapsed"]);
 });

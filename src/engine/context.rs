@@ -1,6 +1,5 @@
 //! Compatibility adapter for saved browser histories. Context policy belongs to
 //! the CLI ContextManager; this module only translates the persistence format.
-use super::transport_types;
 use crate::context::{ContextManager, FunctionCall, Message, ToolCall};
 use serde_json::Value;
 
@@ -9,7 +8,7 @@ pub(super) fn project(
     history: &[Value],
     budget: usize,
     provider: &str,
-) -> Result<Vec<transport_types::Message>, String> {
+) -> Result<crate::context::PreparedApiContext, String> {
     let mut context = ContextManager::new(budget, Some(system.into()));
     for message in history {
         let role = message["role"].as_str().ok_or("missing message role")?;
@@ -80,7 +79,5 @@ pub(super) fn project(
             tool_result_is_error: false,
         });
     }
-    Ok(context
-        .prepare_api_context_with_files(&|_, _| crate::context::FileRead::Unavailable)
-        .into_messages())
+    Ok(context.prepare_api_context_with_files(&|_, _| crate::context::FileRead::Unavailable))
 }

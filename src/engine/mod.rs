@@ -51,6 +51,7 @@ pub struct Conversation {
     awaiting_response: bool,
     context_limit: usize,
     output_limit: u32,
+    last_request_tokens: usize,
 }
 
 impl Conversation {
@@ -85,6 +86,7 @@ impl Conversation {
             awaiting_response: false,
             context_limit: 32_768,
             output_limit: 4096,
+            last_request_tokens: 0,
         })
     }
 
@@ -130,17 +132,24 @@ impl Conversation {
         if self.messages.len() > MAX_MESSAGES {
             return Err("conversation is full; start a new chat".into());
         }
+        let context = context::project(&self.system, &self.messages, self.context_limit, provider)?;
+        self.last_request_tokens = context.estimated_tokens();
         let body = provider::request(
             provider,
             model,
             &self.tools,
             self.output_limit,
-            &context::project(&self.system, &self.messages, self.context_limit, provider)?,
+            context.messages(),
         )?;
         let encoded = body.to_string();
         bounded(&encoded)?;
         self.awaiting_response = true;
         Ok(encoded)
+    }
+
+    /// CLI estimate for the most recently prepared request, before provider usage arrives.
+    pub fn last_request_tokens(&self) -> usize {
+        self.last_request_tokens
     }
 
     /// Validate a model response before committing it to conversation history.

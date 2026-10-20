@@ -269,7 +269,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     const query = input("model-filter").value.trim().toLowerCase();
     const matching = models.filter(model => `${model.id} ${model.name}`.toLowerCase().includes(query));
     const chosen = modelList.value || input("model").value;
-    modelList.replaceChildren(...matching.map(model => new Option(model.name === model.id ? model.id : `${model.name} — ${model.id}`, model.id)));
+    modelList.replaceChildren(...matching.map(model => new Option((model.name === model.id ? model.id : `${model.name} — ${model.id}`) + (model.contextTokens ? ` · context ${model.contextTokens.toLocaleString()}` : "") + (model.maxOutputTokens ? ` · output ${model.maxOutputTokens.toLocaleString()}` : ""), model.id)));
     modelList.value = matching.some(model => model.id === chosen) ? chosen : matching[0]?.id ?? "";
     field(dialog, "model-count").textContent = `${matching.length} of ${models.length} models`;
     button("use-model").disabled = matching.length === 0;

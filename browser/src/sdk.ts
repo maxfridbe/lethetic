@@ -25,7 +25,7 @@ export type RuntimeEvent =
   | StreamDelta
   | { type: "response_reset" }
   | { type: "retry"; attempt: number; delayMs: number; error: string }
-  | { type: "request"; round: number }
+  | { type: "request"; round: number; contextTokens?: number }
   | { type: "response"; usage: ProviderUsage; durationMs: number }
   | { type: "assistant"; text: string }
   | { type: "thinking"; text: string }
@@ -61,6 +61,7 @@ interface WasmRuntime {
   set_limits(context: number, output: number): void;
   begin(prompt: string): void;
   request(provider: string, model: string): string;
+  last_request_tokens(): number;
   accept(provider: string, response: string): string;
   tool_result(id: string, output: string): void;
   rollback(): void;
@@ -176,7 +177,7 @@ export class LetheticRuntime {
         responsePending = true;
         for (let attempt = 0; ; attempt++) {
           controller.signal.throwIfAborted();
-          this.#emit({ type: "request", round });
+          this.#emit({ type: "request", round, contextTokens: this.#wasm.last_request_tokens() });
           let retryAfter: number | null = null;
           try {
             let thinking = "", checked = 0;

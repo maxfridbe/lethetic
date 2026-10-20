@@ -1,7 +1,7 @@
 import { validateConnection, modelAuthHeaders } from "./connection.js";
 import type { Connection } from "./connection.js";
 
-export interface AvailableModel { id: string; name: string }
+export interface AvailableModel { id: string; name: string; contextTokens?: number; maxOutputTokens?: number }
 
 /** Discover models using the draft endpoint/key, without requiring a model first. */
 export async function fetchModels(connection: Pick<Connection, "provider" | "endpoint" | "apiKey">,
@@ -26,8 +26,12 @@ export async function fetchModels(connection: Pick<Connection, "provider" | "end
     }
     for (const item of body.data) {
       if (!item || typeof item !== "object" || typeof item.id !== "string" || !item.id.trim()) continue;
+      const positive = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+      const contextTokens = item.context_length;
+      const maxOutputTokens = item.top_provider?.max_completion_tokens;
       models.set(item.id, { id: item.id, name: typeof item.display_name === "string" ? item.display_name :
-        typeof item.name === "string" ? item.name : item.id });
+        typeof item.name === "string" ? item.name : item.id,
+        ...(positive(contextTokens) ? {contextTokens} : {}), ...(positive(maxOutputTokens) ? {maxOutputTokens} : {}) });
     }
     if (validated.provider !== "anthropic" || !("has_more" in body) || body.has_more !== true) {
       return [...models.values()].sort((a, b) => a.id.localeCompare(b.id));

@@ -5,6 +5,8 @@ export interface MetricsSnapshot {
   turn: { requests: number; responses: number; sums: ProviderUsage; reports: Record<keyof ProviderUsage, number> };
   session: MetricsSnapshot["turn"];
   modelMs: number; toolMs: number; elapsedMs: number;
+  context?: { tokens: number; source: "server_usage" | "local_estimate" };
+  latestUsage?: ProviderUsage;
 }
 
 export function parseMetrics(value: unknown): MetricsSnapshot {
@@ -19,6 +21,13 @@ export function parseMetrics(value: unknown): MetricsSnapshot {
     }
   }
   for (const time of [item.modelMs, item.toolMs, item.elapsedMs]) if (!Number.isFinite(time) || time < 0) throw new Error("Invalid saved timing.");
+  if (item.context !== undefined && (!item.context || !Number.isSafeInteger(item.context.tokens) || item.context.tokens < 0 ||
+      !["server_usage", "local_estimate"].includes(item.context.source))) throw new Error("Invalid saved context usage.");
+  if (item.latestUsage !== undefined && !item.latestUsage) throw new Error("Invalid latest usage.");
+  if (item.latestUsage) for (const key of ["input", "output", "total", "cached", "cacheWrite", "reasoning"] as const) {
+    const value = item.latestUsage[key];
+    if (value !== null && (!Number.isSafeInteger(value) || value < 0)) throw new Error("Invalid latest usage.");
+  }
   return structuredClone(item);
 }
 
@@ -50,6 +59,8 @@ export class BrowserMetrics {
   modelMs = 0;
   toolMs = 0;
   elapsedMs = 0;
+  context: NonNullable<MetricsSnapshot["context"]> = { tokens: 0, source: "local_estimate" };
+  latestUsage: ProviderUsage | undefined;
   #started: number | null = null;
   #toolStarted: number | null = null;
   constructor(readonly now: () => number = () => performance.now()) {}
@@ -59,8 +70,12 @@ export class BrowserMetrics {
     this.#toolStarted = null; this.#started = this.now();
   }
   event(event: RuntimeEvent): void {
-    if (event.type === "request") { this.turn.requests++; this.session.requests++; }
+    if (event.type === "request") { this.turn.requests++; this.session.requests++;
+      if (event.contextTokens !== undefined) this.context = { tokens: event.contextTokens, source: "local_estimate" };
+    }
     if (event.type === "response") {
+      this.latestUsage = event.usage;
+      if (event.usage.input !== null) this.context = { tokens: event.usage.input, source: "server_usage" };
       this.turn.add(event.usage); this.session.add(event.usage); this.modelMs += event.durationMs;
     }
     if (event.type === "tool_start") this.#toolStarted = this.now();
@@ -74,10 +89,11 @@ export class BrowserMetrics {
   reset(): void {
     this.finish(); this.turn = new UsageTotals(); this.session = new UsageTotals();
     this.elapsedMs = 0; this.modelMs = 0; this.toolMs = 0;
+    this.context = { tokens: 0, source: "local_estimate" }; this.latestUsage = undefined;
   }
   snapshot(): MetricsSnapshot {
     return { turn: structuredClone(this.turn), session: structuredClone(this.session), modelMs: this.modelMs,
-      toolMs: this.toolMs, elapsedMs: this.elapsed };
+      toolMs: this.toolMs, elapsedMs: this.elapsed, context: this.context, ...(this.latestUsage ? {latestUsage: this.latestUsage} : {}) };
   }
   restore(value: MetricsSnapshot): void {
     const saved = parseMetrics(value); this.reset();
@@ -85,6 +101,7 @@ export class BrowserMetrics {
       this[key].requests = saved[key].requests; this[key].responses = saved[key].responses;
       Object.assign(this[key].sums, saved[key].sums); Object.assign(this[key].reports, saved[key].reports);
     }
+    this.context = saved.context ?? { tokens: 0, source: "local_estimate" }; this.latestUsage = saved.latestUsage;
     this.modelMs = saved.modelMs; this.toolMs = saved.toolMs; this.elapsedMs = saved.elapsedMs;
   }
 }

@@ -407,3 +407,15 @@ fn anthropic_reused_ids_match_results_and_keep_thinking_signatures() {
     assert_eq!(ids, ["reused", "reused-2"]);
     assert_eq!(ids, results);
 }
+
+#[test]
+fn browser_context_usage_is_the_cli_projected_estimate() {
+    let mut runtime = Conversation::new("system", "[]").unwrap();
+    runtime.begin("hello 🌍").unwrap();
+    let expected = super::context::project("system", &runtime.messages, 32768, "openai")
+        .unwrap()
+        .estimated_tokens();
+    runtime.request("openai", "test").unwrap();
+    assert_eq!(runtime.last_request_tokens(), expected);
+    assert!(expected > 0);
+}

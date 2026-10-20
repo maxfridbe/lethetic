@@ -44,3 +44,9 @@ await test("discovery reports HTTP/format errors, rejects unsafe URLs, and suppo
   await assert.rejects(fetchModels({...connection,provider:"anthropic",endpoint:"https://example.com/v1/messages"},signal,
     async()=>Response.json({data:[],has_more:true,last_id:"same"})),/pagination/);
 });
+
+await test("model picker retains advertised context and output limits", async () => {
+  const models = await fetchModels({provider:"openai",endpoint:"https://openrouter.ai/api/v1/chat/completions"},signal,
+    async()=>Response.json({data:[{id:"vendor/model",context_length:100000,top_provider:{max_completion_tokens:8192}},{id:"bad",context_length:"unknown",top_provider:{max_completion_tokens:-1}}]}));
+  assert.deepEqual(models,[{id:"bad",name:"bad"},{id:"vendor/model",name:"vendor/model",contextTokens:100000,maxOutputTokens:8192}]);
+});

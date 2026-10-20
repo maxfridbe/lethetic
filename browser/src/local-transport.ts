@@ -1,3 +1,4 @@
+import { ModelLimitState, effectiveLimits } from "./model-limits.js";
 import { DEFAULT_TURN_LIMITS, parseTurnLimits, LOOP_MODES, parseLoopMode } from "./turn-limits.js";
 import type { TurnLimits } from "./turn-limits.js";
 import { RelayKeys, relayEndpoint, relayToken } from "./network-route.js";
@@ -46,6 +47,11 @@ export interface LocalOptions {
 export class LocalTransport implements ApplicationTransport {
   readonly state: WebAppSnapshot = initialState();
   readonly metrics = new BrowserMetrics();
+  readonly modelLimits = new ModelLimitState(() => this.publish());
+  #runtimeLimits = "";
+  get effectiveTurnLimits(): TurnLimits { return effectiveLimits(this.turnLimits, this.modelLimits.value); }
+  refreshModelLimits(): Promise<void> { return this.modelLimits.ensure(this.connection, true); }
+  get workspaceBytes(): number { return this.#workspace.files.reduce((sum, file) => sum + file.data.length * 3 / 4 - (file.data.endsWith("==") ? 2 : file.data.endsWith("=") ? 1 : 0), 0); }
   #ticker: ReturnType<typeof setInterval> | null = null;
   #streamPublish: ReturnType<typeof setTimeout> | null = null;
   pendingCount = 0;
@@ -122,6 +128,7 @@ export class LocalTransport implements ApplicationTransport {
     if (this.#closed) return;
     this.#revision++;
     const connection = this.connection;
+    void this.modelLimits.ensure(connection);
     this.state.models = this.options.connections.map((item, index) => ({ model_id: String(index), label: item.name,
       model_name: item.model, transport: item.provider === "openai" ? "open_ai_chat_completions" : "claude_code_proxy",
       available: true, selected: index === this.selected }));
@@ -130,7 +137,19 @@ export class LocalTransport implements ApplicationTransport {
     this.state.status.provider_transport = connection?.provider === "anthropic" ? "claude_code_proxy" : "open_ai_chat_completions";
     this.state.status.python.profile = this.pythonEnabled ? "python_only" : "general";
     this.state.status.tool_use = this.pythonEnabled ? `Pyodide · ${this.networkAccess ? this.#relayEndpoint ? "HTTP relay" : "direct network" : "network off"}` : this.mode === "dotnet-wasm" ? `.NET 11 · WASM · ${this.networkAccess ? this.#relayEndpoint ? "HTTP relay" : "direct network" : "network off"}` : "Browser tools";
-    this.state.status.context_limit_tokens = String(this.turnLimits.contextTokens);
+    this.state.status.context_limit_tokens = String(this.effectiveTurnLimits.contextTokens);
+    this.state.status.context_tokens = String(this.metrics.context.tokens);
+    this.state.status.context_source = this.metrics.context.source;
+    const usage = this.metrics.latestUsage;
+    this.state.status.request_usage = usage?.input != null && usage.output != null ? {
+      total_input_tokens: String(usage.input), output_tokens: String(usage.output), total_tokens: String(usage.total ?? usage.input + usage.output),
+      uncached_input_tokens: String(Math.max(0, usage.input - (usage.cached ?? 0) - (usage.cacheWrite ?? 0))),
+      cache_read_input_tokens: String(usage.cached ?? 0), cache_creation_input_tokens: String(usage.cacheWrite ?? 0),
+      breakdown_complete: usage.cached !== null && usage.cacheWrite !== null,
+    } : null;
+    this.state.status.file_count = this.#workspace.files.length;
+    this.state.status.engine_time = `${(this.metrics.modelMs / 1000).toFixed(1)}s`;
+    this.state.status.tool_time = `${(this.metrics.toolMs / 1000).toFixed(1)}s`;
     this.state.status.visible_block_count = this.state.blocks.blocks.length;
     this.events.serverMessage({ type: "state_snapshot", snapshot: { protocol_version: WFE_PROTOCOL_VERSION,
       revision: this.#revision, sequence: this.#revision, state: structuredClone(this.state) } });
@@ -150,7 +169,9 @@ export class LocalTransport implements ApplicationTransport {
     this.state.activity = { kind: "processing", fully_idle: false, cancellable: true, cancel_id: crypto.randomUUID(), progress_percent: 0 };
     this.state.status.stop_reason = "Compacting context…"; this.metrics.begin(); this.publish();
     try {
-      const summary = await summarizeContext({ connection, ...this.turnLimits, onEvent: event => {
+      await this.modelLimits.ready(connection, controller.signal);
+      controller.signal.throwIfAborted();
+      const summary = await summarizeContext({ connection, ...this.effectiveTurnLimits, onEvent: event => {
         if (event.type === "request" || event.type === "response") { this.metrics.event(event); this.publish(); }
       } }, original.messages, controller.signal, (part, total) => {
         this.state.status.stop_reason = `Compacting context · ${part}/${total}`;
@@ -377,7 +398,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
   dispose(): void {
     if (this.#ticker !== null) clearInterval(this.#ticker);
     if (this.#streamPublish !== null) clearTimeout(this.#streamPublish);
-    this.#closed = true; this.#operation?.abort(); this.#runtime?.dispose(); this.#python?.reset(); this.#dotnet?.reset();
+    this.#closed = true; this.modelLimits.dispose(); this.#operation?.abort(); this.#runtime?.dispose(); this.#python?.reset(); this.#dotnet?.reset();
   }
 
   #requireIdle(): void { if (this.busy) throw new Error("Stop the current turn first."); }
@@ -516,6 +537,12 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
 
   async #run(prompt: string, signal: AbortSignal): Promise<void> {
     try {
+      await this.modelLimits.ready(this.connection, signal);
+      signal.throwIfAborted();
+      const limits = this.effectiveTurnLimits;
+      const limitsKey = JSON.stringify(limits);
+      if (this.#runtimeLimits !== limitsKey) { this.#runtime?.dispose(); this.#runtime = null; }
+      this.#runtimeLimits = limitsKey;
       if (!this.#runtime) {
         const connection = this.connection;
         if (!connection) throw new Error("No connection selected.");
@@ -526,7 +553,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
         if (this.mode === "dotnet-wasm") {
           tools.push(this.#dotnetTool());
         }
-        const runtime = await createRuntime({ connection, ...this.turnLimits, loopDetection: this.loopDetection, tools, systemPrompt: effectiveSystemPrompt(this.#system, this.mode, this.networkAccess, !!this.#relayEndpoint, this.nugetAccess, this.siteAccess), onEvent: (event) => this.#event(event) });
+        const runtime = await createRuntime({ connection, ...limits, loopDetection: this.loopDetection, tools, systemPrompt: effectiveSystemPrompt(this.#system, this.mode, this.networkAccess, !!this.#relayEndpoint, this.nugetAccess, this.siteAccess), onEvent: (event) => this.#event(event) });
         if (this.#closed) { runtime.dispose(); return; }
         try { runtime.restore(this.#savedMessages); } catch (error) { runtime.dispose(); throw error; }
         this.#runtime = runtime;

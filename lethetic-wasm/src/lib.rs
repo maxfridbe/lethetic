@@ -18,6 +18,9 @@ impl BrowserRuntime {
     pub fn request(&mut self, provider: &str, model: &str) -> Result<String, String> {
         self.0.request(provider, model)
     }
+    pub fn last_request_tokens(&self) -> usize {
+        self.0.last_request_tokens()
+    }
     pub fn accept(&mut self, provider: &str, response: &str) -> Result<String, String> {
         self.0.accept(provider, response)
     }
