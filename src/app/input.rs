@@ -969,7 +969,7 @@ fn handle_main_input_key(app: &mut App, key: event::KeyEvent) -> AppEventOutcome
             app.should_redraw = true;
         }
         KeyCode::Enter => {
-            let p = app.input.drain(..).collect::<String>();
+            let p = std::mem::take(&mut app.input);
             app.cursor_pos = 0;
             if !p.trim().is_empty() {
                 app.should_redraw = true;

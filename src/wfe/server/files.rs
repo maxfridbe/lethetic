@@ -47,7 +47,7 @@ pub(super) fn register(router: Router<Arc<ServerState>>) -> Router<Arc<ServerSta
 async fn git_status(State(state): State<Arc<ServerState>>, request: Request) -> Response {
     let request = match authenticated_json::<GitStatusRequest>(&state, request).await {
         Ok(request) => request,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     let Some(files) = state.files.as_ref() else {
         return super::plain_response(StatusCode::NOT_FOUND, "not found");
@@ -61,7 +61,7 @@ async fn git_status(State(state): State<Arc<ServerState>>, request: Request) -> 
 async fn git_diff(State(state): State<Arc<ServerState>>, request: Request) -> Response {
     let request = match authenticated_json::<GitDiffRequest>(&state, request).await {
         Ok(request) => request,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     let Some(files) = state.files.as_ref() else {
         return super::plain_response(StatusCode::NOT_FOUND, "not found");
@@ -75,7 +75,7 @@ async fn git_diff(State(state): State<Arc<ServerState>>, request: Request) -> Re
 async fn list(State(state): State<Arc<ServerState>>, request: Request) -> Response {
     let request = match authenticated_json::<FilesListRequest>(&state, request).await {
         Ok(request) => request,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     let Some(files) = state.files.as_ref() else {
         return super::plain_response(StatusCode::NOT_FOUND, "not found");
@@ -89,7 +89,7 @@ async fn list(State(state): State<Arc<ServerState>>, request: Request) -> Respon
 async fn read(State(state): State<Arc<ServerState>>, request: Request) -> Response {
     let request = match authenticated_json::<FilesReadRequest>(&state, request).await {
         Ok(request) => request,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     let Some(files) = state.files.as_ref() else {
         return super::plain_response(StatusCode::NOT_FOUND, "not found");
@@ -103,7 +103,7 @@ async fn read(State(state): State<Arc<ServerState>>, request: Request) -> Respon
 async fn download(State(state): State<Arc<ServerState>>, request: Request) -> Response {
     let request = match authenticated_json::<FilesDownloadRequest>(&state, request).await {
         Ok(request) => request,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     let Some(files) = state.files.as_ref() else {
         return super::plain_response(StatusCode::NOT_FOUND, "not found");
@@ -126,7 +126,7 @@ async fn download(State(state): State<Arc<ServerState>>, request: Request) -> Re
 async fn archive(State(state): State<Arc<ServerState>>, request: Request) -> Response {
     let request = match authenticated_json::<FilesArchiveRequest>(&state, request).await {
         Ok(request) => request,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     let Some(files) = state.files.as_ref() else {
         return super::plain_response(StatusCode::NOT_FOUND, "not found");
@@ -150,13 +150,13 @@ async fn archive(State(state): State<Arc<ServerState>>, request: Request) -> Res
 async fn authenticated_json<T: DeserializeOwned>(
     state: &ServerState,
     request: Request,
-) -> Result<T, Response> {
+) -> Result<T, Box<Response>> {
     let (parts, body) = request.into_parts();
     if !super::exact_origin(&parts.headers, state) {
-        return Err(super::plain_response(
+        return Err(Box::new(super::plain_response(
             StatusCode::FORBIDDEN,
             "request origin rejected",
-        ));
+        )));
     }
     if !state.process_cookie.verify_headers(&parts.headers)
         || !super::exact_header_matches(
@@ -165,48 +165,52 @@ async fn authenticated_json<T: DeserializeOwned>(
             |candidate| state.websocket_protocol.verify(candidate),
         )
     {
-        return Err(super::plain_response(
+        return Err(Box::new(super::plain_response(
             StatusCode::UNAUTHORIZED,
             "authentication rejected",
-        ));
+        )));
     }
     if !super::exact_header_matches(&parts.headers, CONTENT_TYPE, |value| {
         value.eq_ignore_ascii_case("application/json")
     }) {
-        return Err(super::plain_response(
+        return Err(Box::new(super::plain_response(
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
             "invalid request",
-        ));
+        )));
     }
     if parts.uri.query().is_some() {
-        return Err(super::plain_response(
+        return Err(Box::new(super::plain_response(
             StatusCode::BAD_REQUEST,
             "invalid request",
-        ));
+        )));
     }
     let bytes = match timeout(FILE_REQUEST_BODY_TIMEOUT, read_bounded_body(body)).await {
         Err(_) => {
-            return Err(super::plain_response(
+            return Err(Box::new(super::plain_response(
                 StatusCode::REQUEST_TIMEOUT,
                 "invalid request",
-            ));
+            )));
         }
         Ok(Err(BodyReadError::TooLarge)) => {
-            return Err(super::plain_response(
+            return Err(Box::new(super::plain_response(
                 StatusCode::PAYLOAD_TOO_LARGE,
                 "invalid request",
-            ));
+            )));
         }
         Ok(Err(BodyReadError::Invalid)) => {
-            return Err(super::plain_response(
+            return Err(Box::new(super::plain_response(
                 StatusCode::BAD_REQUEST,
                 "invalid request",
-            ));
+            )));
         }
         Ok(Ok(bytes)) => bytes,
     };
-    serde_json::from_slice(&bytes)
-        .map_err(|_| super::plain_response(StatusCode::BAD_REQUEST, "invalid request"))
+    serde_json::from_slice(&bytes).map_err(|_| {
+        Box::new(super::plain_response(
+            StatusCode::BAD_REQUEST,
+            "invalid request",
+        ))
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

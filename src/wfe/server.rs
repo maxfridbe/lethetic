@@ -939,7 +939,7 @@ async fn run_websocket(
     let started = Instant::now();
     let connection_ordinal = state
         .next_connection_ordinal
-        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |ordinal| {
+        .try_update(Ordering::AcqRel, Ordering::Acquire, |ordinal| {
             ordinal.checked_add(1)
         })
         .expect("WFE connection ordinal space is exhausted");
@@ -958,7 +958,7 @@ async fn run_websocket(
     let category = run_websocket_session(socket, &state, &mut telemetry).await;
     let previous_active = state
         .active_clients
-        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
+        .try_update(Ordering::AcqRel, Ordering::Acquire, |active| {
             active.checked_sub(1)
         })
         .expect("WFE active-client count underflowed");
