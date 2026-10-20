@@ -74,6 +74,7 @@ EXCLUDED_DIRECTORY_NAMES = {
     "vendor",
 }
 EXCLUDED_PREFIXES = {
+    ("archive",),
     ("web", "dist"),
     ("web", "lib"),
     ("web", "src", "generated"),

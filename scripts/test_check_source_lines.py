@@ -50,6 +50,7 @@ class SourceLineCheckerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             excluded = [
+                "archive/tests/old_probe.rs",
                 ".git/hooks/check.py",
                 ".claude/worktrees/example/src/lib.rs",
                 ".lethetic/state.py",
