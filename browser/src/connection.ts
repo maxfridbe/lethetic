@@ -9,6 +9,32 @@ export interface Connection {
   apiKey?: string;
 }
 
+/** Accept the token itself, never a page URL or a copied Authorization header. */
+export function normalizeApiKey(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") throw new Error("The API key must be text.");
+  const key = value.trim();
+  if (!key) return undefined;
+  if (/^(?:authorization\s*:|bearer(?:\s|$))/i.test(key)) {
+    throw new Error("Enter only the API key, without Authorization: or Bearer.");
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(key) || /^(?:#\/|\/sessions\/)/i.test(key)) {
+    throw new Error("The API key contains a URL or session link. Replace it with the provider's API key.");
+  }
+  if (/[^\x21-\x7e]/.test(key)) throw new Error("The API key contains spaces or unsupported characters. Paste the token only.");
+  return key;
+}
+
+/** Chat, connection tests and model discovery must use the same credential rules. */
+export function modelAuthHeaders(connection: Pick<Connection, "provider" | "apiKey">): Record<string, string> {
+  const key = normalizeApiKey(connection.apiKey);
+  if (connection.provider === "anthropic") return {
+    "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true",
+    ...(key ? {"x-api-key": key} : {}),
+  };
+  return key ? {Authorization: `Bearer ${key}`} : {};
+}
+
 export function validateConnection(connection: Connection): Connection {
   if (connection.provider !== "openai" && connection.provider !== "anthropic") {
     throw new Error("Choose an OpenAI-compatible or Anthropic connection.");
@@ -27,7 +53,7 @@ export function validateConnection(connection: Connection): Connection {
   if (!connection.name.trim() || !connection.model.trim()) {
     throw new Error("A connection name and model are required.");
   }
-  return { ...connection, endpoint: endpoint.href, model: connection.model.trim() };
+  return { ...connection, endpoint: endpoint.href, model: connection.model.trim(), apiKey: normalizeApiKey(connection.apiKey) };
 }
 
 const STORAGE_KEY = "lethetic.connections.v1";

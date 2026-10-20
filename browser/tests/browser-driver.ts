@@ -1,6 +1,7 @@
 import { testDotnetBrowser } from "./dotnet-browser.js";
 import { testPythonNetwork } from "./python-network-browser.js";
 import { testPythonSites } from "./python-sites-browser.js";
+import { testConnectionCredentials } from "./connection-browser.js";
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { PREVIEW_WEBM } from "./media-fixture.js";
@@ -102,6 +103,7 @@ try {
   await until("document.querySelector('dialog[open] [data-field=status]').textContent.includes('valid response')");
   check(await evaluate("!!document.querySelector('[data-field=active-summary] .is-valid') && document.querySelector('[data-field=active-summary]').textContent.includes('Key present')"), "active connection or key presence is unclear");
   const connectionSession = await evaluate("location.hash");
+  await testConnectionCredentials(evaluate);
   await evaluate("document.querySelector('[data-field=duplicate]').click()");
   check(await evaluate("document.querySelector('[data-field=name]').value==='Browser test copy' && document.querySelector('[data-field=key]').value==='secret-never-persisted'"), "duplicate lost connection key");
   check(await evaluate("document.querySelector('[data-field=active-summary] strong').textContent==='Browser test'"), "duplicating activated the copy");

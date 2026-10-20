@@ -56,6 +56,13 @@ Selecting a connection automatically sends a small test request. The plug icon i
 green after success, red after failure, and neutral when untested; edited settings
 must be tested again. **Test connection** tests the current editor values.
 
+Enter the provider's token alone in **API key**, without `Bearer` or an
+`Authorization:` prefix. Chat, Test connection, and Fetch models share the same
+credential validation. Surrounding whitespace is trimmed; URLs/session links,
+header prefixes, and invalid token characters are rejected before a model request.
+An invalid key saved by an older version remains visible for correction in
+Connections; replacing it and saving keeps the existing chat and files.
+
 Connection names, protocols, endpoint URLs, and model IDs are saved in localStorage.
 The hosted app keeps API keys in tab-scoped sessionStorage so refresh retains them.
 Keys are excluded from saved chats and device-local connection metadata. Chats are saved locally.

@@ -15,6 +15,13 @@ const call = (name: string, arguments_ = "{}"): Response => Response.json({ choi
     { id: "one", type: "function", function: { name, arguments: arguments_ } },
   ] } }] });
 
+await test("chat refuses a session URL as its key before fetching or loading a conversation", async () => {
+  let requests = 0;
+  await assert.rejects(createRuntime({connection: {...connection, apiKey: "https://maxfridbe.github.io/lethetic/#/sessions/example"},
+    wasm, fetch: async () => { requests++; return answer("unexpected"); }}), /URL or session link/);
+  assert.equal(requests, 0);
+});
+
 await test("concurrent first initialization keeps WASM conversations independent", async () => {
   const runtimes = await Promise.all(Array.from({ length: 8 }, () => createRuntime({ connection, wasm,
     fetch: async () => answer("ok") })));
@@ -24,6 +31,20 @@ await test("concurrent first initialization keeps WASM conversations independent
       assert.deepEqual(runtimes[index]!.history(), [{ role: "user", content: `prompt ${index}` }, { role: "assistant", content: "ok" }]);
     }
   } finally { for (const runtime of runtimes) runtime.dispose(); }
+});
+
+await test("chat trims pasted token edges and retains the correct credential across turns", async () => {
+  const supplied = {...connection, apiKey: " \ttest-token\r\n"};
+  let requests = 0;
+  const runtime = await createRuntime({connection: supplied, wasm, fetch: async (_url, init) => {
+    assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer test-token");
+    requests++; return answer("ok");
+  }});
+  try {
+    supplied.apiKey = "https://maxfridbe.github.io/lethetic/#/sessions/example";
+    await runtime.send("hello"); await runtime.send("again");
+    assert.equal(requests, 2);
+  } finally { runtime.dispose(); }
 });
 
 await test("actual WASM SDK exposes provider usage and measured response time", async () => {

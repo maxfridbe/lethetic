@@ -1,4 +1,4 @@
-import { validateConnection } from "./connection.js";
+import { validateConnection, modelAuthHeaders } from "./connection.js";
 import { readUsage } from "./usage.js";
 import type { ProviderUsage } from "./usage.js";
 export type { ProviderUsage } from "./usage.js";
@@ -91,7 +91,7 @@ export class LetheticRuntime {
 
   constructor(wasm: WasmRuntime, options: RuntimeOptions) {
     this.#wasm = wasm;
-    this.#options = options;
+    this.#options = {...options, connection: validateConnection(options.connection)};
   }
 
   get busy(): boolean { return this.#active !== null; }
@@ -203,13 +203,7 @@ export class LetheticRuntime {
 }
 
 function requestHeaders(connection: Connection): Record<string, string> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (connection.provider === "anthropic") {
-    headers["anthropic-version"] = "2023-06-01";
-    headers["anthropic-dangerous-direct-browser-access"] = "true";
-    if (connection.apiKey) headers["x-api-key"] = connection.apiKey;
-  } else if (connection.apiKey) headers["Authorization"] = `Bearer ${connection.apiKey}`;
-  return headers;
+  return { "Content-Type": "application/json", ...modelAuthHeaders(connection) };
 }
 
 async function readResponse(response: Response, signal: AbortSignal): Promise<string> {

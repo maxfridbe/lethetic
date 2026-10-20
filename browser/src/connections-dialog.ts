@@ -1,5 +1,5 @@
 import { buttonIconHtml } from "../../web/src/icons.js";
-import { validateConnection, saveConnections, saveConnectionKeys } from "./connection.js";
+import { validateConnection, normalizeApiKey, saveConnections, saveConnectionKeys } from "./connection.js";
 import { fetchModels } from "./models.js";
 import type { AvailableModel } from "./models.js";
 import { createRuntime } from "./sdk.js";
@@ -9,7 +9,7 @@ import { createDialog, errorMessage, field } from "./dialog.js";
 
 type Health = { state: "testing" | "valid" | "invalid"; message: string };
 // Compare actual request settings, including the key. Never put this identity in the DOM or storage.
-const identity = (connection: Connection): string => JSON.stringify([connection.provider, connection.endpoint, connection.model, connection.apiKey ?? ""]);
+const identity = (connection: Connection): string => JSON.stringify([connection.provider, connection.endpoint, connection.model, connection.apiKey?.trim() ?? ""]);
 
 export function createConnectionsDialog(transport: LocalTransport, storage?: Storage, credentialStorage?: Storage): {
   dialog: HTMLDialogElement; open(): void; destroy(): void;
@@ -29,7 +29,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
           <label>Protocol<select data-field="provider"><option value="openai">OpenAI-compatible</option><option value="anthropic">Anthropic Messages</option></select></label>
           <label>Endpoint URL<input data-field="endpoint" type="url" required placeholder="https://your-server/v1/chat/completions" autocomplete="off" spellcheck="false"></label>
           <label>Model<input data-field="model" required autocomplete="off" spellcheck="false"></label>
-          <label>API key (optional)<span class="connection-key-input"><input data-field="key" type="password" autocomplete="off" spellcheck="false"><button type="button" data-field="show-key" aria-label="Show API key" aria-pressed="false">${buttonIconHtml("preview")}Show</button></span><small data-field="key-state" role="status"></small></label>
+          <label>API key (optional)<span class="connection-key-input"><input data-field="key" name="model-api-key" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Provider API key — not a session URL"><button type="button" data-field="show-key" aria-label="Show API key" aria-pressed="false">${buttonIconHtml("preview")}Show</button></span><small data-field="key-state" role="status"></small></label>
           <div class="panel-toolbar">
             <button class="primary-button" type="submit" data-field="save">${buttonIconHtml("save")}Save changes</button>
             <button type="button" data-field="use">${buttonIconHtml("connection")}Use this connection</button>
@@ -96,7 +96,8 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     const element = document.createElement(tag); element.textContent = text; element.className = className; return element;
   };
   const healthBadge = (connection: Connection): HTMLElement => {
-    const check = health.get(identity(connection));
+    let check = health.get(identity(connection));
+    try { normalizeApiKey(connection.apiKey); } catch (error) { check = {state: "invalid", message: errorMessage(error)}; }
     const badge = node("span", "", `connection-health is-${check?.state ?? "untested"}`);
     badge.innerHTML = buttonIconHtml("connection");
     badge.append(document.createTextNode(check?.state === "valid" ? "Connected" : check?.state === "invalid" ? "Connection failed" : check?.state === "testing" ? "Testing…" : "Not tested"));
@@ -142,14 +143,18 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     try { validateConnection(current); valid = true; } catch { /* Keep incomplete drafts editable. */ }
     field(dialog, "editor-title").textContent = selected < 0 ? "New connection" : `Editing ${transport.options.connections[selected]?.name ?? "connection"}`;
     field(dialog, "edit-state").textContent = transport.busy ? "A turn is running. Finish or stop it before saving or switching connections." : changed ? "Unsaved changes — save before switching connections or closing." : active ? "This connection is active for the current session." : "Saved. Use this connection to switch the current session.";
-    const keyChanged = (transport.options.connections[selected]?.apiKey ?? "") !== (current.apiKey ?? "");
-    field(dialog, "key-state").textContent = current.apiKey ? (keyChanged ? "Key entered · not yet saved" : "Key present") : "No key provided · optional for endpoints without authentication";
+    let keyError = "";
+    try { normalizeApiKey(current.apiKey); } catch (error) { keyError = errorMessage(error); }
+    input("key").setCustomValidity(keyError); input("key").setAttribute("aria-invalid", String(!!keyError));
+    const keyChanged = (transport.options.connections[selected]?.apiKey?.trim() ?? "") !== (current.apiKey?.trim() ?? "");
+    field(dialog, "key-state").textContent = keyError || (current.apiKey?.trim() ? (keyChanged ? "Key entered · not yet saved" : "Key present") : "No key provided · optional for endpoints without authentication");
     button("save").disabled = !changed || !valid || transport.busy;
     button("use").disabled = !valid || transport.busy || (active && !changed);
     button("use").innerHTML = buttonIconHtml(active && !changed ? "check" : "connection") + (active && !changed ? "Active connection" : changed ? "Save & use connection" : "Use this connection");
     button("duplicate").disabled = selected < 0 || transport.busy;
     button("remove").disabled = selected < 0 || transport.busy;
     button("test").disabled = !valid || operation !== null;
+    button("fetch-models").disabled = !!keyError || modelOperation !== null;
     field(dialog, "test-state").replaceChildren(healthBadge(current));
     select("mode").value = transport.mode; select("mode").disabled = transport.busy;
     input("sites").checked = transport.siteAccess;
@@ -212,6 +217,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
   };
   const save = (use: boolean): void => {
     const form = field<HTMLFormElement>(dialog, "connection-form");
+    updateEditor(); // Revalidate programmatic/autofill changes even without an input event.
     if (!form.reportValidity()) return;
     try {
       const connection = validateConnection(draft());
@@ -251,7 +257,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     button("show-key").setAttribute("aria-pressed", String(show)); button("show-key").setAttribute("aria-label", show ? "Hide API key" : "Show API key");
     button("show-key").innerHTML = buttonIconHtml("preview") + (show ? "Hide" : "Show");
   });
-  for (const name of ["name", "endpoint", "key", "provider", "model"]) field(dialog, name).addEventListener("input", () => {
+  for (const name of ["name", "endpoint", "key", "provider", "model"]) for (const event of ["input", "change"]) field(dialog, name).addEventListener(event, () => {
     cancelTest(); if (["endpoint", "key", "provider"].includes(name)) cancelModels(); updateEditor(); status("");
   });
   const filterModels = (): void => {
@@ -278,7 +284,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
         controller.signal.throwIfAborted(); models = fetched; filterModels(); field(dialog, "model-picker").hidden = false;
         status(models.length ? "Choose a model below. Your active connection stays unchanged until you save." : "No models returned. Enter a model manually.");
       } catch (error) { if (modelOperation === controller && !destroyed) status(`${errorMessage(error)} Check endpoint access and CORS; manual model entry is available.`); }
-      finally { clearTimeout(timer); if (modelOperation === controller) { modelOperation = null; button("fetch-models").disabled = false; } }
+      finally { clearTimeout(timer); if (modelOperation === controller) { modelOperation = null; updateEditor(); } }
     })();
   });
   select("network-route").addEventListener("change", routeEditor);
@@ -339,7 +345,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     })();
   };
   button("test").addEventListener("click", () => {
-    try { checkConnection(validateConnection(draft())); } catch (error) { status(errorMessage(error)); }
+    try { checkConnection(validateConnection(draft())); } catch (error) { status(errorMessage(error)); updateEditor(); }
   });
   dialog.addEventListener("close", () => { cancelTest(); cancelModels(); input("key").type = "password"; });
   return { dialog, open(): void {

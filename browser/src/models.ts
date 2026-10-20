@@ -1,4 +1,4 @@
-import { validateConnection } from "./connection.js";
+import { validateConnection, modelAuthHeaders } from "./connection.js";
 import type { Connection } from "./connection.js";
 
 export interface AvailableModel { id: string; name: string }
@@ -11,13 +11,10 @@ export async function fetchModels(connection: Pick<Connection, "provider" | "end
   const suffix = validated.provider === "anthropic" ? /\/messages\/?$/ : /\/chat\/completions\/?$/;
   if (!suffix.test(url.pathname)) throw new Error("Use a full chat/completions or messages endpoint to fetch models.");
   url.pathname = url.pathname.replace(suffix, "/models");
-  const headers: Record<string, string> = { Accept: "application/json" };
+  const headers: Record<string, string> = { Accept: "application/json", ...modelAuthHeaders(validated) };
   if (validated.provider === "anthropic") {
-    headers["anthropic-version"] = "2023-06-01";
-    headers["anthropic-dangerous-direct-browser-access"] = "true";
-    if (validated.apiKey) headers["x-api-key"] = validated.apiKey;
     url.searchParams.set("limit", "1000");
-  } else if (validated.apiKey) headers["Authorization"] = `Bearer ${validated.apiKey}`;
+  }
   const models = new Map<string, AvailableModel>();
   const cursors = new Set<string>();
   for (let page = 0; page < 100; page++) {
