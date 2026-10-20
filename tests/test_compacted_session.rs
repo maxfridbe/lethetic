@@ -47,7 +47,8 @@ async fn compaction_keeps_the_plan_and_session_settings() {
 
     let mut app = App::new(&Config::default());
     app.loop_detector.config.mode = lethetic::loop_detector::LoopDetectionMode::NGram;
-    app.tool_use_counts.insert("run_shell_command".to_string(), 12);
+    app.tool_use_counts
+        .insert("run_shell_command".to_string(), 12);
     app.remote_control_target = Some("https://127.0.0.1:11223".to_string());
     app.remote_control_files = true;
     app.session_times.engine_ms = 60_000;
@@ -82,8 +83,7 @@ async fn compaction_keeps_the_plan_and_session_settings() {
     assert!(state.remote_control_files);
     assert!(state.python_policy.is_some(), "Agent Mode carries over");
     assert_eq!(
-        state.session_times,
-        app.session_times,
+        state.session_times, app.session_times,
         "times carry over, up to date rather than from the last save"
     );
 }

@@ -20,26 +20,40 @@ impl Drop for CancelOnDrop {
     }
 }
 
-fn trigger_headless_request(
-    client: reqwest::Client,
-    config: Config,
-    context: &ContextManager,
+struct HeadlessRequest {
     tx: mpsc::UnboundedSender<StreamEvent>,
     settlement_fallback: Option<mpsc::UnboundedSender<StreamEvent>>,
     cancellation_token: CancellationToken,
     session_dir: Option<String>,
     request_started_hook: Option<RequestAccountingHook>,
+}
+
+fn trigger_headless_request(
+    client: reqwest::Client,
+    config: Config,
+    context: &ContextManager,
+    options: HeadlessRequest,
 ) -> Result<String, String> {
-    trigger_llm_request_with_surface_and_start_hook_and_settlement_fallback(
-        client,
-        config,
-        context,
+    let HeadlessRequest {
         tx,
         settlement_fallback,
         cancellation_token,
-        false,
         session_dir,
-        tools::ToolSurface::Headless,
+        request_started_hook,
+    } = options;
+
+    trigger_llm_request_with_surface_and_start_hook_and_settlement_fallback(
+        crate::client::RequestExecution {
+            client,
+            tx,
+            token: cancellation_token,
+            is_debug: false,
+            session_dir,
+            tool_surface: tools::ToolSurface::Headless,
+        },
+        config,
+        context,
+        settlement_fallback,
         request_started_hook,
     )
 }
@@ -48,7 +62,7 @@ fn find_legacy_text_tool_call(
     config: &Config,
     text: &str,
     is_final: bool,
-) -> Option<Result<(Vec<ToolCall>, usize), (String, usize)>> {
+) -> Option<parser::ToolCallParseResult> {
     if config.active_connection_kind().uses_native_tools() {
         None
     } else if crate::tool_call_mode::allows_batches(config) {
@@ -105,25 +119,56 @@ fn mark_pending_python_audits(
     Ok(())
 }
 
-async fn execute_tool_calls(
+struct ToolBatch<'a> {
     calls: Vec<ToolCall>,
-    assistant_content: &str,
+    assistant_content: &'a str,
     provider_content: Option<Vec<serde_json::Value>>,
     assistant_already_checkpointed: bool,
-    context: &mut ContextManager,
-    current_dir: &mut String,
-    client: &reqwest::Client,
-    config: &Config,
+}
+
+struct ToolExecutionContext<'a> {
+    context: &'a mut ContextManager,
+    current_dir: &'a mut String,
+    client: &'a reqwest::Client,
+    config: &'a Config,
     print_output: bool,
-    tx: &mpsc::UnboundedSender<StreamEvent>,
-    progress_tx: &Option<mpsc::UnboundedSender<StreamEvent>>,
+    tx: &'a mpsc::UnboundedSender<StreamEvent>,
+    progress_tx: &'a Option<mpsc::UnboundedSender<StreamEvent>>,
     cancellation_token: CancellationToken,
-    tool_runtime: &crate::tool_runtime::ToolRuntime,
-    result_root: &Path,
-    session_directory: Option<&Path>,
-    request_hook: &Option<RequestAccountingHook>,
-    transcript_hook: &Option<TranscriptHook>,
+    tool_runtime: &'a crate::tool_runtime::ToolRuntime,
+    result_root: &'a Path,
+    session_directory: Option<&'a Path>,
+    request_hook: &'a Option<RequestAccountingHook>,
+    transcript_hook: &'a Option<TranscriptHook>,
+}
+
+async fn execute_tool_calls(
+    batch: ToolBatch<'_>,
+    options: ToolExecutionContext<'_>,
 ) -> Result<(), String> {
+    let ToolExecutionContext {
+        context,
+        current_dir,
+        client,
+        config,
+        print_output,
+        tx,
+        progress_tx,
+        cancellation_token,
+        tool_runtime,
+        result_root,
+        session_directory,
+        request_hook,
+        transcript_hook,
+    } = options;
+
+    let ToolBatch {
+        calls,
+        assistant_content,
+        provider_content,
+        assistant_already_checkpointed,
+    } = batch;
+
     context.add_assistant_tool_call_with_provider(
         assistant_content,
         calls.clone(),
@@ -315,11 +360,13 @@ async fn execute_tool_calls(
             tool_runtime,
             &call.function.name,
             &arguments,
-            current_dir,
-            cancellation_token.clone(),
-            tool_tx,
-            client,
-            config,
+            crate::tools::ToolContext {
+                cwd: current_dir,
+                cancellation_token: cancellation_token.clone(),
+                tx: tool_tx,
+                client,
+                config,
+            },
             request_hook.clone(),
         )
         .await;
@@ -346,7 +393,10 @@ async fn execute_tool_calls(
     }
 
     context.set_cwd(current_dir.clone());
-    refresh_todo_summary(context, &[tool_runtime.workspace_root(), Path::new(current_dir)]);
+    refresh_todo_summary(
+        context,
+        &[tool_runtime.workspace_root(), Path::new(current_dir)],
+    );
     Ok(())
 }
 
@@ -354,8 +404,7 @@ async fn execute_tool_calls(
 /// every tool call must name the item it serves.
 fn refresh_todo_summary(context: &mut ContextManager, roots: &[&Path]) {
     for root in roots {
-        if let Ok(snapshot) =
-            crate::todo_store::TodoStore::open(root).and_then(|store| store.get())
+        if let Ok(snapshot) = crate::todo_store::TodoStore::open(root).and_then(|store| store.get())
             && (!snapshot.todos.is_empty() || snapshot.revision > 0)
         {
             context.set_todo_summary(crate::app::render_todo_context(&snapshot));
@@ -484,35 +533,54 @@ pub async fn run_agent_accounted_with_cancellation_and_hook(
         prompt,
         client,
         config,
-        print_output,
-        progress_tx,
+        AgentRunOptions {
+            print_output,
+            progress_tx,
+            workspace,
+            initial_messages: Vec::new(),
+            add_initial_user_message: true,
+            session_dir: None,
+            request_hook,
+            transcript_hook: None,
+            cancellation,
+        },
         &tool_runtime,
-        workspace,
-        Vec::new(),
-        true,
-        None,
-        request_hook,
-        None,
-        cancellation,
     )
     .await
+}
+
+/// Session context, accounting hooks, and output policy for a headless run.
+pub struct AgentRunOptions {
+    pub print_output: bool,
+    pub progress_tx: Option<mpsc::UnboundedSender<StreamEvent>>,
+    pub workspace: PathBuf,
+    pub initial_messages: Vec<crate::context::Message>,
+    pub add_initial_user_message: bool,
+    pub session_dir: Option<String>,
+    pub request_hook: Option<RequestAccountingHook>,
+    pub transcript_hook: Option<TranscriptHook>,
+    pub cancellation: Option<CancellationToken>,
 }
 
 pub async fn run_agent_accounted_with_runtime(
     prompt: String,
     client: &reqwest::Client,
     config: &Config,
-    print_output: bool,
-    progress_tx: Option<mpsc::UnboundedSender<StreamEvent>>,
+    options: AgentRunOptions,
     tool_runtime: &crate::tool_runtime::ToolRuntime,
-    workspace: PathBuf,
-    initial_messages: Vec<crate::context::Message>,
-    add_initial_user_message: bool,
-    session_dir: Option<String>,
-    request_hook: Option<RequestAccountingHook>,
-    transcript_hook: Option<TranscriptHook>,
-    cancellation: Option<CancellationToken>,
 ) -> Result<AgentRun, String> {
+    let AgentRunOptions {
+        print_output,
+        progress_tx,
+        workspace,
+        initial_messages,
+        add_initial_user_message,
+        session_dir,
+        request_hook,
+        transcript_hook,
+        cancellation,
+    } = options;
+
     if tool_runtime.surface() != tools::ToolSurface::Headless {
         return Err("Headless agent requires a Headless tool runtime".to_string());
     }
@@ -573,7 +641,10 @@ pub async fn run_agent_accounted_with_runtime(
         context.set_messages(initial_messages);
     }
     context.set_cwd(cwd.clone());
-    refresh_todo_summary(&mut context, &[tool_runtime.workspace_root(), Path::new(&cwd)]);
+    refresh_todo_summary(
+        &mut context,
+        &[tool_runtime.workspace_root(), Path::new(&cwd)],
+    );
     if add_initial_user_message {
         context.add_message("user", &prompt);
         if let Some(hook) = &transcript_hook {
@@ -603,11 +674,13 @@ pub async fn run_agent_accounted_with_runtime(
         client.clone(),
         config.clone(),
         &context,
-        tx.clone(),
-        progress_tx.clone(),
-        cancellation_token.clone(),
-        session_dir.clone(),
-        request_hook.clone(),
+        HeadlessRequest {
+            tx: tx.clone(),
+            settlement_fallback: progress_tx.clone(),
+            cancellation_token: cancellation_token.clone(),
+            session_dir: session_dir.clone(),
+            request_started_hook: request_hook.clone(),
+        },
     )?;
 
     loop {
@@ -719,23 +792,27 @@ pub async fn run_agent_accounted_with_runtime(
 
                 if let Some((calls, call_provider_content)) = pending_structured.take() {
                     execute_tool_calls(
-                        calls,
-                        &full_response,
-                        call_provider_content.or(provider_content),
-                        request_hook.is_some(),
-                        &mut context,
-                        &mut current_dir,
-                        client,
-                        config,
-                        print_output,
-                        &tx,
-                        &progress_tx,
-                        cancellation_token.clone(),
-                        tool_runtime,
-                        &workspace,
-                        session_dir.as_deref().map(Path::new),
-                        &request_hook,
-                        &transcript_hook,
+                        ToolBatch {
+                            calls,
+                            assistant_content: &full_response,
+                            provider_content: call_provider_content.or(provider_content),
+                            assistant_already_checkpointed: request_hook.is_some(),
+                        },
+                        ToolExecutionContext {
+                            context: &mut context,
+                            current_dir: &mut current_dir,
+                            client,
+                            config,
+                            print_output,
+                            tx: &tx,
+                            progress_tx: &progress_tx,
+                            cancellation_token: cancellation_token.clone(),
+                            tool_runtime,
+                            result_root: &workspace,
+                            session_directory: session_dir.as_deref().map(Path::new),
+                            request_hook: &request_hook,
+                            transcript_hook: &transcript_hook,
+                        },
                     )
                     .await?;
                     full_response.clear();
@@ -745,11 +822,13 @@ pub async fn run_agent_accounted_with_runtime(
                         client.clone(),
                         config.clone(),
                         &context,
-                        tx.clone(),
-                        progress_tx.clone(),
-                        cancellation_token.clone(),
-                        session_dir.clone(),
-                        request_hook.clone(),
+                        HeadlessRequest {
+                            tx: tx.clone(),
+                            settlement_fallback: progress_tx.clone(),
+                            cancellation_token: cancellation_token.clone(),
+                            session_dir: session_dir.clone(),
+                            request_started_hook: request_hook.clone(),
+                        },
                     )?;
                     continue;
                 }
@@ -757,23 +836,27 @@ pub async fn run_agent_accounted_with_runtime(
                 match find_legacy_text_tool_call(config, &full_response, true) {
                     Some(Ok((calls, _))) => {
                         execute_tool_calls(
-                            calls,
-                            &full_response,
-                            None,
-                            false,
-                            &mut context,
-                            &mut current_dir,
-                            client,
-                            config,
-                            print_output,
-                            &tx,
-                            &progress_tx,
-                            cancellation_token.clone(),
-                            tool_runtime,
-                            &workspace,
-                            session_dir.as_deref().map(Path::new),
-                            &request_hook,
-                            &transcript_hook,
+                            ToolBatch {
+                                calls,
+                                assistant_content: &full_response,
+                                provider_content: None,
+                                assistant_already_checkpointed: false,
+                            },
+                            ToolExecutionContext {
+                                context: &mut context,
+                                current_dir: &mut current_dir,
+                                client,
+                                config,
+                                print_output,
+                                tx: &tx,
+                                progress_tx: &progress_tx,
+                                cancellation_token: cancellation_token.clone(),
+                                tool_runtime,
+                                result_root: &workspace,
+                                session_directory: session_dir.as_deref().map(Path::new),
+                                request_hook: &request_hook,
+                                transcript_hook: &transcript_hook,
+                            },
                         )
                         .await?;
                         full_response.clear();
@@ -783,11 +866,13 @@ pub async fn run_agent_accounted_with_runtime(
                             client.clone(),
                             config.clone(),
                             &context,
-                            tx.clone(),
-                            progress_tx.clone(),
-                            cancellation_token.clone(),
-                            session_dir.clone(),
-                            request_hook.clone(),
+                            HeadlessRequest {
+                                tx: tx.clone(),
+                                settlement_fallback: progress_tx.clone(),
+                                cancellation_token: cancellation_token.clone(),
+                                session_dir: session_dir.clone(),
+                                request_started_hook: request_hook.clone(),
+                            },
                         )?;
                         continue;
                     }
@@ -814,11 +899,13 @@ pub async fn run_agent_accounted_with_runtime(
                             client.clone(),
                             config.clone(),
                             &context,
-                            tx.clone(),
-                            progress_tx.clone(),
-                            cancellation_token.clone(),
-                            session_dir.clone(),
-                            request_hook.clone(),
+                            HeadlessRequest {
+                                tx: tx.clone(),
+                                settlement_fallback: progress_tx.clone(),
+                                cancellation_token: cancellation_token.clone(),
+                                session_dir: session_dir.clone(),
+                                request_started_hook: request_hook.clone(),
+                            },
                         )?;
                         continue;
                     }
@@ -894,11 +981,13 @@ pub async fn run_agent_accounted_with_runtime(
                         client.clone(),
                         config.clone(),
                         &context,
-                        tx.clone(),
-                        progress_tx.clone(),
-                        cancellation_token.clone(),
-                        session_dir.clone(),
-                        request_hook.clone(),
+                        HeadlessRequest {
+                            tx: tx.clone(),
+                            settlement_fallback: progress_tx.clone(),
+                            cancellation_token: cancellation_token.clone(),
+                            session_dir: session_dir.clone(),
+                            request_started_hook: request_hook.clone(),
+                        },
                     )?;
                     continue;
                 }
@@ -1132,23 +1221,27 @@ mod tests {
         });
 
         execute_tool_calls(
-            vec![call],
-            "",
-            None,
-            false,
-            &mut context,
-            &mut current_dir,
-            &reqwest::Client::new(),
-            &config,
-            false,
-            &tx,
-            &None,
-            CancellationToken::new(),
-            &runtime,
-            &workspace,
-            None,
-            &None,
-            &Some(transcript_hook),
+            ToolBatch {
+                calls: vec![call],
+                assistant_content: "",
+                provider_content: None,
+                assistant_already_checkpointed: false,
+            },
+            ToolExecutionContext {
+                context: &mut context,
+                current_dir: &mut current_dir,
+                client: &reqwest::Client::new(),
+                config: &config,
+                print_output: false,
+                tx: &tx,
+                progress_tx: &None,
+                cancellation_token: CancellationToken::new(),
+                tool_runtime: &runtime,
+                result_root: &workspace,
+                session_directory: None,
+                request_hook: &None,
+                transcript_hook: &Some(transcript_hook),
+            },
         )
         .await
         .unwrap();
@@ -1209,23 +1302,27 @@ mod tests {
         let (tx, _rx) = mpsc::unbounded_channel();
 
         execute_tool_calls(
-            calls,
-            "",
-            None,
-            false,
-            &mut context,
-            &mut current_dir,
-            &reqwest::Client::new(),
-            &config,
-            false,
-            &tx,
-            &None,
-            CancellationToken::new(),
-            &runtime,
-            &workspace,
-            None,
-            &None,
-            &None,
+            ToolBatch {
+                calls,
+                assistant_content: "",
+                provider_content: None,
+                assistant_already_checkpointed: false,
+            },
+            ToolExecutionContext {
+                context: &mut context,
+                current_dir: &mut current_dir,
+                client: &reqwest::Client::new(),
+                config: &config,
+                print_output: false,
+                tx: &tx,
+                progress_tx: &None,
+                cancellation_token: CancellationToken::new(),
+                tool_runtime: &runtime,
+                result_root: &workspace,
+                session_directory: None,
+                request_hook: &None,
+                transcript_hook: &None,
+            },
         )
         .await
         .unwrap();
@@ -1250,8 +1347,10 @@ mod tests {
         let marker = r#"<|tool_call>{"name":"todowrite","args":{"todos":[],"tool_call_id":"quoted"}}<tool_call|>"#;
         assert!(parser::find_tool_call(marker, true).is_some());
 
-        let mut native = Config::default();
-        native.connection_kind = ConnectionKind::ClaudeCodeProxy;
+        let native = Config {
+            connection_kind: ConnectionKind::ClaudeCodeProxy,
+            ..Default::default()
+        };
         assert!(find_legacy_text_tool_call(&native, marker, true).is_none());
 
         let textual = Config::default();
@@ -1275,7 +1374,9 @@ mod tests {
         context.add_message("user", "go");
         let prepared = context.prepare_api_context();
         let text = prepared.messages().last().unwrap().content.text();
-        assert!(text.contains("- beta: [pending] (high) Beta task"), "{text}");
+        assert!(
+            text.contains("- beta: [pending] (high) Beta task"),
+            "{text}"
+        );
     }
-
 }

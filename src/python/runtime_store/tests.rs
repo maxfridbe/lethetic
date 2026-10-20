@@ -552,9 +552,11 @@ fn shared_workspace_manifest_keeps_external_and_owned_identities_distinct() {
         session_id,
         image_id,
         fingerprint,
-        shared.clone(),
-        RuntimeWorkspaceOwnership::ExternalLaunchCwd,
-        Some(managed.clone()),
+        crate::python::runtime_store::RuntimeWorkspaceBinding {
+            workspace: shared.clone(),
+            workspace_ownership: RuntimeWorkspaceOwnership::ExternalLaunchCwd,
+            managed_workspace: Some(managed.clone()),
+        },
         Utc::now(),
     )
     .unwrap();

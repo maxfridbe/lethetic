@@ -24,12 +24,11 @@ thread_local! {
 }
 
 fn fingerprint<T: std::hash::Hash + ?Sized>(value: &T) -> u64 {
-    use std::hash::{BuildHasher, Hasher};
+    use std::hash::BuildHasher;
     static STATE: std::sync::LazyLock<std::collections::hash_map::RandomState> =
         std::sync::LazyLock::new(std::collections::hash_map::RandomState::new);
-    let mut hasher = STATE.build_hasher();
-    value.hash(&mut hasher);
-    hasher.finish()
+
+    STATE.hash_one(value)
 }
 
 impl Redactor {

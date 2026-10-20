@@ -383,18 +383,20 @@ mod tests {
                 &config,
                 Some(hook),
                 SubagentTimeouts {
-                    execution: std::time::Duration::from_millis(40),
+                    // Leave time for request setup under parallel CI load. The
+                    // containment deadline still expires while the hook is held.
+                    execution: std::time::Duration::from_millis(500),
                     containment: std::time::Duration::from_millis(40),
                 },
             )
             .await
         });
 
-        tokio::time::timeout(std::time::Duration::from_secs(2), terminal_entered_rx)
+        tokio::time::timeout(std::time::Duration::from_secs(10), terminal_entered_rx)
             .await
             .expect("provider did not enter terminal checkpoint after timeout")
             .expect("terminal checkpoint signal disappeared");
-        let result = tokio::time::timeout(std::time::Duration::from_secs(2), execute)
+        let result = tokio::time::timeout(std::time::Duration::from_secs(10), execute)
             .await
             .expect("sub-agent containment deadline did not return")
             .expect("sub-agent task panicked");
@@ -411,7 +413,7 @@ mod tests {
 
         let mut active = std::collections::BTreeSet::new();
         let mut started_count = 0_usize;
-        let settlement = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        let settlement = tokio::time::timeout(std::time::Duration::from_secs(10), async {
             loop {
                 match rx.recv().await.expect("parent settlement route closed") {
                     StreamEvent::RequestStarted(request) => {

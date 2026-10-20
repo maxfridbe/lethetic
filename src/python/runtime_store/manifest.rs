@@ -1,3 +1,10 @@
+/// Workspace identity and ownership recorded together in a retained runtime.
+pub struct RuntimeWorkspaceBinding {
+    pub workspace: WorkspaceIdentity,
+    pub workspace_ownership: RuntimeWorkspaceOwnership,
+    pub managed_workspace: Option<WorkspaceIdentity>,
+}
+
 use super::common::{
     format_timestamp, parse_timestamp, ttl_deadline, validate_image_id, validate_lower_hex,
     validate_uuid,
@@ -101,19 +108,25 @@ impl RuntimeCreationIntent {
         Self::new_with_workspace_binding(
             runtime_id,
             session_id,
-            workspace,
-            RuntimeWorkspaceOwnership::Managed,
-            None,
+            RuntimeWorkspaceBinding {
+                workspace,
+                workspace_ownership: RuntimeWorkspaceOwnership::Managed,
+                managed_workspace: None,
+            },
         )
     }
 
     pub fn new_with_workspace_binding(
         runtime_id: String,
         session_id: String,
-        workspace: WorkspaceIdentity,
-        workspace_ownership: RuntimeWorkspaceOwnership,
-        managed_workspace: Option<WorkspaceIdentity>,
+        options: RuntimeWorkspaceBinding,
     ) -> Result<Self, String> {
+        let RuntimeWorkspaceBinding {
+            workspace,
+            workspace_ownership,
+            managed_workspace,
+        } = options;
+
         let intent = Self {
             schema_version: CREATION_INTENT_SCHEMA,
             container_name: format!("lethetic-python-{runtime_id}"),
@@ -248,9 +261,11 @@ impl RuntimeManifest {
             session_id,
             image_id,
             security_fingerprint,
-            workspace,
-            RuntimeWorkspaceOwnership::Managed,
-            None,
+            RuntimeWorkspaceBinding {
+                workspace,
+                workspace_ownership: RuntimeWorkspaceOwnership::Managed,
+                managed_workspace: None,
+            },
             now,
         )
     }
@@ -260,11 +275,15 @@ impl RuntimeManifest {
         session_id: String,
         image_id: String,
         security_fingerprint: String,
-        workspace: WorkspaceIdentity,
-        workspace_ownership: RuntimeWorkspaceOwnership,
-        managed_workspace: Option<WorkspaceIdentity>,
+        options: RuntimeWorkspaceBinding,
         now: DateTime<Utc>,
     ) -> Result<Self, String> {
+        let RuntimeWorkspaceBinding {
+            workspace,
+            workspace_ownership,
+            managed_workspace,
+        } = options;
+
         validate_uuid(&runtime_id, "runtime ID")?;
         validate_uuid(&session_id, "session ID")?;
         validate_image_id(&image_id)?;

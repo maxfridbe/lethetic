@@ -15,12 +15,11 @@ async fn test_calculate_tool_success() {
 #[tokio::test]
 async fn test_calculate_tool_error() {
     let result = calculate::execute("2 + 2 *").await;
-    assert!(
-        result.contains("error")
-            || result.contains("Error")
-            || result.contains("failed")
-            || result.contains("Unexpected end")
-    );
+    // Assert the tool's error contract, independent of parser-library wording.
+    let message = result
+        .strip_prefix("ERROR: ")
+        .expect("calculation must fail");
+    assert!(!message.trim().is_empty());
 }
 
 #[tokio::test]

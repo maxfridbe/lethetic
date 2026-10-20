@@ -3,7 +3,8 @@
 use super::ServerState;
 use crate::wfe::file_contracts::{
     FilesArchiveRequest, FilesDownloadRequest, FilesErrorResponse, FilesListRequest,
-    FilesReadRequest, GitDiffRequest, GitStatusRequest, WFE_FILES_READ_CHUNK_BYTES, WFE_FILES_REQUEST_BYTES,
+    FilesReadRequest, GitDiffRequest, GitStatusRequest, WFE_FILES_READ_CHUNK_BYTES,
+    WFE_FILES_REQUEST_BYTES,
 };
 use crate::wfe::files::{FileOperationGuard, FilesError};
 use axum::Router;

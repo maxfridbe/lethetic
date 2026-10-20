@@ -115,10 +115,11 @@ static CATEGORY_THEME: LazyLock<syntect::highlighting::Theme> = LazyLock::new(||
 });
 
 fn themed_color(color: syntect::highlighting::Color, theme: &crate::ui::Theme) -> Color {
-    if color.g == MARK_G && color.b == MARK_B {
-        if let Some(category) = CODE_CATEGORIES.get(color.r as usize) {
-            return category.color(theme);
-        }
+    if color.g == MARK_G
+        && color.b == MARK_B
+        && let Some(category) = CODE_CATEGORIES.get(color.r as usize)
+    {
+        return category.color(theme);
     }
     Color::Rgb(color.r, color.g, color.b)
 }

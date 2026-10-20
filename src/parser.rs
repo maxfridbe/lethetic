@@ -1,3 +1,6 @@
+/// Parsed tool calls and their end offset, or a parse error at an offset.
+pub type ToolCallParseResult = Result<(Vec<ToolCall>, usize), (String, usize)>;
+
 use crate::app::BlockType;
 use crate::context::ToolCall;
 use serde_json::{Map, Value};
@@ -905,10 +908,7 @@ pub fn find_tool_call(
 }
 /// Every text-format tool call in `text`, in order, with the end position of
 /// the last one. Stops at the first malformed call and reports it.
-pub fn find_tool_calls(
-    text: &str,
-    is_final: bool,
-) -> Option<Result<(Vec<ToolCall>, usize), (String, usize)>> {
+pub fn find_tool_calls(text: &str, is_final: bool) -> Option<ToolCallParseResult> {
     let mut calls = Vec::new();
     let mut offset = 0;
     while let Some(found) = find_tool_call(&text[offset..], is_final) {
@@ -936,7 +936,12 @@ fn find_tool_calls_returns_every_call_in_order() {
     let (calls, end) = find_tool_calls(text, true).unwrap().unwrap();
     let paths: Vec<_> = calls
         .iter()
-        .map(|call| call.function.arguments["path"].as_str().unwrap().to_string())
+        .map(|call| {
+            call.function.arguments["path"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        })
         .collect();
     assert_eq!(paths, ["a.rs", "b.rs"]);
     assert_eq!(end, text.len());

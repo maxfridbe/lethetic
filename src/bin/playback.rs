@@ -63,7 +63,7 @@ fn main() {
         };
 
         let chunk_preview = if chunk.len() > 60 {
-            format!("{}…", &chunk[..60].replace('\n', "↵"))
+            format!("{}…", chunk[..60].replace('\n', "↵"))
         } else {
             chunk.replace('\n', "↵")
         };
@@ -80,7 +80,7 @@ fn main() {
         for (bt, content) in &results {
             let label = block_type_label(bt);
             let preview = if content.len() > 80 {
-                format!("{}…", &content[..80].replace('\n', "↵"))
+                format!("{}…", content[..80].replace('\n', "↵"))
             } else {
                 content.replace('\n', "↵")
             };

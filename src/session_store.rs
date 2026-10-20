@@ -407,8 +407,8 @@ impl SessionStore {
     ) -> Result<SessionLease, String> {
         validate_session_id(session_id)?;
         let lifecycle = read_lifecycle_record(&self.locks_root, session_id)?;
-        if let Some(record) = &lifecycle {
-            if record.directory_name
+        if let Some(record) = &lifecycle
+            && (record.directory_name
                 != path
                     .file_name()
                     .and_then(|name| name.to_str())
@@ -416,10 +416,9 @@ impl SessionStore {
                 || record
                     .binding
                     .as_ref()
-                    .is_some_and(|binding| binding.canonical_path != path)
-            {
-                return Err("session deletion record targets a different path".to_string());
-            }
+                    .is_some_and(|binding| binding.canonical_path != path))
+        {
+            return Err("session deletion record targets a different path".to_string());
         }
         let path_lock = self
             .try_lock_session_path(path)?
@@ -1294,10 +1293,12 @@ mod tests {
         let (path, lease) = store
             .create_locked_session("session_20260825_commit", SESSION_ID)
             .unwrap();
-        let mut state = crate::app::SessionState::default();
-        state.session_id = Some(SESSION_ID.to_string());
-        state.session_directory_binding = Some(lease.binding().clone());
-        state.needs_migration_save = false;
+        let state = crate::app::SessionState {
+            session_id: Some(SESSION_ID.to_string()),
+            session_directory_binding: Some(lease.binding().clone()),
+            needs_migration_save: false,
+            ..Default::default()
+        };
         state
             .save_to_directory_checked(path.to_str().unwrap())
             .unwrap();
@@ -1427,9 +1428,11 @@ mod tests {
         let (path, lease) = store
             .create_locked_session("session_20260825_restored", SESSION_ID)
             .unwrap();
-        let mut state = crate::app::SessionState::default();
-        state.session_id = Some(SESSION_ID.to_string());
-        state.session_directory_binding = Some(lease.binding().clone());
+        let state = crate::app::SessionState {
+            session_id: Some(SESSION_ID.to_string()),
+            session_directory_binding: Some(lease.binding().clone()),
+            ..Default::default()
+        };
         state
             .save_to_directory_checked(path.to_str().unwrap())
             .unwrap();

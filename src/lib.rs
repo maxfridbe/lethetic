@@ -24,9 +24,9 @@ pub mod python_policy;
 pub mod python_setup;
 pub mod remote_control;
 pub mod saved_models;
-pub mod skills;
 #[cfg(target_os = "linux")]
 pub mod session_store;
+pub mod skills;
 pub mod status_summary;
 pub mod system_prompt;
 pub mod theme;

@@ -1,14 +1,14 @@
+mod background_tasks;
 mod block;
 mod chat;
 mod layout;
 mod model_catalog;
-mod skills;
 mod overlays;
 mod python_setup;
 mod remote_control;
+mod skills;
 mod status;
 mod todos;
-mod background_tasks;
 
 pub use crate::theme::Theme;
 pub use block::{render_block_to_lines, render_block_to_lines_with_cost_visibility};

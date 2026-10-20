@@ -851,13 +851,10 @@ fn remove_entry_at<Fd: std::os::fd::AsFd>(
             || stat.st_ino != node.path.inode
             || !FileType::from_raw_mode(stat.st_mode).is_dir()
         {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!(
-                    "directory changed while preparing deletion: {:?}",
-                    node.path.name
-                ),
-            ));
+            return Err(std::io::Error::other(format!(
+                "directory changed while preparing deletion: {:?}",
+                node.path.name
+            )));
         }
 
         if node.expanded {
@@ -955,8 +952,7 @@ fn open_deletion_parent<Fd: std::os::fd::AsFd>(
             || stat.st_ino != ancestor.inode
             || !FileType::from_raw_mode(stat.st_mode).is_dir()
         {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 "ancestor changed while reopening deletion path",
             ));
         }
@@ -1008,21 +1004,13 @@ fn try_remove_empty_unowned_directory<Fd: std::os::fd::AsFd>(
         || current.st_ino != expected.st_ino
         || !FileType::from_raw_mode(current.st_mode).is_dir()
     {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
+        return Err(std::io::Error::other(
             "unowned directory changed before exact empty-directory removal",
         ));
     }
     match rustix::fs::unlinkat(parent, name, AtFlags::REMOVEDIR) {
         Ok(()) => Ok(true),
-        Err(error)
-            if matches!(
-                error,
-                rustix::io::Errno::NOTEMPTY | rustix::io::Errno::EXIST
-            ) =>
-        {
-            Ok(false)
-        }
+        Err(rustix::io::Errno::NOTEMPTY | rustix::io::Errno::EXIST) => Ok(false),
         Err(error) => Err(errno_to_io(error)),
     }
 }
@@ -1040,8 +1028,7 @@ fn normalize_deletion_directory<Fd: std::os::fd::AsFd>(
     if stat.st_mode & 0o700 != 0o700 {
         let (handle, current) = inspect_deletion_entry(parent, name, expected_mount_id)?;
         if current.st_dev != stat.st_dev || current.st_ino != stat.st_ino {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 "directory changed before permission normalization",
             ));
         }
@@ -1095,10 +1082,10 @@ fn unlink_inspected_entry<Fd: std::os::fd::AsFd>(
         || current.st_ino != expected_inode
         || rustix::fs::FileType::from_raw_mode(current.st_mode) != expected_type
     {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("entry changed while preparing deletion: {:?}", name),
-        ));
+        return Err(std::io::Error::other(format!(
+            "entry changed while preparing deletion: {:?}",
+            name
+        )));
     }
     rustix::fs::unlinkat(parent, name, AtFlags::empty()).map_err(errno_to_io)
 }

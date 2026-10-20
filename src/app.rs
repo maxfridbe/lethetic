@@ -20,13 +20,14 @@ pub use input::handle_key;
 pub use lifecycle::SessionSummary;
 pub use model_catalog::ModelCatalogState;
 pub use remote_control::{RcInfoState, RcResumeOffer, RcSetupStage, RcSetupState};
-pub use skills_panel::{SkillRow, SkillsPanel};
 pub use session_state::{
     SessionDirectoryBinding, SessionSettings, SessionState, SessionWorkspaceBinding,
     describe_python_policy, normalize_session_display_name,
 };
+pub use skills_panel::{SkillRow, SkillsPanel};
 pub use tool_calls::{
-    ApprovalMode, handle_tool_call, handle_tool_call_with_provider, start_next_queued_tool_call,
+    ApprovalMode, ToolCallPresentation, handle_tool_call, handle_tool_call_with_provider,
+    start_next_queued_tool_call,
 };
 pub use transcript::{BlockType, RenderBlock};
 pub(crate) use transcript::{

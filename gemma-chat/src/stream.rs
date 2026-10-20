@@ -579,7 +579,11 @@ mod tests {
             })
             .collect();
         assert_eq!(names, ["read_file", "run_shell_command"], "index order");
-        assert!(!events.iter().any(|event| matches!(event, StreamEvent::Error(_))));
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, StreamEvent::Error(_)))
+        );
     }
 
     #[test]

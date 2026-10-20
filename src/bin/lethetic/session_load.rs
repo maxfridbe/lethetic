@@ -165,7 +165,7 @@ pub(crate) fn begin(
             let _ = tx.send(StreamEvent::LoadProgress(100.0, "Finishing...".to_string()));
             let _ = tx.send(StreamEvent::SessionLoaded {
                 dir: filename_for_task,
-                state,
+                state: Box::new(state),
                 lease: std::sync::Arc::new(lease),
             });
         });

@@ -47,12 +47,14 @@ fn native_provider_id_is_the_notebook_audit_identity() {
     handle_tool_call_with_provider(
         &mut app,
         vec![call],
-        0,
+        lethetic::app::ToolCallPresentation {
+            pos: 0,
+            full_response_content: "",
+            is_native: true,
+            provider_content: None,
+        },
         tx,
         &mut cancellation,
-        "",
-        true,
-        None,
     );
 
     let path = app
@@ -107,12 +109,14 @@ fn malformed_python_call_is_a_terminal_denied_audit_cell() {
     handle_tool_call_with_provider(
         &mut app,
         vec![call],
-        0,
+        lethetic::app::ToolCallPresentation {
+            pos: 0,
+            full_response_content: "",
+            is_native: true,
+            provider_content: None,
+        },
         tx,
         &mut cancellation,
-        "",
-        true,
-        None,
     );
 
     let path = app.tool_runtime.python_notebook_path().unwrap();
@@ -155,12 +159,14 @@ fn disallowed_python_dispatch_is_a_terminal_denied_audit_cell() {
     handle_tool_call_with_provider(
         &mut app,
         vec![call],
-        0,
+        lethetic::app::ToolCallPresentation {
+            pos: 0,
+            full_response_content: "",
+            is_native: true,
+            provider_content: None,
+        },
         tx,
         &mut cancellation,
-        "",
-        true,
-        None,
     );
 
     let path = app.tool_runtime.python_notebook_path().unwrap();
@@ -237,12 +243,14 @@ fn parallel_python_batch_is_rejected_and_every_call_is_audited() {
     let outcome = handle_tool_call_with_provider(
         &mut app,
         calls,
-        0,
+        lethetic::app::ToolCallPresentation {
+            pos: 0,
+            full_response_content: "Provider preamble",
+            is_native: true,
+            provider_content: None,
+        },
         tx,
         &mut cancellation,
-        "Provider preamble",
-        true,
-        None,
     );
 
     assert_eq!(outcome, lethetic::app::AppEventOutcome::Continue);

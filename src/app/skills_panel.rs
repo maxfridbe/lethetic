@@ -1,8 +1,8 @@
 //! The Skills menu: turn found skills on or off, and install catalog skills.
 
 use super::*;
-use crate::skills::catalog::{self, CatalogEntry};
 use crate::skills::Skill;
+use crate::skills::catalog::{self, CatalogEntry};
 use crossterm::event::{self, KeyCode};
 
 #[derive(Debug, Clone)]
@@ -150,7 +150,9 @@ mod tests {
         app.skills_panel = Some(panel);
         let key = event::KeyEvent::new(KeyCode::Enter, event::KeyModifiers::NONE);
         let outcome = handle_skills_key(&mut app, key);
-        assert!(matches!(outcome, AppEventOutcome::InstallSkill { ref name } if name == "mcp-builder"));
+        assert!(
+            matches!(outcome, AppEventOutcome::InstallSkill { ref name } if name == "mcp-builder")
+        );
         let panel = app.skills_panel.as_ref().unwrap();
         assert_eq!(panel.installing.as_deref(), Some("mcp-builder"));
 

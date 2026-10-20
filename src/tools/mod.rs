@@ -1,5 +1,15 @@
+/// Services and cancellation for a model-backed image or summarization tool.
+pub struct ModelToolContext<'a> {
+    pub cwd: &'a str,
+    pub client: &'a reqwest::Client,
+    pub config: &'a crate::config::Config,
+    pub tx: &'a tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>,
+    pub cancellation: tokio_util::sync::CancellationToken,
+}
+
 pub mod apply_patch;
 pub mod ask_the_user;
+pub mod background_task;
 pub mod calculate;
 pub mod edit;
 pub mod fetch_url;
@@ -18,10 +28,9 @@ pub mod read_folder;
 pub mod read_page; // kept for backwards-compat dispatch only
 pub mod replace_text;
 pub mod repo_overview;
-pub mod background_task;
-pub mod skill;
 pub mod run_shell_command;
 pub mod search_text;
+pub mod skill;
 pub mod summarize_content;
 pub mod task;
 pub mod todowrite;
@@ -480,50 +489,33 @@ pub fn get_ui_description(func_name: &str, arguments: &serde_json::Value) -> Str
     }
 }
 
+/// Workspace and services shared by a tool invocation.
+pub struct ToolContext<'a> {
+    pub cwd: &'a str,
+    pub cancellation_token: tokio_util::sync::CancellationToken,
+    pub tx: tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>,
+    pub client: &'a reqwest::Client,
+    pub config: &'a crate::config::Config,
+}
+
 pub fn execute<'a>(
     func_name: &'a str,
     arguments: &'a serde_json::Value,
-    cwd: &'a str,
-    cancellation_token: tokio_util::sync::CancellationToken,
-    tx: tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>,
-    client: &'a reqwest::Client,
-    config: &'a crate::config::Config,
+    options: ToolContext<'a>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ToolExecution> + Send + 'a>> {
-    execute_for_surface(
-        ToolSurface::Interactive,
-        func_name,
-        arguments,
-        cwd,
-        cancellation_token,
-        tx,
-        client,
-        config,
-    )
+    execute_for_surface(ToolSurface::Interactive, func_name, arguments, options)
 }
 
 pub fn execute_for_surface<'a>(
     surface: ToolSurface,
     func_name: &'a str,
     arguments: &'a serde_json::Value,
-    cwd: &'a str,
-    cancellation_token: tokio_util::sync::CancellationToken,
-    tx: tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>,
-    client: &'a reqwest::Client,
-    config: &'a crate::config::Config,
+    options: ToolContext<'a>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ToolExecution> + Send + 'a>> {
     Box::pin(async move {
-        let runtime = crate::tool_runtime::ToolRuntime::new(surface, std::path::PathBuf::from(cwd));
-        execute_with_runtime(
-            &runtime,
-            func_name,
-            arguments,
-            cwd,
-            cancellation_token,
-            tx,
-            client,
-            config,
-        )
-        .await
+        let runtime =
+            crate::tool_runtime::ToolRuntime::new(surface, std::path::PathBuf::from(options.cwd));
+        execute_with_runtime(&runtime, func_name, arguments, options).await
     })
 }
 
@@ -531,46 +523,38 @@ pub fn execute_with_runtime<'a>(
     runtime: &'a crate::tool_runtime::ToolRuntime,
     func_name: &'a str,
     arguments: &'a serde_json::Value,
-    cwd: &'a str,
-    cancellation_token: tokio_util::sync::CancellationToken,
-    tx: tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>,
-    client: &'a reqwest::Client,
-    config: &'a crate::config::Config,
+    options: ToolContext<'a>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ToolExecution> + Send + 'a>> {
-    execute_with_runtime_and_request_hook(
-        runtime,
-        func_name,
-        arguments,
-        cwd,
-        cancellation_token,
-        tx,
-        client,
-        config,
-        None,
-    )
+    execute_with_runtime_and_request_hook(runtime, func_name, arguments, options, None)
 }
 
 pub fn execute_with_runtime_and_request_hook<'a>(
     runtime: &'a crate::tool_runtime::ToolRuntime,
     func_name: &'a str,
     arguments: &'a serde_json::Value,
-    cwd: &'a str,
-    cancellation_token: tokio_util::sync::CancellationToken,
-    tx: tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>,
-    client: &'a reqwest::Client,
-    config: &'a crate::config::Config,
+    options: ToolContext<'a>,
     request_hook: Option<crate::client::RequestStartedHook>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ToolExecution> + Send + 'a>> {
+    let ToolContext {
+        cwd,
+        cancellation_token,
+        tx,
+        client,
+        config,
+    } = options;
+
     Box::pin(async move {
         let mut execution = execute_dispatch(
             runtime,
             func_name,
             arguments,
-            cwd,
-            cancellation_token,
-            tx,
-            client,
-            config,
+            ToolContext {
+                cwd,
+                cancellation_token,
+                tx,
+                client,
+                config,
+            },
             request_hook,
         )
         .await;
@@ -585,18 +569,21 @@ pub fn execute_with_runtime_and_request_hook<'a>(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn execute_dispatch<'a>(
     runtime: &'a crate::tool_runtime::ToolRuntime,
     func_name: &'a str,
     arguments: &'a serde_json::Value,
-    cwd: &'a str,
-    cancellation_token: tokio_util::sync::CancellationToken,
-    tx: tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>,
-    client: &'a reqwest::Client,
-    config: &'a crate::config::Config,
+    options: ToolContext<'a>,
     request_hook: Option<crate::client::RequestStartedHook>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ToolExecution> + Send + 'a>> {
+    let ToolContext {
+        cwd,
+        cancellation_token,
+        tx,
+        client,
+        config,
+    } = options;
+
     Box::pin(async move {
         let surface = runtime.surface();
         if let Some(error) = tool_admission_error(config, surface, func_name) {
@@ -740,11 +727,13 @@ fn execute_dispatch<'a>(
                 let query = arguments["query"].as_str();
                 (
                     lsp::execute(
-                        operation,
-                        file_path,
-                        line,
-                        character,
-                        query,
+                        crate::tools::lsp::LspRequest {
+                            operation,
+                            file_path,
+                            line,
+                            character,
+                            query,
+                        },
                         cwd,
                         cancellation_token,
                         tx,
@@ -827,11 +816,13 @@ fn execute_dispatch<'a>(
                         prompt,
                         image_path,
                         max_size,
-                        cwd,
-                        client,
-                        config,
-                        &tx,
-                        cancellation_token,
+                        crate::tools::ModelToolContext {
+                            cwd,
+                            client,
+                            config,
+                            tx: &tx,
+                            cancellation: cancellation_token,
+                        },
                         request_hook.clone(),
                     )
                     .await,
@@ -855,11 +846,13 @@ fn execute_dispatch<'a>(
                         pdf_path,
                         page_num,
                         max_size,
-                        cwd,
-                        client,
-                        config,
-                        &tx,
-                        cancellation_token,
+                        crate::tools::ModelToolContext {
+                            cwd,
+                            client,
+                            config,
+                            tx: &tx,
+                            cancellation: cancellation_token,
+                        },
                         request_hook.clone(),
                     )
                     .await,
@@ -880,11 +873,13 @@ fn execute_dispatch<'a>(
                         path,
                         content,
                         prompt,
-                        cwd,
-                        client,
-                        config,
-                        &tx,
-                        cancellation_token,
+                        crate::tools::ModelToolContext {
+                            cwd,
+                            client,
+                            config,
+                            tx: &tx,
+                            cancellation: cancellation_token,
+                        },
                         request_hook.clone(),
                     )
                     .await,
@@ -1181,11 +1176,13 @@ mod tests {
             ToolSurface::Interactive,
             "run_shell_command",
             &serde_json::json!({"command": "printf should-not-run"}),
-            ".",
-            tokio_util::sync::CancellationToken::new(),
-            tx,
-            &reqwest::Client::new(),
-            &config,
+            ToolContext {
+                cwd: ".",
+                cancellation_token: tokio_util::sync::CancellationToken::new(),
+                tx,
+                client: &reqwest::Client::new(),
+                config: &config,
+            },
         )
         .await;
         assert!(execution.is_error);
@@ -1203,11 +1200,13 @@ mod tests {
             ToolSurface::Headless,
             "python",
             &serde_json::json!({"code": "1 + 1", "description": "must not run"}),
-            ".",
-            tokio_util::sync::CancellationToken::new(),
-            tx,
-            &reqwest::Client::new(),
-            &invalid_python,
+            ToolContext {
+                cwd: ".",
+                cancellation_token: tokio_util::sync::CancellationToken::new(),
+                tx,
+                client: &reqwest::Client::new(),
+                config: &invalid_python,
+            },
         )
         .await;
         assert!(execution.is_error);
@@ -1218,11 +1217,13 @@ mod tests {
             ToolSurface::Headless,
             "task",
             &serde_json::json!({}),
-            ".",
-            tokio_util::sync::CancellationToken::new(),
-            tx,
-            &reqwest::Client::new(),
-            &Config::default(),
+            ToolContext {
+                cwd: ".",
+                cancellation_token: tokio_util::sync::CancellationToken::new(),
+                tx,
+                client: &reqwest::Client::new(),
+                config: &Config::default(),
+            },
         )
         .await;
         assert!(execution.is_error);
@@ -1245,11 +1246,13 @@ mod tests {
                 "url": "https://example.invalid/never-started",
                 "format": "text"
             }),
-            workspace.path().to_str().unwrap(),
-            cancellation,
-            tx,
-            &reqwest::Client::new(),
-            &config,
+            ToolContext {
+                cwd: workspace.path().to_str().unwrap(),
+                cancellation_token: cancellation,
+                tx,
+                client: &reqwest::Client::new(),
+                config: &config,
+            },
         )
         .await;
 
@@ -1319,11 +1322,13 @@ mod tests {
                 "description": "invalid",
                 "__lethetic_canonical_tool_call_id": "tool-malformed"
             }),
-            workspace.path().to_str().unwrap(),
-            tokio_util::sync::CancellationToken::new(),
-            tx,
-            &reqwest::Client::new(),
-            &config,
+            ToolContext {
+                cwd: workspace.path().to_str().unwrap(),
+                cancellation_token: tokio_util::sync::CancellationToken::new(),
+                tx,
+                client: &reqwest::Client::new(),
+                config: &config,
+            },
         )
         .await;
         assert!(execution.is_error);
@@ -1374,11 +1379,13 @@ mod tests {
                 "description": "initialize value",
                 "__lethetic_canonical_tool_call_id": "tool-python-1"
             }),
-            cwd.to_str().unwrap(),
-            tokio_util::sync::CancellationToken::new(),
-            tx.clone(),
-            &client,
-            &config,
+            ToolContext {
+                cwd: cwd.to_str().unwrap(),
+                cancellation_token: tokio_util::sync::CancellationToken::new(),
+                tx: tx.clone(),
+                client: &client,
+                config: &config,
+            },
         )
         .await;
         assert!(!first.is_error, "{}", first.output);
@@ -1407,11 +1414,13 @@ mod tests {
                 "description": "read value",
                 "__lethetic_canonical_tool_call_id": "tool-python-2"
             }),
-            &first.cwd,
-            tokio_util::sync::CancellationToken::new(),
-            tx,
-            &client,
-            &config,
+            ToolContext {
+                cwd: &first.cwd,
+                cancellation_token: tokio_util::sync::CancellationToken::new(),
+                tx,
+                client: &client,
+                config: &config,
+            },
         )
         .await;
         assert!(!second.is_error, "{}", second.output);
@@ -1435,11 +1444,13 @@ mod tests {
             &runtime,
             "todowrite",
             &serde_json::json!({"todos": []}),
-            workspace.path().to_str().unwrap(),
-            tokio_util::sync::CancellationToken::new(),
-            tx,
-            &reqwest::Client::new(),
-            &config,
+            ToolContext {
+                cwd: workspace.path().to_str().unwrap(),
+                cancellation_token: tokio_util::sync::CancellationToken::new(),
+                tx,
+                client: &reqwest::Client::new(),
+                config: &config,
+            },
         )
         .await;
 
@@ -1466,11 +1477,13 @@ mod tests {
             &runtime,
             "todowrite",
             &serde_json::json!({"todos": []}),
-            nested.to_str().unwrap(),
-            tokio_util::sync::CancellationToken::new(),
-            tx,
-            &reqwest::Client::new(),
-            &config,
+            ToolContext {
+                cwd: nested.to_str().unwrap(),
+                cancellation_token: tokio_util::sync::CancellationToken::new(),
+                tx,
+                client: &reqwest::Client::new(),
+                config: &config,
+            },
         )
         .await;
 

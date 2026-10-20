@@ -497,7 +497,9 @@ pub(crate) fn execute_wfe_command<'a>(
                             Ok(CommandOutcome::Applied)
                         }
                         Err(error) => {
-                            context.app.log_debug(&format!("SKILL_SETTINGS_SAVE_ERROR: {error}"));
+                            context
+                                .app
+                                .log_debug(&format!("SKILL_SETTINGS_SAVE_ERROR: {error}"));
                             Err(wfe_failure(
                                 CommandErrorCode::SaveFailed,
                                 "Could not save the skill choice",

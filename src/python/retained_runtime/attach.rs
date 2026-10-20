@@ -446,24 +446,24 @@ async fn settle_attached_runtime(
             return Err(error);
         }
     };
-    if identity.running {
-        if let Err(error) = run_stop(&config.podman, container_id).await {
-            let verification = verify_exact_container_stopped(&config.podman, container_id).await;
-            let attach_finish = finish_attach_child(attach).await;
-            let mut detail = format!("container stop failed: {error}");
-            if let Err(verification_error) = verification {
-                detail.push_str(&format!(
-                    "; exact stopped-state verification failed: {verification_error}"
-                ));
-            }
-            if let Err(finish_error) = attach_finish {
-                detail.push_str(&format!(
-                    "; attach-process containment failed: {finish_error}"
-                ));
-            }
-            quarantine_manifest(store, lock, manifest, detail.clone())?;
-            return Err(detail);
+    if identity.running
+        && let Err(error) = run_stop(&config.podman, container_id).await
+    {
+        let verification = verify_exact_container_stopped(&config.podman, container_id).await;
+        let attach_finish = finish_attach_child(attach).await;
+        let mut detail = format!("container stop failed: {error}");
+        if let Err(verification_error) = verification {
+            detail.push_str(&format!(
+                "; exact stopped-state verification failed: {verification_error}"
+            ));
         }
+        if let Err(finish_error) = attach_finish {
+            detail.push_str(&format!(
+                "; attach-process containment failed: {finish_error}"
+            ));
+        }
+        quarantine_manifest(store, lock, manifest, detail.clone())?;
+        return Err(detail);
     }
     if let Err(error) = finish_attach_child_then(attach, Duration::ZERO, CHILD_KILL_TIMEOUT, || {
         verify_exact_container_stopped(&config.podman, container_id)

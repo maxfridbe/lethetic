@@ -905,13 +905,15 @@ impl RealRuntimeFixture {
             session_id,
             image.image_id,
             security_fingerprint.clone(),
-            workspace.clone(),
-            if shared {
-                RuntimeWorkspaceOwnership::ExternalLaunchCwd
-            } else {
-                RuntimeWorkspaceOwnership::Managed
+            crate::python::runtime_store::RuntimeWorkspaceBinding {
+                workspace: workspace.clone(),
+                workspace_ownership: if shared {
+                    RuntimeWorkspaceOwnership::ExternalLaunchCwd
+                } else {
+                    RuntimeWorkspaceOwnership::Managed
+                },
+                managed_workspace: shared.then_some(managed_workspace),
             },
-            shared.then_some(managed_workspace),
             Utc::now(),
         )
         .unwrap();

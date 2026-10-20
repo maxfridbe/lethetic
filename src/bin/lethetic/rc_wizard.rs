@@ -22,11 +22,7 @@ async fn ask(
         tokio::select! {
             biased;
             signal = signals.recv() => {
-                match signal_action(RuntimeMode::Interactive, signal?) {
-                    SignalAction::BeginShutdown(reason) => return Ok(Err(reason)),
-                    #[allow(unreachable_patterns)]
-                    _ => {}
-                }
+                if let SignalAction::BeginShutdown(reason) = signal_action(RuntimeMode::Interactive, signal?) { return Ok(Err(reason)) }
             }
             line = input.receive() => {
                 return Ok(match line {

@@ -1421,7 +1421,7 @@ fn json_topology(
     }))
 }
 
-pub(super) fn validate_route_get<'a>(value: &'a Value, address: IpAddr) -> Result<&'a str, String> {
+pub(super) fn validate_route_get(value: &Value, address: IpAddr) -> Result<&str, String> {
     let routes = value
         .as_array()
         .ok_or_else(|| "ip route-get JSON is not an array".to_string())?;

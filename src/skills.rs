@@ -100,9 +100,15 @@ impl SkillSettings {
 /// Where skills are looked for, in priority order.
 pub fn search_roots(project: &Path) -> Vec<(PathBuf, SkillSource)> {
     let mut roots = vec![
-        (project.join(".lethetic").join("skills"), SkillSource::LetheticProject),
+        (
+            project.join(".lethetic").join("skills"),
+            SkillSource::LetheticProject,
+        ),
         (user_skill_root(), SkillSource::LetheticUser),
-        (project.join(".claude").join("skills"), SkillSource::ClaudeProject),
+        (
+            project.join(".claude").join("skills"),
+            SkillSource::ClaudeProject,
+        ),
     ];
     if let Some(home) = std::env::var_os("HOME") {
         roots.push((

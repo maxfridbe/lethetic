@@ -90,10 +90,13 @@ async fn prepare_retained_launch_inner(
     let creation_intent = RuntimeCreationIntent::new_with_workspace_binding(
         runtime_id.clone(),
         binding.session_id.clone(),
-        workspace.clone(),
-        workspace_ownership,
-        (workspace_ownership == RuntimeWorkspaceOwnership::ExternalLaunchCwd)
-            .then_some(managed_workspace.clone()),
+        crate::python::runtime_store::RuntimeWorkspaceBinding {
+            workspace: workspace.clone(),
+            workspace_ownership,
+            managed_workspace: (workspace_ownership
+                == RuntimeWorkspaceOwnership::ExternalLaunchCwd)
+                .then_some(managed_workspace.clone()),
+        },
     )?;
     if created {
         if store.load_deletion_receipt(&lock)?.is_some() {
@@ -206,11 +209,13 @@ async fn prepare_retained_launch_inner(
             &store,
             &lock,
             &podman_config,
-            &workspace,
-            &managed_workspace,
-            workspace_ownership,
-            &security_fingerprint,
-            &legacy_security_fingerprint,
+            RuntimeBindingCheck {
+                workspace: &workspace,
+                managed_workspace: &managed_workspace,
+                workspace_ownership,
+                security_fingerprint: &security_fingerprint,
+                legacy_security_fingerprint: &legacy_security_fingerprint,
+            },
         )
         .await?;
     }
@@ -284,10 +289,13 @@ async fn create_runtime(
         config.session_id.clone(),
         config.image_id.clone(),
         security_fingerprint,
-        workspace.clone(),
-        workspace_ownership,
-        (workspace_ownership == RuntimeWorkspaceOwnership::ExternalLaunchCwd)
-            .then_some(managed_workspace.clone()),
+        crate::python::runtime_store::RuntimeWorkspaceBinding {
+            workspace: workspace.clone(),
+            workspace_ownership,
+            managed_workspace: (workspace_ownership
+                == RuntimeWorkspaceOwnership::ExternalLaunchCwd)
+                .then_some(managed_workspace.clone()),
+        },
         Utc::now(),
     )?;
     store.save_manifest(lock, &manifest)?;
@@ -398,16 +406,28 @@ pub(super) fn require_current_attach_abi(manifest: &RuntimeManifest) -> Result<(
     ))
 }
 
+struct RuntimeBindingCheck<'a> {
+    workspace: &'a WorkspaceIdentity,
+    managed_workspace: &'a WorkspaceIdentity,
+    workspace_ownership: RuntimeWorkspaceOwnership,
+    security_fingerprint: &'a str,
+    legacy_security_fingerprint: &'a str,
+}
+
 async fn validate_existing_runtime(
     store: &RuntimeStore,
     lock: &RuntimeLock,
     config: &RetainedPodmanConfig,
-    workspace: &WorkspaceIdentity,
-    managed_workspace: &WorkspaceIdentity,
-    workspace_ownership: RuntimeWorkspaceOwnership,
-    security_fingerprint: &str,
-    legacy_security_fingerprint: &str,
+    options: RuntimeBindingCheck<'_>,
 ) -> Result<(), String> {
+    let RuntimeBindingCheck {
+        workspace,
+        managed_workspace,
+        workspace_ownership,
+        security_fingerprint,
+        legacy_security_fingerprint,
+    } = options;
+
     let mut manifest = store.load_manifest(lock)?;
     import_legacy_manifest(store, lock, &mut manifest, &config.podman).await?;
     require_current_attach_abi(&manifest)?;

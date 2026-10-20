@@ -213,7 +213,10 @@ mod tests {
 
     #[test]
     fn repository_paths_cannot_escape_the_skill_folder() {
-        assert_eq!(safe_relative("scripts/run.py"), Some(PathBuf::from("scripts/run.py")));
+        assert_eq!(
+            safe_relative("scripts/run.py"),
+            Some(PathBuf::from("scripts/run.py"))
+        );
         assert_eq!(safe_relative("../evil"), None);
         assert_eq!(safe_relative("/etc/passwd"), None);
         assert_eq!(safe_relative("./a"), None);
@@ -224,12 +227,17 @@ mod tests {
     async fn installs_a_catalog_skill_from_github() {
         let root = tempfile::tempdir().unwrap();
         let client = reqwest::Client::new();
-        let path = install(&client, "webapp-testing", root.path()).await.unwrap();
+        let path = install(&client, "webapp-testing", root.path())
+            .await
+            .unwrap();
         assert!(path.join("SKILL.md").is_file());
         assert!(path.join(".lethetic-source").is_file());
         let skills = crate::skills::discover_with(
             Path::new("."),
-            &[(root.path().to_path_buf(), crate::skills::SkillSource::LetheticUser)],
+            &[(
+                root.path().to_path_buf(),
+                crate::skills::SkillSource::LetheticUser,
+            )],
             &crate::skills::SkillSettings::default(),
         );
         assert_eq!(skills[0].name, "webapp-testing");
@@ -240,9 +248,11 @@ mod tests {
             std::fs::read_dir(root.path())
                 .unwrap()
                 .flatten()
-                .all(|entry| !entry.file_name().to_string_lossy().starts_with(".installing")),
+                .all(|entry| !entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".installing")),
             "no staging folder is left behind"
         );
     }
-
 }

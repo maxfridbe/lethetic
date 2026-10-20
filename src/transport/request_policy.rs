@@ -374,10 +374,9 @@ mod tests {
         assert!(validate_final_agent_body(&config, &tampered).is_err());
 
         let mut tampered = canonical.clone();
-        tampered["messages"][0]["content"]
-            .as_str()
-            .map(|content| format!("{content}\ntrailing text"))
-            .map(|content| tampered["messages"][0]["content"] = json!(content));
+        if let Some(content) = tampered["messages"][0]["content"].as_str() {
+            tampered["messages"][0]["content"] = json!(format!("{content}\ntrailing text"));
+        }
         assert!(validate_final_agent_body(&config, &tampered).is_err());
 
         let mut tampered = canonical;

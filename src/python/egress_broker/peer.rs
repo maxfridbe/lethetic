@@ -89,11 +89,11 @@ impl SocketGuard {
             if !metadata.file_type().is_socket() {
                 return Err("bound broker path is not a Unix socket".to_string());
             }
-            return Ok(Self {
+            Ok(Self {
                 path,
                 device: metadata.dev(),
                 inode: metadata.ino(),
-            });
+            })
         }
         #[cfg(not(unix))]
         {

@@ -470,20 +470,6 @@ struct ServerState {
 }
 
 impl ServerState {
-    #[cfg(test)]
-    fn new(
-        security: PreparedSecurity,
-        frontend: WfeFrontendHandle,
-        cancellation: CancellationToken,
-    ) -> Result<Self, String> {
-        Self::new_with_options(
-            security,
-            frontend,
-            cancellation,
-            WfeServerOptions::default(),
-        )
-    }
-
     fn new_with_options(
         security: PreparedSecurity,
         frontend: WfeFrontendHandle,
@@ -1356,7 +1342,7 @@ fn snapshot_after_patch(
             StateChange::Models { value } => state.models = value.clone(),
             StateChange::Themes { value } => state.themes = value.clone(),
             StateChange::Usage { value } => state.usage = value.as_ref().clone(),
-            StateChange::Status { value } => state.status = value.clone(),
+            StateChange::Status { value } => state.status = *value.clone(),
             StateChange::Debugger { value } => state.debugger = value.clone(),
             StateChange::Overlay { value } => state.overlay = value.clone(),
         }

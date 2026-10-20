@@ -19,8 +19,8 @@ use crate::wfe::file_contracts::{
     FileEntryKind, FileExclusionCounts, FileListEntry, FilesApiError, FilesArchiveRequest,
     FilesDownloadRequest, FilesErrorCode, FilesListRequest, FilesListResponse, FilesReadRequest,
     FilesReadResponse, GitDiffRequest, GitDiffResponse, GitStatusRequest, GitStatusResponse,
-    WFE_FILES_DOWNLOAD_BYTES, WFE_FILES_LIST_ENTRIES, WFE_FILES_PATH_BYTES,
-    WFE_FILES_PATH_DEPTH, WFE_FILES_VIEW_BYTES,
+    WFE_FILES_DOWNLOAD_BYTES, WFE_FILES_LIST_ENTRIES, WFE_FILES_PATH_BYTES, WFE_FILES_PATH_DEPTH,
+    WFE_FILES_VIEW_BYTES,
 };
 use platform::{ObjectKind, PinnedRoot};
 use policy::ExclusionKind;

@@ -12,7 +12,7 @@ pub use fingerprint::{
 pub use manifest::{
     LEGACY_RUNTIME_ABI_V2, LEGACY_RUNTIME_ABI_V3, RUNTIME_MANIFEST_SCHEMA, RuntimeCreationIntent,
     RuntimeDeletionReceipt, RuntimeLayoutProfile, RuntimeLifecycleState, RuntimeManifest,
-    RuntimeWorkspaceOwnership,
+    RuntimeWorkspaceBinding, RuntimeWorkspaceOwnership,
 };
 #[allow(unused_imports)]
 pub(crate) use store::{BROKER_SOCKET_FILE, LEGACY_BROKER_SOCKET_FILE};

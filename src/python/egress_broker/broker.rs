@@ -1,3 +1,12 @@
+#[derive(Default)]
+struct AuditTraffic<'a> {
+    destination: Option<&'a str>,
+    port: Option<u16>,
+    selected_ip: Option<std::net::IpAddr>,
+    bytes_from_sandbox: u64,
+    bytes_to_sandbox: u64,
+}
+
 use super::adapter::{ProxyIntent, parse_proxy_request};
 use super::network_policy::{
     HostNetworkMonitor, RouteDecision, RouteSnapshot, RouteVerificationFailure,
@@ -133,13 +142,13 @@ impl AuditLog {
             }
             file.set_permissions(std::fs::Permissions::from_mode(0o600))
                 .map_err(|error| format!("could not secure broker audit log: {error}"))?;
-            return Ok(Self {
+            Ok(Self {
                 runtime_id,
                 file: Mutex::new(tokio::fs::File::from_std(file)),
                 bytes: AtomicU64::new(metadata.len()),
                 healthy: AtomicBool::new(true),
                 failed: CancellationToken::new(),
-            });
+            })
         }
         #[cfg(not(unix))]
         {
@@ -161,14 +170,18 @@ impl AuditLog {
     async fn record(
         &self,
         request_id: &str,
-        destination: Option<&str>,
-        port: Option<u16>,
+        options: AuditTraffic<'_>,
         decision: &str,
         code: &str,
-        selected_ip: Option<IpAddr>,
-        bytes_from_sandbox: u64,
-        bytes_to_sandbox: u64,
     ) -> Result<(), String> {
+        let AuditTraffic {
+            destination,
+            port,
+            selected_ip,
+            bytes_from_sandbox,
+            bytes_to_sandbox,
+        } = options;
+
         if !self.is_healthy() {
             return Err("broker audit log is unhealthy".to_string());
         }
@@ -347,16 +360,7 @@ pub async fn run_broker(config: BrokerConfig, cancel: CancellationToken) -> Resu
             _ = network_changed.cancelled() => {
                 shutdown_reason.store(2, Ordering::Release);
                 let _ = audit
-                    .record(
-                        "broker",
-                        None,
-                        None,
-                        "closed",
-                        "route_changed",
-                        None,
-                        0,
-                        0,
-                    )
+                    .record("broker", AuditTraffic::default(), "closed", "route_changed")
                     .await;
                 fatal_error = Some("host network configuration changed; broker restart required".to_string());
                 break;
@@ -381,7 +385,7 @@ pub async fn run_broker(config: BrokerConfig, cancel: CancellationToken) -> Resu
                     Ok(permit) => permit,
                     Err(_) => {
                         if let Err(error) = audit
-                            .record("capacity", None, None, "deny", "capacity", None, 0, 0)
+                            .record("capacity", AuditTraffic::default(), "deny", "capacity")
                             .await
                         {
                             shutdown_reason.store(3, Ordering::Release);
@@ -403,13 +407,12 @@ pub async fn run_broker(config: BrokerConfig, cancel: CancellationToken) -> Resu
                     let _permit = permit;
                     handle_broker_connection(
                         stream,
-                        &runtime_id,
-                        &capability,
-                        peer,
-                        audit,
-                        shutdown,
-                        route_changed,
-                        reason,
+                        BrokerConnectionContext {
+                            runtime_id: &runtime_id,
+                            capability: &capability,
+                            peer, audit, shutdown, route_changed,
+                            shutdown_reason: reason,
+                        },
                     )
                     .await
                 });
@@ -422,13 +425,15 @@ pub async fn run_broker(config: BrokerConfig, cancel: CancellationToken) -> Resu
         let _ = audit
             .record(
                 "broker",
-                None,
-                None,
+                AuditTraffic {
+                    destination: None,
+                    port: None,
+                    selected_ip: None,
+                    bytes_from_sandbox: 0,
+                    bytes_to_sandbox: 0,
+                },
                 "closed",
                 broker_shutdown_code(final_reason),
-                None,
-                0,
-                0,
             )
             .await;
     }
@@ -600,7 +605,18 @@ async fn handle_broker_readiness(
         return Err("broker is not healthy for adapter readiness".to_string());
     }
     audit
-        .record(request_id, None, None, "allow", "ready", None, 0, 0)
+        .record(
+            request_id,
+            AuditTraffic {
+                destination: None,
+                port: None,
+                selected_ip: None,
+                bytes_from_sandbox: 0,
+                bytes_to_sandbox: 0,
+            },
+            "allow",
+            "ready",
+        )
         .await?;
     let response = BrokerResponse {
         version: BROKER_PROTOCOL_VERSION,
@@ -641,28 +657,44 @@ async fn handle_broker_readiness(
     }
 }
 
-async fn handle_broker_connection(
-    mut stream: UnixStream,
-    runtime_id: &str,
-    capability: &str,
+struct BrokerConnectionContext<'a> {
+    runtime_id: &'a str,
+    capability: &'a str,
     peer: Arc<PeerVerifier>,
     audit: Arc<AuditLog>,
     shutdown: CancellationToken,
     route_changed: CancellationToken,
     shutdown_reason: Arc<AtomicU64>,
+}
+
+async fn handle_broker_connection(
+    mut stream: UnixStream,
+    options: BrokerConnectionContext<'_>,
 ) -> Result<(), String> {
+    let BrokerConnectionContext {
+        runtime_id,
+        capability,
+        peer,
+        audit,
+        shutdown,
+        route_changed,
+        shutdown_reason,
+    } = options;
+
     let request_id = next_broker_request_id();
     if let Err(error) = peer.verify(&stream) {
         audit
             .record(
                 &request_id,
-                None,
-                None,
+                AuditTraffic {
+                    destination: None,
+                    port: None,
+                    selected_ip: None,
+                    bytes_from_sandbox: 0,
+                    bytes_to_sandbox: 0,
+                },
                 "deny",
                 "peer_credentials",
-                None,
-                0,
-                0,
             )
             .await?;
         return Err(error);
@@ -675,31 +707,13 @@ async fn handle_broker_connection(
         _ = audit.failed.cancelled() => return Err("broker audit log failed".to_string()),
         _ = route_changed.cancelled() => {
             let _ = audit
-                .record(
-                    &request_id,
-                    None,
-                    None,
-                    "deny",
-                    "route_changed",
-                    None,
-                    0,
-                    0,
-                )
+                .record(&request_id, AuditTraffic::default(), "deny", "route_changed")
                 .await;
             return Err("host network policy changed".to_string());
         },
         _ = shutdown.cancelled() => {
             let _ = audit
-                .record(
-                    &request_id,
-                    None,
-                    None,
-                    "deny",
-                    "broker_shutdown",
-                    None,
-                    0,
-                    0,
-                )
+                .record(&request_id, AuditTraffic::default(), "deny", "broker_shutdown")
                 .await;
             return Err("broker connection cancelled".to_string());
         },
@@ -709,7 +723,18 @@ async fn handle_broker_connection(
         Ok(Ok(request)) => request,
         Ok(Err(error)) => {
             audit
-                .record(&request_id, None, None, "deny", "protocol", None, 0, 0)
+                .record(
+                    &request_id,
+                    AuditTraffic {
+                        destination: None,
+                        port: None,
+                        selected_ip: None,
+                        bytes_from_sandbox: 0,
+                        bytes_to_sandbox: 0,
+                    },
+                    "deny",
+                    "protocol",
+                )
                 .await?;
             return Err(error);
         }
@@ -717,13 +742,15 @@ async fn handle_broker_connection(
             audit
                 .record(
                     &request_id,
-                    None,
-                    None,
+                    AuditTraffic {
+                        destination: None,
+                        port: None,
+                        selected_ip: None,
+                        bytes_from_sandbox: 0,
+                        bytes_to_sandbox: 0,
+                    },
                     "deny",
                     "protocol_timeout",
-                    None,
-                    0,
-                    0,
                 )
                 .await?;
             return Err("broker request timed out".to_string());
@@ -948,13 +975,15 @@ async fn handle_broker_connection(
     audit
         .record(
             &request_id,
-            Some(&intent.host),
-            Some(intent.port),
+            AuditTraffic {
+                destination: Some(&intent.host),
+                port: Some(intent.port),
+                selected_ip: Some(selected),
+                bytes_from_sandbox: 0,
+                bytes_to_sandbox: 0,
+            },
             "allow",
             "connected",
-            Some(selected),
-            0,
-            0,
         )
         .await?;
     if shutdown.is_cancelled() || route_changed.is_cancelled() {
@@ -966,13 +995,15 @@ async fn handle_broker_connection(
         audit
             .record(
                 &request_id,
-                Some(&intent.host),
-                Some(intent.port),
+                AuditTraffic {
+                    destination: Some(&intent.host),
+                    port: Some(intent.port),
+                    selected_ip: Some(selected),
+                    bytes_from_sandbox: 0,
+                    bytes_to_sandbox: 0,
+                },
                 "closed",
                 code,
-                Some(selected),
-                0,
-                0,
             )
             .await?;
         return Ok(());
@@ -1075,13 +1106,15 @@ async fn handle_broker_connection(
     audit
         .record(
             &request_id,
-            Some(&intent.host),
-            Some(intent.port),
+            AuditTraffic {
+                destination: Some(&intent.host),
+                port: Some(intent.port),
+                selected_ip: Some(selected),
+                bytes_from_sandbox: from_sandbox,
+                bytes_to_sandbox: to_sandbox,
+            },
             "closed",
             close_code,
-            Some(selected),
-            from_sandbox,
-            to_sandbox,
         )
         .await?;
     Ok(())
@@ -1096,7 +1129,18 @@ async fn deny_proxy_request(
     code: &str,
 ) -> Result<(), String> {
     audit
-        .record(request_id, destination, port, "deny", code, None, 0, 0)
+        .record(
+            request_id,
+            AuditTraffic {
+                destination,
+                port,
+                selected_ip: None,
+                bytes_from_sandbox: 0,
+                bytes_to_sandbox: 0,
+            },
+            "deny",
+            code,
+        )
         .await?;
     write_frame(
         stream,

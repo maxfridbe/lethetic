@@ -231,7 +231,9 @@ impl Task {
             output_lines: self.output_lines,
             log_path: self.log_path.clone(),
             todo_id: self.todo_id.clone(),
-            finished_ago: self.finished.map(|finished| now.saturating_duration_since(finished)),
+            finished_ago: self
+                .finished
+                .map(|finished| now.saturating_duration_since(finished)),
         }
     }
 }
@@ -249,7 +251,9 @@ static PERCENT: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(\d{1,3}(?:\.\d+)?)\s?%").expect("valid percent pattern"));
 
 fn registry() -> MutexGuard<'static, Registry> {
-    REGISTRY.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    REGISTRY
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn with_task<T>(id: &str, apply: impl FnOnce(&mut Task) -> T) -> Option<T> {
@@ -314,17 +318,25 @@ pub fn output_tail(id: &str, lines: usize) -> Option<Vec<String>> {
 pub fn start(mut spec: StartSpec) -> Result<TaskSnapshot, String> {
     match mode() {
         BackgroundMode::Off => {
-            return Err("background tasks are turned off (command palette: Background Tasks)".to_string());
+            return Err(
+                "background tasks are turned off (command palette: Background Tasks)".to_string(),
+            );
         }
-        BackgroundMode::Poll if spec.notify == NotifyTarget::Model => spec.notify = NotifyTarget::User,
+        BackgroundMode::Poll if spec.notify == NotifyTarget::Model => {
+            spec.notify = NotifyTarget::User
+        }
         _ => {}
     }
     let pattern = match spec.progress_pattern.as_deref().map(str::trim) {
         None | Some("") => None,
         Some(pattern) => {
-            let regex = Regex::new(pattern).map_err(|error| format!("invalid progress_pattern: {error}"))?;
+            let regex = Regex::new(pattern)
+                .map_err(|error| format!("invalid progress_pattern: {error}"))?;
             if regex.captures_len() < 2 {
-                return Err("progress_pattern needs a capture group: (percent) or (done)…(total)".to_string());
+                return Err(
+                    "progress_pattern needs a capture group: (percent) or (done)…(total)"
+                        .to_string(),
+                );
             }
             Some(regex)
         }
@@ -426,7 +438,10 @@ pub fn start(mut spec: StartSpec) -> Result<TaskSnapshot, String> {
                 Ok(status) => TaskState::Exited(status.code()),
                 Err(error) => TaskState::Failed(error.to_string()),
             };
-            if matches!(task.state, TaskState::Exited(Some(0))) && task.pattern.is_none() && task.watch_path.is_none() {
+            if matches!(task.state, TaskState::Exited(Some(0)))
+                && task.pattern.is_none()
+                && task.watch_path.is_none()
+            {
                 task.progress = Some(1.0);
             }
             if task.notify == NotifyTarget::None {
@@ -477,10 +492,13 @@ fn open_log(cwd: &str, id: &str) -> Option<std::fs::File> {
 
 /// Reads one output stream, splitting on `\n` and treating `\r` as "replace
 /// the current line", which is how progress bars redraw themselves.
-async fn pump<R: tokio::io::AsyncRead + Unpin>(id: String, mut reader: R, log_path: Option<PathBuf>) {
-    let mut log = log_path.and_then(|path| {
-        std::fs::OpenOptions::new().append(true).open(path).ok()
-    });
+async fn pump<R: tokio::io::AsyncRead + Unpin>(
+    id: String,
+    mut reader: R,
+    log_path: Option<PathBuf>,
+) {
+    let mut log =
+        log_path.and_then(|path| std::fs::OpenOptions::new().append(true).open(path).ok());
     let mut logged = 0_u64;
     let mut buffer = vec![0_u8; 16 * 1024];
     let mut pending: Vec<u8> = Vec::new();
@@ -582,8 +600,9 @@ fn detect_progress(task: &mut Task, line: &str) {
 
 /// Samples a watched file's size so silent downloads still show progress.
 async fn watch(id: String, stop: CancellationToken) {
-    let Some((path, expected)) = with_task(&id, |task| (task.watch_path.clone(), task.expected_bytes))
-        .and_then(|(path, expected)| path.map(|path| (path, expected)))
+    let Some((path, expected)) =
+        with_task(&id, |task| (task.watch_path.clone(), task.expected_bytes))
+            .and_then(|(path, expected)| path.map(|path| (path, expected)))
     else {
         return;
     };
@@ -601,7 +620,11 @@ async fn watch(id: String, stop: CancellationToken) {
                     }
                     if seconds > 0.0 {
                         let sample = size.saturating_sub(before) as f64 / seconds;
-                        rate = if rate == 0.0 { sample } else { rate * 0.7 + sample * 0.3 };
+                        rate = if rate == 0.0 {
+                            sample
+                        } else {
+                            rate * 0.7 + sample * 0.3
+                        };
                     }
                 }
                 let mut label = format_bytes(size);
@@ -642,7 +665,11 @@ pub fn stop(id: &str) -> bool {
 
 /// Stops every running task; used when Lethetic exits.
 pub fn stop_all() {
-    for task in registry().tasks.iter().filter(|task| task.state.is_running()) {
+    for task in registry()
+        .tasks
+        .iter()
+        .filter(|task| task.state.is_running())
+    {
         task.stop.cancel();
         if let Some(pid) = task.pid {
             crate::platform::terminate_process_group(pid, false);
@@ -696,10 +723,9 @@ pub fn take_model_notifications() -> Vec<TaskSnapshot> {
 
 /// True when a finished task is waiting to be pushed to the model.
 pub fn has_model_notifications() -> bool {
-    registry()
-        .tasks
-        .iter()
-        .any(|task| !task.state.is_running() && !task.delivered && task.notify == NotifyTarget::Model)
+    registry().tasks.iter().any(|task| {
+        !task.state.is_running() && !task.delivered && task.notify == NotifyTarget::Model
+    })
 }
 
 /// Finished `notify=user` tasks the interface has not announced yet. Taking
@@ -783,7 +809,10 @@ pub fn status_line(task: &TaskSnapshot) -> String {
     }
     line.push_str(&format!(" — {}", task.description));
     if task.state.is_running() {
-        line.push_str(&format!(" · last activity {} ago", format_duration(task.idle)));
+        line.push_str(&format!(
+            " · last activity {} ago",
+            format_duration(task.idle)
+        ));
     }
     line
 }

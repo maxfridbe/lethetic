@@ -287,7 +287,7 @@ Standalone Rust library for OpenAI-compatible streaming over llama.cpp:
 
 - **SSE parser** — `data:` line parsing from HTTP server-sent events
 - **Stream parser** — converts raw SSE to typed events: `ReasoningDelta`, `TextDelta`, `ToolCallComplete`, `Done`
-- **Client** — `stream_chat()` and `complete()` over `/v1/chat/completions`
+- **Client** — `stream_chat()` and `complete()` over `/v1/chat/completions`; model, token limit, key, thinking, and extra-body settings are grouped in `gemma_chat::ChatOptions`
 
 ```bash
 cargo test -p gemma-chat -- --nocapture
@@ -552,10 +552,14 @@ These keys describe the terminal UI. Browser palette accelerators, editable-targ
 These do not require a model server, provider credentials, or a container runtime:
 
 ```bash
-cargo test --lib
-cargo test --bin lethetic
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo clippy -p lethetic-wasm --target wasm32-unknown-unknown --locked -- -D warnings
+python3 scripts/test_rust.py
 cargo test --test test_service_signals -- --nocapture
 ```
+
+`scripts/test_rust.py` runs workspace unit tests and every integration target except `live`, with a temporary state directory, two compiler jobs, and four parallel test cases by default. Set `CARGO_BUILD_JOBS` or `RUST_TEST_THREADS` to override concurrency. Test builds retain line information for backtraces without full debug symbols. Tests marked `#[ignore]` remain opt-in.
 
 The Linux PTY lifecycle suite covers the browser-first and optional-TUI gates (including a WSS snapshot command before the second Enter), foreground service signals, interactive signals (including inherited ignored SIGHUP), terminal-input loss before and after TUI entry, terminal restoration, zero-client persistence, and the absence of TUI control sequences in service/browser-only phases.
 

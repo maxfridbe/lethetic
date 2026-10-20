@@ -783,8 +783,10 @@ mod tests {
     #[test]
     fn process_literal_is_complete_immutable_and_highest_precedence() {
         let baseline = Config::default();
-        let mut literal = Config::default();
-        literal.tool_profile = ToolProfile::PythonOnly;
+        let mut literal = Config {
+            tool_profile: ToolProfile::PythonOnly,
+            ..Default::default()
+        };
         literal.python_runtime.target = Some(PythonExecutionTarget::Sandbox);
         literal.python_runtime.sandbox.backend = Some(SandboxBackend::Podman);
         literal.python_runtime.sandbox.network = Some(NetworkAccess::Full);

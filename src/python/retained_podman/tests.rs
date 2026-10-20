@@ -955,6 +955,7 @@ async fn ambiguous_transient_create_recovers_by_exact_name_and_cleanup_verifies_
     let root = root.path().canonicalize().unwrap();
     let fake = root.join("podman");
     let state = root.join("state");
+    let state_root = root.join("cleanup-state");
     let keep_on_remove = root.join("keep-on-remove");
     let inspection_path = root.join("inspection.json");
     let log = root.join("commands.jsonl");
@@ -1019,16 +1020,21 @@ else:
         .unwrap_err();
     assert!(error.contains("cleanup"));
     assert!(state.exists());
-    let cleanup_record = persist_transient_cleanup_record(&config, Some(&container_id)).unwrap();
-    let retry_error = retry_pending_transient_cleanups(&fake).await.unwrap_err();
+    let cleanup_record =
+        persist_transient_cleanup_record_at(&state_root, &config, Some(&container_id)).unwrap();
+    let retry_error = retry_pending_transient_cleanups_at(&state_root, &fake)
+        .await
+        .unwrap_err();
     assert!(retry_error.contains("remains unresolved"), "{retry_error}");
     assert!(state.exists());
     std::fs::remove_file(&keep_on_remove).unwrap();
-    retry_pending_transient_cleanups(&fake).await.unwrap();
+    retry_pending_transient_cleanups_at(&state_root, &fake)
+        .await
+        .unwrap();
     assert!(!state.exists());
     assert!(
         crate::platform::read_file_nofollow(
-            &crate::platform::lethetic_state_dir(),
+            &state_root,
             &[TRANSIENT_CLEANUP_DIRECTORY],
             &cleanup_record,
         )

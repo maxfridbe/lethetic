@@ -63,12 +63,22 @@ pub(super) fn render(f: &mut ratatui::Frame, app: &App) {
         let line = match row {
             SkillRow::Installed(skill) => Line::from(vec![
                 Span::styled(
-                    if skill.enabled { "  [on]  " } else { "  [off] " },
+                    if skill.enabled {
+                        "  [on]  "
+                    } else {
+                        "  [off] "
+                    },
                     if skill.enabled { on } else { dim },
                 ),
-                Span::styled(format!("{:<18}", skill.name), normal.add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!("{:<18}", skill.name),
+                    normal.add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(format!("{:<28}", skill.source.label()), dim),
-                Span::styled(skill.description.chars().take(90).collect::<String>(), normal),
+                Span::styled(
+                    skill.description.chars().take(90).collect::<String>(),
+                    normal,
+                ),
             ]),
             SkillRow::Catalog { entry, installed } => {
                 let status = if *installed {
@@ -80,10 +90,17 @@ pub(super) fn render(f: &mut ratatui::Frame, app: &App) {
                 };
                 Line::from(vec![
                     Span::styled(status, if *installed { on } else { normal }),
-                    Span::styled(format!(" {:<18}", entry.name), normal.add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        format!(" {:<18}", entry.name),
+                        normal.add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled(entry.summary, normal),
                     Span::styled(
-                        if entry.proprietary { "  (proprietary license)" } else { "" },
+                        if entry.proprietary {
+                            "  (proprietary license)"
+                        } else {
+                            ""
+                        },
                         dim,
                     ),
                 ])
@@ -93,7 +110,11 @@ pub(super) fn render(f: &mut ratatui::Frame, app: &App) {
     }
     let mut state = ListState::default();
     state.select(Some(selected_item));
-    f.render_stateful_widget(List::new(items).highlight_style(highlight), parts[0], &mut state);
+    f.render_stateful_widget(
+        List::new(items).highlight_style(highlight),
+        parts[0],
+        &mut state,
+    );
 
     let detail = match panel.rows.get(panel.selected) {
         Some(SkillRow::Installed(skill)) => skill.dir.display().to_string(),

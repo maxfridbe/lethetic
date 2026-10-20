@@ -3,15 +3,29 @@ use super::*;
 fn write_skill(root: &Path, dir: &str, frontmatter: &str, body: &str) {
     let path = root.join(dir);
     std::fs::create_dir_all(&path).unwrap();
-    std::fs::write(path.join("SKILL.md"), format!("---\n{frontmatter}\n---\n{body}")).unwrap();
+    std::fs::write(
+        path.join("SKILL.md"),
+        format!("---\n{frontmatter}\n---\n{body}"),
+    )
+    .unwrap();
 }
 
 #[test]
 fn lethetic_folders_win_and_claude_skills_start_disabled() {
     let lethetic = tempfile::tempdir().unwrap();
     let claude = tempfile::tempdir().unwrap();
-    write_skill(lethetic.path(), "pdf", "name: pdf\ndescription: Lethetic's PDF skill", "Use pdfplumber.");
-    write_skill(claude.path(), "pdf", "name: pdf\ndescription: Claude's PDF skill", "Other.");
+    write_skill(
+        lethetic.path(),
+        "pdf",
+        "name: pdf\ndescription: Lethetic's PDF skill",
+        "Use pdfplumber.",
+    );
+    write_skill(
+        claude.path(),
+        "pdf",
+        "name: pdf\ndescription: Claude's PDF skill",
+        "Other.",
+    );
     write_skill(
         claude.path(),
         "api",
@@ -37,13 +51,21 @@ fn lethetic_folders_win_and_claude_skills_start_disabled() {
     settings.enabled.insert("claude-api".to_string(), true);
     settings.enabled.insert("pdf".to_string(), false);
     let skills = discover_with(Path::new("."), &roots, &settings);
-    assert!(skills[0].enabled && !skills[1].enabled, "menu choices override");
+    assert!(
+        skills[0].enabled && !skills[1].enabled,
+        "menu choices override"
+    );
 }
 
 #[test]
 fn the_model_gets_the_body_directory_and_file_list() {
     let root = tempfile::tempdir().unwrap();
-    write_skill(root.path(), "pdf", "name: pdf\ndescription: PDFs", "# PDF\nRun scripts/fill.py");
+    write_skill(
+        root.path(),
+        "pdf",
+        "name: pdf\ndescription: PDFs",
+        "# PDF\nRun scripts/fill.py",
+    );
     std::fs::create_dir_all(root.path().join("pdf/scripts")).unwrap();
     std::fs::write(root.path().join("pdf/scripts/fill.py"), "print(1)").unwrap();
     let skill = &discover_with(
@@ -55,7 +77,10 @@ fn the_model_gets_the_body_directory_and_file_list() {
     assert!(text.starts_with("# Skill: pdf\nDirectory: "));
     assert!(text.contains("scripts/fill.py"));
     assert!(text.ends_with("# PDF\nRun scripts/fill.py"));
-    assert!(!text.contains("description: PDFs"), "frontmatter is not repeated");
+    assert!(
+        !text.contains("description: PDFs"),
+        "frontmatter is not repeated"
+    );
 }
 
 #[test]

@@ -60,13 +60,16 @@ pub fn execute(arguments: &serde_json::Value) -> Result<String, String> {
         .filter(|name| !name.is_empty())
         .ok_or("ERROR: name the skill to load.")?;
     let skills = crate::skills::enabled_here();
-    let skill = skills.iter().find(|skill| skill.name == name).ok_or_else(|| {
-        let available = skills
-            .iter()
-            .map(|skill| skill.name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!("ERROR: no enabled skill named {name:?}. Enabled skills: {available}")
-    })?;
+    let skill = skills
+        .iter()
+        .find(|skill| skill.name == name)
+        .ok_or_else(|| {
+            let available = skills
+                .iter()
+                .map(|skill| skill.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("ERROR: no enabled skill named {name:?}. Enabled skills: {available}")
+        })?;
     crate::skills::load_for_model(skill).map_err(|error| format!("ERROR: {error}"))
 }

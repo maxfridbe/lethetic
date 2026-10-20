@@ -85,25 +85,38 @@ pub fn handle_tool_call(
     handle_tool_call_with_provider(
         app,
         calls,
-        pos,
+        ToolCallPresentation {
+            pos,
+            full_response_content,
+            is_native,
+            provider_content: None,
+        },
         tx,
         cancellation_token,
-        full_response_content,
-        is_native,
-        None,
     )
+}
+
+pub struct ToolCallPresentation<'a> {
+    pub pos: usize,
+    pub full_response_content: &'a str,
+    pub is_native: bool,
+    pub provider_content: Option<Vec<serde_json::Value>>,
 }
 
 pub fn handle_tool_call_with_provider(
     app: &mut App,
     calls: Vec<ToolCall>,
-    pos: usize,
+    options: ToolCallPresentation<'_>,
     tx: mpsc::UnboundedSender<StreamEvent>,
     cancellation_token: &mut CancellationToken,
-    full_response_content: &str,
-    is_native: bool,
-    provider_content: Option<Vec<serde_json::Value>>,
 ) -> AppEventOutcome {
+    let ToolCallPresentation {
+        pos,
+        full_response_content,
+        is_native,
+        provider_content,
+    } = options;
+
     if app.tool_calls_processed_this_request {
         return AppEventOutcome::Continue;
     }
@@ -123,11 +136,12 @@ pub fn handle_tool_call_with_provider(
         app.stop_reason = "⚠ Model returned an empty tool-call event".to_string();
         return AppEventOutcome::Continue;
     };
-    app.context_manager.upsert_assistant_tool_call_with_provider(
-        full_response_content,
-        calls.clone(),
-        provider_content,
-    );
+    app.context_manager
+        .upsert_assistant_tool_call_with_provider(
+            full_response_content,
+            calls.clone(),
+            provider_content,
+        );
     app.queued_tool_calls = calls.into_iter().skip(1).collect();
     app.deferred_batch_notes.clear();
     begin_tool_call(app, tool_call, &tx)
@@ -510,11 +524,8 @@ mod tests {
                 arguments: serde_json::json!({"expression": "2 + 2"}),
             },
         };
-        app.context_manager.upsert_assistant_tool_call_with_provider(
-            "",
-            vec![tool_call.clone()],
-            None,
-        );
+        app.context_manager
+            .upsert_assistant_tool_call_with_provider("", vec![tool_call.clone()], None);
         app.pending_tool_call = Some(tool_call.clone());
 
         handle_tool_call_save_failure(&mut app, &tool_call, "save-local-violet".to_string());

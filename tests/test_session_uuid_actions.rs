@@ -171,9 +171,11 @@ async fn session_manager_actions_use_registered_uuids() {
     let (cleanup_path, cleanup_lease) = store
         .create_locked_session("session_20991231_cleanup", cleanup_id)
         .unwrap();
-    let mut cleanup_state = SessionState::default();
-    cleanup_state.session_id = Some(cleanup_id.to_string());
-    cleanup_state.session_directory_binding = Some(cleanup_lease.binding().clone());
+    let cleanup_state = SessionState {
+        session_id: Some(cleanup_id.to_string()),
+        session_directory_binding: Some(cleanup_lease.binding().clone()),
+        ..Default::default()
+    };
     cleanup_state
         .save_to_directory_checked(cleanup_path.to_str().unwrap())
         .unwrap();

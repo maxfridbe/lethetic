@@ -1,6 +1,11 @@
 [workspace]
 members = [".", "gemma-chat", "lethetic-wasm"]
 
+# Keep useful test backtraces without duplicating full debug symbols into every
+# integration-test binary.
+[profile.test]
+debug = "line-tables-only"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
@@ -45,7 +50,8 @@ h2m-search = "0.7.1"
 hyper-util = { version = "=0.1.20", features = ["server-auto", "tokio"] }
 include_dir = "=0.7.4"
 gemma-chat = { path = "gemma-chat" }
-meval = "0.2.0"
+# Keep the MIT-licensed evaluator line; newer releases use AGPL.
+evalexpr = { version = "=11.3.1", default-features = false }
 getrandom = "=0.4.3"
 rcgen = { version = "=0.14.9", default-features = false, features = ["crypto", "ring", "zeroize"] }
 rustls = { version = "=0.23.43", default-features = false, features = ["ring", "std"] }

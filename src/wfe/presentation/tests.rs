@@ -494,7 +494,10 @@ fn successful_scrubbed_python_result_preserves_harmless_text_and_traceback_paths
             .contains("harmless_keyword_assignment_identifier = True")
     );
     assert!(tool.payload.contains("/usr/lib/python3.13/pathlib.py"));
-    assert!(tool.payload.contains("/home/example/.venv/lib/python3.13/site-packages/pkg/main.py"));
+    assert!(
+        tool.payload
+            .contains("/home/example/.venv/lib/python3.13/site-packages/pkg/main.py")
+    );
     assert!(tool.payload.contains(private_root));
     assert!(!tool.payload.contains(TEST_TOKEN));
     assert!(tool.payload_loss.redacted);
@@ -696,7 +699,9 @@ fn panel_data_is_typed_bounded_and_redacted() {
             panel_data: Some(PanelDataView::InputHistory {
                 entries: vec![HistoryEntryView {
                     entry_id: "history-1".to_string(),
-                    label: format!("read /etc/private/data from https://internal.invalid with {TEST_TOKEN}"),
+                    label: format!(
+                        "read /etc/private/data from https://internal.invalid with {TEST_TOKEN}"
+                    ),
                 }],
                 has_more: false,
             }),
@@ -953,8 +958,10 @@ fn podman_status_exposes_only_validated_retained_or_active_transient_names() {
     };
     use crate::python::{PythonContainerIdentity, PythonContainerKind};
 
-    let mut config = Config::default();
-    config.tool_profile = ToolProfile::PythonOnly;
+    let mut config = Config {
+        tool_profile: ToolProfile::PythonOnly,
+        ..Default::default()
+    };
     config.python_runtime.target = Some(PythonExecutionTarget::Sandbox);
     config.python_runtime.sandbox.backend = Some(SandboxBackend::Podman);
     config.python_runtime.sandbox.network = Some(NetworkAccess::Nonlocal);

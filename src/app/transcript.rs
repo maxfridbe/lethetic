@@ -523,7 +523,10 @@ impl App {
             .rposition(|block| {
                 matches!(
                     block.block_type,
-                    BlockType::User | BlockType::ToolResult | BlockType::ToolError | BlockType::Divider
+                    BlockType::User
+                        | BlockType::ToolResult
+                        | BlockType::ToolError
+                        | BlockType::Divider
                 )
             })
             .map_or(0, |index| index + 1);

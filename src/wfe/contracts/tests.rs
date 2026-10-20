@@ -111,7 +111,7 @@ fn history_content_outcome_enforces_session_entry_and_prompt_bounds() {
     else {
         unreachable!();
     };
-    editor_content.push_str("界");
+    editor_content.push('界');
     assert!(oversized.validate().is_err());
 }
 

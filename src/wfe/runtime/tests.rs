@@ -1469,7 +1469,8 @@ fn a_dialog_closed_in_the_terminal_closes_in_the_browser() {
     let mut app = App::new(&Config::default());
     app.show_session_manager = false;
     let (frontend, mut runtime) = WfeRuntime::new(&app, Vec::new()).unwrap();
-    let panel = |frontend: &WfeFrontendHandle| frontend.mirror.latest_snapshot().state.overlay.active_panel;
+    let panel =
+        |frontend: &WfeFrontendHandle| frontend.mirror.latest_snapshot().state.overlay.active_panel;
 
     for open in [
         |app: &mut App| app.show_hotkeys = true,
@@ -1522,22 +1523,36 @@ fn the_skills_menu_is_mirrored_with_resolvable_ids() {
     runtime.publish(&app).unwrap();
     let overlay = frontend.mirror.latest_snapshot().state.overlay.clone();
     assert_eq!(overlay.active_panel, Some(PanelId::Skills));
-    let Some(PanelDataView::Skills { skills, catalog, .. }) = overlay.data else {
+    let Some(PanelDataView::Skills {
+        skills, catalog, ..
+    }) = overlay.data
+    else {
         panic!("skills panel data");
     };
     assert_eq!(skills[0].name, "greeting");
     assert!(skills[0].enabled);
     assert_eq!(
-        skill_choice_map(&app).get(&skills[0].skill_id).map(String::as_str),
+        skill_choice_map(&app)
+            .get(&skills[0].skill_id)
+            .map(String::as_str),
         Some("greeting")
     );
     assert_eq!(
-        skill_catalog_map().get(&catalog[0].entry_id).map(String::as_str),
+        skill_catalog_map()
+            .get(&catalog[0].entry_id)
+            .map(String::as_str),
         Some(crate::skills::catalog::ENTRIES[0].name)
     );
-    assert!(catalog[0].url.starts_with("https://github.com/anthropics/skills/tree/"));
+    assert!(
+        catalog[0]
+            .url
+            .starts_with("https://github.com/anthropics/skills/tree/")
+    );
 
     app.skills_panel = None;
     runtime.publish(&app).unwrap();
-    assert_eq!(frontend.mirror.latest_snapshot().state.overlay.active_panel, None);
+    assert_eq!(
+        frontend.mirror.latest_snapshot().state.overlay.active_panel,
+        None
+    );
 }

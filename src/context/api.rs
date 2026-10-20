@@ -251,11 +251,9 @@ fn trim_projected_conversation(
         .unwrap_or(conversation.len());
     while *estimated_tokens > max_tokens && protected_start > 0 {
         let mut unit_len = 1;
-        if conversation[0].role == Role::Assistant && !conversation[0].tool_calls.is_empty() {
-            while unit_len < protected_start && conversation[unit_len].role == Role::Tool {
-                unit_len += 1;
-            }
-        } else if conversation[0].role == Role::Tool {
+        if (conversation[0].role == Role::Assistant && !conversation[0].tool_calls.is_empty())
+            || conversation[0].role == Role::Tool
+        {
             while unit_len < protected_start && conversation[unit_len].role == Role::Tool {
                 unit_len += 1;
             }

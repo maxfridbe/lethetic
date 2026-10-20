@@ -72,7 +72,9 @@ impl App {
     pub fn command_context(&self) -> CommandContext {
         CommandContext {
             loop_mode: self.loop_detector.config.mode.label().to_string(),
-            tool_call_mode: crate::tool_call_mode::effective(&self.config).label().to_string(),
+            tool_call_mode: crate::tool_call_mode::effective(&self.config)
+                .label()
+                .to_string(),
             agent_mode: format!("{:?}", self.config.tool_profile),
             agent_mode_locked: self.python_policy.is_cli_locked(),
             session_name: self.display_name.clone(),
@@ -156,10 +158,7 @@ pub fn dispatch_command(app: &mut App, command: CommandId) -> AppEventOutcome {
         }
         CommandId::BackgroundMode => {
             crate::background::set_mode(crate::background::mode().next());
-            app.stop_reason = format!(
-                "Background tasks: {}",
-                crate::background::mode().label()
-            );
+            app.stop_reason = format!("Background tasks: {}", crate::background::mode().label());
             app.should_redraw = true;
         }
         CommandId::ToggleBackgroundTasks => {

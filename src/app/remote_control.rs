@@ -135,7 +135,9 @@ fn split_target(target: &str) -> (String, Option<String>) {
         _ => (rest, None),
     };
     (
-        host.trim_start_matches('[').trim_end_matches(']').to_string(),
+        host.trim_start_matches('[')
+            .trim_end_matches(']')
+            .to_string(),
         port,
     )
 }

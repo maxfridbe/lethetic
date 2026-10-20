@@ -1,3 +1,5 @@
+mod expression;
+
 use super::icons;
 use crate::tools::{FunctionDefinition, Tool, ToolExecution};
 use serde_json::json;
@@ -57,7 +59,7 @@ pub(super) async fn execute_classified(
 }
 
 fn evaluate(expression: &str) -> Result<String, String> {
-    match meval::eval_str(expression) {
+    match expression::evaluate(expression) {
         Ok(result) => {
             // Show integer form when the result is a whole number
             if result.fract() == 0.0 && result.abs() < 1e15 {

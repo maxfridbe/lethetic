@@ -46,9 +46,7 @@ pub fn allows_batches(config: &crate::config::Config) -> bool {
 
 /// Text-format calls take their id from the model's `tool_call_id`, which may
 /// repeat or be missing; results must name each call exactly once.
-pub fn with_unique_ids(
-    mut calls: Vec<crate::context::ToolCall>,
-) -> Vec<crate::context::ToolCall> {
+pub fn with_unique_ids(mut calls: Vec<crate::context::ToolCall>) -> Vec<crate::context::ToolCall> {
     let mut seen = std::collections::HashSet::new();
     for (index, call) in calls.iter_mut().enumerate() {
         if !seen.insert(call.id.clone()) {

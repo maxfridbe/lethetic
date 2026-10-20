@@ -46,11 +46,13 @@ async fn test_process_image_file_not_found() {
         "test",
         "non_existent.png",
         None,
-        ".",
-        &client,
-        &config,
-        &tx,
-        CancellationToken::new(),
+        lethetic::tools::ModelToolContext {
+            cwd: ".",
+            client: &client,
+            config: &config,
+            tx: &tx,
+            cancellation: CancellationToken::new(),
+        },
     )
     .await;
     assert!(res.contains("ERROR: Image file not found"));
@@ -90,11 +92,13 @@ async fn test_process_pdf_image_invalid_page() {
         "non_existent.pdf",
         1,
         None,
-        ".",
-        &client,
-        &config,
-        &tx,
-        CancellationToken::new(),
+        lethetic::tools::ModelToolContext {
+            cwd: ".",
+            client: &client,
+            config: &config,
+            tx: &tx,
+            cancellation: CancellationToken::new(),
+        },
     )
     .await;
     assert!(res.contains("ERROR: PDF file not found"));
@@ -115,11 +119,13 @@ async fn test_live_vision_screenshot() {
             "What is the contents of this image?",
             "res/Screenshot.webp",
             Some(1024),
-            ".",
-            &client,
-            &config,
-            &tx,
-            CancellationToken::new(),
+            lethetic::tools::ModelToolContext {
+                cwd: ".",
+                client: &client,
+                config: &config,
+                tx: &tx,
+                cancellation: CancellationToken::new(),
+            },
         ),
     )
     .await
@@ -174,11 +180,13 @@ async fn test_live_pdf_processing() {
             pdf_path,
             1,
             Some(512),
-            ".",
-            &client,
-            &config,
-            &tx,
-            CancellationToken::new(),
+            lethetic::tools::ModelToolContext {
+                cwd: ".",
+                client: &client,
+                config: &config,
+                tx: &tx,
+                cancellation: CancellationToken::new(),
+            },
         ),
     )
     .await
@@ -207,11 +215,13 @@ async fn test_live_vision_bike() {
             "what kind of image this is",
             "/var/home/maxfridbe/Downloads/bike.jpg",
             Some(1024),
-            ".",
-            &client,
-            &config,
-            &tx,
-            CancellationToken::new(),
+            lethetic::tools::ModelToolContext {
+                cwd: ".",
+                client: &client,
+                config: &config,
+                tx: &tx,
+                cancellation: CancellationToken::new(),
+            },
         ),
     )
     .await
@@ -240,11 +250,13 @@ async fn test_live_vision_sequential() {
             "what kind of image this is",
             "/var/home/maxfridbe/Downloads/bike.jpg",
             Some(1024),
-            ".",
-            &client,
-            &config,
-            &tx,
-            CancellationToken::new(),
+            lethetic::tools::ModelToolContext {
+                cwd: ".",
+                client: &client,
+                config: &config,
+                tx: &tx,
+                cancellation: CancellationToken::new(),
+            },
         ),
     )
     .await
@@ -259,11 +271,13 @@ async fn test_live_vision_sequential() {
             "What is the contents of this image?",
             "res/Screenshot.webp",
             Some(1024),
-            ".",
-            &client,
-            &config,
-            &tx,
-            CancellationToken::new(),
+            lethetic::tools::ModelToolContext {
+                cwd: ".",
+                client: &client,
+                config: &config,
+                tx: &tx,
+                cancellation: CancellationToken::new(),
+            },
         ),
     )
     .await

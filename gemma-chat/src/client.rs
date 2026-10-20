@@ -88,18 +88,31 @@ pub fn build_request(
     Ok(body)
 }
 
+/// Model settings shared by streaming and non-streaming chat requests.
+pub struct ChatOptions<'a> {
+    pub model: &'a str,
+    pub max_tokens: u32,
+    pub api_key: Option<&'a str>,
+    pub thinking: Option<bool>,
+    pub extra_body: Option<&'a serde_json::Value>,
+}
+
 /// Stream a chat completion request while retaining ownership of the HTTP body.
 pub async fn stream_chat(
     client: &Client,
     base_url: &str,
-    model: &str,
+    options: ChatOptions<'_>,
     messages: &[Message],
     tools: &[ToolDefinition],
-    max_tokens: u32,
-    api_key: Option<&str>,
-    thinking: Option<bool>,
-    extra_body: Option<&serde_json::Value>,
 ) -> Result<Pin<Box<dyn Stream<Item = StreamEvent> + Send>>, String> {
+    let ChatOptions {
+        model,
+        max_tokens,
+        api_key,
+        thinking,
+        extra_body,
+    } = options;
+
     let body = build_request(model, messages, tools, max_tokens, thinking, extra_body)?;
     stream_chat_with_body(client, base_url, api_key, body).await
 }
@@ -266,31 +279,29 @@ pub async fn stream_chat_with_encoded_body(
 pub async fn complete(
     client: &Client,
     base_url: &str,
-    model: &str,
+    options: ChatOptions<'_>,
     messages: &[Message],
-    max_tokens: u32,
-    api_key: Option<&str>,
-    thinking: Option<bool>,
-    extra_body: Option<&serde_json::Value>,
 ) -> Result<String, String> {
-    complete_with_usage(
-        client, base_url, model, messages, max_tokens, api_key, thinking, extra_body,
-    )
-    .await
-    .map(|completion| completion.text)
+    complete_with_usage(client, base_url, options, messages)
+        .await
+        .map(|completion| completion.text)
 }
 
 /// Send a non-streaming chat completion and retain provider usage.
 pub async fn complete_with_usage(
     client: &Client,
     base_url: &str,
-    model: &str,
+    options: ChatOptions<'_>,
     messages: &[Message],
-    max_tokens: u32,
-    api_key: Option<&str>,
-    thinking: Option<bool>,
-    extra_body: Option<&serde_json::Value>,
 ) -> Result<Completion, String> {
+    let ChatOptions {
+        model,
+        max_tokens,
+        api_key,
+        thinking,
+        extra_body,
+    } = options;
+
     let url = if base_url.contains("/chat/completions") {
         base_url.to_string()
     } else {
@@ -430,13 +441,15 @@ mod tests {
         let mut stream = stream_chat(
             &client,
             &format!("http://{address}/v1"),
-            "model",
+            ChatOptions {
+                model: "model",
+                max_tokens: 32,
+                api_key: None,
+                thinking: None,
+                extra_body: None,
+            },
             &[Message::user("hello")],
             &[],
-            32,
-            None,
-            None,
-            None,
         )
         .await
         .unwrap();
@@ -490,13 +503,15 @@ mod tests {
         let mut stream = stream_chat(
             &Client::new(),
             &format!("http://{address}/v1"),
-            "model",
+            ChatOptions {
+                model: "model",
+                max_tokens: 32,
+                api_key: None,
+                thinking: None,
+                extra_body: None,
+            },
             &[Message::user("hello")],
             &[],
-            32,
-            None,
-            None,
-            None,
         )
         .await
         .unwrap();
@@ -555,13 +570,15 @@ mod tests {
         let mut stream = stream_chat(
             &Client::new(),
             &format!("http://{address}/v1"),
-            "model",
+            ChatOptions {
+                model: "model",
+                max_tokens: 32,
+                api_key: None,
+                thinking: None,
+                extra_body: None,
+            },
             &[Message::user("hello")],
             &[],
-            32,
-            None,
-            None,
-            None,
         )
         .await
         .unwrap();
@@ -620,13 +637,15 @@ mod tests {
         let mut stream = stream_chat(
             &Client::new(),
             &format!("http://{address}/v1"),
-            "model",
+            ChatOptions {
+                model: "model",
+                max_tokens: 32,
+                api_key: None,
+                thinking: None,
+                extra_body: None,
+            },
             &[Message::user("hello")],
             &[],
-            32,
-            None,
-            None,
-            None,
         )
         .await
         .unwrap();
@@ -685,13 +704,15 @@ mod tests {
         let mut stream = stream_chat(
             &client,
             &format!("http://{address}/v1"),
-            "model",
+            ChatOptions {
+                model: "model",
+                max_tokens: 32,
+                api_key: None,
+                thinking: None,
+                extra_body: None,
+            },
             &[Message::user("hello")],
             &[],
-            32,
-            None,
-            None,
-            None,
         )
         .await
         .unwrap();

@@ -3,18 +3,13 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 /// Typed authority for presenting and recovering a tool's output.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ToolOutputProvenance {
     /// Ordinary host-side output may be retained in secure workspace storage.
+    #[default]
     OrdinaryHost,
     /// Python output is recoverable only through the worker-local cell artifact.
     PythonCell(crate::python::PythonOutputMetadata),
-}
-
-impl Default for ToolOutputProvenance {
-    fn default() -> Self {
-        Self::OrdinaryHost
-    }
 }
 
 /// Tool outputs larger than this (in bytes) are shortened for display and context.

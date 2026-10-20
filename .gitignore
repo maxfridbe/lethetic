@@ -27,3 +27,7 @@ config.local.yml
 # Local agent/editor state
 .claude/
 .antigravitycli/
+
+# Python test bytecode
+__pycache__/
+*.py[cod]

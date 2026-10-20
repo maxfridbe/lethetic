@@ -264,12 +264,14 @@ pub async fn complete_with_usage(
     let completion = gemma_chat::complete_with_usage(
         client,
         &base_url(&config.server_url),
-        &config.model,
+        gemma_chat::client::ChatOptions {
+            model: &config.model,
+            max_tokens,
+            api_key: config.api_key.as_deref(),
+            thinking: config.thinking,
+            extra_body: config.extra_body.as_ref(),
+        },
         &messages,
-        max_tokens,
-        config.api_key.as_deref(),
-        config.thinking,
-        config.extra_body.as_ref(),
     )
     .await?;
     Ok(Completion {

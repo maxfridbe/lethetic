@@ -11,9 +11,21 @@ const MODEL: &str = "Gemma-4-26B-TurboQuant-262k";
 async fn test_live_simple_reply() {
     let client = reqwest::Client::new();
     let msgs = vec![Message::user("Reply with exactly: PONG")];
-    let mut stream = stream_chat(&client, BASE_URL, MODEL, &msgs, &[], 200, None, None, None)
-        .await
-        .expect("stream_chat failed");
+    let mut stream = stream_chat(
+        &client,
+        BASE_URL,
+        gemma_chat::client::ChatOptions {
+            model: MODEL,
+            max_tokens: 200,
+            api_key: None,
+            thinking: None,
+            extra_body: None,
+        },
+        &msgs,
+        &[],
+    )
+    .await
+    .expect("stream_chat failed");
 
     let mut text = String::new();
     let mut got_done = false;
@@ -39,9 +51,21 @@ async fn test_live_simple_reply() {
 async fn test_live_reasoning_present() {
     let client = reqwest::Client::new();
     let msgs = vec![Message::user("What is 17 * 43?")];
-    let mut stream = stream_chat(&client, BASE_URL, MODEL, &msgs, &[], 600, None, None, None)
-        .await
-        .expect("stream_chat failed");
+    let mut stream = stream_chat(
+        &client,
+        BASE_URL,
+        gemma_chat::client::ChatOptions {
+            model: MODEL,
+            max_tokens: 600,
+            api_key: None,
+            thinking: None,
+            extra_body: None,
+        },
+        &msgs,
+        &[],
+    )
+    .await
+    .expect("stream_chat failed");
 
     let mut reasoning = String::new();
     let mut text = String::new();
@@ -91,7 +115,17 @@ async fn test_live_tool_call() {
     ];
 
     let mut stream = stream_chat(
-        &client, BASE_URL, MODEL, &msgs, &tools, 400, None, None, None,
+        &client,
+        BASE_URL,
+        gemma_chat::client::ChatOptions {
+            model: MODEL,
+            max_tokens: 400,
+            api_key: None,
+            thinking: None,
+            extra_body: None,
+        },
+        &msgs,
+        &tools,
     )
     .await
     .expect("stream_chat failed");

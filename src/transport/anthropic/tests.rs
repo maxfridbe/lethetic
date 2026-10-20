@@ -836,7 +836,11 @@ fn passes_every_native_tool_call_to_the_host_in_block_order() {
         })
         .expect("tool calls event");
     assert_eq!(ids, ["toolu_1", "toolu_2"]);
-    assert!(!events.iter().any(|event| matches!(event, StreamEvent::Error(_))));
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, StreamEvent::Error(_)))
+    );
 }
 
 #[test]

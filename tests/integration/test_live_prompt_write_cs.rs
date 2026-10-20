@@ -99,11 +99,13 @@ async fn test_live_prompt_write_cs_helloworld() -> Result<(), String> {
     let execution = lethetic::tools::execute(
         "write_file",
         &tc.function.arguments,
-        &cwd,
-        CancellationToken::new(),
-        mpsc::unbounded_channel().0,
-        &client,
-        &config,
+        lethetic::tools::ToolContext {
+            cwd: &cwd,
+            cancellation_token: CancellationToken::new(),
+            tx: mpsc::unbounded_channel().0,
+            client: &client,
+            config: &config,
+        },
     )
     .await;
 

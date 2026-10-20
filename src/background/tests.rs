@@ -65,7 +65,10 @@ async fn custom_pattern_reads_done_and_total() {
     assert!(stop(&started.id));
     let stopped = finish(&started.id).await;
     assert_eq!(stopped.state, TaskState::Stopped);
-    assert!(!stop(&started.id), "a finished task cannot be stopped again");
+    assert!(
+        !stop(&started.id),
+        "a finished task cannot be stopped again"
+    );
 }
 
 #[tokio::test]
@@ -100,10 +103,17 @@ async fn model_notifications_are_taken_once_and_poll_only_tasks_are_skipped() {
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    let taken: Vec<String> = take_model_notifications().into_iter().map(|t| t.id).collect();
+    let taken: Vec<String> = take_model_notifications()
+        .into_iter()
+        .map(|t| t.id)
+        .collect();
     assert!(taken.contains(&pushed.id));
     assert!(!taken.contains(&quiet.id));
-    assert!(!take_model_notifications().iter().any(|task| task.id == pushed.id));
+    assert!(
+        !take_model_notifications()
+            .iter()
+            .any(|task| task.id == pushed.id)
+    );
     let notice = finish_notice(&[snapshot(&pushed.id).unwrap()]);
     assert!(notice.contains(&format!("Background task {} finished: done", pushed.id)));
 }
@@ -111,7 +121,13 @@ async fn model_notifications_are_taken_once_and_poll_only_tasks_are_skipped() {
 #[test]
 fn bars_and_labels_render() {
     assert_eq!(progress_bar(Some(0.5), 10, Duration::ZERO), "█████░░░░░");
-    assert_eq!(progress_bar(None, 5, Duration::ZERO).chars().filter(|c| *c == '█').count(), 1);
+    assert_eq!(
+        progress_bar(None, 5, Duration::ZERO)
+            .chars()
+            .filter(|c| *c == '█')
+            .count(),
+        1
+    );
     assert_eq!(format_duration(Duration::from_secs(135)), "2m 15s");
     assert_eq!(format_bytes(1536), "1.5 KB");
     assert!(NotifyTarget::parse(Some("bogus")).is_err());

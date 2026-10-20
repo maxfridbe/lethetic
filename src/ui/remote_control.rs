@@ -198,7 +198,10 @@ pub(super) fn render(f: &mut ratatui::Frame, app: &App) {
                 normal,
             )),
             Line::from(""),
-            Line::from(Span::styled(format!("Address:        {}", offer.target), normal)),
+            Line::from(Span::styled(
+                format!("Address:        {}", offer.target),
+                normal,
+            )),
             Line::from(Span::styled(
                 format!(
                     "Authentication: {}",

@@ -99,14 +99,16 @@ async fn persisted_agent_diagnostic_is_the_exact_openai_wire_body() {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let session = tempfile::tempdir().unwrap();
     trigger_llm_request_with_surface(
-        Client::new(),
+        crate::client::RequestExecution {
+            client: Client::new(),
+            tx,
+            token: CancellationToken::new(),
+            is_debug: false,
+            session_dir: Some(session.path().to_string_lossy().into_owned()),
+            tool_surface: crate::tools::ToolSurface::Headless,
+        },
         config,
         &context,
-        tx,
-        CancellationToken::new(),
-        false,
-        Some(session.path().to_string_lossy().into_owned()),
-        crate::tools::ToolSurface::Headless,
     )
     .unwrap();
 
@@ -178,14 +180,16 @@ async fn persisted_agent_diagnostic_is_the_exact_anthropic_wire_body() {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let session = tempfile::tempdir().unwrap();
     trigger_llm_request_with_surface(
-        Client::new(),
+        crate::client::RequestExecution {
+            client: Client::new(),
+            tx,
+            token: CancellationToken::new(),
+            is_debug: false,
+            session_dir: Some(session.path().to_string_lossy().into_owned()),
+            tool_surface: crate::tools::ToolSurface::Headless,
+        },
         config,
         &context,
-        tx,
-        CancellationToken::new(),
-        false,
-        Some(session.path().to_string_lossy().into_owned()),
-        crate::tools::ToolSurface::Headless,
     )
     .unwrap();
 
@@ -637,14 +641,16 @@ async fn failed_terminal_checkpoint_blocks_tool_authorization() {
     });
     let (tx, mut rx) = mpsc::unbounded_channel();
     trigger_llm_request_with_surface_and_start_hook(
-        Client::new(),
+        crate::client::RequestExecution {
+            client: Client::new(),
+            tx,
+            token: CancellationToken::new(),
+            is_debug: false,
+            session_dir: None,
+            tool_surface: crate::tools::ToolSurface::Headless,
+        },
         config,
         &context,
-        tx,
-        CancellationToken::new(),
-        false,
-        None,
-        crate::tools::ToolSurface::Headless,
         Some(hook),
     )
     .unwrap();
@@ -704,14 +710,16 @@ async fn failed_cancellation_checkpoint_emits_typed_terminal_settlement() {
     let (tx, mut rx) = mpsc::unbounded_channel();
 
     let request_id = trigger_llm_request_with_surface_and_prepared_start_and_hook(
-        Client::new(),
+        crate::client::RequestExecution {
+            client: Client::new(),
+            tx,
+            token: cancellation,
+            is_debug: false,
+            session_dir: None,
+            tool_surface: crate::tools::ToolSurface::Headless,
+        },
         config,
         &context,
-        tx,
-        cancellation,
-        false,
-        None,
-        crate::tools::ToolSurface::Headless,
         started,
         Some(hook),
     )
@@ -807,14 +815,16 @@ async fn tool_call_waits_for_delayed_terminal_usage() {
         Ok(())
     });
     let request_id = trigger_llm_request_with_surface_and_start_hook(
-        Client::new(),
+        crate::client::RequestExecution {
+            client: Client::new(),
+            tx,
+            token: CancellationToken::new(),
+            is_debug: false,
+            session_dir: Some(session.path().to_string_lossy().into_owned()),
+            tool_surface: crate::tools::ToolSurface::Headless,
+        },
         config,
         &context,
-        tx,
-        CancellationToken::new(),
-        false,
-        Some(session.path().to_string_lossy().into_owned()),
-        crate::tools::ToolSurface::Headless,
         Some(hook),
     )
     .unwrap();
@@ -884,24 +894,25 @@ async fn tool_call_waits_for_delayed_terminal_usage() {
     assert!(finished.usage_reported);
     assert_eq!(finished.usage.total_input_tokens, Some(100));
     assert_eq!(finished.usage.output_tokens, 3);
-    let checkpoints = checkpoints.lock().unwrap();
-    assert_eq!(checkpoints.len(), 2);
-    assert!(checkpoints[0].request.in_flight);
-    assert!(checkpoints[0].transcript.is_none());
-    assert!(checkpoints[1].request.completed);
-    assert_eq!(checkpoints[1].request.usage.total_input_tokens, Some(100));
-    let transcript = checkpoints[1].transcript.as_ref().unwrap();
-    assert_eq!(transcript.len(), 2);
-    assert_eq!(transcript[0].role, "user");
-    let assistant = &transcript[1];
-    assert_eq!(assistant.role, "assistant");
-    assert_eq!(assistant.content, "");
-    assert_eq!(assistant.tool_calls.as_ref().unwrap().len(), 1);
-    assert_eq!(
-        assistant.tool_calls.as_ref().unwrap()[0].id,
-        "provider-call-1"
-    );
-    drop(checkpoints);
+    {
+        let checkpoints = checkpoints.lock().unwrap();
+        assert_eq!(checkpoints.len(), 2);
+        assert!(checkpoints[0].request.in_flight);
+        assert!(checkpoints[0].transcript.is_none());
+        assert!(checkpoints[1].request.completed);
+        assert_eq!(checkpoints[1].request.usage.total_input_tokens, Some(100));
+        let transcript = checkpoints[1].transcript.as_ref().unwrap();
+        assert_eq!(transcript.len(), 2);
+        assert_eq!(transcript[0].role, "user");
+        let assistant = &transcript[1];
+        assert_eq!(assistant.role, "assistant");
+        assert_eq!(assistant.content, "");
+        assert_eq!(assistant.tool_calls.as_ref().unwrap().len(), 1);
+        assert_eq!(
+            assistant.tool_calls.as_ref().unwrap()[0].id,
+            "provider-call-1"
+        );
+    }
     server.await.unwrap();
 }
 
@@ -961,15 +972,17 @@ async fn dropping_event_receiver_closes_provider_body() {
         Ok(())
     });
     let request_id = trigger_llm_request_with_surface_and_start_hook_and_settlement_fallback(
-        Client::new(),
+        crate::client::RequestExecution {
+            client: Client::new(),
+            tx,
+            token: CancellationToken::new(),
+            is_debug: false,
+            session_dir: Some(session.path().to_string_lossy().into_owned()),
+            tool_surface: crate::tools::ToolSurface::Headless,
+        },
         config,
         &context,
-        tx,
         Some(fallback_tx),
-        CancellationToken::new(),
-        false,
-        Some(session.path().to_string_lossy().into_owned()),
-        crate::tools::ToolSurface::Headless,
         Some(hook),
     )
     .unwrap();
@@ -1083,15 +1096,17 @@ async fn pre_header_receiver_closure_routes_terminal_checkpoint_failure_to_fallb
         }
     });
     let request_id = trigger_llm_request_with_surface_and_start_hook_and_settlement_fallback(
-        Client::new(),
+        crate::client::RequestExecution {
+            client: Client::new(),
+            tx,
+            token: CancellationToken::new(),
+            is_debug: false,
+            session_dir: Some(session.path().to_string_lossy().into_owned()),
+            tool_surface: crate::tools::ToolSurface::Headless,
+        },
         config,
         &context,
-        tx,
         Some(fallback_tx),
-        CancellationToken::new(),
-        false,
-        Some(session.path().to_string_lossy().into_owned()),
-        crate::tools::ToolSurface::Headless,
         Some(hook),
     )
     .unwrap();
@@ -1240,14 +1255,16 @@ async fn cancelled_reasoning_is_not_replayed_as_empty_native_assistant() {
     let first_cancel = CancellationToken::new();
     let (first_tx, mut first_rx) = mpsc::unbounded_channel();
     trigger_llm_request_with_surface(
-        Client::new(),
+        crate::client::RequestExecution {
+            client: Client::new(),
+            tx: first_tx,
+            token: first_cancel.clone(),
+            is_debug: false,
+            session_dir: Some(session_dir.clone()),
+            tool_surface: crate::tools::ToolSurface::Interactive,
+        },
         config.clone(),
         &context,
-        first_tx,
-        first_cancel.clone(),
-        false,
-        Some(session_dir.clone()),
-        crate::tools::ToolSurface::Interactive,
     )
     .unwrap();
 
@@ -1276,14 +1293,16 @@ async fn cancelled_reasoning_is_not_replayed_as_empty_native_assistant() {
     assert_eq!(context.get_messages()[1].content, partial);
     let (second_tx, mut second_rx) = mpsc::unbounded_channel();
     trigger_llm_request_with_surface(
-        Client::new(),
+        crate::client::RequestExecution {
+            client: Client::new(),
+            tx: second_tx,
+            token: CancellationToken::new(),
+            is_debug: false,
+            session_dir: Some(session_dir.clone()),
+            tool_surface: crate::tools::ToolSurface::Interactive,
+        },
         config,
         &context,
-        second_tx,
-        CancellationToken::new(),
-        false,
-        Some(session_dir.clone()),
-        crate::tools::ToolSurface::Interactive,
     )
     .unwrap();
     loop {
@@ -1353,14 +1372,16 @@ async fn cancellation_closes_body_and_emits_one_terminal_sequence() {
     let session = tempfile::tempdir().unwrap();
     let cancellation = CancellationToken::new();
     let request_id = trigger_llm_request_with_surface(
-        Client::new(),
+        crate::client::RequestExecution {
+            client: Client::new(),
+            tx,
+            token: cancellation.clone(),
+            is_debug: false,
+            session_dir: Some(session.path().to_string_lossy().into_owned()),
+            tool_surface: crate::tools::ToolSurface::Headless,
+        },
         config,
         &context,
-        tx,
-        cancellation.clone(),
-        false,
-        Some(session.path().to_string_lossy().into_owned()),
-        crate::tools::ToolSurface::Headless,
     )
     .unwrap();
 
@@ -1441,14 +1462,16 @@ async fn premature_eof_emits_finished_then_error_only() {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let session = tempfile::tempdir().unwrap();
     let request_id = trigger_llm_request_with_surface(
-        Client::new(),
+        crate::client::RequestExecution {
+            client: Client::new(),
+            tx,
+            token: CancellationToken::new(),
+            is_debug: false,
+            session_dir: Some(session.path().to_string_lossy().into_owned()),
+            tool_surface: crate::tools::ToolSurface::Headless,
+        },
         config,
         &context,
-        tx,
-        CancellationToken::new(),
-        false,
-        Some(session.path().to_string_lossy().into_owned()),
-        crate::tools::ToolSurface::Headless,
     )
     .unwrap();
 
@@ -1469,7 +1492,10 @@ async fn premature_eof_emits_finished_then_error_only() {
                 sequence.push("finished");
             }
             StreamEvent::Error(error) => {
-                assert!(error.contains("closed the reply before finishing"), "{error}");
+                assert!(
+                    error.contains("closed the reply before finishing"),
+                    "{error}"
+                );
                 sequence.push("error");
                 break;
             }

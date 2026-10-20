@@ -106,7 +106,7 @@ pub enum StreamEvent {
     LoadProgress(f32, String),
     SessionLoaded {
         dir: String,
-        state: crate::app::SessionState,
+        state: Box<crate::app::SessionState>,
         #[cfg(target_os = "linux")]
         lease: std::sync::Arc<crate::session_store::SessionLease>,
     },
@@ -325,14 +325,16 @@ pub fn trigger_llm_request(
     session_dir: Option<String>,
 ) -> Result<String, String> {
     trigger_llm_request_with_surface(
-        client,
+        RequestExecution {
+            client,
+            tx,
+            token,
+            is_debug,
+            session_dir,
+            tool_surface: crate::tools::ToolSurface::Interactive,
+        },
         config,
         context_manager,
-        tx,
-        token,
-        is_debug,
-        session_dir,
-        crate::tools::ToolSurface::Interactive,
     )
 }
 
@@ -489,49 +491,34 @@ fn reasoning_segment_separator(
     needs_separator.then_some("\n\n")
 }
 
+/// Transport, cancellation, and session settings for one provider request.
+pub struct RequestExecution {
+    pub client: Client,
+    pub tx: mpsc::UnboundedSender<StreamEvent>,
+    pub token: CancellationToken,
+    pub is_debug: bool,
+    pub session_dir: Option<String>,
+    pub tool_surface: crate::tools::ToolSurface,
+}
+
 pub fn trigger_llm_request_with_surface(
-    client: Client,
+    options: RequestExecution,
     config: Config,
     context_manager: &ContextManager,
-    tx: mpsc::UnboundedSender<StreamEvent>,
-    token: CancellationToken,
-    is_debug: bool,
-    session_dir: Option<String>,
-    tool_surface: crate::tools::ToolSurface,
 ) -> Result<String, String> {
-    trigger_llm_request_with_surface_and_start_hook(
-        client,
-        config,
-        context_manager,
-        tx,
-        token,
-        is_debug,
-        session_dir,
-        tool_surface,
-        None,
-    )
+    trigger_llm_request_with_surface_and_start_hook(options, config, context_manager, None)
 }
 
 pub fn trigger_llm_request_with_surface_and_start_hook(
-    client: Client,
+    options: RequestExecution,
     config: Config,
     context_manager: &ContextManager,
-    tx: mpsc::UnboundedSender<StreamEvent>,
-    token: CancellationToken,
-    is_debug: bool,
-    session_dir: Option<String>,
-    tool_surface: crate::tools::ToolSurface,
     request_started_hook: Option<RequestStartedHook>,
 ) -> Result<String, String> {
     trigger_llm_request_with_surface_and_prepared_start_impl(
-        client,
+        options,
         config,
         Some(context_manager),
-        tx,
-        token,
-        is_debug,
-        session_dir,
-        tool_surface,
         request_started_hook,
         None,
         None,
@@ -540,26 +527,16 @@ pub fn trigger_llm_request_with_surface_and_start_hook(
 }
 
 pub(crate) fn trigger_llm_request_with_surface_and_start_hook_and_settlement_fallback(
-    client: Client,
+    options: RequestExecution,
     config: Config,
     context_manager: &ContextManager,
-    tx: mpsc::UnboundedSender<StreamEvent>,
     settlement_fallback: Option<mpsc::UnboundedSender<StreamEvent>>,
-    token: CancellationToken,
-    is_debug: bool,
-    session_dir: Option<String>,
-    tool_surface: crate::tools::ToolSurface,
     request_started_hook: Option<RequestStartedHook>,
 ) -> Result<String, String> {
     trigger_llm_request_with_surface_and_prepared_start_impl(
-        client,
+        options,
         config,
         Some(context_manager),
-        tx,
-        token,
-        is_debug,
-        session_dir,
-        tool_surface,
         request_started_hook,
         None,
         settlement_fallback,
@@ -568,51 +545,31 @@ pub(crate) fn trigger_llm_request_with_surface_and_start_hook_and_settlement_fal
 }
 
 pub fn trigger_llm_request_with_surface_and_prepared_start(
-    client: Client,
+    options: RequestExecution,
     config: Config,
     context_manager: &ContextManager,
-    tx: mpsc::UnboundedSender<StreamEvent>,
-    token: CancellationToken,
-    is_debug: bool,
-    session_dir: Option<String>,
-    tool_surface: crate::tools::ToolSurface,
     started: crate::accounting::ProviderRequestAccounting,
 ) -> Result<String, String> {
     trigger_llm_request_with_surface_and_prepared_start_and_hook(
-        client,
+        options,
         config,
         context_manager,
-        tx,
-        token,
-        is_debug,
-        session_dir,
-        tool_surface,
         started,
         None,
     )
 }
 
 pub fn trigger_llm_request_with_surface_and_prepared_start_and_hook(
-    client: Client,
+    options: RequestExecution,
     config: Config,
     context_manager: &ContextManager,
-    tx: mpsc::UnboundedSender<StreamEvent>,
-    token: CancellationToken,
-    is_debug: bool,
-    session_dir: Option<String>,
-    tool_surface: crate::tools::ToolSurface,
     started: crate::accounting::ProviderRequestAccounting,
     request_hook: Option<RequestAccountingHook>,
 ) -> Result<String, String> {
     trigger_llm_request_with_surface_and_prepared_start_impl(
-        client,
+        options,
         config,
         Some(context_manager),
-        tx,
-        token,
-        is_debug,
-        session_dir,
-        tool_surface,
         request_hook,
         Some(started),
         None,
@@ -632,14 +589,16 @@ pub fn trigger_prepared_llm_request_with_hook(
     let config = prepared.config.clone();
     let tool_surface = prepared.tool_surface;
     trigger_llm_request_with_surface_and_prepared_start_impl(
-        client,
+        RequestExecution {
+            client,
+            tx,
+            token,
+            is_debug,
+            session_dir,
+            tool_surface,
+        },
         config,
         None,
-        tx,
-        token,
-        is_debug,
-        session_dir,
-        tool_surface,
         request_hook,
         None,
         None,
@@ -648,19 +607,23 @@ pub fn trigger_prepared_llm_request_with_hook(
 }
 
 fn trigger_llm_request_with_surface_and_prepared_start_impl(
-    client: Client,
+    options: RequestExecution,
     config: Config,
     context_manager: Option<&ContextManager>,
-    tx: mpsc::UnboundedSender<StreamEvent>,
-    token: CancellationToken,
-    _is_debug: bool,
-    session_dir: Option<String>,
-    tool_surface: crate::tools::ToolSurface,
     request_started_hook: Option<RequestStartedHook>,
     prepared_start: Option<crate::accounting::ProviderRequestAccounting>,
     settlement_fallback: Option<mpsc::UnboundedSender<StreamEvent>>,
     prepared_llm_request: Option<PreparedLlmRequest>,
 ) -> Result<String, String> {
+    let RequestExecution {
+        client,
+        tx,
+        token,
+        is_debug: _,
+        session_dir,
+        tool_surface,
+    } = options;
+
     let start_was_prepared = prepared_llm_request.is_some() || prepared_start.is_some();
     let prepared = match prepared_llm_request {
         Some(prepared) => {
@@ -1399,11 +1362,7 @@ pub fn strip_file_content_from_log(log: &str) -> String {
             continue;
         }
         if let Some(rest) = line.strip_prefix("call:") {
-            let tool_name = rest
-                .split(|c| c == '{' || c == ' ')
-                .next()
-                .unwrap_or("")
-                .to_string();
+            let tool_name = rest.split(['{', ' ']).next().unwrap_or("").to_string();
             last_tool = Some(tool_name.clone());
             if is_file_write_tool(&tool_name) {
                 let mut elided = line.to_string();

@@ -49,17 +49,26 @@ pub(super) fn status_line(app: &App) -> Option<Line<'static>> {
             spans.push(Span::styled(" · ", Style::default().fg(theme.system_fg)));
         }
         let style = state_style(app, task);
-        spans.push(Span::styled(format!("{} ", task.id), style.add_modifier(Modifier::BOLD)));
+        spans.push(Span::styled(
+            format!("{} ", task.id),
+            style.add_modifier(Modifier::BOLD),
+        ));
         if task.state.is_running() {
             spans.push(Span::styled(
-                format!("[{}] ", background::progress_bar(task.progress, 8, task.elapsed)),
+                format!(
+                    "[{}] ",
+                    background::progress_bar(task.progress, 8, task.elapsed)
+                ),
                 style,
             ));
             if let Some(label) = &task.progress_label {
                 spans.push(Span::styled(format!("{label} "), style));
             }
         } else {
-            spans.push(Span::styled(format!("{} {} ", state_mark(task), task.state.label()), style));
+            spans.push(Span::styled(
+                format!("{} {} ", state_mark(task), task.state.label()),
+                style,
+            ));
         }
         spans.push(Span::styled(
             task.description.chars().take(40).collect::<String>(),
@@ -89,28 +98,44 @@ pub(super) fn render(f: &mut ratatui::Frame, app: &App, area: Rect) {
     for task in tasks.iter().rev() {
         let style = state_style(app, task);
         lines.push(Line::from(vec![
-            Span::styled(format!("{} {} ", state_mark(task), task.id), style.add_modifier(Modifier::BOLD)),
-            Span::styled(task.description.clone(), Style::default().fg(theme.output_fg)),
+            Span::styled(
+                format!("{} {} ", state_mark(task), task.id),
+                style.add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                task.description.clone(),
+                Style::default().fg(theme.output_fg),
+            ),
         ]));
         lines.push(Line::from(vec![
             Span::styled(
-                format!("[{}] ", background::progress_bar(task.progress, bar_width, task.elapsed)),
+                format!(
+                    "[{}] ",
+                    background::progress_bar(task.progress, bar_width, task.elapsed)
+                ),
                 style,
             ),
-            Span::styled(
-                task.progress_label.clone().unwrap_or_default(),
-                style,
-            ),
+            Span::styled(task.progress_label.clone().unwrap_or_default(), style),
         ]));
-        let mut detail = format!("{} · {}", task.state.label(), background::format_duration(task.elapsed));
+        let mut detail = format!(
+            "{} · {}",
+            task.state.label(),
+            background::format_duration(task.elapsed)
+        );
         if task.state.is_running() {
-            detail.push_str(&format!(" · last activity {} ago", background::format_duration(task.idle)));
+            detail.push_str(&format!(
+                " · last activity {} ago",
+                background::format_duration(task.idle)
+            ));
             if task.idle >= STALLED_AFTER {
                 detail.push_str(" · may be stalled");
             }
         }
         detail.push_str(&format!(" · notify {}", task.notify.label()));
-        lines.push(Line::from(Span::styled(detail, Style::default().fg(theme.system_fg))));
+        lines.push(Line::from(Span::styled(
+            detail,
+            Style::default().fg(theme.system_fg),
+        )));
         if !task.last_line.trim().is_empty() {
             lines.push(Line::from(Span::styled(
                 format!("› {}", task.last_line.trim()),
@@ -119,11 +144,16 @@ pub(super) fn render(f: &mut ratatui::Frame, app: &App, area: Rect) {
         }
         lines.push(Line::from(Span::styled(
             format!("$ {}", task.command),
-            Style::default().fg(theme.system_fg).add_modifier(Modifier::DIM),
+            Style::default()
+                .fg(theme.system_fg)
+                .add_modifier(Modifier::DIM),
         )));
         lines.push(Line::from(""));
     }
-    let title = format!("⏳ Background tasks · {running} running of {} (F8)", tasks.len());
+    let title = format!(
+        "⏳ Background tasks · {running} running of {} (F8)",
+        tasks.len()
+    );
     f.render_widget(
         Paragraph::new(lines).wrap(Wrap { trim: false }).block(
             UIBlock::default()

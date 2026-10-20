@@ -1,12 +1,10 @@
+use super::ModelToolContext;
 use super::icons;
-use crate::client::{RequestStartedHook, StreamEvent, summarize_llm_accounted_with_hook};
-use crate::config::Config;
+use crate::client::{RequestStartedHook, summarize_llm_accounted_with_hook};
 use crate::tools::{FunctionDefinition, Tool};
-use reqwest::Client;
 use serde_json::json;
 use std::fs;
 use std::path::Path;
-use tokio_util::sync::CancellationToken;
 
 pub fn get_definition() -> Tool {
     Tool {
@@ -49,37 +47,26 @@ pub async fn execute(
     path: Option<&str>,
     content: Option<&str>,
     prompt: Option<&str>,
-    cwd: &str,
-    client: &Client,
-    config: &Config,
-    tx: &tokio::sync::mpsc::UnboundedSender<StreamEvent>,
-    cancellation: CancellationToken,
+    options: ModelToolContext<'_>,
 ) -> String {
-    execute_with_hook(
-        path,
-        content,
-        prompt,
-        cwd,
-        client,
-        config,
-        tx,
-        cancellation,
-        None,
-    )
-    .await
+    execute_with_hook(path, content, prompt, options, None).await
 }
 
 pub async fn execute_with_hook(
     path: Option<&str>,
     content: Option<&str>,
     prompt: Option<&str>,
-    cwd: &str,
-    client: &Client,
-    config: &Config,
-    tx: &tokio::sync::mpsc::UnboundedSender<StreamEvent>,
-    cancellation: CancellationToken,
+    options: ModelToolContext<'_>,
     request_hook: Option<RequestStartedHook>,
 ) -> String {
+    let ModelToolContext {
+        cwd,
+        client,
+        config,
+        tx,
+        cancellation,
+    } = options;
+
     if path.is_none() && content.is_none() {
         return "ERROR: Provide either 'path' (file to read) or 'content' (inline text)."
             .to_string();

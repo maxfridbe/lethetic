@@ -1354,7 +1354,7 @@ pub enum StateChange {
     Models { value: Vec<ModelChoiceView> },
     Themes { value: Vec<ThemeView> },
     Usage { value: Box<UsageSummaryView> },
-    Status { value: StatusView },
+    Status { value: Box<StatusView> },
     Debugger { value: DebuggerView },
     Overlay { value: OverlayView },
 }
@@ -1560,7 +1560,7 @@ impl IStatePatch {
         });
         push_change(&mut changes, &previous.status, &current.status, || {
             StateChange::Status {
-                value: current.status.clone(),
+                value: Box::new(current.status.clone()),
             }
         });
         push_change(&mut changes, &previous.debugger, &current.debugger, || {

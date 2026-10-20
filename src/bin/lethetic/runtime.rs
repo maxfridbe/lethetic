@@ -337,7 +337,10 @@ pub(crate) async fn run_actor(
             }
         }
         if context.lifecycle.is_shutting_down() {
-            crate::stream_events::abandon_provider_retry(context.app, "Retry dropped: shutting down");
+            crate::stream_events::abandon_provider_retry(
+                context.app,
+                "Retry dropped: shutting down",
+            );
         } else {
             crate::stream_events::run_due_provider_retry(&mut context);
         }
@@ -895,7 +898,7 @@ fn spawn_background_tasks(context: &RuntimeContext<'_>) -> BackgroundTasks {
         let mut lethetic_bytes: Option<u64> = None;
         let mut sample_index: u64 = 0;
         loop {
-            if sample_index % 10 == 0 {
+            if sample_index.is_multiple_of(10) {
                 lethetic_bytes = tokio::task::spawn_blocking(|| {
                     lethetic::platform::directory_size_bytes(std::path::Path::new(".lethetic"))
                 })
@@ -991,6 +994,71 @@ fn emit_console(
     match console.as_deref_mut() {
         Some(console) => console.emit(event),
         None => Ok(()),
+    }
+}
+
+async fn handle_remote_control_request(
+    request: crate::context::RemoteControlRequest,
+    context: &mut RuntimeContext<'_>,
+    wfe_runtime: &mut Option<WfeRuntime>,
+    wfe_status: &mut Option<WfeStatusReceiver>,
+    in_session_server: &mut Option<lethetic::wfe::server::WfeServerHandle>,
+) {
+    use crate::context::RemoteControlRequest;
+    context.app.should_redraw = true;
+    match request {
+        RemoteControlRequest::Start { .. } if wfe_runtime.is_some() => {
+            context.app.stop_reason = "Remote control is already running".to_string();
+        }
+        RemoteControlRequest::Start {
+            target,
+            open,
+            files,
+        } => {
+            match crate::wfe_startup::start_in_session(
+                context.app,
+                context.config,
+                &target,
+                open,
+                files,
+            )
+            .await
+            {
+                Ok(started) => {
+                    *wfe_runtime = Some(started.runtime);
+                    *wfe_status = Some(started.status);
+                    *in_session_server = Some(started.server);
+                    context.app.remote_control_target = Some(target.clone());
+                    context.app.remote_control_open = open;
+                    context.app.remote_control_files = files;
+                    context.app.remote_control_clients = 0;
+                    context.app.remote_control_last_peer = None;
+                    context.app.rc_info = Some(lethetic::app::RcInfoState {
+                        lines: started.lines,
+                        url: started.url,
+                    });
+                    context.app.stop_reason = format!("Remote control running at {target}");
+                }
+                Err(error) => {
+                    context.app.stop_reason = format!("✗ Remote control failed: {error}");
+                }
+            }
+        }
+        RemoteControlRequest::Stop => {
+            let Some(server) = in_session_server.take() else {
+                context.app.stop_reason =
+                    "Remote control was not started from the palette".to_string();
+                return;
+            };
+            *wfe_runtime = None;
+            *wfe_status = None;
+            context.app.remote_control_target = None;
+            context.app.remote_control_clients = 0;
+            context.app.stop_reason = match server.shutdown().await {
+                Ok(()) => "Remote control stopped".to_string(),
+                Err(error) => format!("⚠ Remote control stopped with an error: {error}"),
+            };
+        }
     }
 }
 
@@ -1230,71 +1298,6 @@ mod tests {
                 !encoded.contains(private),
                 "serialized private value {private}"
             );
-        }
-    }
-}
-
-async fn handle_remote_control_request(
-    request: crate::context::RemoteControlRequest,
-    context: &mut RuntimeContext<'_>,
-    wfe_runtime: &mut Option<WfeRuntime>,
-    wfe_status: &mut Option<WfeStatusReceiver>,
-    in_session_server: &mut Option<lethetic::wfe::server::WfeServerHandle>,
-) {
-    use crate::context::RemoteControlRequest;
-    context.app.should_redraw = true;
-    match request {
-        RemoteControlRequest::Start { .. } if wfe_runtime.is_some() => {
-            context.app.stop_reason = "Remote control is already running".to_string();
-        }
-        RemoteControlRequest::Start {
-            target,
-            open,
-            files,
-        } => {
-            match crate::wfe_startup::start_in_session(
-                context.app,
-                context.config,
-                &target,
-                open,
-                files,
-            )
-            .await
-            {
-                Ok(started) => {
-                    *wfe_runtime = Some(started.runtime);
-                    *wfe_status = Some(started.status);
-                    *in_session_server = Some(started.server);
-                    context.app.remote_control_target = Some(target.clone());
-                    context.app.remote_control_open = open;
-                    context.app.remote_control_files = files;
-                    context.app.remote_control_clients = 0;
-                    context.app.remote_control_last_peer = None;
-                    context.app.rc_info = Some(lethetic::app::RcInfoState {
-                        lines: started.lines,
-                        url: started.url,
-                    });
-                    context.app.stop_reason = format!("Remote control running at {target}");
-                }
-                Err(error) => {
-                    context.app.stop_reason = format!("✗ Remote control failed: {error}");
-                }
-            }
-        }
-        RemoteControlRequest::Stop => {
-            let Some(server) = in_session_server.take() else {
-                context.app.stop_reason =
-                    "Remote control was not started from the palette".to_string();
-                return;
-            };
-            *wfe_runtime = None;
-            *wfe_status = None;
-            context.app.remote_control_target = None;
-            context.app.remote_control_clients = 0;
-            context.app.stop_reason = match server.shutdown().await {
-                Ok(()) => "Remote control stopped".to_string(),
-                Err(error) => format!("⚠ Remote control stopped with an error: {error}"),
-            };
         }
     }
 }

@@ -176,14 +176,16 @@ pub(crate) fn trigger_persisted_provider_request(
     cancellation_token: &CancellationToken,
 ) -> Result<String, String> {
     trigger_llm_request_with_surface(
-        client.clone(),
+        lethetic::client::RequestExecution {
+            client: client.clone(),
+            tx: tx.clone(),
+            token: cancellation_token.clone(),
+            is_debug: app.show_debug,
+            session_dir: None,
+            tool_surface: lethetic::tools::ToolSurface::Interactive,
+        },
         config.clone(),
         &app.context_manager,
-        tx.clone(),
-        cancellation_token.clone(),
-        app.show_debug,
-        None,
-        lethetic::tools::ToolSurface::Interactive,
     )
 }
 
@@ -263,7 +265,7 @@ fn settle_pending_interaction_with_result_checked(
         app.should_redraw,
         app.stop_reason.clone(),
         app.tool_output_preview.clone(),
-        app.output_state.clone(),
+        app.output_state,
         app.scroll,
         app.total_line_count,
     );
@@ -280,18 +282,18 @@ fn settle_pending_interaction_with_result_checked(
     app.tool_call_pos = None;
     app.request_start_time = None;
     app.tool_output_preview.clear();
-    let pending_call_is_in_context =
-        app.context_manager
-            .get_messages()
-            .iter()
-            .rev()
-            .find(|message| message.role == "assistant")
-            .is_some_and(|message| {
-                message
-                        .tool_calls
-                        .as_ref()
-                        .is_some_and(|calls| calls.iter().any(|call| call.id == tool_call.id))
-            });
+    let pending_call_is_in_context = app
+        .context_manager
+        .get_messages()
+        .iter()
+        .rev()
+        .find(|message| message.role == "assistant")
+        .is_some_and(|message| {
+            message
+                .tool_calls
+                .as_ref()
+                .is_some_and(|calls| calls.iter().any(|call| call.id == tool_call.id))
+        });
     if !pending_call_is_in_context {
         let mut compact_call = tool_call.clone();
         compact_call.function.arguments = serde_json::json!({
@@ -499,11 +501,13 @@ pub(crate) fn dispatch_auto_approved_tool(
             &tool_runtime,
             func_name.as_str(),
             &args,
-            &current_dir,
-            tool_cancel,
-            ctx_tx.clone(),
-            &client,
-            &config,
+            lethetic::tools::ToolContext {
+                cwd: &current_dir,
+                cancellation_token: tool_cancel,
+                tx: ctx_tx.clone(),
+                client: &client,
+                config: &config,
+            },
             request_hook,
         )
         .await;

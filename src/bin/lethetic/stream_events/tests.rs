@@ -743,8 +743,15 @@ fn calculate_calls(ids: &[&str]) -> Vec<lethetic::context::ToolCall> {
 fn result_id(message: &lethetic::context::Message) -> String {
     let marker = "tool_call_id:<|'|>";
     let text = message.content.as_str();
-    let start = text.rfind(marker).map(|index| index + marker.len()).unwrap_or(0);
-    text[start..].split("<|'|>").next().unwrap_or("").to_string()
+    let start = text
+        .rfind(marker)
+        .map(|index| index + marker.len())
+        .unwrap_or(0);
+    text[start..]
+        .split("<|'|>")
+        .next()
+        .unwrap_or("")
+        .to_string()
 }
 
 fn calculate_result(id: &str) -> StreamEvent {
@@ -785,7 +792,11 @@ async fn sequential_batch_runs_every_call_before_asking_the_model_again() {
 
     handle_stream_event(&mut context, calculate_result("first")).await;
     assert_eq!(
-        context.app.pending_tool_call.as_ref().map(|call| call.id.as_str()),
+        context
+            .app
+            .pending_tool_call
+            .as_ref()
+            .map(|call| call.id.as_str()),
         Some("second"),
         "the second call starts instead of a new model request"
     );
@@ -846,9 +857,7 @@ async fn stopping_mid_batch_gives_unrun_calls_an_error_result() {
         .get_messages()
         .iter()
         .filter(|message| message.role == "tool")
-        .map(|message| {
-            (result_id(message), message.tool_result_is_error)
-        })
+        .map(|message| (result_id(message), message.tool_result_is_error))
         .collect();
     assert_eq!(
         unrun,
@@ -885,9 +894,18 @@ async fn a_dropped_reply_is_retried_until_the_limit_then_reported() {
     for attempt in 1..=2 {
         handle_stream_event(&mut context, StreamEvent::Error(DROPPED.to_string())).await;
         assert_eq!(context.app.provider_retry_attempts, attempt);
-        assert!(context.app.provider_retry_at.is_some(), "retry {attempt} scheduled");
-        assert!(context.app.is_processing, "the turn stays open while retrying");
-        assert!(context.full_response_content.is_empty(), "partial reply discarded");
+        assert!(
+            context.app.provider_retry_at.is_some(),
+            "retry {attempt} scheduled"
+        );
+        assert!(
+            context.app.is_processing,
+            "the turn stays open while retrying"
+        );
+        assert!(
+            context.full_response_content.is_empty(),
+            "partial reply discarded"
+        );
         assert!(context.app.stop_reason.starts_with("↻ Retrying"));
         context.app.provider_retry_at = None;
     }
@@ -912,8 +930,7 @@ async fn rejections_and_disabled_retries_are_reported_at_once() {
         };
         let mut app = processing_app(&config);
         let (tx, _rx) = mpsc::unbounded_channel();
-        let mut context =
-            RuntimeContext::new(&mut app, &mut config, tx, RuntimeMode::Interactive);
+        let mut context = RuntimeContext::new(&mut app, &mut config, tx, RuntimeMode::Interactive);
         handle_stream_event(&mut context, StreamEvent::Error(error.to_string())).await;
         assert!(context.app.provider_retry_at.is_none(), "{error}");
         assert!(!context.app.is_processing, "{error}");
@@ -935,6 +952,9 @@ async fn stopping_during_the_retry_wait_cancels_it() {
     let _ = context.dispatch_app_event(AppEventOutcome::Stop).await;
     assert!(context.app.provider_retry_at.is_none());
     assert!(!context.app.is_processing);
-    assert!(!context.cancellation_pending, "nothing in flight to contain");
+    assert!(
+        !context.cancellation_pending,
+        "nothing in flight to contain"
+    );
     assert_eq!(context.app.stop_reason, "Cancelled by user");
 }

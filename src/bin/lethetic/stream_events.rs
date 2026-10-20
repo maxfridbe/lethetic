@@ -56,7 +56,9 @@ fn schedule_provider_retry(context: &mut RuntimeContext<'_>, error: &str) -> boo
         "↻ Retrying model request in {}s (attempt {attempt} of {allowed})",
         wait.as_secs()
     );
-    context.app.log_debug(&format!("PROVIDER_RETRY_SCHEDULED|{attempt}|{error}"));
+    context
+        .app
+        .log_debug(&format!("PROVIDER_RETRY_SCHEDULED|{attempt}|{error}"));
     context.app.should_redraw = true;
     context.app.save_session();
     true
@@ -80,15 +82,17 @@ pub(crate) fn run_due_provider_retry(context: &mut RuntimeContext<'_>) {
     context.app.request_start_time = Some(tokio::time::Instant::now());
     context.app.parser.reset();
     context.app.stop_reason = "Processing… (retry)".to_string();
-    if persist_before_side_effect(context.app, "retry the provider request", SideEffectKind::Provider)
-        && let Err(error) = trigger_persisted_provider_request(
-            context.app,
-            &context.client,
-            context.config,
-            &context.tx,
-            &context.cancellation_token,
-        )
-    {
+    if persist_before_side_effect(
+        context.app,
+        "retry the provider request",
+        SideEffectKind::Provider,
+    ) && let Err(error) = trigger_persisted_provider_request(
+        context.app,
+        &context.client,
+        context.config,
+        &context.tx,
+        &context.cancellation_token,
+    ) {
         record_provider_start_failure(context.app, "Provider retry", &error);
     }
     context.app.should_redraw = true;
@@ -104,7 +108,10 @@ pub(crate) fn abandon_provider_retry(app: &mut App, reason: &str) -> bool {
     app.request_start_time = None;
     app.settle_logical_turn();
     app.stop_reason = reason.to_string();
-    app.add_segment(format!("\n{} [RETRY CANCELLED]\n", icons::WARNING), BlockType::Text);
+    app.add_segment(
+        format!("\n{} [RETRY CANCELLED]\n", icons::WARNING),
+        BlockType::Text,
+    );
     app.should_redraw = true;
     app.save_session();
     true
@@ -733,12 +740,14 @@ pub(crate) async fn handle_stream_event(
                 && let AppEventOutcome::ToolApproved(..) = handle_tool_call_with_provider(
                     context.app,
                     calls,
-                    context.full_response_content.len(),
+                    lethetic::app::ToolCallPresentation {
+                        pos: context.full_response_content.len(),
+                        full_response_content: &context.full_response_content,
+                        is_native: true,
+                        provider_content,
+                    },
                     context.tx.clone(),
                     &mut context.cancellation_token,
-                    &context.full_response_content,
-                    true,
-                    provider_content,
                 )
             {
                 dispatch_auto_approved_tool(
@@ -1026,10 +1035,8 @@ pub(crate) async fn handle_stream_event(
                 // A multi-call batch runs its calls one at a time; the model is
                 // asked again only once every call has a result.
                 if !context.cancellation_pending && context.app.batch_in_progress() {
-                    let outcome = lethetic::app::start_next_queued_tool_call(
-                        context.app,
-                        &context.tx,
-                    );
+                    let outcome =
+                        lethetic::app::start_next_queued_tool_call(context.app, &context.tx);
                     if let Some(AppEventOutcome::ToolApproved(..)) = outcome {
                         dispatch_auto_approved_tool(
                             context.app,
@@ -1513,7 +1520,7 @@ pub(crate) async fn handle_stream_event(
                     context.app,
                     context.config,
                     dir,
-                    state,
+                    *state,
                     context.shutdown_cancellation.child_token(),
                     lease,
                 )
@@ -1523,7 +1530,7 @@ pub(crate) async fn handle_stream_event(
                     context.app,
                     context.config,
                     dir,
-                    state,
+                    *state,
                     context.shutdown_cancellation.child_token(),
                 )
                 .await;

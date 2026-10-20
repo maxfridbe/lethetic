@@ -9,7 +9,7 @@ const ACTIVE_FILE_TURNS: usize = 3;
 const LATEST_FILES_BUDGET_FRACTION: usize = 35; // 35% of max_tokens for all cached files
 
 fn estimate_byte_len_tokens(bytes: usize) -> usize {
-    bytes / CHARS_PER_TOKEN + usize::from(bytes % CHARS_PER_TOKEN != 0)
+    bytes / CHARS_PER_TOKEN + usize::from(!bytes.is_multiple_of(CHARS_PER_TOKEN))
 }
 
 fn estimate_tokens(text: &str) -> usize {
@@ -952,7 +952,12 @@ mod tests {
         for turn in 0..3 {
             context.add_message("user", &format!("commit {turn}"));
             context.upsert_assistant_tool_call_with_provider("", vec![call("commit_fix")], None);
-            context.add_tool_message_with_status("commit_fix".to_string(), "run_shell_command", "ok", false);
+            context.add_tool_message_with_status(
+                "commit_fix".to_string(),
+                "run_shell_command",
+                "ok",
+                false,
+            );
         }
         context.add_message("user", "next");
         let prepared = context.prepare_api_context();
@@ -969,7 +974,11 @@ mod tests {
         assert_eq!(calls, ["commit_fix", "commit_fix-2", "commit_fix-3"]);
         assert_eq!(results, calls, "each result answers its own call");
         assert_eq!(
-            context.get_messages().iter().filter(|m| m.role == "tool").count(),
+            context
+                .get_messages()
+                .iter()
+                .filter(|m| m.role == "tool")
+                .count(),
             3,
             "the stored transcript is unchanged"
         );

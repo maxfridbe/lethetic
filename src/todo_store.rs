@@ -112,18 +112,10 @@ pub struct TodoItem {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
+#[derive(Default)]
 pub struct TodoSnapshot {
     pub revision: u64,
     pub todos: Vec<TodoItem>,
-}
-
-impl Default for TodoSnapshot {
-    fn default() -> Self {
-        Self {
-            revision: 0,
-            todos: Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug)]

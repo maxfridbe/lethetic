@@ -1,3 +1,4 @@
+use super::ModelToolContext;
 use super::icons;
 use crate::tools::{FunctionDefinition, Tool};
 use base64::{Engine as _, engine::general_purpose};
@@ -49,37 +50,26 @@ pub async fn execute(
     prompt: &str,
     image_path: &str,
     max_size: Option<u32>,
-    cwd: &str,
-    client: &reqwest::Client,
-    config: &crate::config::Config,
-    tx: &tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>,
-    cancellation: tokio_util::sync::CancellationToken,
+    options: ModelToolContext<'_>,
 ) -> String {
-    execute_with_hook(
-        prompt,
-        image_path,
-        max_size,
-        cwd,
-        client,
-        config,
-        tx,
-        cancellation,
-        None,
-    )
-    .await
+    execute_with_hook(prompt, image_path, max_size, options, None).await
 }
 
 pub async fn execute_with_hook(
     prompt: &str,
     image_path: &str,
     max_size: Option<u32>,
-    cwd: &str,
-    client: &reqwest::Client,
-    config: &crate::config::Config,
-    tx: &tokio::sync::mpsc::UnboundedSender<crate::client::StreamEvent>,
-    cancellation: tokio_util::sync::CancellationToken,
+    options: ModelToolContext<'_>,
     request_hook: Option<crate::client::RequestStartedHook>,
 ) -> String {
+    let ModelToolContext {
+        cwd,
+        client,
+        config,
+        tx,
+        cancellation,
+    } = options;
+
     let image_path = image_path.trim_matches(|c| c == '\'' || c == '\"');
     let full_path = Path::new(cwd).join(image_path);
     if !full_path.exists() {

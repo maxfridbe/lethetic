@@ -83,7 +83,10 @@ pub fn get_ui_description(arguments: &serde_json::Value) -> String {
         .as_str()
         .or_else(|| arguments["command"].as_str())
         .unwrap_or("");
-    let id = arguments["id"].as_str().map(|id| format!(" {id}")).unwrap_or_default();
+    let id = arguments["id"]
+        .as_str()
+        .map(|id| format!(" {id}"))
+        .unwrap_or_default();
     format!("{} Background {action}{id}: {detail}", icons::SHELL)
 }
 
@@ -103,7 +106,10 @@ fn render(task: &TaskSnapshot, recent: usize) -> String {
         && let Some(lines) = background::output_tail(&task.id, recent)
         && !lines.is_empty()
     {
-        out.push_str(&format!("Recent output ({} lines total):\n", task.output_lines));
+        out.push_str(&format!(
+            "Recent output ({} lines total):\n",
+            task.output_lines
+        ));
         for line in lines {
             out.push_str(&line);
             out.push('\n');
@@ -161,7 +167,9 @@ pub async fn execute(
                     "Automatic notification is turned off; poll with status or wait."
                 }
                 NotifyTarget::Model => "You will be told when it finishes; keep working meanwhile.",
-                NotifyTarget::User => "Only the user is told when it finishes; poll with status or wait.",
+                NotifyTarget::User => {
+                    "Only the user is told when it finishes; poll with status or wait."
+                }
                 NotifyTarget::None => "Nobody is told when it finishes; poll with status or wait.",
             };
             Ok(format!(

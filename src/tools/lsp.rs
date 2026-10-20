@@ -143,16 +143,28 @@ fn validate_operation_inputs(
     }
 }
 
+pub struct LspRequest<'a> {
+    pub operation: &'a str,
+    pub file_path: Option<&'a str>,
+    pub line: Option<u32>,
+    pub character: Option<u32>,
+    pub query: Option<&'a str>,
+}
+
 pub async fn execute(
-    operation: &str,
-    file_path: Option<&str>,
-    line: Option<u32>,
-    character: Option<u32>,
-    query: Option<&str>,
+    options: LspRequest<'_>,
     cwd: &str,
     cancellation_token: CancellationToken,
     tx: mpsc::UnboundedSender<StreamEvent>,
 ) -> String {
+    let LspRequest {
+        operation,
+        file_path,
+        line,
+        character,
+        query,
+    } = options;
+
     // Resolve file to absolute path
     let abs_path: Option<String> = file_path.map(|fp| {
         let p = Path::new(fp);

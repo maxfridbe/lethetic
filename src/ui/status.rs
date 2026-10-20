@@ -302,7 +302,10 @@ fn status_lines(app: &App) -> Vec<Line<'static>> {
         ("| ToolTime: ", times.tool_ms),
         ("| IdleTime: ", times.idle_ms),
     ] {
-        line2_spans.push(Span::styled(label, Style::default().fg(app.theme.system_fg)));
+        line2_spans.push(Span::styled(
+            label,
+            Style::default().fg(app.theme.system_fg),
+        ));
         line2_spans.push(Span::styled(
             format!("{} ", crate::status_summary::format_compact_duration(ms)),
             Style::default().fg(app.theme.thought_fg),
@@ -462,7 +465,8 @@ mod status_layout_tests {
     #[test]
     fn status_rows_fit_the_width_and_the_area_grows_to_hold_them() {
         let mut app = App::new(&crate::config::Config::default());
-        app.tool_use_counts.insert("run_shell_command".to_string(), 87);
+        app.tool_use_counts
+            .insert("run_shell_command".to_string(), 87);
         app.tool_use_counts.insert("edit".to_string(), 10);
         app.session_times = crate::status_summary::SessionTimes {
             engine_ms: 33 * 60_000,
@@ -475,7 +479,12 @@ mod status_layout_tests {
         let rows = status_rows(&app, 60);
         let text: String = rows
             .iter()
-            .map(|row| row.spans.iter().map(|span| span.content.as_ref()).collect::<String>())
+            .map(|row| {
+                row.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
             .collect::<Vec<_>>()
             .join("\n");
         assert!(text.contains("EngTime: 33m"), "{text}");
@@ -512,8 +521,14 @@ mod status_layout_tests {
         back(&mut app);
         app.accrue_session_time();
         assert!(app.session_times.tool_ms >= 2000);
-        assert_eq!(crate::status_summary::format_compact_duration(45_000), "45s");
-        assert_eq!(crate::status_summary::format_compact_duration(33 * 60_000 + 5_000), "33m");
+        assert_eq!(
+            crate::status_summary::format_compact_duration(45_000),
+            "45s"
+        );
+        assert_eq!(
+            crate::status_summary::format_compact_duration(33 * 60_000 + 5_000),
+            "33m"
+        );
         assert_eq!(
             crate::status_summary::format_compact_duration(3 * 3_600_000 + 300_000),
             "3h 05m"

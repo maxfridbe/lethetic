@@ -574,7 +574,8 @@ pub(crate) async fn handle_app_event_outcome(
         }
         AppEventOutcome::CycleToolCallMode => {
             if config.tool_profile == lethetic::config::ToolProfile::PythonOnly {
-                app.stop_reason = "Tool calls: Python-only mode always uses one per turn".to_string();
+                app.stop_reason =
+                    "Tool calls: Python-only mode always uses one per turn".to_string();
             } else {
                 config.tool_calls = config.tool_calls.next();
                 app.config.tool_calls = config.tool_calls;
@@ -1083,15 +1084,9 @@ pub(crate) async fn handle_app_event_outcome(
                 let tool_cancel = (*cancellation_token).clone();
                 let cwd = app.current_dir.clone();
                 tokio::spawn(async move {
-                    let execution = lethetic::tools::execute(
-                        "run_shell_command",
-                        &serde_json::json!({"command": cmd, "description": "Install LSP server", "tool_call_id": "lsp_install"}),
-                        &cwd,
-                        tool_cancel,
-                        ctx_tx.clone(),
-                        &reqwest::Client::new(),
-                        &lethetic::config::Config::default(),
-                    )
+                    let execution = lethetic::tools::execute("run_shell_command",
+&serde_json::json!({"command": cmd, "description": "Install LSP server", "tool_call_id": "lsp_install"}),
+lethetic::tools::ToolContext { cwd: &cwd, cancellation_token: tool_cancel, tx: ctx_tx.clone(), client: &reqwest::Client::new(), config: &lethetic::config::Config::default() },)
                     .await;
                     let _ = ctx_tx.send(StreamEvent::ToolResult {
                         id: None,

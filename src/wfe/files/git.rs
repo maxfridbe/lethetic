@@ -42,7 +42,12 @@ pub(super) fn status_sync(
         truncated: false,
         protected: 0,
     };
-    match run_git(directory, &["rev-parse", "--is-inside-work-tree"], 64, context)? {
+    match run_git(
+        directory,
+        &["rev-parse", "--is-inside-work-tree"],
+        64,
+        context,
+    )? {
         Some(output) if output.starts_with(b"true") => {}
         _ => return Ok(not_repository),
     }
@@ -256,7 +261,12 @@ fn has_head(directory: &Path, context: &OperationContext) -> Result<bool, FilesE
 }
 
 fn branch_name(directory: &Path, context: &OperationContext) -> Result<Option<String>, FilesError> {
-    let named = run_git(directory, &["symbolic-ref", "--short", "-q", "HEAD"], 512, context)?;
+    let named = run_git(
+        directory,
+        &["symbolic-ref", "--short", "-q", "HEAD"],
+        512,
+        context,
+    )?;
     let output = match named {
         Some(output) => Some(output),
         None => run_git(directory, &["rev-parse", "--short", "HEAD"], 128, context)?,
@@ -471,7 +481,10 @@ mod tests {
             .await
             .unwrap()
             .into_value();
-        assert_eq!((deleted.original.as_str(), deleted.modified.as_str()), ("a\nb\n", ""));
+        assert_eq!(
+            (deleted.original.as_str(), deleted.modified.as_str()),
+            ("a\nb\n", "")
+        );
         let protected = files
             .git_diff(
                 GitDiffRequest {
