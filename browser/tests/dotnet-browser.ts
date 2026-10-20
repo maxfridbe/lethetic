@@ -175,6 +175,8 @@ export async function testDotnetBrowser(evaluate: (expression: string) => Promis
     if(!document.body.innerText.includes('Site ready on virtual port'))throw Error('Run output missing');
     document.querySelector('[data-browser-action=sites]').click();
     await wait(()=>document.querySelector('[data-field=site-frame]')?.src.includes('wire-preview-host.html'));
+    const networkNote=document.querySelector('[data-field=site-network]').textContent;
+    if(!networkNote.includes('disabled') || !networkNote.includes('run the site file again'))throw Error('Sites must explain disabled outbound HTTP and restart');
     await new Promise(r=>setTimeout(r,300));
   })()`);
   const interacted=await previewInput(`(async()=>{
@@ -204,6 +206,15 @@ export async function testDotnetBrowser(evaluate: (expression: string) => Promis
     const permission=document.querySelector('[data-field=sites]');permission.checked=false;permission.dispatchEvent(new Event('change'));
     if(saved().siteAccess || saved().id!==id || !saved().workspace.files.some(file=>file.path==='wireapp/note.txt'))throw Error('Revocation lost session/files');
     if(!document.querySelector('[data-browser-action=sites]').textContent.includes('(0)'))throw Error('Revocation kept site running');
+    const network=document.querySelector('[data-field=network]');network.checked=true;network.dispatchEvent(new Event('change'));
+    if(!saved().networkAccess || saved().id!==id)throw Error('Network permission lost session');
+    document.querySelector('dialog[open]').close();
+    document.querySelector('[data-browser-action=sites]').click();
+    const route=saved().dotnetRelayEndpoint ? 'HTTP relay' : 'direct requests';
+    if(!document.querySelector('[data-field=site-network]').textContent.includes('enabled · '+route))throw Error('Sites network status is stale');
+    document.querySelector('dialog[open]').close();
+    document.querySelector('[data-browser-action=connections]').click();
+    network.checked=false;network.dispatchEvent(new Event('change'));
     document.querySelector('dialog[open]').close();
   })()`);
 

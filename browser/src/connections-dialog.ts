@@ -53,6 +53,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     <fieldset class="browser-runtime"><legend>Runtime &amp; security · current session</legend>
     <label>Code runtime <select data-field="mode"><option value="general">Chat</option><option value="python">Python · Pyodide</option><option value="dotnet-wasm">.NET 11 · WASM</option></select></label>
     <label><input data-field="network" type="checkbox"> Network access (.NET code)</label>
+    <p class="browser-note">Required for HttpClient calls to external APIs, including calls inside site routes. Changing this setting stops running .NET sites; run the site file again afterward. Session files and chat are kept.</p>
     <label><input data-field="sites" type="checkbox"> Interactive sites (ASP.NET virtual ports and isolated preview)</label>
     <label><input data-field="nuget" type="checkbox"> NuGet package access (direct downloads from NuGet.org)</label>
     <a href="${new URL("../../runtimes/dotnetdide/llm.md", import.meta.url).href}" target="_blank" rel="noopener">.NET usage guide</a>
@@ -301,7 +302,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     updateEditor(); routeEditor();
   });
   input("network").addEventListener("change", () => {
-    try { transport.setNetworkAccess(input("network").checked); status(`.NET network access ${transport.networkAccess ? "enabled" : "disabled"}.`); }
+    try { transport.setNetworkAccess(input("network").checked); status(`.NET network access ${transport.networkAccess ? "enabled" : "disabled"}. Run your site file again to restart its routes with this setting.`); }
     catch (error) { status(errorMessage(error)); }
     updateEditor();
   });

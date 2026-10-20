@@ -522,6 +522,18 @@ but native form navigation is blocked: use preventDefault and fetch. The child
 cannot access parent DOM/storage/keys or external networking. General outbound
 C# HTTP remains controlled separately by Network access.
 
+For a weather page or another site that calls an external API, enable **both**
+Interactive sites and **Network access** before running its `.cs` or `.csproj`.
+The Sites dialog shows the current C# network permission and HTTP route.
+Changing Network access stops the .NET worker: run the site file again, then
+reopen Sites. It does not remove the session's files or chat. Use
+`fetch('/api/weather')` in the page and `HttpClient` in the C# route; external
+requests made directly by preview JavaScript are blocked even with Network access
+enabled. Direct C# requests still require destination CORS support.
+Keep the original exception message when reporting failures: “Network access is
+disabled by the host” means the permission is off; a generic fetch failure alone
+does not identify whether CORS, connectivity, or the remote service caused it.
+
 ES modules, dynamic asset URLs, XHR, CSS @import, WebSockets and streaming are
 not implemented in this message transport. Use explicit JSON serialization with
 `Response.WriteAsync(JsonSerializer.Serialize(value))`; .NET 11 RC2 WASM has a
