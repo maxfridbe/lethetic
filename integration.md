@@ -534,6 +534,13 @@ Keep the original exception message when reporting failures: “Network access i
 disabled by the host” means the permission is off; a generic fetch failure alone
 does not identify whether CORS, connectivity, or the remote service caused it.
 
+Leave `User-Agent` to the browser when using direct `HttpClient` requests. A
+custom header can trigger a rejected CORS preflight in Firefox even when the
+same program appears to work in Chrome, which may silently drop that header.
+In a Firefox Wire preview test, removing the custom `User-Agent` resolved an
+Open-Meteo geocoding fetch failure. An HTTP 200 is still not proof of a successful
+ZIP lookup: check the returned locations before making a forecast request.
+
 ES modules, dynamic asset URLs, XHR, CSS @import, WebSockets and streaming are
 not implemented in this message transport. Use explicit JSON serialization with
 `Response.WriteAsync(JsonSerializer.Serialize(value))`; .NET 11 RC2 WASM has a
