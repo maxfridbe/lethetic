@@ -36,12 +36,63 @@ ${PYODIDE_CHECK}
 
 sys.platform == "emscripten" identifies an Emscripten Python build, not exclusively Pyodide. For another package, importlib.util.find_spec("package_name") checks whether it is currently importable, not whether it can be installed. The tool automatically loads packages bundled with Pyodide from imports in the submitted code. For additional compatible wheels, use import micropip followed by await micropip.install("package-name"). Native desktop binaries, subprocesses, and OS shell commands are unavailable. Network requests remain subject to browser CORS; use async browser-compatible APIs such as pyodide.http.pyfetch. Use print() to report useful output, and inspect exceptions before claiming success.`;
 
+export const DOTNET_PROGRAM_EXAMPLE = String.raw`{
+    Directory.CreateDirectory("demo");
+    File.WriteAllText("demo/Program.cs", """
+using System.Text.Json;
+Directory.CreateDirectory("output");
+File.WriteAllText("output/result.json", JsonSerializer.Serialize(new { answer = 6 * 7 }));
+Console.WriteLine("Created demo/output/result.json");
+""");
+    var run = await Dotnet.Run("demo/Program.cs");
+    if (!run.Success)
+        throw new Exception(run.Build.Output + "\n" + run.Stderr + "\n" + run.Error + " ExitCode=" + run.ExitCode);
+    Console.WriteLine(File.ReadAllText("demo/output/result.json"));
+}`;
+
+export const DOTNET_PROJECT_EXAMPLE = String.raw`{
+    Directory.CreateDirectory("report");
+    File.WriteAllText("report/Report.csproj", """
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+</Project>
+""");
+    File.WriteAllText("report/Program.cs", "Console.WriteLine(Answer.Value); File.WriteAllText(\"answer.txt\", Answer.Value.ToString());");
+    File.WriteAllText("report/Answer.cs", "public static class Answer { public static int Value => 42; }");
+    var build = Dotnet.Build("report/Report.csproj");
+    if (!build.Success) throw new Exception(build.Output);
+    Console.WriteLine($"Artifacts: {build.AssemblyPath}, {build.PdbPath}");
+    var run = await Dotnet.Run("report/Report.csproj");
+    if (!run.Success)
+        throw new Exception(run.Build.Output + "\n" + run.Stderr + "\n" + run.Error + " ExitCode=" + run.ExitCode);
+}`;
+
 export const DOTNET_INSTRUCTIONS = `dotnet-wasm mode
 The user expects you to write, compile and run C# programs to solve their problems. Your dotnet tool runs .NET 11 and Roslyn inside a browser worker. Use System.IO to inspect uploaded files and create reusable .cs programs and results under /home/dotnetdide (the initial working directory). These files sync into this session after each tool call and the user can preview or download them in Files. Python and .NET modes share relative session file paths.
 
 Default script usings: System, System.IO, System.Linq, System.Collections.Generic, System.Threading.Tasks. Use using (...) blocks for disposable script resources; top-level using var declarations require a regular compiled .cs program. Add explicit using directives for other .NET namespaces, e.g. System.Text.Json, System.Net.Http and System.IO.Compression. Variables persist until stop, reload, mode/permission changes or session switch; files survive. Session limits: 100 files, 256 folders, 1 MiB per file, 2 MiB total. Use Console.WriteLine to report output and inspect compiler diagnostics before claiming success.
 
-Write File.WriteAllText("Program.cs", source), then await Dotnet.Run("Program.cs"). Dotnet.Build() builds workspace sources; Dotnet.Build("app.csproj") and await Dotnet.Run("app.csproj") support a limited SDK-style project subset, not full MSBuild. Inspect the returned Success, Output or Build.Output and ExitCode. No NuGet restore, package/project references, native binaries or shell. Script variables and script using directives are not inherited by separately compiled programs.
+Workspace workflow:
+1. Inspect uploads with Directory.GetFiles(".", "*", SearchOption.AllDirectories), File.ReadAllText or File.ReadAllBytes. Create parent directories with Directory.CreateDirectory before writing. Use File.WriteAllText for source/text/SVG, File.WriteAllBytes for binary media, and FileStream for streams. Dispose streams before returning so session sync captures complete files.
+2. Save a reusable program as .cs, then always await Dotnet.Run(path, optionalStringArrayArgs). A direct .cs path compiles only that file; use a directory or .csproj for multiple source files. Compiled programs need top-level statements or static Main, with their own using directives. They cannot access script variables or the script's Dotnet helper.
+3. Dotnet.Build(path) is synchronous and only compiles; Dotnet.Run(path) rebuilds and executes, so a separate Build is optional. Both print diagnostics. Check run.Success, run.Build.Output, run.Stderr, run.Error and run.ExitCode: the surrounding tool call can succeed even when a program fails. Build results expose Success, Output, Diagnostics, AssemblyPath and PdbPath.
+4. Runs use the source/project directory as their working directory. Afterward the script's working directory is restored. Successful builds write bin/<name>.dll and bin/<name>.pdb beside the source/project. These are managed assemblies, not standalone WASM applications. All source, media and build artifacts count toward session size limits. Keep useful source and output files; remove unneeded bin artifacts if approaching limits.
+5. Dotnet.Build() and Dotnet.Run() discover the single .csproj in the current directory; otherwise they compile .cs files recursively, skipping bin, obj and hidden folders. Multiple projects require an explicit path. Keep unrelated programs in separate directories to avoid conflicting top-level statements. No NuGet restore, package/project/assembly references, native binaries or shell. A using directive imports a namespace; it does not install a library.
+
+Single-file example (submit the whole block to the dotnet tool):
+${DOTNET_PROGRAM_EXAMPLE}
+
+Multi-file project example (a supported SDK-style subset, not full MSBuild):
+${DOTNET_PROJECT_EXAMPLE}
+
+Loose .cs/directory builds receive the five default imports. Project builds receive no implicit imports unless ImplicitUsings is enabled; include OutputType=Exe to run a project (the default is Library). Never use Console.ReadLine or Environment.Exit. Mention exact workspace-relative output paths and direct the user to Files to preview or download them.
+
+Media capabilities of the bundled runtime:
+No third-party image or audio codec libraries are currently bundled. System.Drawing primitives do not provide Bitmap/Graphics image processing in browser WASM; do not assume System.Drawing.Common, ImageSharp, SkiaSharp or NAudio is installed. For dependency-free diagrams/charts write SVG text with System.IO; for simple generated sound write a PCM WAV using BinaryWriter with a valid RIFF/WAVE header. Already-encoded PNG/JPEG/audio bytes can be saved with File.WriteAllBytes. Image resizing, raster codecs and compressed-audio encoding require an explicitly bundled compatible library; do not invent APIs or attempt NuGet restore. Save supported image/audio files to the workspace for the Files preview; do not try desktop audio devices. Prefer small SVGs and short WAV clips within the session limits.
 
 For browser HTTP use Dotnetdide.Net.GetStringAsync, GetBytesAsync, GetJsonAsync<T>, PostJsonAsync, PostFormAsync, HeadAsync, OptionsAsync, DeleteAsync, PostAsync, PutAsync, PatchAsync, or RequestAsync(method, url, content). SendAsync(request, new Dotnetdide.BrowserRequestOptions { Credentials = "omit", Mode = "cors", Redirect = "error" }) accepts custom headers and returns status/headers/body; dispose responses. Direct requests require destination CORS support; no-cors cannot make responses readable. OpenReadAsync returns an async System.IO.Stream; DownloadFileAsync(url, path) writes into session files. Ordinary System.Net.Http.HttpClient uses the same host route. SOCKS/HTTP proxies must be configured in the native HTTP relay or browser, not HttpClientHandler.Proxy in WASM. Raw System.Net.Sockets is unsupported. Tor bridge addresses belong in an external Tor client; bridges.torproject.org is not a proxy. Network access is a host permission, not something code should bypass. No model credentials are passed to the worker. Do not attempt JavaScript interop to evade permissions.`;
 

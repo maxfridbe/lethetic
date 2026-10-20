@@ -12,12 +12,25 @@ export async function testDotnetBrowser(evaluate: (expression: string) => Promis
     await new Promise((resolve,reject)=>{styles.onload=resolve;styles.onerror=reject;document.head.append(styles)});
     await document.fonts.ready;
     const {createDotnetTool}=await import('./src/sdk.js');
+    const {DOTNET_PROGRAM_EXAMPLE,DOTNET_PROJECT_EXAMPLE}=await import('./src/prompts.js');
     const run=(tool,code)=>tool.execute({code},new AbortController().signal);
     const tool=createDotnetTool();
     try {
       await run(tool,'File.WriteAllText("answer.txt", "42"); int answer = 40;');
       if((await run(tool,'answer + 2')).trim()!=='42')throw Error('.NET state failed');
       if(!tool.snapshotWorkspace().files.some(f=>f.path==='answer.txt'))throw Error('.NET files missing');
+      // Execute the exact examples injected into the model prompt in real WASM.
+      for(const example of [DOTNET_PROGRAM_EXAMPLE,DOTNET_PROJECT_EXAMPLE]) {
+        const output=await run(tool,example);
+        if(!output.includes('Build succeeded') || output.includes('Build failed'))throw Error('Prompt example failed: '+output);
+      }
+      const exampleFiles=tool.snapshotWorkspace().files;
+      const json=exampleFiles.find(f=>f.path==='demo/output/result.json');
+      const answerFile=exampleFiles.find(f=>f.path==='report/answer.txt');
+      if(!json || JSON.parse(atob(json.data)).answer!==42 || !answerFile || atob(answerFile.data)!=='42')throw Error('Prompt example outputs missing');
+      for(const path of ['demo/Program.cs','demo/bin/Program.dll','report/Report.csproj','report/Answer.cs','report/bin/Report.dll']) {
+        if(!exampleFiles.some(f=>f.path===path))throw Error('Prompt example artifact missing: '+path);
+      }
       const denied=await run(tool,'await Dotnetdide.Net.GetStringAsync("'+location.origin+'/v1/models")');
       if(!denied.includes('disabled'))throw Error('Network was not denied: '+denied);
       const edit=tool.snapshotWorkspace();edit.files.push({path:'upload.txt',data:btoa('from UI')});tool.setWorkspace(edit);

@@ -479,6 +479,23 @@ Projects use a documented SDK-style subset, without NuGet restore, project/packa
 references or full MSBuild. Read the bundled `runtimes/dotnetdide/llm.md` and
 `docs/runtime-namespaces.md` for supported libraries and project settings.
 
+The injected prompt includes runnable single-file and multi-file project examples,
+directory creation, binary/text file I/O, build diagnostics and output paths.
+`Dotnet.Run("file.cs")` compiles only that file; a directory or `.csproj` includes
+multiple sources. Always await `Run` and inspect `result.Success`: successful
+execution of the outer script does not imply that its compiled program succeeded.
+Programs run in their source/project directory, and successful builds write
+`bin/<name>.dll` and `bin/<name>.pdb` there. These managed artifacts also count
+toward session file limits.
+
+The pinned runtime currently bundles no third-party image or audio codecs.
+Namespace listings include type forwarders and do not imply browser support for
+`System.Drawing.Bitmap`, `Graphics`, or desktop sound playback. SVG text and
+PCM WAV files can be generated with `System.IO`; existing encoded media can be
+written with `File.WriteAllBytes` and opened in Files. Additional image/audio
+libraries must be bundled and tested in a new Dotnetdide release before prompts
+can advertise them; adding a `using` directive does not install a package.
+
 ### Runtime security
 
 **Network access** is off by default for .NET and is stored per session.

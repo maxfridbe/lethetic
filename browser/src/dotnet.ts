@@ -8,9 +8,12 @@ export const DOTNET_TOOL_DEFINITION = {
   description: "Run C# in a persistent .NET 11 WASM worker with Roslyn compilation. " +
     "Use Console.WriteLine for output. System.IO files under /home/dotnetdide sync with this session's Files pane after every call. " +
     "Write reusable .cs programs and run them with await Dotnet.Run(\"file.cs\"); Dotnet.Build() compiles workspace files or a supported .csproj. " +
-    "Inspect build.Success and build.Output. Default usings: System, System.IO, System.Linq, System.Collections.Generic, System.Threading.Tasks. " +
+    "Create parent directories before writing; await Run and check run.Success, run.Build.Output, run.Error and run.ExitCode. " +
+    "A .cs path builds only that file; a directory or .csproj builds multiple files. Builds emit bin/*.dll and bin/*.pdb. " +
+    "Default usings: System, System.IO, System.Linq, System.Collections.Generic, System.Threading.Tasks. " +
     "Add explicit using directives for other available .NET libraries. Dotnetdide.Net provides async HTTP when the host enables Network access; browser CORS applies. " +
-    "No shell, native OS, NuGet restore or full MSBuild. Variables reset on stop, reload or mode switch; completed files survive. " +
+    "No shell, native OS, NuGet restore or full MSBuild. No third-party image/audio packages are bundled; SVG text and PCM WAV can be written with System.IO. " +
+    "Variables reset on stop, reload or mode switch; completed files survive. " +
     "Workspace limits: 100 files, 256 folders, 1 MiB per file, 2 MiB total; no symlinks.",
   parameters: { type: "object", properties: { code: { type: "string", description: "C# script source, including top-level await" } },
     required: ["code"], additionalProperties: false },
