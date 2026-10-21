@@ -57,7 +57,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   const files = new BrowserFiles(options.storage);
   const pinnedStats = new PinnedStats(options.storage);
   let editor: ReturnType<typeof createFileEditor> | null = null;
-  const preview = createFilePreview();
+  const preview = createFilePreview({ plainText: () => plainText, onPlainText: value => { plainText = value; transport?.publish(); } });
   let sites: ReturnType<typeof createSitesDialog> | null = null;
   let limits: ReturnType<typeof createTurnLimitsDialog> | null = null;
   let settings: ReturnType<typeof createConnectionsDialog> | null = null;
@@ -141,7 +141,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
         h("button", { attrs: { type: "button", "data-file-action": "new" }, props: { disabled: transport?.busy }, on: { click: () => editor?.open(state.directory ? state.directory + "/untitled.txt" : "untitled.txt", "") } }, [uiIcon("add"), "New file"]),
         h("button", { attrs: { type: "button", "data-file-action": "edit" }, props: { disabled: !state.preview || transport?.busy }, on: { click: () => { if (state.preview) editor?.open(state.preview.path, state.preview.content, true); } } }, [uiIcon("edit"), "Edit"]),
         h("button", { attrs: { type: "button", "data-file-action": "preview" }, props: { disabled: !canPreviewFile(state.selectedPath ? files.get(state.selectedPath) : undefined) }, on: { click: () => {
-          try { const file = state.selectedPath ? files.get(state.selectedPath) : undefined; if (file) preview.openFile(file, fileTools.sortFiles().filter(canPreviewFile)); }
+          try { const file = state.selectedPath ? files.get(state.selectedPath) : undefined; if (file) preview.openFile(file, fileTools.sortFiles().filter(canPreviewFile), false, sourceViews.has(file.path)); }
           catch (error) { fileStatus = String(error); transport?.publish(); }
         } } }, [uiIcon("preview"), "Preview"]),
         h("button", { attrs: { type: "button", "data-file-action": "copy" }, props: { disabled: !state.preview }, on: { click: () => {

@@ -3,6 +3,7 @@ import type { FilesReadResponse, GitDiffResponse } from "../generated/contracts.
 
 type MonacoApi = typeof Monaco;
 let assets: Promise<MonacoApi> | null = null;
+let editorSequence = 0;
 
 async function loadMonaco(): Promise<MonacoApi> {
   if (assets !== null) return assets;
@@ -47,6 +48,7 @@ export function fileLanguage(path: string, languages: readonly Monaco.languages.
 }
 
 export class MonacoFileEditor {
+  readonly #modelOwner = `preview-${++editorSequence}`;
   #host: HTMLElement | null = null;
   #api: MonacoApi | null = null;
   #editor: Monaco.editor.IStandaloneCodeEditor | null = null;
@@ -110,7 +112,7 @@ export class MonacoFileEditor {
     this.#applied = this.#preview;
     if (this.#preview !== null) {
       const { path, content } = this.#preview;
-      const uri = api.Uri.from({ scheme: "lethetic-view", authority: "launch", path: `/${path}` });
+      const uri = api.Uri.from({ scheme: "lethetic-view", authority: "launch", path: `/${path}`, query: this.#modelOwner });
       this.#model = api.editor.createModel(content, fileLanguage(path, api.languages.getLanguages()), uri);
       editor.setModel(this.#model);
       editor.updateOptions({ ariaLabel: `Read-only file preview: ${path}` });

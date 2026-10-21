@@ -1,4 +1,5 @@
 let assets = null;
+let editorSequence = 0;
 async function loadMonaco() {
     if (assets !== null)
         return assets;
@@ -42,6 +43,7 @@ export function fileLanguage(path, languages) {
 export class MonacoFileEditor {
     failed;
     resized;
+    #modelOwner = `preview-${++editorSequence}`;
     #host = null;
     #api = null;
     #editor = null;
@@ -109,7 +111,7 @@ export class MonacoFileEditor {
         this.#applied = this.#preview;
         if (this.#preview !== null) {
             const { path, content } = this.#preview;
-            const uri = api.Uri.from({ scheme: "lethetic-view", authority: "launch", path: `/${path}` });
+            const uri = api.Uri.from({ scheme: "lethetic-view", authority: "launch", path: `/${path}`, query: this.#modelOwner });
             this.#model = api.editor.createModel(content, fileLanguage(path, api.languages.getLanguages()), uri);
             editor.setModel(this.#model);
             editor.updateOptions({ ariaLabel: `Read-only file preview: ${path}` });

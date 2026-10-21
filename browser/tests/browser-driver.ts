@@ -183,7 +183,8 @@ try {
   await until("globalThis.copiedText===\"print('private snippet')\"");
   await evaluate("document.querySelector('[data-field=preview-content]').click()");
   await until("!!document.querySelector('.browser-preview[open]')");
-  check(await evaluate("document.querySelector('.browser-preview[open] iframe').srcdoc.includes(\"print('private snippet')\")"), "editor preview lost unsaved contents");
+  await until("document.querySelector('.browser-preview[open] [data-field=preview-monaco] .view-lines')?.textContent.includes('private')");
+  check(await evaluate("document.querySelector('.browser-preview[open] [data-field=preview-frame]').hidden"), "code preview did not use Monaco");
   await evaluate("document.querySelector('.browser-preview[open]').close()");
   await evaluate(`document.querySelector('[data-field=file-path]').value='reports/analysis.py';
     document.querySelector('[data-field=file-form]').requestSubmit()`);
@@ -200,6 +201,10 @@ try {
 
   await evaluate("document.querySelector('[data-file-action=text-mode]').click()");
   await until("document.querySelector('#files-monaco')?.dataset.editorReady==='true'");
+
+  await evaluate("document.querySelector('[data-preview-expand]').click()");
+  check(await evaluate("!!document.querySelector('.files-pane.is-full-preview #files-monaco .line-numbers')"), "expanded file pane lost Monaco");
+  await evaluate("document.querySelector('[data-preview-expand]').click()");
 
   check(await evaluate("!document.querySelector('[data-field=passphrase]') && !document.querySelector('[data-browser-action=code]')"), "encrypted library remains visible");
   await evaluate(`Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{globalThis.copiedText=text}}});
@@ -219,8 +224,19 @@ try {
   await evaluate("document.querySelector('[data-field=preview-expand]').click()");
   check(await evaluate("(()=>{const r=document.querySelector('.browser-preview[open]').getBoundingClientRect();return r.width>=innerWidth-2 && r.height>=innerHeight-2})()"), "preview did not expand to window");
   await evaluate("document.querySelector('[data-field=preview-expand]').click()");
-  check(await evaluate(`(() => { const frame=document.querySelector('[data-field=preview-frame]');
-    return frame.getAttribute('sandbox')==='allow-scripts' && !frame.getAttribute('sandbox').includes('allow-same-origin') && frame.srcdoc.includes("print('private snippet')") && frame.getBoundingClientRect().height>100; })()`), "file preview is missing or not sandboxed");
+  await until("document.querySelector('.browser-preview[open] [data-field=preview-monaco] .view-lines')?.textContent.includes('private')");
+  check(await evaluate(`(() => { const host=document.querySelector('.browser-preview[open] [data-field=preview-monaco]');
+    return !host.hidden && !!host.querySelector('.line-numbers') && host.getBoundingClientRect().height>100 && host.querySelectorAll('.view-line span[class*=mtk]').length>1; })()`), "dialog preview lost Monaco highlighting or sizing");
+  await evaluate("document.querySelector('.browser-preview[open] [data-field=preview-expand]').click(); globalThis.previewEditor=document.querySelector('.browser-preview[open] .monaco-editor')");
+  check(await evaluate("!document.querySelector('.browser-preview[open] [data-field=preview-monaco]').hidden && !!previewEditor"), "expanded preview lost Monaco");
+  await evaluate("document.querySelector('.browser-preview[open] [data-field=preview-text-mode]').click()");
+  check(await evaluate(`(() => {const dialog=document.querySelector('.browser-preview[open]'), text=dialog.querySelector('[data-field=preview-plain-text]');
+    text.focus();text.setSelectionRange(0,text.value.length);const name=dialog.querySelector('h2').textContent;
+    text.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
+    return !text.hidden && text.selectionEnd>10 && text.value.includes("print('private snippet')") && dialog.querySelector('h2').textContent===name;})()`), "plain text selection or arrow keys switched files");
+  await evaluate("document.querySelector('.browser-preview[open] [data-field=preview-text-mode]').click()");
+  await until("document.querySelector('.browser-preview[open] [data-field=preview-monaco] .view-lines')?.textContent.includes('private')");
+  await evaluate("document.querySelector('.browser-preview[open] [data-field=preview-expand]').click()");
   check(await evaluate(`(async () => {
     const {previewDocument}=await import('./src/file-actions.js');
     const doc=previewDocument('<h1>Hello</h1><script>parent.hacked=true<\/script><img src="https://example.com/leak" onerror="evil()"><a href="https://example.com">leave</a><form><input></form>','html','test.html');
@@ -241,6 +257,11 @@ try {
   await evaluate("document.querySelector('[data-file-action=source]').click();document.querySelector('[data-file-action=preview]').click()");
   await until("!!document.querySelector('.browser-preview[open]')");
   // Resolve the open dialog's exact iframe; other inline/closed frames may coexist.
+  await evaluate("document.querySelector('.browser-preview[open] [data-field=preview-source]').click()");
+  await until("document.querySelector('.browser-preview[open] [data-field=preview-monaco] .view-lines')?.textContent.includes('Rendered')");
+  check(await evaluate("document.querySelector('.browser-preview[open] [data-field=preview-frame]').hidden && !globalThis.hacked"), "HTML source did not use safe Monaco preview");
+  await evaluate("document.querySelector('.browser-preview[open] [data-field=preview-source]').click()");
+  check(await evaluate("!document.querySelector('.browser-preview[open] [data-field=preview-frame]').hidden"), "Rendered view did not restore");
   const previewInput = async (expression: string, full = true): Promise<unknown> => {
     const interactive = await evaluate("!!document.querySelector('.browser-sites[open] iframe')");
     if (!interactive) await until(`document.querySelector('.browser-preview[open] [data-field=preview-frame]').dataset.navigationReady==='${String(full)}'`);

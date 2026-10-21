@@ -219,7 +219,7 @@ BMP and ICO), plus audio/video formats reported playable by the browser (includi
 MP3, WAV, Ogg, FLAC, MP4 and WebM where supported). Media uses native controls,
 loads from session bytes, and does not autoplay. Codec support depends on the
 browser; unsupported files remain downloadable. Existing workspace size limits
-also apply to media. JSON is formatted and other text is shown as source. Other binary
+also apply to media. Code and other text use Monaco syntax highlighting in the pane and Preview dialog, including full-screen views. **Plain text** switches to native text selection; **Monaco** switches back. HTML, SVG and Markdown offer **Source / Rendered** in both preview locations. Arrow keys and touch gestures inside text viewers preserve selection; use the navigation toolbar to change files. Other binary
 files can be downloaded without changing their bytes; Edit and Copy apply to text. They use an opaque sandbox and a restrictive content policy:
 file scripts, forms, external resources and navigation are disabled. A nonce-scoped,
 trusted navigation bridge handles preview arrows and swipes; it has no access to the host. Download the file

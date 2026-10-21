@@ -157,3 +157,8 @@ dialog.browser-preview.is-full-preview {
 .browser-persistence { position: absolute; z-index: 100; top: 3.5rem; left: 1rem; right: 1rem; padding: .4rem .6rem; background: var(--theme-output-bg, #252532); color: var(--theme-output-fg, white); border: 1px solid var(--border); box-shadow: 0 3px 12px #0008; }
 .browser-persistence[hidden] { display: none; }
 .browser-persistence button { margin-left: .5rem; }
+
+.browser-preview [hidden] { display: none !important; }
+.preview-content { position: relative; min-height: 0; min-width: 0; }
+.preview-content > iframe, .preview-monaco, .preview-plain-text { position: absolute; inset: 0; width: 100%; height: 100%; box-sizing: border-box; }
+.preview-plain-text { margin: 0; padding: .65rem; border: 0; resize: none; font: 14px/1.5 monospace; tab-size: 4; white-space: pre; overflow: auto; user-select: text; -webkit-user-select: text; touch-action: auto; }

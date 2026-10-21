@@ -1,3 +1,5 @@
+import { MonacoFileEditor } from "../../web/src/files/editor.js";
+import type { FilesReadResponse } from "../../web/src/generated/contracts.js";
 import { buttonIconHtml } from "../../web/src/icons.js";
 import { parse } from "../../web/lib/marked/marked.esm.js";
 import { createDialog, field } from "./dialog.js";
@@ -79,21 +81,50 @@ export function workspacePreview(file: WorkspaceFile): string {
   return previewDocument(content, "", file.path);
 }
 
-export function createFilePreview(): { dialog: HTMLDialogElement; open(code: string, language: string, name: string): void; openFile(file: WorkspaceFile, files?: readonly WorkspaceFile[], expanded?: boolean): void; clear(): void; destroy(): void } {
+export function createFilePreview(options: { plainText?: () => boolean; onPlainText?: (value: boolean) => void } = {}): { dialog: HTMLDialogElement; open(code: string, language: string, name: string): void; openFile(file: WorkspaceFile, files?: readonly WorkspaceFile[], expanded?: boolean, source?: boolean): void; clear(): void; destroy(): void } {
   const dialog = createDialog("File preview", `<div class="preview-toolbar" tabindex="0" aria-label="Preview navigation">
     <button type="button" data-field="preview-expand" aria-pressed="false">${buttonIconHtml("fullscreen")}Expand</button>
     <button type="button" data-field="preview-previous">${buttonIconHtml("previous")}Previous</button>
     <span data-field="preview-position" aria-live="polite"></span>
     <button type="button" data-field="preview-next">${buttonIconHtml("next")}Next</button>
-    <small>Swipe or use ← → in full view. Select text to copy it.</small>
-    </div><iframe data-field="preview-frame" title="File preview" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>`);
+    <button type="button" data-field="preview-source">${buttonIconHtml("code")}Source</button>
+    <button type="button" data-field="preview-text-mode">${buttonIconHtml("file")}Plain text</button>
+    <small>Use ← → or swipe on the toolbar to change files. Select text in the viewer to copy it.</small>
+    </div><div class="preview-content">
+    <iframe data-field="preview-frame" title="File preview" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
+    <div class="preview-monaco" data-field="preview-monaco" aria-label="Read-only Monaco preview" hidden></div>
+    <textarea class="preview-plain-text" data-field="preview-plain-text" readonly spellcheck="false" aria-label="File contents" hidden></textarea>
+    </div>`);
   dialog.classList.add("browser-preview");
   const frame = field<HTMLIFrameElement>(dialog, "preview-frame");
+  const host = field(dialog, "preview-monaco"), text = field<HTMLTextAreaElement>(dialog, "preview-plain-text");
+  const sourceButton = field<HTMLButtonElement>(dialog, "preview-source"), textButton = field<HTMLButtonElement>(dialog, "preview-text-mode");
   let files: readonly WorkspaceFile[] = [], index = 0, token = "";
+  let current: FilesReadResponse | null = null, rendered = false, source = false, sourcePreference = false, plain = false;
+  const isPlain = (): boolean => options.plainText?.() ?? plain;
+  const setPlain = (value: boolean): void => { plain = value; options.onPlainText?.(value); };
+  const editor = new MonacoFileEditor(() => { setPlain(true); showMode(); }, () => {});
+  const showMode = (): void => {
+    const code = source && current !== null, native = code && isPlain();
+    frame.hidden = source; host.hidden = !code || native; text.hidden = !native;
+    sourceButton.hidden = !rendered || current === null;
+    sourceButton.innerHTML = buttonIconHtml(source ? "preview" : "code") + (source ? "Rendered" : "Source");
+    sourceButton.setAttribute("aria-pressed", String(source));
+    textButton.hidden = !code;
+    textButton.innerHTML = buttonIconHtml(isPlain() ? "code" : "file") + (isPlain() ? "Monaco" : "Plain text");
+    textButton.setAttribute("aria-pressed", String(isPlain()));
+    if (text.value !== (current?.content ?? "")) text.value = current?.content ?? "";
+    text.setAttribute("aria-label", `File contents: ${current?.path ?? ""}`);
+    editor.sync(code && !native ? host : null, current);
+  };
+  sourceButton.addEventListener("click", () => { source = !source; sourcePreference = source; showMode(); });
+  textButton.addEventListener("click", () => { setPlain(!isPlain()); showMode(); });
   const expand = field<HTMLButtonElement>(dialog, "preview-expand");
   const previous = field<HTMLButtonElement>(dialog, "preview-previous");
   const next = field<HTMLButtonElement>(dialog, "preview-next");
-  const display = (html: string, name: string): void => {
+  const display = (html: string | null, name: string, content: string | null, preferSource = false): void => {
+    current = content === null ? null : { path: name, content, size: String(new TextEncoder().encode(content).byteLength) };
+    sourcePreference = preferSource; rendered = html !== null; source = !rendered || (preferSource && current !== null);
     dialog.querySelector("h2")!.textContent = name;
     frame.title = `Preview: ${name}`;
     previous.disabled = next.disabled = files.length < 2;
@@ -104,15 +135,17 @@ export function createFilePreview(): { dialog: HTMLDialogElement; open(code: str
     const nonce = crypto.randomUUID();
     const bridge = new URL("./preview-bridge.js", import.meta.url).href.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
     delete frame.dataset["navigationReady"];
-    frame.srcdoc = html.replace("script-src 'none'", `script-src 'nonce-${nonce}'`).replace("</body>", `<script nonce="${nonce}" src="${bridge}" data-preview-token="${token}"></script></body>`);
+    if (html === null) frame.removeAttribute("srcdoc");
+    else frame.srcdoc = html.replace("script-src 'none'", `script-src 'nonce-${nonce}'`).replace("</body>", `<script nonce="${nonce}" src="${bridge}" data-preview-token="${token}"></script></body>`);
     if (!dialog.open) dialog.showModal();
+    showMode();
   };
   const syncFull = (): void => frame.contentWindow?.postMessage({token,full:dialog.classList.contains("is-full-preview")}, "*");
   frame.addEventListener("load", syncFull);
   const step = (direction: number): void => {
     if (!files.length) return;
     index = (index + direction + files.length) % files.length;
-    const file = files[index]!; display(workspacePreview(file), file.path);
+    const file = files[index]!; display(canRenderFile(file) ? workspacePreview(file) : null, file.path, textFile(file), sourcePreference);
   };
   const toggle = (): void => {
     const full = dialog.classList.toggle("is-full-preview");
@@ -132,24 +165,29 @@ export function createFilePreview(): { dialog: HTMLDialogElement; open(code: str
   };
   globalThis.addEventListener("message", message);
   dialog.addEventListener("keydown", event => {
-    if (!dialog.classList.contains("is-full-preview") || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.defaultPrevented || (event.target instanceof Element && event.target.closest(".preview-content")) || !dialog.classList.contains("is-full-preview") || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); step(event.key === "ArrowLeft" ? -1 : 1); }
   });
   let swipe: {x: number; y: number; time: number} | null = null;
-  dialog.addEventListener("touchstart", event => { const t = event.touches[0]; swipe = t ? {x:t.clientX,y:t.clientY,time:Date.now()} : null; }, {passive:true});
+  dialog.addEventListener("touchstart", event => { const t = event.touches[0]; swipe = !(event.target instanceof Element && event.target.closest(".preview-content")) && t ? {x:t.clientX,y:t.clientY,time:Date.now()} : null; }, {passive:true});
   dialog.addEventListener("touchend", event => {
     const t = event.changedTouches[0];
     if (swipe && t && dialog.classList.contains("is-full-preview") && Date.now()-swipe.time<600 &&
       Math.abs(t.clientX-swipe.x)>70 && Math.abs(t.clientX-swipe.x)>Math.abs(t.clientY-swipe.y)*2) step(t.clientX<swipe.x?-1:1);
     swipe=null;
   }, {passive:true});
-  const clear = (): void => { token = ""; files = []; frame.removeAttribute("srcdoc"); if (dialog.open) dialog.close(); };
-  dialog.addEventListener("close", () => { if (!dialog.open) { token = ""; files = []; frame.removeAttribute("srcdoc"); } });
-  return { dialog, open(code, language, name): void { files = []; display(previewDocument(code, language, name), name); },
-    openFile(file, available = [file], expanded = false): void {
+  const release = (): void => { token = ""; files = []; current = null; text.value = ""; editor.sync(null, null); delete host.dataset["editorReady"]; frame.removeAttribute("srcdoc"); };
+  const clear = (): void => { release(); if (dialog.open) dialog.close(); };
+  dialog.addEventListener("close", () => { if (!dialog.open) release(); });
+  return { dialog, open(code, language, name): void {
+      files = [];
+      const render = [language.toLowerCase(), name.split(".").at(-1)?.toLowerCase()].some(kind => ["html", "htm", "svg", "md", "markdown"].includes(kind ?? ""));
+      display(render ? previewDocument(code, language, name) : null, name, code);
+    },
+    openFile(file, available = [file], expanded = false, preferSource = false): void {
       if (expanded && !dialog.classList.contains("is-full-preview")) toggle();
       files = available.filter(canPreviewFile); index = files.findIndex(item => item.path === file.path);
       if (index < 0) { files = [file]; index = 0; }
-      display(workspacePreview(file), file.path);
+      display(canRenderFile(file) ? workspacePreview(file) : null, file.path, textFile(file), preferSource);
     }, clear, destroy(): void { clear(); globalThis.removeEventListener("message", message); dialog.remove(); } };
 }
