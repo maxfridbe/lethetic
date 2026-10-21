@@ -133,6 +133,7 @@ mod tests {
         let mut cli = Cli {
             command: Some("test".to_string()),
             python_mode: None,
+            dotnet_mode: false,
             new_session: false,
             session_id: None,
             timeout_seconds: DEFAULT_HEADLESS_TIMEOUT_SECONDS,

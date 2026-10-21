@@ -984,6 +984,7 @@ pub enum ContextUsageSourceView {
 pub enum PythonProfileView {
     General,
     PythonOnly,
+    DotnetOnly,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

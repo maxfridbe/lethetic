@@ -29,6 +29,11 @@ jobs:
           cargo clippy -p lethetic-wasm --target wasm32-unknown-unknown --locked -- -D warnings
       - name: Native and WASM unit tests, local integration tests
         run: python3 scripts/test_rust.py
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 11.0.100-rc.2.26504.105
+      - name: Native C# runspace integration
+        run: cargo test --test test_dotnet_native --locked -- --include-ignored
       - name: Source size policy
         run: |
           python3 scripts/test_check_source_lines.py

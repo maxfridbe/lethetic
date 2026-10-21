@@ -117,6 +117,9 @@ cargo run --bin lethetic -- --command "Fix all TypeScript errors in src/"
 # Browser controller or sandboxed Python-only mode
 cargo run --bin lethetic -- --rc
 cargo run --bin lethetic -- --python-only isolated
+
+# Native C# only (installed .NET SDK 8+)
+cargo run --bin lethetic -- --dotnet-only
 ```
 
 **Ctrl+P** opens the command palette and model picker. **F12** shows the debugger,
@@ -134,6 +137,7 @@ file sharing, TLS, authentication and service operation.
 | --- | --- |
 | Browser UI, files, saved sessions and embedding | [Integration guide](integration.md) |
 | Native configuration, providers and model switching | [Native reference](docs/native-reference.md#configuration) |
+| Native C# runspace, SDK builds, files and permissions | [Native .NET mode](docs/dotnet-native.md) |
 | Native Python profiles and container isolation | [Python isolation](docs/python-isolation.md) |
 | Browser control of the native application | [Web remote control](docs/web-remote-control.md) |
 | Native tools, context management and engine behavior | [Tools](docs/native-reference.md#tools), [context](docs/native-reference.md#context-management), [reliability](docs/native-reference.md#engine-reliability) |

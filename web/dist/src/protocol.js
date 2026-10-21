@@ -125,6 +125,7 @@ const CONTEXT_USAGE_SOURCES = {
 const PYTHON_PROFILES = {
     general: true,
     python_only: true,
+    dotnet_only: true,
 };
 const PYTHON_TARGETS = {
     host: true,

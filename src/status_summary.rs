@@ -33,6 +33,7 @@ pub struct PythonStatusSummary {
 impl PythonStatusSummary {
     pub fn display(&self) -> String {
         match self.profile {
+            ToolProfile::DotnetOnly => format!(".NET Host/{}", self.policy_source.label()),
             ToolProfile::General => format!("General/{}", self.policy_source.label()),
             ToolProfile::PythonOnly => match self.target {
                 Some(PythonExecutionTarget::Host) => {

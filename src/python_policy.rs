@@ -77,7 +77,7 @@ impl PythonPolicySource {
     }
 }
 
-pub const CLI_PYTHON_POLICY_LOCKED_ERROR: &str = "Agent Mode is locked by a literal CLI Python flag for this process; restart without that flag to change it.";
+pub const CLI_PYTHON_POLICY_LOCKED_ERROR: &str = "Agent Mode is locked by a literal CLI mode flag for this process; restart without that flag to change it.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourcedPythonPolicy {
@@ -139,7 +139,7 @@ impl PythonPolicyState {
                     PackageAccess::Disabled
                 ) | (Some(NetworkAccess::Nonlocal), PackageAccess::Session)
             );
-        if !literal_shape {
+        if !literal_shape && config.tool_profile != ToolProfile::DotnetOnly {
             return Err(
                 "literal CLI Python policy does not match an exact literal mode".to_string(),
             );
@@ -346,11 +346,12 @@ fn apply_policy_from_source(
 }
 
 fn validate_project_policy(snapshot: &PythonPolicySnapshot) -> Result<(), String> {
-    if snapshot.tool_profile == ToolProfile::PythonOnly
-        && snapshot.python_runtime.target == Some(PythonExecutionTarget::Host)
+    if snapshot.tool_profile == ToolProfile::DotnetOnly
+        || (snapshot.tool_profile == ToolProfile::PythonOnly
+            && snapshot.python_runtime.target == Some(PythonExecutionTarget::Host))
     {
         return Err(
-            "Untrusted project Python policy cannot select Host execution; use a trusted global policy or an explicit one-time choice"
+            "Untrusted project policy cannot select Host execution; use a trusted global policy or an explicit one-time choice"
                 .to_string(),
         );
     }

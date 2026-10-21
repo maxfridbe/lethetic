@@ -11,6 +11,7 @@ pub mod apply_patch;
 pub mod ask_the_user;
 pub mod background_task;
 pub mod calculate;
+pub mod dotnet;
 pub mod edit;
 pub mod fetch_url;
 pub mod find_symbol;
@@ -324,6 +325,7 @@ pub fn todo_reference_warning(
 pub fn get_tools_for_surface(config: &crate::config::Config, surface: ToolSurface) -> Vec<Tool> {
     match config.tool_profile {
         crate::config::ToolProfile::PythonOnly => vec![python::get_definition()],
+        crate::config::ToolProfile::DotnetOnly => vec![dotnet::get_definition()],
         crate::config::ToolProfile::General => {
             let mut tools = general_tools(config);
             if surface == ToolSurface::Headless {
@@ -443,6 +445,10 @@ pub fn get_ui_description(func_name: &str, arguments: &serde_json::Value) -> Str
         "repo_overview" => repo_overview::get_ui_description(arguments),
         "lsp" => lsp::get_ui_description(arguments),
         "python" => python::get_ui_description(arguments),
+        "dotnet" => format!(
+            "C# cell: {}",
+            arguments["description"].as_str().unwrap_or("Execute C#")
+        ),
         "task" => task::get_ui_description(arguments),
         _ => format!("{} {}: {}", icons::COMMAND, func_name, arguments),
     }
@@ -552,6 +558,18 @@ fn execute_dispatch<'a>(
             return ToolExecution::error("[Operation Cancelled by User]", cwd);
         }
         let (output, new_cwd) = match func_name {
+            "dotnet" => {
+                let (code, _) = match python::validate_arguments(arguments) {
+                    Ok(arguments) => arguments,
+                    Err(error) => {
+                        return ToolExecution::error(
+                            format!("ERROR: Malformed .NET tool call: {error}"),
+                            cwd,
+                        );
+                    }
+                };
+                return runtime.dotnet.execute(code, cwd, cancellation_token).await;
+            }
             "python" => {
                 let (code, _) = match python::validate_arguments(arguments) {
                     Ok(arguments) => arguments,

@@ -15,6 +15,8 @@ pub mod compact;
 pub mod config;
 pub mod context;
 pub mod context_vercel;
+#[cfg(feature = "native")]
+pub mod dotnet;
 pub mod engine;
 pub mod engine_types;
 pub mod fuzzy;

@@ -573,9 +573,9 @@ pub(crate) async fn handle_app_event_outcome(
             app.should_redraw = true;
         }
         AppEventOutcome::CycleToolCallMode => {
-            if config.tool_profile == lethetic::config::ToolProfile::PythonOnly {
+            if config.tool_profile != lethetic::config::ToolProfile::General {
                 app.stop_reason =
-                    "Tool calls: Python-only mode always uses one per turn".to_string();
+                    "Tool calls: single-tool modes always use one per turn".to_string();
             } else {
                 config.tool_calls = config.tool_calls.next();
                 app.config.tool_calls = config.tool_calls;

@@ -32,7 +32,7 @@ impl ToolCallMode {
 
 /// The mode in force for `config`: Python-only mode is always single-call.
 pub fn effective(config: &crate::config::Config) -> ToolCallMode {
-    if config.tool_profile == crate::config::ToolProfile::PythonOnly {
+    if config.tool_profile != crate::config::ToolProfile::General {
         ToolCallMode::Single
     } else {
         config.tool_calls

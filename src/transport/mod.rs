@@ -20,7 +20,7 @@ pub struct PreparedAgentRequest {
     model: String,
     request_output_tokens: u32,
     tool_profile: ToolProfile,
-    python_guidance: Option<String>,
+    capability_guidance: Option<String>,
     encoded_body: Vec<u8>,
 }
 
@@ -30,13 +30,13 @@ impl PreparedAgentRequest {
     }
 
     fn validate_binding(&self, config: &Config) -> Result<(), String> {
-        let guidance = crate::system_prompt::python_capability_guidance(config);
+        let guidance = crate::system_prompt::capability_guidance(config);
         if self.connection_kind != config.active_connection_kind()
             || self.server_url != config.server_url
             || self.model != config.model
             || self.request_output_tokens != config.request_output_tokens()
             || self.tool_profile != config.tool_profile
-            || self.python_guidance != guidance
+            || self.capability_guidance != guidance
         {
             return Err(
                 "Prepared agent request does not match the active provider configuration"
@@ -123,7 +123,7 @@ pub fn prepare_agent_request(
         model: config.model.clone(),
         request_output_tokens: max_tokens,
         tool_profile: config.tool_profile,
-        python_guidance: crate::system_prompt::python_capability_guidance(config),
+        capability_guidance: crate::system_prompt::capability_guidance(config),
         encoded_body,
     })
 }

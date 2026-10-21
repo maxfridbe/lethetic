@@ -28,6 +28,7 @@ impl PreparedApiContext {
 struct Projection {
     root_system: Option<String>,
     history_system: Vec<String>,
+    final_guidance: Option<String>,
     conversation: Vec<Message>,
 }
 
@@ -213,8 +214,23 @@ fn shorten_old_tool_results(conversation: &mut [Message]) {
 pub(super) fn prepare(
     ctx: &ContextManager,
     read_file: &dyn Fn(&str, usize) -> FileRead,
+    guidance: Option<&str>,
 ) -> PreparedApiContext {
     let mut projection = project_messages(ctx);
+    // Relocate only the exact footer already installed in the root prompt.
+    // Missing, altered or duplicated policy remains invalid for request validation.
+    if let (Some(guidance), Some(root)) = (guidance, projection.root_system.as_mut())
+        && root.ends_with(guidance)
+        && root.match_indices(guidance).count() == 1
+        && projection
+            .history_system
+            .iter()
+            .all(|message| !message.contains(guidance))
+    {
+        root.truncate(root.len() - guidance.len());
+        *root = root.trim_end().to_string();
+        projection.final_guidance = Some(guidance.to_string());
+    }
     shorten_old_tool_results(&mut projection.conversation);
     let base_messages = assemble_messages(ctx.mode, &projection, &FileSections::default());
     let mut base_estimate = estimate_api_messages(&base_messages);
@@ -419,6 +435,7 @@ fn project_messages(ctx: &ContextManager) -> Projection {
     Projection {
         root_system,
         history_system,
+        final_guidance: None,
         conversation,
     }
 }
@@ -482,6 +499,9 @@ fn assemble_messages(
         _ => system.extend(working),
     }
 
+    if let Some(guidance) = &projection.final_guidance {
+        system.push(guidance.clone());
+    }
     let mut messages = Vec::with_capacity(conversation.len() + 1);
     if !system.is_empty() {
         messages.push(Message::system(system.join("\n\n")));

@@ -628,7 +628,7 @@ pub async fn run_agent_accounted_with_runtime(
         .replace("[TOOLS_DEFINITIONS]", &tool_declarations)
         .replace("[CWD]", &cwd)
         .replace("[TOOL_CALL_FORMAT]", &tool_call_format);
-    if let Some(guidance) = crate::system_prompt::python_capability_guidance(config) {
+    if let Some(guidance) = crate::system_prompt::capability_guidance(config) {
         resolved.push_str("\n\n");
         resolved.push_str(&guidance);
     }

@@ -88,6 +88,14 @@ const PYTHON_RETAINED_NONLOCAL_GUIDANCE: &str = r#"This is a retained Podman san
 If a required distro tool is missing, invoke only `lethetic-pkg refresh` or `lethetic-pkg install NAME...` with fixed package names from a Python subprocess. Do not invoke `apt-get` directly and do not pass options, URLs, paths, repository changes, or shell syntax to `lethetic-pkg`.
 The package layer persists for this chat for up to 14 days and the container is stopped between attachments. Python globals reset on detach/resume. Signed packages may run maintainer scripts as namespaced container-root and mutate this chat's retained package layer."#;
 
+pub fn capability_guidance(config: &crate::config::Config) -> Option<String> {
+    if config.tool_profile == crate::config::ToolProfile::DotnetOnly {
+        Some(tools::dotnet::GUIDANCE.trim_end().to_string())
+    } else {
+        python_capability_guidance(config)
+    }
+}
+
 pub fn python_capability_guidance(config: &crate::config::Config) -> Option<String> {
     use crate::config::{
         AccessMode, NetworkAccess, PythonExecutionTarget, SandboxBackend, ToolProfile,
@@ -373,7 +381,7 @@ impl SystemPromptManager {
             .replace("[TOOLS_DEFINITIONS]", &tool_declarations)
             .replace("[CWD]", cwd)
             .replace("[TOOL_CALL_FORMAT]", &tool_call_fmt);
-        match python_capability_guidance(config) {
+        match capability_guidance(config) {
             Some(guidance) => format!("{resolved}\n\n{guidance}"),
             None if config.tool_profile == crate::config::ToolProfile::General => {
                 format!("{resolved}\n\n{PLANNING_GUIDANCE}")

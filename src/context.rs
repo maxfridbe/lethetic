@@ -792,17 +792,22 @@ impl ContextManager {
         &self,
         read_file: &dyn Fn(&str, usize) -> FileRead,
     ) -> PreparedApiContext {
-        api::prepare(self, read_file)
+        api::prepare(self, read_file, None)
     }
 
     pub fn prepare_api_context(&self) -> PreparedApiContext {
+        self.prepare_api_context_with_guidance(None)
+    }
+
+    /// Keep an existing host capability footer after dynamic system context.
+    pub fn prepare_api_context_with_guidance(&self, guidance: Option<&str>) -> PreparedApiContext {
         #[cfg(feature = "native")]
         let read_file = |path: &str, limit| {
             filesystem::read_complete_file(&std::path::Path::new(&self.cwd).join(path), limit)
         };
         #[cfg(not(feature = "native"))]
         let read_file = |_: &str, _| FileRead::Unavailable;
-        self.prepare_api_context_with_files(&read_file)
+        api::prepare(self, &read_file, guidance)
     }
 
     /// Compatibility wrapper for callers that only need the projected messages.

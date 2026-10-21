@@ -41,6 +41,7 @@ pub(crate) enum WfeFilesMode {
 pub(crate) struct Cli {
     pub(crate) command: Option<String>,
     pub(crate) python_mode: Option<LiteralPythonMode>,
+    pub(crate) dotnet_mode: bool,
     pub(crate) new_session: bool,
     pub(crate) session_id: Option<String>,
     pub(crate) timeout_seconds: u64,
@@ -58,7 +59,7 @@ pub(crate) struct Cli {
 }
 
 fn looks_like_flag(value: &str) -> bool {
-    value.starts_with("--") || value == "-h"
+    value.starts_with("--") || matches!(value, "-h" | "-rc")
 }
 
 impl Cli {
@@ -66,6 +67,7 @@ impl Cli {
         let mut cli = Self {
             command: None,
             python_mode: None,
+            dotnet_mode: false,
             new_session: false,
             session_id: None,
             timeout_seconds: DEFAULT_HEADLESS_TIMEOUT_SECONDS,
@@ -83,6 +85,9 @@ impl Cli {
         while index < arguments.len() {
             let argument = arguments[index].as_str();
             match argument {
+                "--dotnet-only" => {
+                    cli.dotnet_mode = true;
+                }
                 "--python-only" | "--sandbox-python-only" => {
                     let mode = match arguments.get(index + 1).map(String::as_str) {
                         Some(value) if !looks_like_flag(value) => {
@@ -133,7 +138,7 @@ impl Cli {
                             "--timeout-seconds requires a positive integer".to_string()
                         })?;
                 }
-                "--rc" => {
+                "-rc" | "--rc" => {
                     if cli.wfe_remote_control.is_some() || cli.rc_wizard {
                         return Err("--rc may be supplied only once".to_string());
                     }
@@ -255,6 +260,9 @@ impl Cli {
     }
 
     fn validate(&self) -> Result<(), String> {
+        if self.dotnet_mode && self.python_mode.is_some() {
+            return Err("--dotnet-only conflicts with --python-only".to_string());
+        }
         if self.new_session && self.session_id.is_some() {
             return Err("--new-session conflicts with --session-id".to_string());
         }
@@ -322,6 +330,9 @@ impl Cli {
         if let Some(mode) = self.python_mode {
             parts.push(mode.flag().to_string());
         }
+        if self.dotnet_mode {
+            parts.push("--dotnet-only".to_string());
+        }
         parts.join(" ")
     }
 
@@ -334,7 +345,7 @@ USAGE:\n  \
   lethetic --rc TARGET --rc-only           browser control only\n  \
   lethetic [OPTIONS] --command <PROMPT>    one headless request\n\n\
 REMOTE CONTROL (browser):\n  \
-  --rc [TARGET]\n      \
+  -rc, --rc [TARGET]\n      \
       Expose the chat to a browser over HTTPS. TARGET is host, host:port, or https://host:port\n      \
       (default port {DEFAULT_RC_PORT}; concrete IPs or lowercase DNS names of this machine).\n      \
       Without TARGET, an interactive chooser lists this machine's addresses and asks how to\n      \
@@ -357,6 +368,7 @@ SESSIONS:\n  \
   --new-session             Create a durable chat identity.\n  \
   --session-id <UUID>       Resume one exact durable chat identity.\n\n\
 HEADLESS:\n  \
+  --dotnet-only            Native C# tool only (SDK 8+, host permissions).\n  \
   --command <PROMPT>        Run one agent request and exit. Put this option last.\n  \
   --timeout-seconds <N>     Headless deadline (default: {DEFAULT_HEADLESS_TIMEOUT_SECONDS}).\n\n\
 OTHER:\n  \
@@ -391,6 +403,35 @@ mod tests {
 
     fn arguments(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_string()).collect()
+    }
+
+    #[test]
+    fn dotnet_literal_and_short_rc_alias() {
+        let cli = Cli::parse(&arguments(&["-rc", "127.0.0.1:9443", "--dotnet-only"])).unwrap();
+        assert!(cli.dotnet_mode);
+        assert_eq!(
+            cli.wfe_remote_control.as_deref(),
+            Some("https://127.0.0.1:9443")
+        );
+        assert!(cli.rc_flags_summary().contains("--dotnet-only"));
+        assert!(Cli::parse(&arguments(&["-rc"])).unwrap().rc_wizard);
+        assert!(Cli::parse(&arguments(&["--dotnet-only", "--python-only"])).is_err());
+        assert!(Cli::parse(&arguments(&["--python-only", "--dotnet-only"])).is_err());
+        let mut config = Config::default();
+        config.tool_profile = lethetic::config::ToolProfile::DotnetOnly;
+        let policy = lethetic::python_policy::PythonPolicyState::from_config(
+            &config,
+            lethetic::python_policy::PythonPolicySource::Config,
+        )
+        .with_process_literal(&config)
+        .unwrap();
+        assert!(policy.is_cli_locked());
+        config.tool_profile = lethetic::config::ToolProfile::General;
+        policy.apply_effective_to(&mut config);
+        assert_eq!(
+            config.tool_profile,
+            lethetic::config::ToolProfile::DotnetOnly
+        );
     }
 
     #[test]

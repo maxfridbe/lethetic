@@ -24,7 +24,10 @@ pub(super) fn handle_python_setup_key(app: &mut App, key: event::KeyEvent) -> Ap
             KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down => {
                 setup.profile = match setup.profile {
                     crate::config::ToolProfile::General => crate::config::ToolProfile::PythonOnly,
-                    crate::config::ToolProfile::PythonOnly => crate::config::ToolProfile::General,
+                    crate::config::ToolProfile::PythonOnly => {
+                        crate::config::ToolProfile::DotnetOnly
+                    }
+                    crate::config::ToolProfile::DotnetOnly => crate::config::ToolProfile::General,
                 };
             }
             KeyCode::Enter => setup.next(),

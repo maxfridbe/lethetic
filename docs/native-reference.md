@@ -7,7 +7,7 @@ native Lethetic application. Start with the [native quick start](../README.md#na
 
 ## Browser controller
 
-Expose the same chat to a browser with `--rc`:
+Expose the same chat to a browser with `--rc` (or `-rc`):
 
 ```bash
 lethetic --rc                     # interactive: pick address, port, auth, files, surface
@@ -27,6 +27,10 @@ The long spellings still work: `--wfe-remote-control <HTTPS_URL>`, `--wfe-files 
 The protocol-v6 browser UI uses canonical `H`/`T`/`C`/`D` palette accelerators from its noneditable command list, a persistent wide right-hand Debugger or focus-trapped narrow drawer, bounded browser-safe operational diagnostics, and complete application/transport status in two horizontally scrollable bottom rows. Podman status includes only validated retained or active-transient operational names—never raw container/image IDs. Exact loss metadata explains filtering, redaction, fixed-size truncation, and invalid-source replacement without inferring loss from displayed text.
 
 ---
+
+## Native .NET-only mode
+
+Use `lethetic --dotnet-only` for a persistent C# runspace with the installed .NET SDK. It works in the terminal, headless commands, and the same remote controller (`lethetic -rc 127.0.0.1 --dotnet-only`). See [setup, namespaces, files, limits, and host permissions](dotnet-native.md).
 
 ## Model servers
 

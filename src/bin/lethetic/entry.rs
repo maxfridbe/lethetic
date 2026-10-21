@@ -87,6 +87,10 @@ async fn run_cli(
     config.restore_last_model(&workspace_root);
     let mut python_policy =
         lethetic::python_policy::PythonPolicyState::from_config(&config, python_policy_source);
+    if cli.dotnet_mode {
+        config.tool_profile = lethetic::config::ToolProfile::DotnetOnly;
+        python_policy = python_policy.with_process_literal(&config)?;
+    }
     if let Some(mode) = cli.python_mode {
         apply_literal_python_mode(&mut config, mode)?;
         python_policy = python_policy.with_process_literal(&config)?;

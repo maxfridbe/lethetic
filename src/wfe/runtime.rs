@@ -1212,6 +1212,7 @@ fn agent_modes_panel(app: &App) -> PanelDataView {
         modes: [
             ("general", "General", ToolProfile::General),
             ("python-only", "Python only", ToolProfile::PythonOnly),
+            ("dotnet-only", ".NET only (host)", ToolProfile::DotnetOnly),
         ]
         .into_iter()
         .map(|(key, label, mode)| ModeChoiceView {
@@ -1249,6 +1250,7 @@ pub fn agent_mode_map() -> HashMap<String, crate::config::ToolProfile> {
     [
         ("general", ToolProfile::General),
         ("python-only", ToolProfile::PythonOnly),
+        ("dotnet-only", ToolProfile::DotnetOnly),
     ]
     .into_iter()
     .map(|(key, mode)| (opaque_choice_id("agent-mode", &[key]), mode))

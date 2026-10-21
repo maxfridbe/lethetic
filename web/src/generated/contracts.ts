@@ -87,7 +87,7 @@ export type GitStateView = "clean" | "dirty" | "unknown";
 
 export type ContextUsageSourceView = "server_usage" | "server_prompt" | "local_estimate";
 
-export type PythonProfileView = "general" | "python_only";
+export type PythonProfileView = "general" | "python_only" | "dotnet_only";
 
 export type PythonTargetView = "host" | "sandbox";
 
@@ -298,7 +298,7 @@ export const WFE_MAX_SERVER_MESSAGE_BYTES = 4194304 as const;
 
 export const WFE_PROTOCOL_VERSION = 6 as const;
 
-export const WFE_PROTOCOL_SCHEMA_SHA256 = "c6be78c3442ea6b04ab6f8dc69798b52b5abecfec685c7172085b3b977e8481a" as const;
+export const WFE_PROTOCOL_SCHEMA_SHA256 = "e1ce4031b238bc545bb0ba2a08667c868caabd8acda55fae4fef5dabbda7fb92" as const;
 
 export const COMMAND_ORDER = [
   "hotkeys",

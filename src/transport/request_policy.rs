@@ -3,9 +3,9 @@ use serde_json::{Value, json};
 use crate::config::{Config, ConnectionKind, ToolProfile};
 use crate::transport::{Message, Role, ToolDefinition};
 
-fn python_guidance(config: &Config) -> Result<String, String> {
-    crate::system_prompt::python_capability_guidance(config)
-        .ok_or_else(|| "Python-only request is missing host capability guidance".to_string())
+fn capability_guidance(config: &Config) -> Result<String, String> {
+    crate::system_prompt::capability_guidance(config)
+        .ok_or_else(|| "Single-tool request is missing host capability guidance".to_string())
 }
 
 fn has_exact_guidance_suffix(content: &str, guidance: &str) -> bool {
@@ -48,8 +48,11 @@ fn openai_body_has_exact_guidance(body: &Value, guidance: &str) -> bool {
         .is_some_and(|content| has_exact_guidance_suffix(content, guidance))
 }
 
-fn canonical_python_tool() -> ToolDefinition {
-    let tool = crate::tools::python::get_definition();
+fn canonical_tool(config: &Config) -> ToolDefinition {
+    let tool = match config.tool_profile {
+        ToolProfile::DotnetOnly => crate::tools::dotnet::get_definition(),
+        _ => crate::tools::python::get_definition(),
+    };
     ToolDefinition {
         name: tool.function.name,
         description: tool.function.description,
@@ -70,8 +73,8 @@ pub(crate) fn native_tool_schema(schema: &Value) -> Value {
     schema
 }
 
-fn canonical_openai_python_tool() -> Value {
-    let tool = canonical_python_tool();
+fn canonical_openai_tool(config: &Config) -> Value {
+    let tool = canonical_tool(config);
     json!({
         "type": "function",
         "function": {
@@ -82,8 +85,8 @@ fn canonical_openai_python_tool() -> Value {
     })
 }
 
-fn canonical_anthropic_python_tool() -> Value {
-    let tool = canonical_python_tool();
+fn canonical_anthropic_tool(config: &Config) -> Value {
+    let tool = canonical_tool(config);
     json!({
         "name": tool.name,
         "description": tool.description,
@@ -115,7 +118,7 @@ fn reject_alternate_tool_fields(
 ) -> Result<(), String> {
     if let Some(field) = fields.iter().find(|field| body.get(**field).is_some()) {
         return Err(format!(
-            "Python-only {provider} request contains forbidden alternate tool field `{field}`"
+            "Single-tool {provider} request contains forbidden alternate tool field `{field}`"
         ));
     }
     Ok(())
@@ -126,63 +129,63 @@ pub fn validate_agent_surface(
     messages: &[Message],
     tools: &[ToolDefinition],
 ) -> Result<(), String> {
-    if config.tool_profile != ToolProfile::PythonOnly {
+    if config.tool_profile == ToolProfile::General {
         return Ok(());
     }
     if let Some(error) = config.python_mode_validation_error() {
         return Err(format!("Invalid Python-only request policy: {error}"));
     }
-    let expected = canonical_python_tool();
+    let expected = canonical_tool(config);
     if tools.len() != 1
         || tools[0].name != expected.name
         || tools[0].description != expected.description
         || tools[0].input_schema != expected.input_schema
     {
         return Err(
-            "Python-only request must advertise exactly the canonical `python` tool".to_string(),
+            "Single-tool request must advertise exactly the canonical mode tool".to_string(),
         );
     }
-    let guidance = python_guidance(config)?;
+    let guidance = capability_guidance(config)?;
     if !messages_have_exact_guidance(messages, &guidance) {
         return Err(
-            "Python-only request is missing the exact final host capability guidance".to_string(),
+            "Single-tool request is missing the exact final host capability guidance".to_string(),
         );
     }
     Ok(())
 }
 
 pub fn validate_final_agent_body(config: &Config, body: &Value) -> Result<(), String> {
-    if config.tool_profile != ToolProfile::PythonOnly {
+    if config.tool_profile == ToolProfile::General {
         return Ok(());
     }
     if let Some(error) = config.python_mode_validation_error() {
         return Err(format!("Invalid Python-only request policy: {error}"));
     }
     validate_common_agent_body(config, body)?;
-    let guidance = python_guidance(config)?;
+    let guidance = capability_guidance(config)?;
     match config.active_connection_kind() {
         ConnectionKind::OpenAiChatCompletions => {
             let tools = body
                 .get("tools")
                 .and_then(Value::as_array)
-                .ok_or_else(|| "Python-only OpenAI request is missing tools".to_string())?;
-            if tools.as_slice() != [canonical_openai_python_tool()] {
+                .ok_or_else(|| "Single-tool OpenAI request is missing tools".to_string())?;
+            if tools.as_slice() != [canonical_openai_tool(config)] {
                 return Err(
-                    "Python-only OpenAI request must contain exactly the canonical `python` tool"
+                    "Single-tool OpenAI request must contain exactly the canonical mode tool"
                         .to_string(),
                 );
             }
             if body.get("parallel_tool_calls").and_then(Value::as_bool) != Some(false) {
-                return Err("Python-only OpenAI request must disable parallel tools".to_string());
+                return Err("Single-tool OpenAI request must disable parallel tools".to_string());
             }
             if body.get("tool_choice").is_some() {
                 return Err(
-                    "Python-only OpenAI request contains a noncanonical tool choice".to_string(),
+                    "Single-tool OpenAI request contains a noncanonical tool choice".to_string(),
                 );
             }
             if body.get("stream_options") != Some(&json!({"include_usage": true})) {
                 return Err(
-                    "Python-only OpenAI request must retain exact streaming usage options"
+                    "Single-tool OpenAI request must retain exact streaming usage options"
                         .to_string(),
                 );
             }
@@ -199,7 +202,7 @@ pub fn validate_final_agent_body(config: &Config, body: &Value) -> Result<(), St
             )?;
             if !openai_body_has_exact_guidance(body, &guidance) {
                 return Err(
-                    "Python-only OpenAI request is missing the exact final host capability guidance"
+                    "Single-tool OpenAI request is missing the exact final host capability guidance"
                         .to_string(),
                 );
             }
@@ -208,10 +211,10 @@ pub fn validate_final_agent_body(config: &Config, body: &Value) -> Result<(), St
             let tools = body
                 .get("tools")
                 .and_then(Value::as_array)
-                .ok_or_else(|| "Python-only Anthropic request is missing tools".to_string())?;
-            if tools.as_slice() != [canonical_anthropic_python_tool()] {
+                .ok_or_else(|| "Single-tool Anthropic request is missing tools".to_string())?;
+            if tools.as_slice() != [canonical_anthropic_tool(config)] {
                 return Err(
-                    "Python-only Anthropic request must contain exactly the canonical `python` tool"
+                    "Single-tool Anthropic request must contain exactly the canonical mode tool"
                         .to_string(),
                 );
             }
@@ -222,7 +225,7 @@ pub fn validate_final_agent_body(config: &Config, body: &Value) -> Result<(), St
                 }))
             {
                 return Err(
-                    "Python-only Anthropic request must use the exact nonparallel automatic tool choice"
+                    "Single-tool Anthropic request must use the exact nonparallel automatic tool choice"
                         .to_string(),
                 );
             }
@@ -242,7 +245,7 @@ pub fn validate_final_agent_body(config: &Config, body: &Value) -> Result<(), St
                 .is_some_and(|system| has_exact_guidance_suffix(system, &guidance))
             {
                 return Err(
-                    "Python-only Anthropic request is missing the exact final host capability guidance"
+                    "Single-tool Anthropic request is missing the exact final host capability guidance"
                         .to_string(),
                 );
             }
@@ -277,7 +280,7 @@ mod tests {
     }
 
     fn messages(config: &Config) -> Vec<Message> {
-        let guidance = python_guidance(config).unwrap();
+        let guidance = capability_guidance(config).unwrap();
         vec![
             Message::system(format!("Synthetic host template\n\n{guidance}")),
             Message::user("Run one cell"),
@@ -345,7 +348,7 @@ mod tests {
         wrong_tools[0].description.push_str(" changed");
         assert!(validate_agent_surface(&config, &messages(&config), &wrong_tools).is_err());
 
-        let guidance = python_guidance(&config).unwrap();
+        let guidance = capability_guidance(&config).unwrap();
         let trailing = vec![Message::system(format!("{guidance}\ncontradictory tail"))];
         assert!(validate_agent_surface(&config, &trailing, &tools(&config)).is_err());
         let duplicate = vec![Message::system(format!("{guidance}\n\n{guidance}"))];

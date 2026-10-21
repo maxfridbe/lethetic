@@ -23,6 +23,7 @@ pub enum ToolProfile {
     #[default]
     General,
     PythonOnly,
+    DotnetOnly,
 }
 
 #[derive(Serialize, Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -612,11 +613,12 @@ impl Config {
         // trusted per-user global config; an explicit one-time UI choice is
         // also applied after this loading boundary.
         self.python_runtime.python_executable = default_python_executable();
-        if self.tool_profile == ToolProfile::PythonOnly
-            && self.python_runtime.target == Some(PythonExecutionTarget::Host)
+        if self.tool_profile == ToolProfile::DotnetOnly
+            || (self.tool_profile == ToolProfile::PythonOnly
+                && self.python_runtime.target == Some(PythonExecutionTarget::Host))
         {
             return Err(
-                "Untrusted project config cannot select Python Host execution; use a trusted global policy or an explicit one-time choice"
+                "Untrusted project config cannot select native Host execution; use a trusted global policy or an explicit one-time choice"
                     .to_string(),
             );
         }

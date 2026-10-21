@@ -29,7 +29,7 @@ pub(super) fn render(f: &mut ratatui::Frame, app: &App) {
     match setup.stage {
         PythonSetupStage::Profile => {
             lines.push(Line::from(format!(
-                "Choose:  {} General    {} Python-only",
+                "Choose:  {} General    {} Python-only    {} .NET-only",
                 if setup.profile == ToolProfile::General {
                     "▶"
                 } else {
@@ -39,10 +39,15 @@ pub(super) fn render(f: &mut ratatui::Frame, app: &App) {
                     "▶"
                 } else {
                     " "
+                },
+                if setup.profile == ToolProfile::DotnetOnly {
+                    "▶"
+                } else {
+                    " "
                 }
             )));
             lines.push(Line::from(
-                "General keeps the existing tools. Python-only exposes only python; task tracking uses import lethetic_todo.",
+                "General: existing tools. Python-only: python. .NET-only: C# with the installed SDK and unrestricted host permissions.",
             ));
         }
         PythonSetupStage::Target => {

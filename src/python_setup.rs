@@ -352,6 +352,8 @@ impl PythonSetupDialog {
     pub fn summary_lines(&self) -> Vec<String> {
         let mut lines = Vec::new();
         match self.profile {
+            ToolProfile::DotnetOnly => lines
+                .push("Tools: dotnet only; native SDK, unrestricted host permissions".to_string()),
             ToolProfile::General => {
                 lines.push("Tools: existing General tool set (Python is not exposed)".to_string())
             }
@@ -535,7 +537,7 @@ impl PythonSetupDialog {
         self.error = None;
         self.stage = match self.stage {
             PythonSetupStage::Profile => {
-                if self.profile == ToolProfile::General {
+                if self.profile != ToolProfile::PythonOnly {
                     PythonSetupStage::Confirm
                 } else {
                     PythonSetupStage::Target
@@ -577,7 +579,7 @@ impl PythonSetupDialog {
             PythonSetupStage::WorkspaceAccess => PythonSetupStage::Network,
             PythonSetupStage::Grants => PythonSetupStage::WorkspaceAccess,
             PythonSetupStage::Confirm => match (self.profile, self.runtime.target) {
-                (ToolProfile::General, _) => PythonSetupStage::Profile,
+                (ToolProfile::General | ToolProfile::DotnetOnly, _) => PythonSetupStage::Profile,
                 (_, Some(PythonExecutionTarget::Host)) => PythonSetupStage::Target,
                 _ => PythonSetupStage::Grants,
             },

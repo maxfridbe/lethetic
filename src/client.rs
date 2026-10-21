@@ -268,7 +268,8 @@ fn prepare_llm_request_with_start(
         return Err("prepared provider request does not match the active connection".to_string());
     }
     let transcript_prefix = context_manager.get_messages().to_vec();
-    let api_context = context_manager.prepare_api_context();
+    let guidance = crate::system_prompt::capability_guidance(config);
+    let api_context = context_manager.prepare_api_context_with_guidance(guidance.as_deref());
     if api_context.estimated_tokens() > context_manager.input_token_budget() {
         return Err(
             "Prepared API context exceeds the configured input token budget; reduce the system prompt or context"

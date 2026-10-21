@@ -169,6 +169,7 @@ const CONTEXT_USAGE_SOURCES = {
 const PYTHON_PROFILES = {
   general: true,
   python_only: true,
+  dotnet_only: true,
 } as const satisfies Readonly<Record<Wire.PythonProfileView, true>>;
 const PYTHON_TARGETS = {
   host: true,

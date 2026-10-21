@@ -776,6 +776,7 @@ fn project_status(app: &App, redactor: &Redactor) -> StatusView {
     let profile = match summary.python.profile {
         ToolProfile::General => PythonProfileView::General,
         ToolProfile::PythonOnly => PythonProfileView::PythonOnly,
+        ToolProfile::DotnetOnly => PythonProfileView::DotnetOnly,
     };
     let target = summary.python.target.map(|target| match target {
         PythonExecutionTarget::Host => PythonTargetView::Host,

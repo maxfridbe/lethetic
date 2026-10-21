@@ -84,6 +84,7 @@ pub struct SessionBinding {
 #[derive(Clone)]
 pub struct ToolRuntime {
     runspace: Arc<PythonRunspace>,
+    pub(crate) dotnet: crate::dotnet::DotnetRunspace,
     cached_launch: Arc<Mutex<Option<ResolvedLaunch>>>,
     session_binding: Arc<Mutex<Option<SessionBinding>>>,
     workspace_root: Arc<PathBuf>,
@@ -106,6 +107,7 @@ impl ToolRuntime {
         let workspace_root = workspace_root.canonicalize().unwrap_or(workspace_root);
         Self {
             runspace: Arc::new(PythonRunspace::new()),
+            dotnet: crate::dotnet::DotnetRunspace::default(),
             cached_launch: Arc::new(Mutex::new(None)),
             session_binding: Arc::new(Mutex::new(None)),
             workspace_root: Arc::new(workspace_root),
@@ -736,6 +738,7 @@ impl ToolRuntime {
     }
 
     async fn reset_and_reconcile(&self, _binding: Option<&SessionBinding>) -> Result<(), String> {
+        self.dotnet.reset().await;
         let reset = self.runspace.reset_checked().await;
         *self.cached_launch.lock().await = None;
         #[cfg(target_os = "linux")]
