@@ -178,6 +178,31 @@ where
     })
 }
 
+fn deserialize_stop_signal<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Signal {
+        Name(String),
+        Number(u32),
+    }
+    Ok(match Signal::deserialize(deserializer)? {
+        Signal::Number(15) => "SIGTERM".to_string(),
+        Signal::Number(number) => number.to_string(),
+        Signal::Name(name) => name,
+    })
+}
+
+fn deserialize_present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub(super) struct ImageInspection {
@@ -226,6 +251,7 @@ pub(super) struct InspectedContainerConfig {
     pub(super) open_stdin: bool,
     pub(super) stdin_once: bool,
     pub(super) tty: bool,
+    #[serde(deserialize_with = "deserialize_stop_signal")]
     pub(super) stop_signal: String,
     pub(super) stop_timeout: u64,
     pub(super) user: String,
@@ -235,8 +261,14 @@ pub(super) struct InspectedContainerConfig {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub(super) struct InspectedHostConfig {
-    #[serde(default, deserialize_with = "deserialize_null_default")]
-    pub(super) annotations: BTreeMap<String, String>,
+    // Podman 4 exposes annotations in Config only. Newer versions also emit
+    // this duplicate; when present it must pass the same security checks.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(super) annotations: Option<BTreeMap<String, String>>,
     pub(super) auto_remove: bool,
     #[serde(default, deserialize_with = "deserialize_null_default")]
     pub(super) binds: Vec<String>,

@@ -66,7 +66,7 @@ fn podman_entrypoint_wire_formats_preserve_exact_attestation() {
 }
 
 #[test]
-fn podman_entrypoint_legacy_retained_supervisor_is_attested() {
+fn podman_legacy_retained_supervisor_is_attested() {
     use crate::python::retained_podman::model::{CONTAINER_ENTRYPOINT, ContainerInspection};
 
     let root = tempfile::tempdir().unwrap();
@@ -75,8 +75,68 @@ fn podman_entrypoint_legacy_retained_supervisor_is_attested() {
     let id = "e".repeat(64);
     let mut fixture = serde_json::to_value(matching_inspection(&config, &id)).unwrap();
     fixture["Config"]["Entrypoint"] = CONTAINER_ENTRYPOINT.into();
+    fixture["Config"]["StopSignal"] = 15.into();
+    fixture["HostConfig"]
+        .as_object_mut()
+        .unwrap()
+        .remove("Annotations");
     let inspection: ContainerInspection = serde_json::from_value(fixture).unwrap();
     validate_retained_inspection(&config, &id, &inspection, true).unwrap();
+}
+
+#[test]
+fn podman_legacy_inspection_keeps_signal_and_annotation_checks() {
+    use crate::python::retained_podman::model::ContainerInspection;
+    use serde_json::json;
+
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path().canonicalize().unwrap();
+    let config = transient_test_config(&root, NetworkAccess::None, false);
+    let id = "d".repeat(64);
+    let mut fixture = serde_json::to_value(matching_transient_inspection(&config, &id)).unwrap();
+    // Podman 4.9's complete relevant schema, not just individual field changes:
+    // https://github.com/containers/podman/blob/v4.9.3/libpod/define/container_inspect.go
+    fixture["Config"]["Entrypoint"] = json!("python3");
+    fixture["Config"]["StopSignal"] = json!(15);
+    fixture["HostConfig"]
+        .as_object_mut()
+        .unwrap()
+        .remove("Annotations");
+    let inspection: ContainerInspection = serde_json::from_value(fixture.clone()).unwrap();
+    validate_transient_inspection(&config, &id, &inspection).unwrap();
+
+    for signal in [json!(9), json!(0), json!("SIGKILL"), json!(" SIGTERM")] {
+        let mut value = fixture.clone();
+        value["Config"]["StopSignal"] = signal;
+        let inspection: ContainerInspection = serde_json::from_value(value).unwrap();
+        assert!(validate_transient_inspection(&config, &id, &inspection).is_err());
+    }
+    for signal in [
+        json!(null),
+        json!(-1),
+        json!(15.5),
+        json!(true),
+        json!([15]),
+    ] {
+        let mut value = fixture.clone();
+        value["Config"]["StopSignal"] = signal;
+        assert!(serde_json::from_value::<ContainerInspection>(value).is_err());
+    }
+    // The Config annotations remain mandatory with or without the host copy.
+    let mut missing = fixture.clone();
+    missing["Config"]
+        .as_object_mut()
+        .unwrap()
+        .remove("Annotations");
+    let inspection: ContainerInspection = serde_json::from_value(missing).unwrap();
+    assert!(validate_transient_inspection(&config, &id, &inspection).is_err());
+
+    let mut empty = fixture.clone();
+    empty["HostConfig"]["Annotations"] = json!({});
+    let inspection: ContainerInspection = serde_json::from_value(empty).unwrap();
+    assert!(validate_transient_inspection(&config, &id, &inspection).is_err());
+    fixture["HostConfig"]["Annotations"] = json!(null);
+    assert!(serde_json::from_value::<ContainerInspection>(fixture).is_err());
 }
 
 #[tokio::test]

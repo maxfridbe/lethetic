@@ -231,10 +231,9 @@ impl TransientInspectionAttestation<'_> {
             ),
         ]);
         validate_podman_annotations(&self.inspection.config.annotations, &expected_annotations)?;
-        validate_podman_annotations(
-            &self.inspection.host_config.annotations,
-            &expected_annotations,
-        )?;
+        if let Some(annotations) = &self.inspection.host_config.annotations {
+            validate_podman_annotations(annotations, &expected_annotations)?;
+        }
         let host = &self.inspection.host_config;
         let expected_network = match self.config.network {
             NetworkAccess::None => "none",
@@ -629,10 +628,9 @@ impl RetainedInspectionAttestation<'_> {
             ),
         ]);
         validate_podman_annotations(&self.inspection.config.annotations, &expected_annotations)?;
-        validate_podman_annotations(
-            &self.inspection.host_config.annotations,
-            &expected_annotations,
-        )?;
+        if let Some(annotations) = &self.inspection.host_config.annotations {
+            validate_podman_annotations(annotations, &expected_annotations)?;
+        }
 
         let host = &self.inspection.host_config;
         if host.auto_remove

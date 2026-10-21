@@ -229,7 +229,7 @@ fn matching_transient_inspection(
             working_dir: config.launch_cwd.display().to_string(),
         },
         host_config: InspectedHostConfig {
-            annotations,
+            annotations: Some(annotations),
             auto_remove: true,
             binds,
             cgroup_mode: "private".to_string(),
@@ -431,7 +431,7 @@ fn matching_inspection(config: &RetainedPodmanConfig, container_id: &str) -> Con
             working_dir: destination.clone(),
         },
         host_config: InspectedHostConfig {
-            annotations,
+            annotations: Some(annotations),
             auto_remove: false,
             binds: vec![
                 format!(
