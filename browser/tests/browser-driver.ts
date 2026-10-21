@@ -8,6 +8,8 @@ import { testConnectionThinking } from "./thinking-browser.js";
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { PREVIEW_WEBM } from "./media-fixture.js";
+import { navigateDocument } from "./navigation.js";
+import type { CdpListener } from "./navigation.js";
 
 interface Config { browser: string; profile: string; origin: string; pyodide: boolean; screenshot: string }
 process.stdin.setEncoding("utf8");
@@ -19,11 +21,12 @@ const browser = spawn(config.browser, ["--headless=new", "--password-store=basic
   "--disable-component-update", "--disable-sync", "--window-size=1440,1100", "about:blank"],
 { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] });
 const pending = new Map<number, { resolve: (value: Record<string, unknown>) => void;
-  reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+  reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; failure: Error }>();
 let counter = 0;
 let session: string | undefined;
 let buffered = "";
 let browserErrors = "";
+const eventListeners = new Set<CdpListener>();
 browser.stderr?.setEncoding("utf8");
 browser.stderr?.on("data", (chunk) => { browserErrors = (browserErrors + chunk).slice(-3000); });
 browser.on("exit", () => {
@@ -39,18 +42,23 @@ pipe.on("data", (chunk) => {
     const end = buffered.indexOf("\0");
     const message = JSON.parse(buffered.slice(0, end)) as Record<string, unknown>;
     buffered = buffered.slice(end + 1);
+    if (message["method"]) { for (const listener of eventListeners) listener(message); }
     const request = pending.get(Number(message["id"]));
     if (!request) continue;
     pending.delete(Number(message["id"])); clearTimeout(request.timer);
-    if (message["error"]) request.reject(new Error(JSON.stringify(message["error"])));
+    if (message["error"]) {
+      request.failure.message += `: ${JSON.stringify(message["error"])}`;
+      request.reject(request.failure);
+    }
     else request.resolve(message["result"] as Record<string, unknown>);
   }
 });
 function rpc(method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
   const id = ++counter;
+  const failure = new Error(`CDP ${method} failed`);
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => { pending.delete(id); reject(new Error(`CDP timed out: ${method}`)); }, 180_000);
-    pending.set(id, { resolve, reject, timer });
+    pending.set(id, { resolve, reject, timer, failure });
     browser.stdio[3]?.write(JSON.stringify({ id, method, params, sessionId: session }) + "\0");
   });
 }
@@ -58,6 +66,12 @@ async function evaluate(expression: string): Promise<unknown> {
   const response = await rpc("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
   if (response["exceptionDetails"]) throw new Error(JSON.stringify(response["exceptionDetails"]));
   return (response["result"] as Record<string, unknown>)["value"];
+}
+async function navigate(method: "Page.navigate" | "Page.reload", params: Record<string, unknown> = {}): Promise<void> {
+  if (!session) throw new Error("No page session for navigation");
+  await navigateDocument(rpc, listener => {
+    eventListeners.add(listener); return () => { eventListeners.delete(listener); };
+  }, session, method, params);
 }
 function check(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
 async function until(expression: string): Promise<void> {
@@ -87,12 +101,13 @@ try {
   const attached = await rpc("Target.attachToTarget", { targetId: target["targetId"], flatten: true });
   session = String(attached["sessionId"]);
   await rpc("Page.enable"); await rpc("Runtime.enable");
+  await rpc("Page.setLifecycleEventsEnabled", {enabled: true});
   // Hold the actual WASM download to verify that elapsed time alone never hides the popup.
   const startupGate = await rpc("Page.addScriptToEvaluateOnNewDocument", {source: `
     {const original=globalThis.fetch;const gate=new Promise(resolve=>globalThis.releaseStartupWasm=resolve);
     globalThis.fetch=async (...args)=>{const url=args[0] instanceof Request?args[0].url:String(args[0]);
       if(url.includes('lethetic_wasm_bg.wasm'))await gate;return original(...args);};}`});
-  await rpc("Page.navigate", { url: `${config.origin}/lethetic/` });
+  await navigate("Page.navigate", { url: `${config.origin}/lethetic/` });
   await until("!!document.querySelector('#startup-splash:modal')");
   check(await evaluate("document.querySelector('#startup-splash').getAttribute('aria-busy')==='true'"), "startup did not announce loading");
   check(await evaluate("(()=>{const splash=document.querySelector('#startup-splash');splash.click();return splash.open && !splash.dispatchEvent(new Event('cancel',{cancelable:true}))})()"), "loading splash dismissed before readiness");
@@ -426,7 +441,7 @@ try {
   process.stdout.write("Shared UI, WASM chat, code capture, and mobile layout passed.\n");
   await until("!document.querySelector('.browser-persistence:not([hidden])')");
   await evaluate("globalThis.beforeSessionReload=true");
-  await rpc("Page.reload");
+  await navigate("Page.reload");
   await until("!!document.querySelector('#startup-splash')");
   await waitForStartup();
   await until("!globalThis.beforeSessionReload && !!document.querySelector('[data-field=name]')");
@@ -477,7 +492,7 @@ try {
   await evaluate("document.querySelector('dialog[open]').close()");
   await until("!document.querySelector('.browser-persistence:not([hidden])')");
   await evaluate("globalThis.beforeSessionReload=true");
-  await rpc("Page.reload");
+  await navigate("Page.reload");
   await until("!!document.querySelector('#startup-splash')");
   await waitForStartup();
   await until("!globalThis.beforeSessionReload && !!document.querySelector('[data-field=name]')");
@@ -508,7 +523,7 @@ try {
   const freshHash = await evaluate("location.hash");
   await until("!document.querySelector('.browser-persistence:not([hidden])')");
   await evaluate("globalThis.beforeSessionReload=true");
-  await rpc("Page.reload");
+  await navigate("Page.reload");
   await until("!!document.querySelector('#startup-splash')");
   await waitForStartup();
   await until("!globalThis.beforeSessionReload && !!document.querySelector('[data-field=name]')");
@@ -551,7 +566,7 @@ try {
   })()`);
   check(JSON.stringify(pythonResult) === JSON.stringify({ output: "42\n", stopped: true, restarted: "42\n" }), "Python worker lifecycle failed");
   process.stdout.write("Python worker lifecycle passed.\n");
-  await rpc("Page.navigate", { url: `${config.origin}/lethetic/integration.html` });
+  await navigate("Page.navigate", { url: `${config.origin}/lethetic/integration.html` });
   await until("document.title==='Lethetic integration guide'");
   check(await evaluate(`(async () => {
     const {mountLethetic}=await import('./src/embed.js');
