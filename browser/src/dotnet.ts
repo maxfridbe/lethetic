@@ -43,6 +43,7 @@ export interface DotnetRuntime {
 }
 export type DotnetLoader = (options: { signal: AbortSignal; networkAccess: boolean; nugetAccess: boolean; siteAccess: boolean; relay?: DotnetRelay | null }) => Promise<DotnetRuntime>;
 export interface DotnetTool extends Tool {
+  initialize(signal: AbortSignal): Promise<void>;
   recordConsole(entry: DotnetConsoleMessage): void;
   sites(): WireSite[];
   requestSite(request: WireRequest, signal: AbortSignal): Promise<WireResponse>;
@@ -102,6 +103,10 @@ export function createDotnetTool(options: {
   }
   return {
     ...DOTNET_TOOL_DEFINITION,
+    async initialize(signal): Promise<void> {
+      const {warning} = await perform(signal, async () => {});
+      if (warning) throw new Error(warning.trim());
+    },
     recordConsole: entry => { runtime?.recordConsole?.(entry); },
     sites: () => structuredClone(sites),
     async requestSiteStream(request, signal): Promise<WireStreamResponse> {

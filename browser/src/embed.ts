@@ -23,6 +23,8 @@ import { BrowserFiles } from "./files.js";
 import { createFileEditor } from "./file-editor.js";
 
 export interface EmbedOptions {
+  /** Defer initial connection setup until activate(), for hosts displaying a startup overlay. */
+  startInBackground?: boolean;
   connections?: Connection[];
   /** Optional device-local persistence for connections, sessions and files. */
   storage?: Storage;
@@ -50,7 +52,7 @@ export interface EmbedOptions {
 /** Mount the same SpaApplication used by native remote mode, backed by local WASM.
  * The shared UI uses document-level keyboard and focus handling: mount one per document.
  */
-export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { destroy(): void } {
+export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { initialize(onProgress: (message: string) => void): Promise<void>; activate(): void; destroy(): void } {
   let connections = options.connections?.map(validateConnection) ??
     (options.storage ? loadConnections(options.storage) : []);
   if (options.credentialStorage) connections = restoreConnectionKeys(options.credentialStorage, connections);
@@ -212,6 +214,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
     transport?.publish();
   };
   if (options.sessionRouting) globalThis.addEventListener("hashchange", navigate);
-  if (!connections.length) settings.open();
-  return { destroy(): void { unsubscribeStorage?.(); globalThis.removeEventListener("beforeunload", protectUnsaved); upload.destroy(); globalThis.removeEventListener("hashchange", navigate); transport?.dispose(); application.dispose(); settings?.destroy(); limits?.destroy(); sites?.destroy(); editor?.destroy(); preview.destroy(); root.replaceChildren(); } };
+  const activate = (): void => { if (!connections.length) settings?.open(); else document.getElementById("composer-input")?.focus(); };
+  if (!options.startInBackground) activate();
+  return { initialize: onProgress => transport!.initialize(onProgress), activate, destroy(): void { unsubscribeStorage?.(); globalThis.removeEventListener("beforeunload", protectUnsaved); upload.destroy(); globalThis.removeEventListener("hashchange", navigate); transport?.dispose(); application.dispose(); settings?.destroy(); limits?.destroy(); sites?.destroy(); editor?.destroy(); preview.destroy(); root.replaceChildren(); } };
 }

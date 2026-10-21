@@ -9,7 +9,7 @@ import { summarizeContext } from "./compaction.js";
 import { WFE_PROTOCOL_SCHEMA_SHA256, WFE_PROTOCOL_VERSION } from "../../web/src/generated/contracts.js";
 import type { CommandOutcome, ICommandRequest, PanelId, WebAppSnapshot, WebCommand } from "../../web/src/generated/contracts.js";
 import type { ApplicationTransport, BrowserTransportEvents } from "../../web/src/transport.js";
-import { createRuntime, DEFAULT_PROMPT } from "./sdk.js";
+import { createRuntime, initializeWasm, DEFAULT_PROMPT } from "./sdk.js";
 import type { Connection, LetheticRuntime, RuntimeEvent, Tool } from "./sdk.js";
 import { effectiveSystemPrompt, injectedInstructions, toolDefinitions } from "./prompts.js";
 import { createDotnetTool } from "./dotnet.js";
@@ -276,6 +276,26 @@ export class LocalTransport implements ApplicationTransport {
   }
 
   get sites(): WireSite[] { return (this.pythonEnabled ? this.#python : this.#dotnet)?.sites() ?? []; }
+
+  async initialize(onProgress: (message: string) => void): Promise<void> {
+    this.#requireIdle();
+    const controller = new AbortController(); this.#operation = controller;
+    this.state.activity = {kind: "processing", fully_idle: false, cancellable: false, cancel_id: null, progress_percent: null};
+    const progress = (message: string): void => { this.state.status.stop_reason = message; onProgress(message); this.publish(); };
+    try {
+      progress("Loading Lethetic WASM…");
+      await initializeWasm(); controller.signal.throwIfAborted();
+      if (this.pythonEnabled) { progress("Loading Pyodide and restoring session files…"); await this.#pythonTool().initialize(controller.signal); }
+      if (this.mode === "dotnet-wasm") { progress("Loading .NET WASM and restoring session files…"); await this.#dotnetTool().initialize(controller.signal); }
+      controller.signal.throwIfAborted();
+      this.state.status.stop_reason = "Ready";
+    } catch (error) { this.state.status.stop_reason = "Initialization failed"; throw error; }
+    finally {
+      this.#operation = null;
+      this.state.activity = {kind: "idle", fully_idle: true, cancellable: false, cancel_id: null, progress_percent: null};
+      this.publish();
+    }
+  }
 
   #pythonTool(): PythonTool {
     return this.#python ??= createPythonTool({ indexURL: this.options.pyodideIndexURL, siteAccess: this.siteAccess, networkAccess: this.networkAccess, relay: this.dotnetRelay,

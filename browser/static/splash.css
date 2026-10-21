@@ -1,14 +1,22 @@
 /* Startup artwork is local so it paints before the application modules load. */
-#startup-splash { position: fixed; inset: 0; display: grid; place-items: center; overflow: hidden; box-sizing: border-box; background-color: #04060a; color: #f1f5f9; font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; user-select: none; background-size: 48px 48px; background-image: linear-gradient(to right, #00f2fe06 1px, transparent 1px), linear-gradient(to bottom, #00f2fe06 1px, transparent 1px); }
+#startup-splash { position: fixed; inset: 0; margin: auto; padding: 0; width: 70vw; height: 70dvh; max-width: none; max-height: none; border: 1px solid #334155; border-radius: 20px; box-shadow: 0 24px 90px #0009; display: grid; grid-template-rows: minmax(0,1fr) auto; place-items: center; overflow: hidden; box-sizing: border-box; background-color: #04060a; color: #f1f5f9; font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; user-select: none; background-size: 48px 48px; background-image: linear-gradient(to right, #00f2fe06 1px, transparent 1px), linear-gradient(to bottom, #00f2fe06 1px, transparent 1px); }
+#startup-splash:not([open]) { display: none; }
+#startup-splash::backdrop { background: #0002; }
 #startup-splash * { box-sizing: border-box; }
 .splash-auras { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; pointer-events: none; }
 .splash-auras div { flex-shrink: 0; width: 520px; height: 520px; border-radius: 50%; background: #06b6d426; animation: splash-aura 4.5s ease-in-out infinite; }
 .splash-auras div + div { width: 420px; height: 420px; background: #4f46e533; animation-delay: -2.25s; }
 .splash-hero { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; padding: 16px; width: 100%; }
-#splash-mark { display: block; width: 256px; height: 256px; max-width: 70vw; max-height: 55dvh; overflow: visible; animation: splash-glow 4s ease-in-out infinite; }
-.splash-brand { display: flex; justify-content: center; align-items: center; gap: 12px; margin: 32px 0 0; font-size: clamp(1.1rem, 5.1vw, 3.75rem); line-height: 1.2; font-weight: 900; letter-spacing: .22em; white-space: nowrap; animation: splash-text-glow 4s ease-in-out infinite; }
+#splash-mark { display: block; width: 256px; height: 256px; max-width: 55vw; max-height: 38dvh; overflow: visible; animation: splash-glow 4s ease-in-out infinite; }
+.splash-brand { display: flex; justify-content: center; align-items: center; gap: 12px; margin: 16px 0 0; font-size: clamp(.8rem, 3.4vw, 3rem); line-height: 1.2; font-weight: 900; letter-spacing: .22em; white-space: nowrap; animation: splash-text-glow 4s ease-in-out infinite; }
 .splash-brand span:first-child { color: white; filter: drop-shadow(0 0 24px #ffffff40); }
 .splash-brand span:last-child { color: #22d3ee; font-weight: 300; filter: drop-shadow(0 0 30px #00f2fe73); }
+.splash-controls { position: relative; z-index: 1; width: 100%; padding: 0 16px 18px; text-align: center; font-size: clamp(.75rem, 1.2vw, .95rem); }
+#splash-progress { margin: 0 0 12px; color: #94a3b8; overflow-wrap: anywhere; max-height: 12dvh; overflow: auto; }
+#splash-continue { padding: 8px 16px; border: 1px solid #22d3ee; border-radius: 8px; color: #e2e8f0; background: #0f172a; font: inherit; cursor: pointer; }
+#splash-continue:disabled { opacity: .5; cursor: wait; }
+#splash-continue:focus-visible { outline: 2px solid #22d3ee; outline-offset: 3px; }
+#startup-splash[data-ready="true"] { cursor: pointer; }
 #startup-splash noscript { position: absolute; bottom: 24px; padding: 16px; text-align: center; }
 .splash-halo { animation: splash-halo 3.6s ease-in-out infinite; }
 .splash-orbit { animation: splash-orbit 45s linear infinite; }
@@ -40,5 +48,5 @@
 @keyframes splash-gradient { 0%,100% { stop-color: #00f2fe; } 33% { stop-color: #6366f1; } 66% { stop-color: #38bdf8; } }
 @media (min-width: 640px) { #splash-mark { width: 320px; height: 320px; } }
 @media (min-width: 768px) { #splash-mark { width: 384px; height: 384px; } }
-@media (max-height: 420px) { #splash-mark { width: 180px; height: 180px; } .splash-brand { margin-top: 8px; font-size: 1.5rem; } }
+@media (max-height: 420px) { #splash-mark { width: 180px; height: 180px; } .splash-brand { margin-top: 8px; font-size: clamp(.8rem, 3.4vw, 1.5rem); } }
 @media (prefers-reduced-motion: reduce) { #startup-splash, #startup-splash * { animation: none !important; } .splash-auras div { filter: blur(80px); opacity: .35; } .splash-wave, .splash-synapse { stroke-dasharray: none; } }

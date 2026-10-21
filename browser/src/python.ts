@@ -19,6 +19,7 @@ export const PYTHON_TOOL_DEFINITION = {
 export const PYODIDE_INDEX_URL = "https://cdn.jsdelivr.net/pyodide/v0.29.3/full/";
 
 export interface PythonTool extends Tool {
+  initialize(signal: AbortSignal): Promise<void>;
   execute(arguments_: Record<string, unknown>, signal: AbortSignal): Promise<string>;
   /** Terminate Python; the last completed workspace checkpoint survives. */
   sites(): WireSite[];
@@ -128,6 +129,10 @@ export function createPythonTool(options: {
   }
   return {
     ...PYTHON_TOOL_DEFINITION,
+    async initialize(signal): Promise<void> {
+      const reply = await perform("", signal);
+      if (reply.warning || reply.output.trim() !== "Python completed without output.") { reset(); throw new Error(`${reply.output}\n${reply.warning}`); }
+    },
     reset,
     sites: () => structuredClone(sites),
     snapshotWorkspace: () => structuredClone(checkpoint),

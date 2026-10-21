@@ -100,6 +100,9 @@ function loadRuntimeModule(wasm?: BufferSource): Promise<WasmModule> {
   return moduleReady;
 }
 
+/** Preload the shared CLI WASM module without creating a conversation or making model requests. */
+export async function initializeWasm(): Promise<void> { await loadRuntimeModule(); }
+
 /** Host binding to the same compaction coordinator used by the native CLI. */
 export async function createCompactionPlan(messages: readonly unknown[], options: Pick<RuntimeOptions, "wasm" | "contextTokens" | "maxOutputTokens">): Promise<WasmCompaction> {
   const module = await loadRuntimeModule(options.wasm);

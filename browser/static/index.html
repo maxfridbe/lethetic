@@ -12,8 +12,8 @@
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <div id="browser-root" aria-busy="true">
-    <div id="startup-splash" role="status" aria-label="Loading Lethetic Engine">
+  <div id="browser-root"><p role="status">Loading workspace…</p></div>
+  <dialog id="startup-splash" open aria-labelledby="splash-title" aria-describedby="splash-progress" aria-busy="true">
       <div class="splash-auras" aria-hidden="true"><div></div><div></div></div>
       <div class="splash-hero">
 <svg id="splash-mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 280" aria-hidden="true">
@@ -63,11 +63,14 @@
   </g>
 </svg>
 
-        <h1 class="splash-brand"><span>LETHETIC</span><span>ENGINE</span></h1>
+        <h1 id="splash-title" class="splash-brand"><span>LETHETIC</span><span>ENGINE</span></h1>
       </div>
+      <footer class="splash-controls">
+        <p id="splash-progress" role="status" aria-live="polite">Loading workspace…</p>
+        <button id="splash-continue" type="button" disabled>Loading…</button>
+      </footer>
       <noscript>Lethetic requires JavaScript and WebAssembly.</noscript>
-    </div>
-  </div>
+  </dialog>
   <script type="module" src="./src/main.js"></script>
 </body>
 </html>

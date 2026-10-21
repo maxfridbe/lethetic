@@ -29,11 +29,15 @@ Embedded hosts retain control of their own container sizing.
 
 ## Run the hosted application
 
-The standalone page shows the animated Lethetic splash for at least three seconds
-while application modules and saved sessions initialize in the background. It stays visible
-until initialization finishes, respects reduced-motion preferences, and shows a
-retry action if startup fails. The splash uses local SVG/CSS assets; embedded
-`mountLethetic` hosts control their own loading UI.
+The standalone page shows an animated popup at 70% of the viewport's width and
+height, with the workspace visible behind it. It initializes the shared CLI WASM
+core and the saved session's selected Pyodide or .NET runtime, restoring session
+files without running saved programs. After initialization and the three-second
+minimum, click the popup or press Enter/Escape to dismiss; it never closes itself.
+Loading stages appear in the popup and workspace status. Startup failures offer
+Retry. Local SVG/CSS respects reduced-motion preferences. Embedded `mountLethetic`
+hosts retain their own loading UI; optionally use `startInBackground: true`, await
+`view.initialize(onProgress)`, then call `view.activate()` after dismissing your overlay.
 
 Open https://maxfridbe.github.io/lethetic/ and save a connection:
 

@@ -20,6 +20,23 @@ class FakeWorker extends EventTarget {
   }
 }
 
+await test("startup restores Python files without executing saved code and rejects initialization errors", async () => {
+  const worker = new FakeWorker();
+  const files = parseWorkspace({version: 1, directories: [], files: [{path: "app.py", data: btoa("print('saved program')")}]});
+  const python = createPythonTool({workspace: files, workerFactory: () => worker as unknown as Worker});
+  const initialized = python.initialize(new AbortController().signal);
+  assert.equal(worker.requests[0]?.code, "");
+  assert.deepEqual(worker.requests[0]?.workspace, files);
+  worker.answer("Python completed without output.\n", files);
+  await initialized;
+  assert.equal(worker.terminated, false);
+  const failed = python.initialize(new AbortController().signal);
+  worker.answer("Runtime configuration failed", files);
+  await assert.rejects(failed, /configuration failed/);
+  assert.equal(worker.terminated, true);
+  assert.deepEqual(python.snapshotWorkspace(), files);
+});
+
 await test("Python worker is lazy, persistent, and receives no model credentials", async () => {
   const workers: FakeWorker[] = [];
   const python = createPythonTool({ workerFactory: () => {

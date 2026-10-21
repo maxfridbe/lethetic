@@ -16,6 +16,17 @@ class Runtime implements DotnetRuntime {
 const textFile = (path: string, content: string) => ({path, data:btoa(content)});
 const signal = (): AbortSignal => new AbortController().signal;
 
+await test("startup initializes the worker and binds saved files without running C#", async () => {
+  const runtime = new Runtime();
+  runtime.runCSharpAsync = async () => { throw new Error("Startup must not run saved programs"); };
+  const tool = createDotnetTool({workspace: {...emptyWorkspace(), files: [textFile("Program.cs", "saved source")]}, loadRuntime: async () => runtime});
+  await tool.initialize(signal());
+  assert.equal(runtime.imports, 1);
+  assert.equal(runtime.files.files[0]?.path, "Program.cs");
+  assert.equal(runtime.terminated, false);
+  tool.reset();
+});
+
 await test("iframe console forwarding never starts a worker and stops on reset", async () => {
   const entries: string[] = [];
   const runtime = Object.assign(new Runtime(), { recordConsole: (entry: { message: string }) => entries.push(entry.message) });
