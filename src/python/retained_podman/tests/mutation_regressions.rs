@@ -14,6 +14,71 @@ use crate::python::runtime_store::{
 };
 use std::os::unix::fs::PermissionsExt;
 
+#[test]
+fn podman_entrypoint_wire_formats_preserve_exact_attestation() {
+    use crate::python::retained_podman::model::ContainerInspection;
+    use serde_json::json;
+
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path().canonicalize().unwrap();
+    let config = transient_test_config(&root, NetworkAccess::None, false);
+    let id = "d".repeat(64);
+    let fixture = serde_json::to_value(matching_transient_inspection(&config, &id)).unwrap();
+    for entrypoint in [json!("python3"), json!(["python3"])] {
+        let mut value = fixture.clone();
+        value["Config"]["Entrypoint"] = entrypoint;
+        let inspection: ContainerInspection = serde_json::from_value(value).unwrap();
+        validate_transient_inspection(&config, &id, &inspection).unwrap();
+    }
+    // A legacy string is one executable, never a shell command to split, trim,
+    // or unquote. Empty/missing entrypoints and extra arguments still fail.
+    for entrypoint in [
+        json!("python3 -u"),
+        json!(" python3"),
+        json!("\"python3\""),
+        json!("sh"),
+        json!(""),
+        json!([]),
+        json!(null),
+        json!(["python3", "-u"]),
+    ] {
+        let mut value = fixture.clone();
+        value["Config"]["Entrypoint"] = entrypoint;
+        let inspection: ContainerInspection = serde_json::from_value(value).unwrap();
+        assert!(validate_transient_inspection(&config, &id, &inspection).is_err());
+    }
+    for entrypoint in [
+        json!(42),
+        json!({"command": "python3"}),
+        json!(["python3", 42]),
+    ] {
+        let mut value = fixture.clone();
+        value["Config"]["Entrypoint"] = entrypoint;
+        assert!(serde_json::from_value::<ContainerInspection>(value).is_err());
+    }
+    let mut missing = fixture;
+    missing["Config"]
+        .as_object_mut()
+        .unwrap()
+        .remove("Entrypoint");
+    let inspection: ContainerInspection = serde_json::from_value(missing).unwrap();
+    assert!(validate_transient_inspection(&config, &id, &inspection).is_err());
+}
+
+#[test]
+fn podman_entrypoint_legacy_retained_supervisor_is_attested() {
+    use crate::python::retained_podman::model::{CONTAINER_ENTRYPOINT, ContainerInspection};
+
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path().canonicalize().unwrap();
+    let config = test_config(&root);
+    let id = "e".repeat(64);
+    let mut fixture = serde_json::to_value(matching_inspection(&config, &id)).unwrap();
+    fixture["Config"]["Entrypoint"] = CONTAINER_ENTRYPOINT.into();
+    let inspection: ContainerInspection = serde_json::from_value(fixture).unwrap();
+    validate_retained_inspection(&config, &id, &inspection, true).unwrap();
+}
+
 #[tokio::test]
 async fn rejected_replaced_retained_workspace_never_commits_control_state() {
     let root = tempfile::tempdir().unwrap();

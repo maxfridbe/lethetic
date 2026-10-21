@@ -158,6 +158,26 @@ where
     Option::<T>::deserialize(deserializer).map(Option::unwrap_or_default)
 }
 
+fn deserialize_entrypoint<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    // Podman versions differ in whether inspect emits a string or argv here.
+    // Treat a string as exactly one executable; splitting or unquoting it could
+    // turn an unexpected command into the entrypoint attestation expects.
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Entrypoint {
+        Executable(String),
+        Argv(Vec<String>),
+    }
+    Ok(match Option::<Entrypoint>::deserialize(deserializer)? {
+        Some(Entrypoint::Executable(executable)) => vec![executable],
+        Some(Entrypoint::Argv(argv)) => argv,
+        None => Vec::new(),
+    })
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub(super) struct ImageInspection {
@@ -194,7 +214,7 @@ pub(super) struct InspectedContainerConfig {
     pub(super) annotations: BTreeMap<String, String>,
     #[serde(default, deserialize_with = "deserialize_null_default")]
     pub(super) create_command: Vec<String>,
-    #[serde(default, deserialize_with = "deserialize_null_default")]
+    #[serde(default, deserialize_with = "deserialize_entrypoint")]
     pub(super) entrypoint: Vec<String>,
     #[serde(default, deserialize_with = "deserialize_null_default")]
     pub(super) cmd: Vec<String>,
