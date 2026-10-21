@@ -32,8 +32,8 @@ Embedded hosts retain control of their own container sizing.
 The standalone page shows an animated popup at 70% of the viewport's width and
 height, with the workspace visible behind it. It initializes the shared CLI WASM
 core and the saved session's selected Pyodide or .NET runtime, restoring session
-files without running saved programs. After initialization and the three-second
-minimum, click the popup or press Enter/Escape to dismiss; it never closes itself.
+files without running saved programs. The popup closes automatically after
+initialization and a two-second minimum; no click or continue button is needed.
 Loading stages appear in the popup and workspace status. Startup failures offer
 Retry. Local SVG/CSS respects reduced-motion preferences. Embedded `mountLethetic`
 hosts retain their own loading UI; optionally use `startInBackground: true`, await

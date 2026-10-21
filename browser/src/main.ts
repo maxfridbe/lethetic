@@ -4,29 +4,24 @@ import type { mountLethetic } from "./embed.js";
 const root = document.getElementById("browser-root");
 const splash = document.getElementById("startup-splash") as HTMLDialogElement;
 const progress = document.getElementById("splash-progress")!;
-const proceed = document.getElementById("splash-continue") as HTMLButtonElement;
-if (!root || !splash || !proceed) throw new Error("Missing application root or splash.");
+if (!root || !splash) throw new Error("Missing application root or splash.");
 fitViewport(root);
 // Promote the initial static popup into the browser's modal layer before loading the UI.
 splash.close(); splash.showModal();
-const minimum = new Promise<void>(resolve => setTimeout(resolve, 3000));
+const minimum = new Promise<void>(resolve => setTimeout(resolve, 2000));
 let view: ReturnType<typeof mountLethetic> | undefined;
-let ready = false, failed = false;
+let ready = false;
 let storage: Storage | undefined;
 try { storage = localStorage; } catch { /* Private or embedded contexts may deny storage. */ }
 let credentialStorage: Storage | undefined;
 try { credentialStorage = sessionStorage; } catch { /* Memory-only keys when unavailable. */ }
 
-const dismiss = (): void => { if (ready) splash.close(); };
-splash.addEventListener("cancel", event => { if (!ready) event.preventDefault(); });
-splash.addEventListener("click", event => {
-  if (ready && event.target instanceof Node && splash.contains(event.target)) dismiss();
-});
+splash.addEventListener("cancel", event => event.preventDefault());
 splash.addEventListener("close", () => { if (ready) { splash.remove(); view?.activate(); } });
-proceed.addEventListener("click", () => { if (failed) void start(); else dismiss(); });
 
 async function start(): Promise<void> {
-  failed = false; proceed.disabled = true; proceed.textContent = "Loading…";
+  splash.querySelector("button")?.remove();
+  delete splash.dataset.failed;
   splash.setAttribute("aria-busy", "true");
   const report = (message: string): void => { progress.textContent = message; };
   try {
@@ -42,12 +37,14 @@ async function start(): Promise<void> {
     await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     report("Workspace and runtimes ready.");
     await minimum;
-    ready = true; splash.dataset.ready = "true"; splash.setAttribute("aria-busy", "false");
-    proceed.textContent = "Click to continue"; proceed.disabled = false; proceed.focus();
+    ready = true; splash.setAttribute("aria-busy", "false"); splash.close();
   } catch (error) {
-    failed = true; splash.setAttribute("aria-busy", "false");
+    splash.dataset.failed = "true"; splash.setAttribute("aria-busy", "false");
     report(`Lethetic could not start: ${String(error)}. Existing data has been kept.`);
-    proceed.textContent = "Retry loading"; proceed.disabled = false; proceed.focus();
+    const retry = document.createElement("button");
+    retry.id = "splash-retry"; retry.type = "button"; retry.textContent = "Retry loading";
+    retry.addEventListener("click", () => { void start(); });
+    splash.querySelector(".splash-controls")!.append(retry); retry.focus();
   }
 }
 void start();

@@ -70,19 +70,16 @@ async function until(expression: string): Promise<void> {
 
 
 async function waitForStartup(): Promise<void> {
-  await until("!!document.querySelector('#startup-splash')");
   for (let attempt = 0; attempt < 3600; attempt++) {
-    if (await evaluate("document.querySelector('#startup-splash')?.dataset.ready==='true'")) return;
-    const error = await evaluate("document.querySelector('#splash-continue')?.textContent==='Retry loading' ? document.querySelector('#splash-progress').textContent : ''");
+    if (await evaluate("!document.querySelector('#startup-splash') && !!document.querySelector('.app-shell')")) {
+      check(await evaluate("performance.now()>=2000"), "splash ended before two seconds");
+      return;
+    }
+    const error = await evaluate("document.querySelector('#startup-splash')?.dataset.failed==='true' ? document.querySelector('#splash-progress').textContent : ''");
     if (error) throw new Error('Startup failed: ' + String(error));
     await new Promise(resolve => setTimeout(resolve, 50));
   }
-  throw new Error('Startup did not become ready');
-}
-async function dismissStartup(): Promise<void> {
-  await waitForStartup();
-  await evaluate("document.querySelector('#splash-continue').click()");
-  await until("!document.querySelector('#startup-splash')");
+  throw new Error('Startup did not finish');
 }
 
 try {
@@ -90,14 +87,18 @@ try {
   const attached = await rpc("Target.attachToTarget", { targetId: target["targetId"], flatten: true });
   session = String(attached["sessionId"]);
   await rpc("Page.enable"); await rpc("Runtime.enable");
+  // Hold the actual WASM download to verify that elapsed time alone never hides the popup.
+  const startupGate = await rpc("Page.addScriptToEvaluateOnNewDocument", {source: `
+    {const original=globalThis.fetch;const gate=new Promise(resolve=>globalThis.releaseStartupWasm=resolve);
+    globalThis.fetch=async (...args)=>{const url=args[0] instanceof Request?args[0].url:String(args[0]);
+      if(url.includes('lethetic_wasm_bg.wasm'))await gate;return original(...args);};}`});
   await rpc("Page.navigate", { url: `${config.origin}/lethetic/` });
   await until("!!document.querySelector('#startup-splash:modal')");
   check(await evaluate("document.querySelector('#startup-splash').getAttribute('aria-busy')==='true'"), "startup did not announce loading");
   check(await evaluate("(()=>{const splash=document.querySelector('#startup-splash');splash.click();return splash.open && !splash.dispatchEvent(new Event('cancel',{cancelable:true}))})()"), "loading splash dismissed before readiness");
   await until("!!document.querySelector('.app-shell')");
   check(await evaluate("(()=>{const r=document.querySelector('#startup-splash').getBoundingClientRect();return Math.abs(r.width-innerWidth*.7)<2 && Math.abs(r.height-innerHeight*.7)<2})()"), "splash must occupy 70% of the viewport dimensions");
-  await waitForStartup();
-  check(await evaluate("performance.now()>=3000 && document.querySelector('#startup-splash').open && !!document.querySelector('.session-header')"), "ready splash closed itself or background UI was not mounted");
+  check(await evaluate("!document.querySelector('#startup-splash button') && !!document.querySelector('.session-header')"), "loading splash has a continue button or background UI is missing");
   const splashImage = await rpc("Page.captureScreenshot", { format: "png" });
   await writeFile(config.screenshot.replace('.png','-splash.png'), Buffer.from(String(splashImage['data']), 'base64'));
   await rpc("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
@@ -109,9 +110,13 @@ try {
   await writeFile(config.screenshot.replace('.png','-splash-mobile.png'), Buffer.from(String(splashMobile['data']), 'base64'));
   await rpc("Emulation.clearDeviceMetricsOverride");
   await rpc("Emulation.setEmulatedMedia", { features: [] });
-  await dismissStartup();
+  await evaluate("new Promise(resolve=>setTimeout(resolve,Math.max(0,2100-performance.now())))");
+  check(await evaluate("document.querySelector('#startup-splash')?.open"), "popup hid before WASM finished loading");
+  await evaluate("globalThis.releaseStartupWasm()");
+  await rpc("Page.removeScriptToEvaluateOnNewDocument", {identifier: startupGate['identifier']});
+  await waitForStartup();
   await until("!!document.querySelector('[data-field=name]')");
-  check(await evaluate("performance.now()>=3000 && !document.querySelector('#startup-splash') && !document.querySelector('[aria-busy=true]')"), "splash ended early or remained over the ready application");
+  check(await evaluate("performance.now()>=2000 && !document.querySelector('#startup-splash') && !document.querySelector('[aria-busy=true]')"), "splash ended early or remained over the ready application");
   await evaluate(`document.querySelector('[data-field=endpoint]').value=location.origin+'/v1/chat/completions';
     document.querySelector('[data-field=key]').value='secret-never-persisted';
     document.querySelector('[data-field=fetch-models]').click()`);
@@ -422,7 +427,8 @@ try {
   await until("!document.querySelector('.browser-persistence:not([hidden])')");
   await evaluate("globalThis.beforeSessionReload=true");
   await rpc("Page.reload");
-  await dismissStartup();
+  await until("!!document.querySelector('#startup-splash')");
+  await waitForStartup();
   await until("!globalThis.beforeSessionReload && !!document.querySelector('[data-field=name]')");
   await until("!!document.querySelector('[data-field=name]')");
   check(await evaluate("document.querySelectorAll('[data-pinned-stat]').length===document.querySelectorAll('[data-stat-pin]').length && document.querySelectorAll('[data-pinned-stat]').length>=30"), "pins did not survive reload: " + JSON.stringify(await evaluate("({pins:localStorage.getItem('lethetic.pinned-stats.v2'),pinned:document.querySelectorAll('[data-pinned-stat]').length,available:document.querySelectorAll('[data-stat-pin]').length,status:document.querySelector('.browser-persistence')?.textContent})")));
@@ -472,7 +478,8 @@ try {
   await until("!document.querySelector('.browser-persistence:not([hidden])')");
   await evaluate("globalThis.beforeSessionReload=true");
   await rpc("Page.reload");
-  await dismissStartup();
+  await until("!!document.querySelector('#startup-splash')");
+  await waitForStartup();
   await until("!globalThis.beforeSessionReload && !!document.querySelector('[data-field=name]')");
   await until("!!document.querySelector('[data-field=name]')");
   await evaluate("document.querySelector('[data-browser-action=connections]').click()");
@@ -502,7 +509,8 @@ try {
   await until("!document.querySelector('.browser-persistence:not([hidden])')");
   await evaluate("globalThis.beforeSessionReload=true");
   await rpc("Page.reload");
-  await dismissStartup();
+  await until("!!document.querySelector('#startup-splash')");
+  await waitForStartup();
   await until("!globalThis.beforeSessionReload && !!document.querySelector('[data-field=name]')");
   await until("!!document.querySelector('[data-browser-action=sessions]')");
   check(await evaluate("location.hash") === freshHash, "empty new session did not survive refresh");
