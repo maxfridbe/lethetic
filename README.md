@@ -2,167 +2,79 @@
 
 > "...so many various filters and enhancements, so many possible patterns, that it was as much an art as a craft. We didn't have the trained personnel that we needed, and as good as the lethetic intelligence engines were, they still lacked the ability to make intuitive leaps. LIs could give you statistical probabilities; they couldn't give you hunches—although the last I'd heard, they were working on adding that function too."
 
-- Greek Origin: Derived from Lethe (Λήθη), the mythological Greek river of forgetfulness and oblivion in Hades.
+**Lethetic is an LLM harness for exploring new and better ways to interact with
+language models.** It brings model connections, tools, code execution, context
+management, and interfaces together in a workspace you control.
 
-Lethetic is a Rust terminal coding agent and browser workspace for your own LLM
-connections. The standalone browser edition and native remote controller share
-the same UI. The CLI library also builds for WASM; see the
-[shared-core status and remaining differences](docs/browser-parity.md).
+The ambition is to become the fastest and most versatile harness across LLMs:
+make interactions responsive, try different workflows, and carry useful ideas
+across models and runtimes. Speed and broad compatibility are goals we build and
+test toward. Today, Lethetic connects to local and hosted models through supported
+OpenAI-compatible and Anthropic Messages endpoints.
 
-**[Try it now in your browser](https://maxfridbe.github.io/lethetic/) · [Embed it in your app](integration.md#embed-the-complete-ui) · [Run it locally](integration.md#build-and-test)**
+**[Try it now](https://maxfridbe.github.io/lethetic/) · [Run locally](docs/how-to/native.md) · [Embed it](docs/how-to/embedding.md) · [Download releases](https://github.com/maxfridbe/lethetic/releases/latest)**
 
-[Download the browser site and embedding SDK](https://github.com/maxfridbe/lethetic/releases/latest).
+<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-desktop.png" alt="Try Lethetic: browser workspace with Files docked left, a Python editor and chat" width="760"></a>
+<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-mobile.png" alt="Try Lethetic on a phone" width="260"></a>
 
-<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-desktop.png" alt="Lethetic browser workspace with Files docked left, a Python editor and chat" width="760"></a>
-<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-mobile.png" alt="Lethetic browser workspace on a phone" width="260"></a>
+Click either screenshot to try it. [More screenshots](docs/screenshots.md).
 
-Click a screenshot to try the browser edition.
+## What you can explore
 
-<details>
-<summary>Native terminal, .NET WASM and Python site screenshots</summary>
+- **Models and interaction:** bring your own connections, switch models, tune
+  prompts, stream responses and available thinking, and inspect usage and context.
+- **Tools and execution:** use native tools, a Python-only or C#-only runspace,
+  or browser WASM runtimes with session files and interactive site previews.
+- **Interfaces:** work in the terminal, automate a headless run, control the
+  native engine from a browser, or run the harness entirely in a browser.
+- **Control and visibility:** adjust turn budgets and loop detection, compact
+  context, inspect diagnostics, and choose execution and network permissions.
 
-![Lethetic terminal UI](res/Screenshot.webp)
+Rust is the core. Portable CLI code also builds to WASM, and the standalone browser
+and native remote controller share their web UI. The browser still has its own
+orchestration adapter; [full CLI parity remains in progress](docs/browser-parity.md).
 
-<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-dotnet.png" alt="C# compilation with Program.cs and generated DLL/PDB files in the session workspace" width="1000"></a>
-<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-dotnet-mobile.png" alt="Mobile .NET settings with HTTP relay configuration and the Network access switch" width="260"></a>
+## Start in the browser
 
-<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-sites.png" alt="Interactive ASP.NET site calling C# routes and saving a session file" width="760"></a>
-<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-sites-mobile.png" alt="Interactive C# site preview on a phone with compact controls" width="260"></a>
-
-<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-python-sites.png" alt="Interactive Pyodide site calling Python routes and saving a session file" width="760"></a>
-<a href="https://maxfridbe.github.io/lethetic/"><img src="res/browser-python-sites-mobile.png" alt="Interactive Python site preview on a phone" width="260"></a>
-
-[Runtime and proxy settings](res/browser-dotnet-security.png)
-
-</details>
-
-## Quick start
-
-### Browser, GitHub Pages, and embedding
-
-1. Open **[Lethetic](https://maxfridbe.github.io/lethetic/)** and add your model endpoint
-   in **Connections**. OpenAI-compatible Chat Completions and Anthropic Messages
-   endpoints are supported. Use **Fetch models** to search the available models.
-2. Choose **Chat**, **Python · Pyodide**, or **.NET 11 · WASM** in
+1. [Open Lethetic](https://maxfridbe.github.io/lethetic/) and add your endpoint,
+   model, and API key in **Connections**. **Fetch models** helps you choose a model.
+2. Select **Chat**, **Python · Pyodide**, or **.NET 11 · WASM** in
    **Connections → Runtime & security**.
-3. Start a conversation. Use **Files** to upload inputs, edit generated programs,
-   preview supported documents and media, or download results.
+3. Send a prompt. In code modes, use **Files** to upload inputs and preview or
+   download generated results.
 
-For OpenRouter models, enable **Thinking · OpenRouter** in the connection editor
-and save. Text and available reasoning stream live. **Ctrl+P → Turn limits** adjusts
-timeout, model rounds, retries, and token budgets; **Loop detection** uses the CLI detector.
+The endpoint must permit browser requests through CORS. Chats and files are saved
+locally on your device; model requests go to your chosen provider. See the
+[browser guide](docs/how-to/browser.md) for setup, sessions, and permissions.
 
-The conversation runtime and code workers run locally in your browser. Python
-and .NET share each session's files. Chats, files and settings survive refresh;
-code variables restart. API keys stay in the current tab and are excluded from
-saved chats. Chats and files are stored unencrypted on your device.
+## How-To guides
 
-**Sessions** reopens previous conversations and exports debug bundles as `.tar.gz`.
-You can also [start a new session](https://maxfridbe.github.io/lethetic/#/new) or
-[open the latest](https://maxfridbe.github.io/lethetic/#/latest) directly.
+Choose where the engine should run, then choose its tools. Remote control uses the
+native engine; browser-only mode runs the harness and code workers in your browser.
 
-Model endpoints must allow browser requests through CORS and use HTTPS when the
-page uses HTTPS. Native shell, host filesystem, LSP and container tools are
-available in the native application.
-
-| Code runtime | Capabilities | Guide |
+| Mode | Use it for | Guide |
 | --- | --- | --- |
-| Python · Pyodide | Persistent Python worker; session files at `/home/pyodide` | [Python mode](integration.md#python-mode-with-pyodide) |
-| .NET 11 · WASM | C# scripts, `Dotnet.Build()`, `Dotnet.Run("Program.cs")`; session files at `/home/dotnetdide` | [.NET mode](integration.md#net-wasm-mode) |
+| Browser-only | Chat and work with session files without installing the native application | [Use the browser workspace](docs/how-to/browser.md) |
+| Native terminal / headless | Work with a local project and native tools, interactively or from scripts | [Run the native harness](docs/how-to/native.md) |
+| Remote control (`--rc`) | Use the browser UI to control the native engine and its tools | [Control a native session](docs/how-to/remote-control.md) |
+| Python-only | Execute Python in Pyodide or a selected native isolation profile | [Work in Python](docs/how-to/python.md) |
+| .NET-only | Execute C# in DotnetDide WASM or an isolated native SDK container | [Work in C#](docs/how-to/dotnet.md) |
+| Embedded | Add the browser UI or headless SDK to your own application | [Embed the harness](docs/how-to/embedding.md) |
 
-Python and .NET network access is off by default and can be enabled per session. HTTP methods,
-JSON/forms, binary transfers, streams and file downloads use browser CORS or an
-optional native .NET relay. The relay supports upstream SOCKS5, including a Tor
-client's SOCKS port. See the [relay setup guide](https://github.com/maxfridbe/dotnetdide/blob/master/docs/networking.md).
-The .NET runtime is bundled from a checksum-pinned [dotnetdide release](https://github.com/maxfridbe/dotnetdide/releases).
-
-.NET includes image, WAV and Ogg Opus libraries; generated files appear in Files
-for preview and download. Enable **NuGet package access** separately to use
-`await DotnetDide.Nuget.Load("name", "version")`. Compatible managed packages download
-in the browser and persist in Cache Storage for reuse. See the
-[media and package guide](integration.md#bundled-media-and-optional-nuget-packages).
-
-For local hosting, build with `./build-browser.sh` and serve `target/browser` over
-HTTP. The release ZIP includes the standalone site, WASM runtime, embedding SDK,
-TypeScript declarations and integration guide. See [build requirements](integration.md#build-and-test),
-[embedding examples](integration.md#embed-the-complete-ui) and
-[Pages/release instructions](integration.md#github-pages-and-releases).
-
-Save a `.cs` or `.csproj` in **Files** and press **▶ Run** to compile it in the
-current session. For interactive C# sites, enable **Interactive sites** in
-Connections → Runtime & security, run a `DotnetDide.Wire` program, then open
-**Sites**. HTML/JavaScript can call its ASP.NET routes and create session files.
-The permission is separate and off by default. See the
-[site example and limits](integration.md#run-saved-programs-and-interactive-sites).
-
-Python can host sites too: run a `.py` file using `lethetic_wire.listen`, then
-open **Sites**. Async Python handlers, static files and Flask/WSGI applications
-share the same preview and session-file synchronization.
-See [Python hosting and the runnable example](integration.md#interactive-python-sites).
-
-### Native application
-
-Configure your model server in `./config.yml` or `~/.config/lethetic/config.yml`.
-Lethetic connects to existing servers; it does not install or launch them.
-See the [configuration example](docs/native-reference.md#example-configyml) and
-[connection types](docs/native-reference.md#connection-kinds).
-
-```bash
-cargo build --release
-cargo run --bin lethetic
-
-# Headless / scripted
-cargo run --bin lethetic -- --command "Fix all TypeScript errors in src/"
-
-# Browser controller or sandboxed Python-only mode
-cargo run --bin lethetic -- --rc
-cargo run --bin lethetic -- --python-only isolated
-
-# C# only, same isolated Podman policy as Python (no host SDK)
-podman build -t localhost/lethetic-dotnet-runtime:dev runtime/dotnet
-cargo run --bin lethetic -- --dotnet-only
-```
-
-**Ctrl+P** opens the command palette and model picker. **F12** shows the debugger,
-**F9** the model's todo list, and **F8** background tasks. Resuming a session restores
-its model, prompt, mode, theme and loop-detection settings.
-
-`--rc` serves the current chat over HTTPS and asks how to bind and authenticate.
-Keep the printed controller-token URL private. Use `--rc --rc-only` for a browser-only
-foreground process. See the [remote-control guide](docs/web-remote-control.md) for
-file sharing, TLS, authentication and service operation.
-
-## Guides and reference
+## Technical reference
 
 | Topic | Documentation |
 | --- | --- |
-| Isolation modes, remote control, and browser-only diagrams | [Architecture diagrams](docs/architecture.md) |
-| Browser UI, files, saved sessions and embedding | [Integration guide](integration.md) |
-| Native configuration, providers and model switching | [Native reference](docs/native-reference.md#configuration) |
-| Native C# runspace, SDK builds, files and permissions | [Native .NET mode](docs/dotnet-native.md) |
-| Native Python profiles and container isolation | [Python isolation](docs/python-isolation.md) |
-| Browser control of the native application | [Web remote control](docs/web-remote-control.md) |
-| Native tools, context management and engine behavior | [Tools](docs/native-reference.md#tools), [context](docs/native-reference.md#context-management), [reliability](docs/native-reference.md#engine-reliability) |
-| Terminal shortcuts and palette commands | [Hotkeys](docs/native-reference.md#tui-hotkeys) |
-| Provider transports and stream parsing | [Architecture](docs/native-reference.md#architecture) |
+| Execution boundaries and data flow | [Architecture diagrams](docs/architecture.md) |
+| Native providers, configuration, tools, and shortcuts | [Native reference](docs/native-reference.md) |
+| Python backends, network policies, and retained packages | [Python isolation](docs/python-isolation.md) |
+| Native C# runspace and container lifecycle | [Native .NET](docs/dotnet-native.md) |
+| Remote authentication, TLS, and file disclosure | [Remote-control reference](docs/web-remote-control.md) |
+| Browser APIs, files, limits, hosting, and releases | [Integration reference](integration.md) |
+| Shared CLI/WASM behavior and remaining gaps | [Browser parity](docs/browser-parity.md) |
+| Builds and validation | [Development checks](docs/development.md) |
 
-## Testing
+## The name
 
-Native unit and lifecycle checks:
-
-```bash
-cargo test --lib
-cargo test --bin lethetic
-cargo test --test test_service_signals -- --nocapture
-```
-
-Browser build and acceptance checks:
-
-```bash
-./build-browser.sh
-CHROME_BIN=/path/to/chrome python3 scripts/test_browser.py
-```
-
-See the [native test reference](docs/native-reference.md#testing) for live provider,
-container and diagnostic tests, and the [browser build guide](integration.md#build-and-test)
-for prerequisites. Live provider tests can incur API charges.
+Greek Origin: Derived from Lethe (Λήθη), the mythological Greek river of
+forgetfulness and oblivion in Hades.
