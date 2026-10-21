@@ -461,7 +461,10 @@ where
     R: tokio::io::AsyncRead + Unpin,
 {
     let mut output = Vec::new();
-    let mut buffer = [0_u8; 16 * 1024];
+    // Both readers live inside the Podman command future, which is nested in
+    // launch, attestation and cleanup futures. Inline buffers amplify stack
+    // usage at every layer, overflowing ordinary test/runtime thread stacks.
+    let mut buffer = vec![0_u8; 16 * 1024].into_boxed_slice();
     let mut truncated = false;
     loop {
         let read = reader
@@ -486,5 +489,28 @@ pub(super) fn podman_failure(label: &str, output: &std::process::Output) -> Stri
         format!("{label} failed with status {}", output.status)
     } else {
         format!("{label} failed with status {}: {details}", output.status)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::drain_bounded;
+
+    #[tokio::test]
+    async fn output_reader_stays_small_and_drains_past_capture_limit() {
+        // Cross several buffer boundaries and leave the input fully drained,
+        // even though only the prefix fits in the captured output.
+        let input = vec![b'x'; 50_000];
+        let mut reader = input.as_slice();
+        let future = drain_bounded(&mut reader, 17_000);
+        assert!(std::mem::size_of_val(&future) < 1024);
+        let (output, truncated) = future.await.unwrap();
+        assert_eq!(output, input[..17_000]);
+        assert!(truncated);
+        assert!(reader.is_empty());
+
+        let (output, truncated) = drain_bounded(&input[..], input.len()).await.unwrap();
+        assert_eq!(output, input);
+        assert!(!truncated);
     }
 }

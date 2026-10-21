@@ -14,6 +14,41 @@ fn workspace() -> tempfile::TempDir {
     tempfile::tempdir_in(parent).unwrap()
 }
 
+#[test]
+fn runtime_lifecycle_futures_fit_on_normal_thread_stacks() {
+    let runtime = ToolRuntime::headless(".");
+    let config = Config::default();
+    let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+    let sizes = [
+        (
+            "dotnet",
+            std::mem::size_of_val(&lethetic::dotnet::execute(
+                &runtime,
+                &config,
+                "",
+                ".",
+                CancellationToken::new(),
+                &tx,
+            )),
+        ),
+        (
+            "python",
+            std::mem::size_of_val(&runtime.execute_python(
+                &config,
+                ".",
+                "",
+                CancellationToken::new(),
+                Some(&tx),
+            )),
+        ),
+        ("reset", std::mem::size_of_val(&runtime.reset_checked())),
+    ];
+    assert!(
+        sizes.iter().all(|(_, bytes)| *bytes < 16 * 1024),
+        "{sizes:?}"
+    );
+}
+
 async fn cell(
     runtime: &ToolRuntime,
     code: &str,
