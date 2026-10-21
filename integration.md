@@ -29,6 +29,12 @@ Embedded hosts retain control of their own container sizing.
 
 ## Run the hosted application
 
+The standalone page shows the animated Lethetic splash for at least three seconds
+while application modules and saved sessions initialize in the background. It stays visible
+until initialization finishes, respects reduced-motion preferences, and shows a
+retry action if startup fails. The splash uses local SVG/CSS assets; embedded
+`mountLethetic` hosts control their own loading UI.
+
 Open https://maxfridbe.github.io/lethetic/ and save a connection:
 
 1. Choose **OpenAI-compatible** or **Anthropic Messages**.

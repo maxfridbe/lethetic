@@ -8,7 +8,66 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src https: http://localhost:* http://127.0.0.1:*; worker-src 'self'; img-src 'self' data:; media-src 'self' data:; frame-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
   <title>Lethetic · Browser workspace</title>
   <link rel="icon" type="image/svg+xml" href="./assets/lethetic-icon.svg">
+  <link rel="stylesheet" href="./splash.css">
   <link rel="stylesheet" href="./styles.css">
 </head>
-<body><div id="browser-root"><noscript>Lethetic requires JavaScript and WebAssembly.</noscript></div><script type="module" src="./src/main.js"></script></body>
+<body>
+  <div id="browser-root" aria-busy="true">
+    <div id="startup-splash" role="status" aria-label="Loading Lethetic Engine">
+      <div class="splash-auras" aria-hidden="true"><div></div><div></div></div>
+      <div class="splash-hero">
+<svg id="splash-mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 280" aria-hidden="true">
+  <defs>
+    <linearGradient id="splashWashGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f2fe"/><stop offset="50%" stop-color="#6366f1"/><stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+    <filter id="splashNodeGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="3.5" result="glow"/><feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="splashHyperGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur1"/><feGaussianBlur in="SourceGraphic" stdDeviation="12" result="blur2"/>
+      <feMerge><feMergeNode in="blur2"/><feMergeNode in="blur1"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g transform="translate(140,140)">
+    <circle r="82" fill="none" stroke="#00f2fe" stroke-width="1.2" stroke-opacity=".3" class="splash-halo"/>
+    <circle r="92" fill="none" stroke="#6366f1" stroke-width="1" stroke-dasharray="3 7" stroke-opacity=".25" class="splash-orbit"/>
+    <circle r="72" fill="#070b13" stroke="#1a2538" stroke-width="2"/>
+    <g stroke="#334155" stroke-width="2">
+      <line x1="-66" y1="0" x2="-58" y2="0"/><line x1="58" y1="0" x2="66" y2="0"/>
+      <line x1="0" y1="-66" x2="0" y2="-58"/><line x1="0" y1="58" x2="0" y2="66"/>
+    </g>
+    <g stroke-width="2.5">
+      <line x1="-38" y1="-28" x2="-12" y2="-12" stroke="#1e293b"/>
+      <line x1="-38" y1="-28" x2="-12" y2="-12" stroke="#00f2fe" class="splash-synapse" stroke-linecap="round"/>
+      <line x1="-38" y1="0" x2="-12" y2="0" stroke="#1e293b"/>
+      <line x1="-38" y1="0" x2="-12" y2="0" stroke="#38bdf8" class="splash-synapse splash-delay-one" stroke-linecap="round"/>
+      <line x1="-38" y1="28" x2="-12" y2="12" stroke="#1e293b"/>
+      <line x1="-38" y1="28" x2="-12" y2="12" stroke="#00f2fe" class="splash-synapse splash-delay-two" stroke-linecap="round"/>
+    </g>
+    <circle cx="-38" cy="-28" r="6" fill="#00f2fe" filter="url(#splashNodeGlow)" class="splash-node"/>
+    <circle cx="-38" cy="-28" r="2.5" fill="white"/>
+    <circle cx="-38" cy="0" r="6.5" fill="#38bdf8" filter="url(#splashNodeGlow)" class="splash-node splash-node-middle"/>
+    <circle cx="-38" cy="0" r="3" fill="white"/>
+    <circle cx="-38" cy="28" r="6" fill="#00f2fe" filter="url(#splashNodeGlow)" class="splash-node"/>
+    <circle cx="-38" cy="28" r="2.5" fill="white"/>
+    <path d="M -12,-46 C 10,-24 -10,16 12,46" fill="none" stroke="#00f2fe" stroke-width="12" stroke-opacity=".25" stroke-linecap="round" filter="url(#splashHyperGlow)"/>
+    <path d="M -12,-46 C 10,-24 -10,16 12,46" fill="none" stroke="url(#splashWashGrad)" stroke-width="7" stroke-linecap="round" filter="url(#splashNodeGlow)" class="splash-wave"/>
+    <path d="M 10,-46 C 32,-24 12,16 34,46" fill="none" stroke="#818cf8" stroke-width="3.5" stroke-linecap="round" stroke-opacity=".75" class="splash-wave splash-wave-secondary"/>
+    <circle cx="2" cy="-18" r="1.8" fill="white" opacity=".9" class="splash-particle"/>
+    <circle cx="16" cy="4" r="1.5" fill="#00f2fe" opacity=".8" class="splash-particle splash-particle-secondary"/>
+    <circle cx="44" cy="-18" r="5.5" fill="none" stroke="#64748b" stroke-width="2.2" stroke-dasharray="3 3" class="splash-ghost"/>
+    <line x1="22" y1="-8" x2="38" y2="-14" stroke="#334155" stroke-width="1.8" stroke-dasharray="2 3" stroke-opacity=".4"/>
+    <circle cx="44" cy="18" r="5.5" fill="none" stroke="#64748b" stroke-width="2.2" stroke-dasharray="3 3" class="splash-ghost splash-ghost-reverse"/>
+    <line x1="22" y1="8" x2="38" y2="14" stroke="#334155" stroke-width="1.8" stroke-dasharray="2 3" stroke-opacity=".4"/>
+  </g>
+</svg>
+
+        <h1 class="splash-brand"><span>LETHETIC</span><span>ENGINE</span></h1>
+      </div>
+      <noscript>Lethetic requires JavaScript and WebAssembly.</noscript>
+    </div>
+  </div>
+  <script type="module" src="./src/main.js"></script>
+</body>
 </html>
