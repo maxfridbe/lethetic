@@ -282,6 +282,15 @@ the same relative session file when switching modes. This is model guidance,
 not an automatic task recorder; chat without file-writing tools cannot save it.
 Rendered file previews default to the active theme's background and text colors;
 documents can override these defaults with their own styles.
+The .NET instructions include a self-debugging recipe: after running code or
+interacting with a hosted site, call `Dotnet.GetDebugInfo()` in a later submission
+to read the JSON snapshot of C# and iframe console output, virtual HTTP requests,
+and loaded assemblies. Save it as `debug-info.json` for preview/download. The
+Sites dialog forwards iframe console messages to the active .NET session; closed
+or replaced previews cannot add messages. No extra diagnostic permission is needed.
+Snapshots precede the current submission and are bounded, worker-local history;
+external HTTP traffic and native browser DevTools are excluded. SDK hosts using
+`createDotnetTool` can forward their preview's `onConsole` to `tool.recordConsole`.
 Python mode asks the model to write, run, and validate reusable `.py` programs in
 `/home/pyodide`, then point you to **Files** to preview or download the results.
 The included example creates and executes `solution.py`. The availability example

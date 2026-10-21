@@ -1,11 +1,11 @@
 import { buttonIconHtml } from "../../web/src/icons.js";
 import { createDialog, errorMessage, field } from "./dialog.js";
 import type { LocalTransport } from "./local-transport.js";
-import type { WireRequest, WireResponse } from "./dotnet.js";
+import type { DotnetConsoleMessage, WireRequest, WireResponse } from "./dotnet.js";
 
 type Preview = { reload(): Promise<void>; navigate(path: string): Promise<void>; destroy(): void };
 type PreviewFactory = (options: { iframe: HTMLIFrameElement; port: number; path: string;
-  request(value: WireRequest): Promise<WireResponse>; onNavigate(path: string): void }) => Promise<Preview>;
+  request(value: WireRequest): Promise<WireResponse>; onNavigate(path: string): void; onConsole(entry: DotnetConsoleMessage): void }) => Promise<Preview>;
 
 export function createSitesDialog(transport: LocalTransport): { open(): void; refresh(): void; clear(): void; destroy(): void } {
   const dialog = createDialog("Interactive sites", `
@@ -66,6 +66,7 @@ export function createSitesDialog(transport: LocalTransport): { open(): void; re
       if (mine !== generation) return;
       const created = await sdk.createWirePreview({ iframe: frame, port, path: path.value || "/",
         onNavigate: value => { path.value = value; },
+        onConsole: entry => { if (mine === generation && dialog.open) transport.recordSiteConsole(entry, sessionId); },
         request: value => {
           // Serialize parallel fetches from a page while keeping model turns exclusive.
           const next = queue.catch(() => {}).then(async () => {

@@ -16,6 +16,17 @@ class Runtime implements DotnetRuntime {
 const textFile = (path: string, content: string) => ({path, data:btoa(content)});
 const signal = (): AbortSignal => new AbortController().signal;
 
+await test("iframe console forwarding never starts a worker and stops on reset", async () => {
+  const entries: string[] = [];
+  const runtime = Object.assign(new Runtime(), { recordConsole: (entry: { message: string }) => entries.push(entry.message) });
+  const tool = createDotnetTool({loadRuntime: async () => runtime});
+  const entry = {level: "log" as const, message: "iframe output", source: "iframe :8080"};
+  tool.recordConsole(entry); assert.deepEqual(entries, []);
+  await tool.execute({code: "42"}, signal());
+  tool.recordConsole(entry); assert.deepEqual(entries, ["iframe output"]);
+  tool.reset(); tool.recordConsole(entry); assert.equal(entries.length, 1);
+});
+
 await test(".NET tool loads lazily without credentials and reuses its workspace/runtime", async () => {
   const runtime = new Runtime(); let loads = 0;
   const tool = createDotnetTool({ workspace: { ...emptyWorkspace(), files: [textFile("input.txt", "uploaded")] },

@@ -14,6 +14,7 @@ export const DOTNET_TOOL_DEFINITION = {
     "Add explicit using directives for other available .NET libraries. Dotnetdide.Net provides async HTTP when the host enables Network access; browser CORS applies. " +
     "No shell, native OS or full MSBuild/NuGet project restore. StbImageSharp/StbImageWriteSharp, NAudio.Core and Concentus/Oggfile are bundled for images, WAV and Ogg Opus. Await DotnetDide.Nuget.Load(name, optionalVersion) in a separate call before using extra managed packages; requires NuGet package access. " +
     "DotnetDide.Wire hosts ASP.NET middleware and HttpContext routes on virtual ports when Interactive sites is enabled; await Wire.ListenAsync and return, then open Sites. " +
+    "In a later submission, Dotnet.GetDebugInfo() returns JSON with prior console/iframe logs, virtual HTTP requests and loaded assemblies; parse, filter or save it to debug-info.json. " +
     "Variables reset on stop, reload or mode switch; completed files survive. " +
     "Workspace limits: 100 files, 256 folders, 16 MiB per file, 64 MiB total; no symlinks.",
   parameters: { type: "object", properties: { code: { type: "string", description: "C# script source, including top-level await" } },
@@ -28,7 +29,9 @@ export interface DotnetResult {
 export interface WireSite { port: number; webRoot: string | null }
 export interface WireRequest { port: number; method: string; path: string; headers?: Record<string, string[]>; body?: string }
 export interface WireResponse { status: number; headers: Record<string, string[]>; body: string; error?: string | null }
+export interface DotnetConsoleMessage { level: "debug" | "log" | "info" | "warn" | "error"; message: string; source: string; stack?: string; truncated?: boolean }
 export interface DotnetRuntime {
+  recordConsole?(entry: DotnetConsoleMessage): void;
   runCSharpAsync(code: string, options: { signal: AbortSignal }): Promise<DotnetResult>;
   listSites?(): Promise<WireSite[]>;
   requestSite?(request: WireRequest, options: { signal: AbortSignal }): Promise<WireResponse>;
@@ -38,6 +41,7 @@ export interface DotnetRuntime {
 }
 export type DotnetLoader = (options: { signal: AbortSignal; networkAccess: boolean; nugetAccess: boolean; siteAccess: boolean; relay?: DotnetRelay | null }) => Promise<DotnetRuntime>;
 export interface DotnetTool extends Tool {
+  recordConsole(entry: DotnetConsoleMessage): void;
   sites(): WireSite[];
   requestSite(request: WireRequest, signal: AbortSignal): Promise<WireResponse>;
   reset(): void;
@@ -95,6 +99,7 @@ export function createDotnetTool(options: {
   }
   return {
     ...DOTNET_TOOL_DEFINITION,
+    recordConsole: entry => { runtime?.recordConsole?.(entry); },
     sites: () => structuredClone(sites),
     async requestSite(request, signal): Promise<WireResponse> {
       if (!options.siteAccess) throw new Error("Interactive sites are disabled for this session.");

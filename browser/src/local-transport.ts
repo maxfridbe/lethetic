@@ -13,7 +13,7 @@ import { createRuntime, DEFAULT_PROMPT } from "./sdk.js";
 import type { Connection, LetheticRuntime, RuntimeEvent, Tool } from "./sdk.js";
 import { effectiveSystemPrompt, injectedInstructions, toolDefinitions } from "./prompts.js";
 import { createDotnetTool } from "./dotnet.js";
-import type { DotnetTool, WireRequest, WireResponse, WireSite } from "./dotnet.js";
+import type { DotnetConsoleMessage, DotnetTool, WireRequest, WireResponse, WireSite } from "./dotnet.js";
 import type { AgentMode } from "./sessions.js";
 import { createPythonTool } from "./python.js";
 import type { PythonTool } from "./python.js";
@@ -324,6 +324,12 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
       this.#operation = null;
       this.state.activity = { kind: "idle", fully_idle: true, cancellable: false, cancel_id: null, progress_percent: null };
       if (!this.#closed) this.#saveSession(); this.publish();
+    }
+  }
+
+  recordSiteConsole(entry: DotnetConsoleMessage, sessionId: string): void {
+    if (!this.#closed && sessionId === this.state.session.session_id && this.siteAccess && this.mode === "dotnet-wasm") {
+      this.#dotnet?.recordConsole(entry);
     }
   }
 

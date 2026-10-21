@@ -56,14 +56,28 @@ export async function testDotnetBrowser(evaluate: (expression: string) => Promis
       if(!(await run(tool,'answer')).includes('CS0103'))throw Error('Variables survived worker termination');
     } finally {tool.reset()}
     const sitesTool=createDotnetTool({siteAccess:true});
+    let debugSites;
     try {
-      const {DOTNET_SITE_EXAMPLE}=await import('./src/prompts.js');
-      const create='Directory.CreateDirectory("promptsite"); File.WriteAllText("promptsite/Program.cs", '+JSON.stringify(DOTNET_SITE_EXAMPLE)+'); var siteRun=await Dotnet.Run("promptsite/Program.cs"); Console.WriteLine(siteRun.Success);';
+      const {DOTNET_SITE_EXAMPLE,DOTNET_DEBUG_EXAMPLE}=await import('./src/prompts.js');
+      const source=DOTNET_SITE_EXAMPLE.replace('<h1>My C# site</h1>',"<script>console.log('Lethetic iframe diagnostic')</script><h1>My C# site</h1>");
+      const create='Directory.CreateDirectory("promptsite"); File.WriteAllText("promptsite/Program.cs", '+JSON.stringify(source)+'); var siteRun=await Dotnet.Run("promptsite/Program.cs"); Console.WriteLine(siteRun.Success);';
       const output=await run(sitesTool,create);
       if(!output.includes('True') || !sitesTool.sites().some(site=>site.port===8080))throw Error('Site prompt example failed: '+output);
       const response=await sitesTool.requestSite({port:8080,method:'GET',path:'/api/hello'},new AbortController().signal);
       if(response.status!==200 || !atob(response.body).includes('Hello from C#'))throw Error('Compiled prompt route failed: '+JSON.stringify(response));
-    } finally {sitesTool.reset()}
+      const {createSitesDialog}=await import('./src/sites-dialog.js');
+      let received=false;
+      debugSites=createSitesDialog({state:{session:{session_id:'debug-test'}},siteAccess:true,networkAccess:false,
+        sites:sitesTool.sites(),requestSite:request=>sitesTool.requestSite(request,new AbortController().signal),
+        recordSiteConsole:(entry,id)=>{if(id!=='debug-test')throw Error('Wrong diagnostic session');sitesTool.recordConsole(entry);if(entry.message.includes('Lethetic iframe diagnostic'))received=true;}});
+      debugSites.open();
+      for(let end=Date.now()+10000;!received&&Date.now()<end;)await new Promise(r=>setTimeout(r,50));
+      if(!received)throw Error('Sites dialog did not forward real iframe console output');
+      const debugOutput=await run(sitesTool,DOTNET_DEBUG_EXAMPLE);
+      if(!debugOutput.includes('Lethetic iframe diagnostic')||!debugOutput.includes('GET :8080/api/hello'))throw Error('Debug prompt failed: '+debugOutput);
+      const snapshot=sitesTool.snapshotWorkspace().files.find(file=>file.path==='debug-info.json');
+      if(!snapshot||!JSON.parse(atob(snapshot.data)).assemblies.length)throw Error('Debug snapshot not saved');
+    } finally {debugSites?.destroy();sitesTool.reset()}
     const online=createDotnetTool({networkAccess:true});
     try { if(!(await run(online,'await Dotnetdide.Net.GetStringAsync("'+location.origin+'/v1/models")')).includes('deepseek/test'))throw Error('Enabled .NET network failed'); }
     finally {online.reset()}
