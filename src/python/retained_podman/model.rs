@@ -322,6 +322,14 @@ pub(super) struct InspectedRestartPolicy {
     pub(super) maximum_retry_count: u64,
 }
 
+impl InspectedRestartPolicy {
+    pub(super) fn is_disabled(&self) -> bool {
+        // Podman 4 records an unspecified policy as ""; newer versions use
+        // "no". Both mean no restart, and neither may carry retry attempts.
+        matches!(self.name.as_str(), "" | "no") && self.maximum_retry_count == 0
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub(super) struct InspectedMount {

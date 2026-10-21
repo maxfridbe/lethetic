@@ -259,8 +259,7 @@ impl TransientInspectionAttestation<'_> {
             || host.userns_mode != "private"
             || host.pids_limit != 256
             || host.log_config.log_type != "none"
-            || host.restart_policy.name != "no"
-            || host.restart_policy.maximum_retry_count != 0
+            || !host.restart_policy.is_disabled()
             || !host.devices.is_empty()
             || !host.group_add.is_empty()
             || !host.port_bindings.is_empty()
@@ -659,8 +658,7 @@ impl RetainedInspectionAttestation<'_> {
             || host.userns_mode != "private"
             || host.pids_limit != 512
             || host.log_config.log_type != "none"
-            || host.restart_policy.name != "no"
-            || host.restart_policy.maximum_retry_count != 0
+            || !host.restart_policy.is_disabled()
             || !host.devices.is_empty()
             || !host.group_add.is_empty()
             || !host.port_bindings.is_empty()

@@ -76,6 +76,7 @@ fn podman_legacy_retained_supervisor_is_attested() {
     let mut fixture = serde_json::to_value(matching_inspection(&config, &id)).unwrap();
     fixture["Config"]["Entrypoint"] = CONTAINER_ENTRYPOINT.into();
     fixture["Config"]["StopSignal"] = 15.into();
+    fixture["HostConfig"]["RestartPolicy"]["Name"] = "".into();
     fixture["Config"]["CreateCommand"][0] = config.podman.to_str().unwrap().into();
     fixture["Config"]["Annotations"]
         .as_object_mut()
@@ -107,6 +108,7 @@ fn podman_legacy_inspection_keeps_signal_and_annotation_checks() {
     // https://github.com/containers/podman/blob/v4.9.3/libpod/define/container_inspect.go
     fixture["Config"]["Entrypoint"] = json!("python3");
     fixture["Config"]["StopSignal"] = json!(15);
+    fixture["HostConfig"]["RestartPolicy"]["Name"] = json!("");
     fixture["Config"]["CreateCommand"][0] = config.podman.to_str().unwrap().into();
     fixture["Config"]["Annotations"]
         .as_object_mut()
@@ -131,6 +133,16 @@ fn podman_legacy_inspection_keeps_signal_and_annotation_checks() {
         let inspection: ContainerInspection = serde_json::from_value(changed).unwrap();
         assert!(validate_transient_inspection(&config, &id, &inspection).is_err());
     }
+    for name in ["always", "unless-stopped", "on-failure", " no"] {
+        let mut changed = fixture.clone();
+        changed["HostConfig"]["RestartPolicy"]["Name"] = json!(name);
+        let inspection: ContainerInspection = serde_json::from_value(changed).unwrap();
+        assert!(validate_transient_inspection(&config, &id, &inspection).is_err());
+    }
+    let mut retries = fixture.clone();
+    retries["HostConfig"]["RestartPolicy"]["MaximumRetryCount"] = json!(1);
+    let inspection: ContainerInspection = serde_json::from_value(retries).unwrap();
+    assert!(validate_transient_inspection(&config, &id, &inspection).is_err());
     let mut changed = fixture.clone();
     changed["HostConfig"]["IDMappings"]["UidMap"] = json!(["0:0:65536"]);
     let inspection: ContainerInspection = serde_json::from_value(changed).unwrap();
