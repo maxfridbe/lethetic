@@ -1,0 +1,9 @@
+FROM mcr.microsoft.com/dotnet/sdk:11.0.100-rc.2
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=1
+RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
+WORKDIR /opt/lethetic-dotnet
+COPY Program.cs Lethetic.Dotnet.csproj ./
+RUN sed -i 's/net__SDK_MAJOR__.0/net11.0/' Lethetic.Dotnet.csproj && \
+    printf '%s' '<configuration><packageSources><clear /></packageSources></configuration>' > NuGet.Config && \
+    dotnet build --nologo -v:q -o out -p:UseSharedCompilation=false && rm -rf obj bin
+WORKDIR /workspace

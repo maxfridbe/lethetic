@@ -352,8 +352,10 @@ impl PythonSetupDialog {
     pub fn summary_lines(&self) -> Vec<String> {
         let mut lines = Vec::new();
         match self.profile {
-            ToolProfile::DotnetOnly => lines
-                .push("Tools: dotnet only; native SDK, unrestricted host permissions".to_string()),
+            ToolProfile::DotnetOnly => lines.push(
+                "Tools: dotnet only; Podman isolated, workspace read/write, network disabled"
+                    .to_string(),
+            ),
             ToolProfile::General => {
                 lines.push("Tools: existing General tool set (Python is not exposed)".to_string())
             }

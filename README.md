@@ -118,7 +118,8 @@ cargo run --bin lethetic -- --command "Fix all TypeScript errors in src/"
 cargo run --bin lethetic -- --rc
 cargo run --bin lethetic -- --python-only isolated
 
-# Native C# only (installed .NET SDK 8+)
+# C# only, same isolated Podman policy as Python (no host SDK)
+podman build -t localhost/lethetic-dotnet-runtime:dev runtime/dotnet
 cargo run --bin lethetic -- --dotnet-only
 ```
 

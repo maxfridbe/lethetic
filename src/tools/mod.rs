@@ -568,7 +568,8 @@ fn execute_dispatch<'a>(
                         );
                     }
                 };
-                return runtime.dotnet.execute(code, cwd, cancellation_token).await;
+                return crate::dotnet::execute(runtime, config, code, cwd, cancellation_token, &tx)
+                    .await;
             }
             "python" => {
                 let (code, _) = match python::validate_arguments(arguments) {

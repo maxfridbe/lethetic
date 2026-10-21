@@ -589,11 +589,27 @@ pub async fn run_agent_accounted_with_runtime(
     }
     let workspace = workspace.canonicalize().unwrap_or(workspace);
     let cwd = workspace.to_string_lossy().into_owned();
-    if config.tool_profile == crate::config::ToolProfile::PythonOnly {
+    if matches!(
+        config.tool_profile,
+        crate::config::ToolProfile::PythonOnly | crate::config::ToolProfile::DotnetOnly
+    ) {
+        let isolated;
+        let runtime_config = if config.tool_profile == crate::config::ToolProfile::DotnetOnly {
+            isolated = crate::dotnet::isolated_config(config);
+            &isolated
+        } else {
+            config
+        };
         tool_runtime
-            .ensure_ready(config, &workspace)
+            .ensure_ready(runtime_config, &workspace)
             .await
-            .map_err(|error| format!("Python-only runtime is unavailable: {error}"))?;
+            .map_err(|error| {
+                if config.tool_profile == crate::config::ToolProfile::DotnetOnly {
+                    format!("Isolated .NET runtime is unavailable: {error}. Build its image from the repository root: podman build -t {} runtime/dotnet. No host fallback is available.", crate::dotnet::IMAGE)
+                } else {
+                    format!("Python-only runtime is unavailable: {error}")
+                }
+            })?;
         while let Some(notice) = tool_runtime.take_python_runtime_notice() {
             if print_output {
                 println!("{}", notice.render());

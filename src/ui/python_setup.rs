@@ -47,7 +47,7 @@ pub(super) fn render(f: &mut ratatui::Frame, app: &App) {
                 }
             )));
             lines.push(Line::from(
-                "General: existing tools. Python-only: python. .NET-only: C# with the installed SDK and unrestricted host permissions.",
+                "General: existing tools. Python-only: python. .NET-only: C# inside isolated Podman.",
             ));
         }
         PythonSetupStage::Target => {

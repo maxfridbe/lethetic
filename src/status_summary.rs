@@ -33,7 +33,9 @@ pub struct PythonStatusSummary {
 impl PythonStatusSummary {
     pub fn display(&self) -> String {
         match self.profile {
-            ToolProfile::DotnetOnly => format!(".NET Host/{}", self.policy_source.label()),
+            ToolProfile::DotnetOnly => {
+                format!(".NET Podman isolated/{}", self.policy_source.label())
+            }
             ToolProfile::General => format!("General/{}", self.policy_source.label()),
             ToolProfile::PythonOnly => match self.target {
                 Some(PythonExecutionTarget::Host) => {
@@ -102,24 +104,31 @@ impl StatusSummary {
                 ConnectionKind::OpenAiChatCompletions => "OpenAI-compatible".to_string(),
                 ConnectionKind::ClaudeCodeProxy => "Claude Code proxy".to_string(),
             });
-        let sandbox_active = app.config.tool_profile == ToolProfile::PythonOnly
-            && app.config.python_runtime.target == Some(PythonExecutionTarget::Sandbox);
+        let dotnet_policy;
+        let runtime_config = if app.config.tool_profile == ToolProfile::DotnetOnly {
+            dotnet_policy = crate::dotnet::isolated_config(&app.config);
+            &dotnet_policy
+        } else {
+            &app.config
+        };
+        let sandbox_active = runtime_config.tool_profile == ToolProfile::PythonOnly
+            && runtime_config.python_runtime.target == Some(PythonExecutionTarget::Sandbox);
         let python = PythonStatusSummary {
             profile: app.config.tool_profile,
-            target: (app.config.tool_profile == ToolProfile::PythonOnly)
-                .then_some(app.config.python_runtime.target)
+            target: (runtime_config.tool_profile == ToolProfile::PythonOnly)
+                .then_some(runtime_config.python_runtime.target)
                 .flatten(),
             backend: sandbox_active
-                .then_some(app.config.python_runtime.sandbox.backend)
+                .then_some(runtime_config.python_runtime.sandbox.backend)
                 .flatten(),
             network: sandbox_active
-                .then_some(app.config.python_runtime.sandbox.network)
+                .then_some(runtime_config.python_runtime.sandbox.network)
                 .flatten(),
             workspace_access: sandbox_active
-                .then_some(app.config.python_runtime.sandbox.workspace_access)
+                .then_some(runtime_config.python_runtime.sandbox.workspace_access)
                 .flatten(),
             grant_count: if sandbox_active {
-                app.config.python_runtime.sandbox.grants.len()
+                runtime_config.python_runtime.sandbox.grants.len()
             } else {
                 0
             },

@@ -618,7 +618,7 @@ impl Config {
                 && self.python_runtime.target == Some(PythonExecutionTarget::Host))
         {
             return Err(
-                "Untrusted project config cannot select native Host execution; use a trusted global policy or an explicit one-time choice"
+                "Untrusted project config cannot select Host execution or change to .NET-only; use a trusted global policy or an explicit one-time choice"
                     .to_string(),
             );
         }

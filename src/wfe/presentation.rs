@@ -896,9 +896,10 @@ fn project_python_container_with_identity(
     use crate::config::{PythonExecutionTarget, SandboxBackend, ToolProfile};
     use crate::python::{PythonContainerIdentity, PythonContainerKind};
 
-    if app.config.tool_profile != ToolProfile::PythonOnly
-        || app.config.python_runtime.target != Some(PythonExecutionTarget::Sandbox)
-        || app.config.python_runtime.sandbox.backend != Some(SandboxBackend::Podman)
+    if app.config.tool_profile != ToolProfile::DotnetOnly
+        && (app.config.tool_profile != ToolProfile::PythonOnly
+            || app.config.python_runtime.target != Some(PythonExecutionTarget::Sandbox)
+            || app.config.python_runtime.sandbox.backend != Some(SandboxBackend::Podman))
     {
         return None;
     }

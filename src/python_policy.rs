@@ -351,7 +351,7 @@ fn validate_project_policy(snapshot: &PythonPolicySnapshot) -> Result<(), String
             && snapshot.python_runtime.target == Some(PythonExecutionTarget::Host))
     {
         return Err(
-            "Untrusted project policy cannot select Host execution; use a trusted global policy or an explicit one-time choice"
+            "Untrusted project policy cannot select Host execution or change to .NET-only; use a trusted global policy or an explicit one-time choice"
                 .to_string(),
         );
     }

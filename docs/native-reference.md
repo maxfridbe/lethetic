@@ -30,7 +30,7 @@ The protocol-v6 browser UI uses canonical `H`/`T`/`C`/`D` palette accelerators f
 
 ## Native .NET-only mode
 
-Use `lethetic --dotnet-only` for a persistent C# runspace with the installed .NET SDK. It works in the terminal, headless commands, and the same remote controller (`lethetic -rc 127.0.0.1 --dotnet-only`). See [setup, namespaces, files, limits, and host permissions](dotnet-native.md).
+Use `lethetic --dotnet-only` for a persistent C# runspace inside rootless Podman using the Python-only isolated policy, with no host .NET SDK dependency. It works in the terminal, headless commands, and the same remote controller (`lethetic -rc 127.0.0.1 --dotnet-only`). See [setup, namespaces, files, limits, and container isolation](dotnet-native.md).
 
 ## Model servers
 

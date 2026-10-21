@@ -279,7 +279,7 @@ pub fn describe_python_policy(snapshot: &crate::python_policy::PythonPolicySnaps
         return "general tools".to_string();
     }
     if snapshot.tool_profile == ToolProfile::DotnetOnly {
-        return ".NET-only (host)".to_string();
+        return ".NET-only (Podman isolated)".to_string();
     }
     let runtime = &snapshot.python_runtime;
     match runtime.target {

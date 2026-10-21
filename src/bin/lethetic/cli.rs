@@ -368,7 +368,7 @@ SESSIONS:\n  \
   --new-session             Create a durable chat identity.\n  \
   --session-id <UUID>       Resume one exact durable chat identity.\n\n\
 HEADLESS:\n  \
-  --dotnet-only            Native C# tool only (SDK 8+, host permissions).\n  \
+  --dotnet-only            C# tool only in isolated Podman; no host SDK.\n  \
   --command <PROMPT>        Run one agent request and exit. Put this option last.\n  \
   --timeout-seconds <N>     Headless deadline (default: {DEFAULT_HEADLESS_TIMEOUT_SECONDS}).\n\n\
 OTHER:\n  \

@@ -13,20 +13,26 @@ lethetic -rc 127.0.0.1 --rc-files --dotnet-only
 
 `-rc` and `--rc` are equivalent. Remote control uses the same native session,
 provider connection, approvals, tools and files as the terminal. The last example
-serves a controller over HTTPS; C# runs on the CLI machine. It does not load browser
-WASM or require DotnetDide, Pyodide, Node.js, containers or downloaded packages.
+serves a controller over HTTPS; C# runs inside Podman on the CLI machine.
 
-Install a **.NET SDK 8 or newer**, accessible as `dotnet` on PATH. Set
-`LETHETIC_DOTNET=/absolute/path/to/dotnet` to choose another installation. An SDK is
-required, not just the runtime. The embedded host builds in a private temporary
-directory on first execution using the SDK's own Roslyn compiler and framework
-references. The compiler's supported C# language version follows the installed SDK.
+Build the runtime image once from the repository root:
 
-You can also choose **Ctrl+P → Agent Mode → .NET-only**, or choose **.NET only (host)**
-in the remote controller. The literal `--dotnet-only` flag locks the mode for that
-process, including resumed sessions, and conflicts with Python-only flags. A trusted
-user config can set `tool_profile: dotnet_only`; project policy cannot silently opt
-into unrestricted native execution.
+```bash
+podman build -t localhost/lethetic-dotnet-runtime:dev runtime/dotnet
+```
+
+Rootless **Podman** and this image are required. The image contains the .NET 11 SDK,
+its Roslyn compiler, a precompiled persistent C# host, and Python as an internal
+IPC supervisor. The model sees only the `dotnet` tool. No host .NET SDK, host Python
+or Node.js is used. Image construction downloads dependencies; agent execution
+uses the local image with networking disabled. Rebuild after runtime source changes.
+Missing Podman or image is an error: there is **no host fallback**.
+
+You can also choose **Ctrl+P → Agent Mode → .NET-only**, or choose **.NET only
+(Podman isolated)** in the remote controller. The literal `--dotnet-only` flag
+locks the mode for that process, including resumed sessions, and conflicts with
+Python-only flags. A trusted user config can set `tool_profile: dotnet_only`;
+project policy cannot silently select this mode.
 
 ## C# cells and files
 
@@ -53,7 +59,8 @@ Console.WriteLine(await File.ReadAllTextAsync("answer.txt"));
 await File.WriteAllTextAsync("tasks.md", "- [x] Write the answer\n");
 ```
 
-Files are ordinary host files, initially relative to the launch workspace.
+Files live in the mounted launch workspace and persist on the host. Paths outside
+that mount refer only to the container filesystem.
 `Directory.SetCurrentDirectory` changes the subsequent tool cwd. With `--rc-files`,
 files inside the shared launch directory are visible through the existing read-only
 Files pane, subject to its usual disclosure rules.
@@ -62,24 +69,36 @@ Save reusable `.cs`/`.csproj` programs using `File.WriteAllText`. Build and run 
 using `System.Diagnostics.Process` with `dotnet build app.csproj` and
 `dotnet run --project app.csproj`; SDK 10+ also supports `dotnet run --file app.cs`.
 Use `ProcessStartInfo.ArgumentList`, redirect both output streams, read them
-concurrently, await process completion and check its exit code. Ordinary SDK
-projects can restore NuGet packages; project dependencies do not automatically
+concurrently, await process completion and check its exit code. Framework-only SDK
+projects targeting `net11.0` with `<NuGetAudit>false</NuGetAudit>` build offline;
+older targeting packs are not installed; downloading NuGet packages is disabled; project dependencies do not automatically
 become references in the interactive runspace.
 
 ## Lifetime and permissions
 
-This mode runs with **the CLI user's host permissions**: real System.IO files,
-HttpClient/networking, environment and subprocesses. It adds no Python-style
-container sandbox or browser permission switches. Browser-only DotnetDide helpers
-such as Wire, virtual networking/debugger data, and bundled media libraries are
-not installed in this native runspace. The model receives these distinctions and
-the default namespaces in its injected prompt, including guidance to keep tasks.md.
+This mode uses the **same isolated Podman launcher, attestation and cleanup as
+`--python-only isolated`**:
 
-Cells accept up to **1 MiB of source**, have a **120-second deadline**, and capture
-up to **1,000,000 characters each** of stdout and stderr. Interactive stdin is
-closed. Cancellation/timeout kills the worker (and its process group on Unix);
-the next call starts cleanly. Files survive. Compiler errors leave earlier state
-available; runtime exceptions can leave partial variable/file changes.
+- Rootless, non-root worker; read-only container root; all capabilities dropped;
+  no-new-privileges and private temporary directories.
+- Only the launch workspace mounted read/write, with its `.lethetic` control
+  directory masked. No additional host path grants or host environment forwarding.
+- Network disabled, including access to host services. Host SDK selections,
+  inherited Python Host settings and network/package permissions cannot override it.
+- Subprocesses, SDK compilation and saved programs all execute inside the container.
+
+The CLI's model-provider requests remain outside this tool container and still
+work. This is native .NET in Podman, not DotnetDide WASM: browser-only Wire,
+virtual networking/debugger helpers and bundled media libraries are unavailable.
+The injected prompt describes these boundaries and keeping `tasks.md` updated.
+
+Cells accept up to **1 MiB of source** and have a **120-second deadline**. The C#
+host captures up to **1,000,000 characters each** of stdout and stderr; the shared
+worker additionally returns bounded output excerpts. Save large results to files.
+Interactive stdin is closed. Cancellation/timeout uses the same container teardown
+as Python-only, including child processes; the next call starts cleanly. Files
+survive. Compiler errors leave earlier state available; runtime exceptions can
+leave partial variable/file changes.
 
 Session history and mode are saved normally. Live CLR objects are not serialized:
 restart, session switch, mode change or cancellation loses variables without
@@ -93,7 +112,8 @@ cargo test --test test_dotnet_native -- --include-ignored
 cargo test --bin lethetic cli::tests
 ```
 
-The SDK tests cover state across calls, real file output, diagnostics, stderr,
-exceptions, building/running a saved project, reset and cancellation of an infinite loop. CI explicitly installs
-the .NET 11 SDK and runs them. Regular Rust test runs still check tool exclusivity
-and native prompt guidance without requiring .NET on the build machine.
+The container tests cover state across calls, workspace file output, compiler
+errors, stderr, exceptions, offline project builds, reset, cancellation, blocked
+networking, hidden host files/environment, and masked control files. CI builds
+the Podman image and runs them with an invalid host SDK path. Regular Rust tests
+check tool exclusivity, prompt guidance and fixed isolation policy without Podman.

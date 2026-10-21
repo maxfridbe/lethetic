@@ -1212,7 +1212,11 @@ fn agent_modes_panel(app: &App) -> PanelDataView {
         modes: [
             ("general", "General", ToolProfile::General),
             ("python-only", "Python only", ToolProfile::PythonOnly),
-            ("dotnet-only", ".NET only (host)", ToolProfile::DotnetOnly),
+            (
+                "dotnet-only",
+                ".NET only (Podman isolated)",
+                ToolProfile::DotnetOnly,
+            ),
         ]
         .into_iter()
         .map(|(key, label, mode)| ModeChoiceView {
