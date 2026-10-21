@@ -206,7 +206,6 @@ function renderComposer(context) {
                 placeholder: live
                     ? context.state.promptPlaceholder ?? "Type a prompt. Enter submits; Shift+Enter adds a line. Ctrl+P opens commands."
                     : "Waiting for a synchronized connection…",
-                "aria-describedby": "composer-help",
             }, props: { value: draft, disabled: !live || snapshot === null }, on: {
                 input: (event) => context.actions.updateDraft(inputValue(event)),
                 keydown: (event) => {
@@ -219,7 +218,6 @@ function renderComposer(context) {
                 },
             } }),
         h("div", { attrs: { class: "composer-actions" } },
-            h("span", { attrs: { id: "composer-help", class: "composer-help" } }, "Draft stays in this browser and is never persisted."),
             snapshot?.activity.cancellable === true ? (h("button", { attrs: { type: "button", class: "danger-button" }, props: { disabled: !live }, on: { click: context.actions.stop } },
                 uiIcon("stop"),
                 "Stop")) : null,

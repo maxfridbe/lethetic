@@ -297,8 +297,8 @@ export function fuzzyScore(query, text) {
     }
     return total;
 }
-export function filteredCommands(snapshot, query, local = []) {
-    const commands = [...orderedCommands(snapshot), ...local];
+export function filteredCommands(snapshot, query, local = [], visible = () => true) {
+    const commands = [...orderedCommands(snapshot), ...local].filter(visible);
     if (query.trim().length === 0) {
         return commands;
     }

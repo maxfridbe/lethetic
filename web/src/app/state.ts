@@ -87,6 +87,7 @@ export interface ChatViewContext {
 
 export interface PanelViewState {
   readonly paletteCommands?: readonly LocalPaletteCommand[];
+  readonly paletteCommandVisible?: (command: PaletteCommand) => boolean;
   readonly sessionsNotice?: string | null;
   readonly systemPromptDetails?: { instructions: string; tools: string } | null;
   readonly sessionActions?: (id: string) => VNode | null;
@@ -159,6 +160,7 @@ export interface PanelViewContext {
 
 export interface KeyboardState {
   readonly paletteCommands?: readonly LocalPaletteCommand[];
+  readonly paletteCommandVisible?: (command: PaletteCommand) => boolean;
   readonly snapshot: WebAppSnapshot | null;
   readonly palette: PaletteState | null;
   readonly activePanel: PanelId | null;

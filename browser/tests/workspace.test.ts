@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { emptyWorkspace, encodeBytes, decodeBytes, parseWorkspace, textFile, FILE_BYTES } from "../src/workspace.js";
+import { emptyWorkspace, encodeBytes, decodeBytes, parseWorkspace, textFile, changedWorkspacePaths, FILE_BYTES } from "../src/workspace.js";
 import { captureWorkspace, restoreWorkspace } from "../src/python-filesystem.js";
 import type { PythonFS } from "../src/python-filesystem.js";
 import { BrowserFiles } from "../src/files.js";
@@ -34,7 +34,8 @@ await test("workspace rejects traversal, path collisions, malformed data and quo
   assert.throws(()=>parseWorkspace({version:1,directories:[],files:[{path:'a',data:''},{path:'a',data:''}]}));
   const data = encodeBytes(new Uint8Array(FILE_BYTES));
   assert.equal(decodeBytes(parseWorkspace({version:1,directories:[],files:[{path:'a',data}]}).files[0]!.data).length, FILE_BYTES);
-  assert.throws(()=>parseWorkspace({version:1,directories:[],files:['a','b','c'].map(path=>({path,data}))}), /2 MiB/);
+  assert.equal(parseWorkspace({version:1,directories:[],files:['a','b','c','d'].map(path=>({path,data}))}).files.length,4);
+  assert.throws(()=>parseWorkspace({version:1,directories:[],files:['a','b','c','d','e'].map(path=>({path,data}))}), /64 MiB/);
 });
 
 class MemoryFS implements PythonFS {
@@ -58,4 +59,22 @@ await test("filesystem snapshots restore deletions and never traverse symlinks o
   fs.nodes.set('/home/pyodide/link',{mode:0xa000}); assert.throws(()=>captureWorkspace(fs),/symbolic/);
   restoreWorkspace(fs,emptyWorkspace()); assert.deepEqual(captureWorkspace(fs),emptyWorkspace());
   assert.deepEqual(fs.readFile('/lib/runtime'),new Uint8Array([99]));
+});
+
+await test("canonical base64 size validation covers padding and every byte value", () => {
+  for (let size=0;size<1024;size++) {
+    const bytes=Uint8Array.from({length:size},(_,i)=>i%256);
+    const file={path:'file.bin',data:encodeBytes(bytes)};
+    assert.deepEqual(decodeBytes(parseWorkspace({version:1,directories:[],files:[file]}).files[0]!.data),bytes);
+  }
+  for (const data of ['A===','AAAA=','AA=A','AAA=AAAA','AB==','AAB=','\nAAA','AA==\n']) {
+    assert.throws(()=>parseWorkspace({version:1,directories:[],files:[{path:'file',data}]}));
+  }
+});
+
+await test("workspace changes identify modified, added and deleted files without touching unchanged previews", () => {
+  const previous = {version:1 as const,directories:['empty'],files:[{path:'keep',data:'YQ=='},{path:'edit',data:'YQ=='},{path:'delete',data:''}]};
+  const next = {version:1 as const,directories:['new'],files:[{path:'keep',data:'YQ==',modifiedAt:5},{path:'edit',data:'Yg=='},{path:'add',data:''}]};
+  assert.deepEqual(changedWorkspacePaths(previous,next).sort(),['add','delete','edit','empty','new']);
+  assert.deepEqual(changedWorkspacePaths(next,structuredClone(next)),[]);
 });

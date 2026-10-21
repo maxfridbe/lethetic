@@ -153,3 +153,7 @@ dialog.browser-preview.is-full-preview {
 .browser-sites [data-field="site-status"] { overflow-wrap: anywhere; margin: 0; }
 .browser-sites .browser-note { margin: 0; }
 .browser-sites .browser-note summary { cursor: pointer; }
+
+.browser-persistence { position: absolute; z-index: 100; top: 3.5rem; left: 1rem; right: 1rem; padding: .4rem .6rem; background: var(--theme-output-bg, #252532); color: var(--theme-output-fg, white); border: 1px solid var(--border); box-shadow: 0 3px 12px #0008; }
+.browser-persistence[hidden] { display: none; }
+.browser-persistence button { margin-left: .5rem; }

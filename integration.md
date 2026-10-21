@@ -225,12 +225,24 @@ file scripts, forms, external resources and navigation are disabled. A nonce-sco
 trusted navigation bridge handles preview arrows and swipes; it has no access to the host. Download the file
 to use it elsewhere. This is a static preview, not a JavaScript app runner.
 
-Files are **unencrypted**, saved with each session under `lethetic.sessions.v1`.
-Each workspace supports 100 files, 256 folders, 1 MiB per file and 2 MiB of file
-bytes total. Binary contents use base64 in the stored record. Sessions, including
-encoded files and chat history, share the existing 4 MiB storage limit.
-A quota failure preserves the previous saved record and reports that saving failed;
-files still in memory can be downloaded. Oversized workspaces and symbolic links
+Files are **unencrypted**. The Pages app stores sessions in the IndexedDB database
+`lethetic.sessions.v2`, with file contents stored as raw binary bytes. Each workspace
+supports **100 files, 256 folders, 16 MiB per file and 64 MiB total**. The shared
+session snapshot budget is 256 MiB (including base64 used in memory/runtime snapshots
+and chat history); the browser's disk quota may be lower. Runtime snapshots retain
+base64 for compatibility; yEnc is not used because its low overhead assumes an
+8-bit transport, while JSON/localStorage introduce escaping and Unicode overhead.
+
+Existing `lethetic.sessions.v1` localStorage sessions migrate before the app mounts.
+The migrated record is removed only after the IndexedDB transaction commits. If an
+IndexedDB database already exists, a later legacy record from an older client is
+left untouched rather than overwritten or deleted. A failed
+load does not open a blank replacement session. Saves run asynchronously: a banner
+shows pending saves or errors, with **Retry save** after failure, and closing a tab
+with unsaved changes requests confirmation. A quota or transaction failure preserves
+the previous saved record; edits remain in memory and can be exported/downloaded.
+Concurrent edits in another tab are detected and rejected rather than overwritten;
+export the unsaved tab before reloading it. Oversized workspaces and symbolic links
 are reported to the model without replacing the last complete file checkpoint.
 Empty directories are preserved; runtime packages and files outside `/home/pyodide`
 are not included. Clearing site data deletes local sessions and files.
@@ -245,9 +257,13 @@ records are also left untouched; no encrypted library or passphrase UI is involv
 **Sessions** uses the existing session screen to resume, name, create, or delete
 chats. Completed turns automatically save their transcript, model context, usage
 stats, system prompt, code mode, code network permission, theme and connection metadata in
-`lethetic.sessions.v1`. API keys are excluded. Reopening a chat restores its context
+IndexedDB. API keys are excluded. Reopening a chat restores its context
 without rerunning tools. Its files and empty directories are restored before the
 next Python call. Python variables are recreated, so save durable results to files.
+
+The browser command palette hides native-only commands and runtime operations that
+do not apply to the current mode. Mode-switch commands remain available; supported
+commands with temporary prerequisites stay visible with their disabled reason.
 
 Open **Ctrl+P → System prompt** to edit your instructions and inspect the exact
 read-only instructions appended for the current mode. Expand **Tool definitions
@@ -275,10 +291,12 @@ imported into the currently open folder and synced to the active session's Pyodi
 workspace before its next call. Text and binary data are preserved. Files remain
 available after refresh when session storage is enabled. Existing names are kept;
 collisions receive numbered filenames, such as `data (2).csv`. The existing limits
-apply: 1 MiB per file, 2 MiB total and 100 files per session. A failed upload batch
+apply: 16 MiB per file, 64 MiB total and 100 files per session. A failed upload batch
 leaves existing files unchanged. Upload is available while idle; changing sessions
 or starting a turn before reading finishes cancels the import. The upload stays in
 the browser's session workspace and does not require a native server.
+
+File changes update the directory in place. Unchanged previews stay mounted, preserving selection, scroll and media playback; only changed selected files reload.
 
 Drag the visible handle along the bottom edge in Top mode or the right edge in Left mode to resize Files. Arrow keys also resize a focused handle.
 
@@ -297,7 +315,7 @@ The hosted page supports these routes without requiring server-side rewrites:
 
 Session links identify local records; they do not share conversation contents with
 another device. Missing sessions show an error and never silently replace an
-existing chat. Storage holds up to 50 sessions / 4 MiB. Save failures appear in
+existing chat. IndexedDB storage holds up to 50 sessions / 256 MiB of serialized snapshot data, subject to browser disk quota. Save failures appear in
 Sessions and Stats; delete old sessions to free space. Old chats are never silently
 evicted. Refreshing during a running turn restores the last complete model context and
 the file checkpoint from the last completed Python call. Sessions
@@ -678,7 +696,7 @@ from `src/sdk.js`, use it in `createRuntime({ tools: [dotnet], ... })`, and call
 `dotnet.reset()` on disposal. `setWorkspace()` imports browser edits before the next
 call; `snapshotWorkspace()` returns the last completed checkpoint. Execution has a
 120-second timeout (configurable), cancellation, a 64 KiB output cap, and the same
-session limits as Python: 100 files, 256 folders, 1 MiB/file, 2 MiB total. An invalid
+session limits as Python: 100 files, 256 folders, 16 MiB/file, 64 MiB total. An invalid
 or oversized snapshot is reported without replacing the last saved checkpoint.
 The mount composes C# instructions automatically; headless hosts can use
 `effectiveSystemPrompt(editable, 'dotnet-wasm', networkAccess, !!relay, nugetAccess, siteAccess)`
@@ -934,3 +952,27 @@ Keep `runtimes/` with the embedding SDK when copying it to another host.
 The default browser acceptance suite executes the real bundled .NET release,
 checks network denial/opt-in, uploads, persistent variables, cancellation, restored
 files and session settings under the standalone page's CSP and project subpath.
+
+### Binary persistence for embedded hosts
+
+The Pages application enables IndexedDB automatically. Embedded hosts opt in before
+mounting (use a distinct database name for independent embedded applications):
+
+```javascript
+import { mountLethetic, openBrowserStorage } from "./src/embed.js";
+const storage = await openBrowserStorage(localStorage);
+const app = mountLethetic(document.getElementById("app"), { storage });
+// Before programmatic navigation/disposal, await the durable save:
+await storage.flush();
+app.destroy();
+storage.close();
+```
+
+Connections and preferences still use localStorage; credentials retain their existing
+separate storage. Passing plain `localStorage` keeps the legacy 4 MiB session limit;
+use `openBrowserStorage` for the larger workspace capacity. `storage.status` reports
+saving/failure, `storage.pending` signals uncommitted edits, and `storage.subscribe`
+notifies hosts. A rejected `flush()` must be handled before disposing the view.
+Static media previews support the 16 MiB file limit; the text viewer also accepts
+16 MiB in browser mode. Virtual-site request/response bodies retain their separate
+2 MiB ceiling. Network, model-context, and package-cache limits are unchanged.

@@ -8,10 +8,10 @@ export async function readUploads(files: readonly File[]): Promise<{ name: strin
   if (files.length > 100) throw new Error("Choose up to 100 files.");
   let total = 0;
   for (const file of files) {
-    if (file.size > FILE_BYTES) throw new Error(`${file.name} exceeds the 1 MiB per-file limit.`);
+    if (file.size > FILE_BYTES) throw new Error(`${file.name} exceeds the 16 MiB per-file limit.`);
     total += file.size;
   }
-  if (total > WORKSPACE_BYTES) throw new Error("The selected files exceed the 2 MiB workspace limit.");
+  if (total > WORKSPACE_BYTES) throw new Error("The selected files exceed the 64 MiB workspace limit.");
   const result = [];
   for (const file of files) result.push({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) });
   return result;
@@ -42,7 +42,7 @@ export function createFileUpload(files: BrowserFiles, session: () => Session | n
     render(directory): VNode {
       return h("span.browser-upload", [
         h("button", { attrs: { type: "button", "data-file-action": "upload",
-          title: "Upload into this folder for code execution: 1 MiB per file, 2 MiB total per session. Existing files are kept." },
+          title: "Upload into this folder for code execution: 16 MiB per file, 64 MiB total per session. Existing files are kept." },
           props: { disabled: uploading || !session() || session()?.busy }, on: { click: (event: Event) => {
             const current = session(); if (!current || current.busy || uploading || destroyed) return;
             target = { id: current.id, directory };

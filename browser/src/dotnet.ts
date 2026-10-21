@@ -15,7 +15,7 @@ export const DOTNET_TOOL_DEFINITION = {
     "No shell, native OS or full MSBuild/NuGet project restore. StbImageSharp/StbImageWriteSharp, NAudio.Core and Concentus/Oggfile are bundled for images, WAV and Ogg Opus. Await DotnetDide.Nuget.Load(name, optionalVersion) in a separate call before using extra managed packages; requires NuGet package access. " +
     "DotnetDide.Wire hosts ASP.NET middleware and HttpContext routes on virtual ports when Interactive sites is enabled; await Wire.ListenAsync and return, then open Sites. " +
     "Variables reset on stop, reload or mode switch; completed files survive. " +
-    "Workspace limits: 100 files, 256 folders, 1 MiB per file, 2 MiB total; no symlinks.",
+    "Workspace limits: 100 files, 256 folders, 16 MiB per file, 64 MiB total; no symlinks.",
   parameters: { type: "object", properties: { code: { type: "string", description: "C# script source, including top-level await" } },
     required: ["code"], additionalProperties: false },
 };

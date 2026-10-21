@@ -9,7 +9,7 @@ function emptyPanel(message) {
 }
 function commandPalette(context, snapshot) {
     const palette = context.state.palette ?? { query: "", selected: 0 };
-    const commands = filteredCommands(snapshot, palette.query, context.state.paletteCommands);
+    const commands = filteredCommands(snapshot, palette.query, context.state.paletteCommands, context.state.paletteCommandVisible);
     const selected = Math.min(palette.selected, Math.max(0, commands.length - 1));
     if (context.state.palette !== null && palette.selected !== selected) {
         context.actions.clampPaletteSelection(selected);

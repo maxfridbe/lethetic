@@ -30,7 +30,7 @@ export class BrowserFiles {
   }
   save(path: string, content: string): void {
     if (!validFilePath(path, false)) throw new Error("Use a relative path such as reports/analysis.py.");
-    if (new TextEncoder().encode(content).byteLength > 1_048_576) throw new Error("Files are limited to 1 MiB each.");
+    if (new TextEncoder().encode(content).byteLength > (this.#binding ? FILE_BYTES : 1_048_576)) throw new Error(this.#binding ? "Files are limited to 16 MiB each." : "Legacy local files are limited to 1 MiB each.");
     if (this.#binding) {
       const workspace = this.#binding.read();
       workspace.files = workspace.files.filter((file) => file.path !== path);
@@ -51,7 +51,7 @@ export class BrowserFiles {
     const occupied = new Set([...workspace.files.map(file => file.path), ...workspace.directories]);
     const paths: string[] = [];
     for (const file of incoming) {
-      if (file.bytes.length > FILE_BYTES) throw new Error(`${file.name} exceeds the 1 MiB per-file limit.`);
+      if (file.bytes.length > FILE_BYTES) throw new Error(`${file.name} exceeds the 16 MiB per-file limit.`);
       if (file.name.includes("/") || !validFilePath(file.name, false)) throw new Error(`Invalid filename: ${file.name}`);
       const dot = file.name.lastIndexOf(".");
       const stem = dot > 0 ? file.name.slice(0, dot) : file.name;

@@ -25,17 +25,22 @@ export interface SavedSession {
   metrics?: MetricsSnapshot;
   workspace?: Workspace;
 }
-const KEY = "lethetic.sessions.v1";
+export const SESSION_BYTES = 256 * 1024 * 1024;
+export const SESSION_KEY = "lethetic.sessions.v1";
 export const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
-type StorageAccess = Pick<Storage, "getItem" | "setItem">;
+export type StorageAccess = Pick<Storage, "getItem" | "setItem"> & {
+  /** Larger backing stores can opt out of the legacy localStorage quota. */
+  sessionByteLimit?: number;
+};
 
 export class SessionStore {
   #memory: string | null = null;
   constructor(readonly storage?: StorageAccess) {}
+  get byteLimit(): number { return this.storage ? this.storage.sessionByteLimit ?? 4 * 1024 * 1024 : SESSION_BYTES; }
   list(): SavedSession[] {
-    const raw = this.storage ? this.storage.getItem(KEY) : this.#memory;
+    const raw = this.storage ? this.storage.getItem(SESSION_KEY) : this.#memory;
     if (raw === null) return [];
-    if (raw.length > 4_500_000) throw new Error("Saved sessions exceed the storage limit.");
+    if (raw.length > this.byteLimit) throw new Error("Saved sessions exceed the storage limit.");
     const value = JSON.parse(raw) as { version?: unknown; sessions?: unknown };
     if (value.version !== 1 || !Array.isArray(value.sessions) || value.sessions.length > 50) throw new Error("Unsupported or damaged saved sessions.");
     const sessions = value.sessions.map(parseSession);
@@ -51,8 +56,8 @@ export class SessionStore {
   #write(sessions: SavedSession[]): void {
     if (sessions.length > 50) throw new Error("Session limit reached (50). Delete an older session to save this one.");
     const raw = JSON.stringify({ version: 1, sessions });
-    if (new TextEncoder().encode(raw).byteLength > 4 * 1024 * 1024) throw new Error("Saved sessions exceed 4 MiB. Delete an older session to free space.");
-    this.storage?.setItem(KEY, raw); this.#memory = raw;
+    if (new TextEncoder().encode(raw).byteLength > this.byteLimit) throw new Error(`Saved sessions exceed ${this.byteLimit / 1024 / 1024} MiB. Delete an older session to free space.`);
+    this.storage?.setItem(SESSION_KEY, raw); this.#memory = raw;
   }
 }
 

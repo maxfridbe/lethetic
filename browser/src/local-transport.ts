@@ -1,3 +1,4 @@
+import { BrowserSessionStorage } from "./session-storage.js";
 import { ModelLimitState, effectiveLimits } from "./model-limits.js";
 import { DEFAULT_TURN_LIMITS, parseTurnLimits, LOOP_MODES, parseLoopMode } from "./turn-limits.js";
 import type { TurnLimits } from "./turn-limits.js";
@@ -16,7 +17,7 @@ import type { DotnetTool, WireRequest, WireResponse, WireSite } from "./dotnet.j
 import type { AgentMode } from "./sessions.js";
 import { createPythonTool } from "./python.js";
 import type { PythonTool } from "./python.js";
-import { emptyWorkspace, dateWorkspace } from "./workspace.js";
+import { emptyWorkspace, dateWorkspace, changedWorkspacePaths } from "./workspace.js";
 import type { Workspace } from "./workspace.js";
 import { block, initialState, NO_LOSS } from "./local-state.js";
 import { BrowserMetrics } from "./metrics.js";
@@ -40,7 +41,7 @@ export interface LocalOptions {
   initialSession?: string;
   onSessionChanged?: (id: string) => void;
   files?: BrowserFiles;
-  onFilesChanged?: () => void;
+  onFilesChanged?: (paths: readonly string[]) => void;
 }
 
 /** Drives the existing remote-mode UI using the same typed commands and snapshots. */
@@ -83,7 +84,11 @@ export class LocalTransport implements ApplicationTransport {
   #savedMessages: unknown[] = [];
   #workspace = emptyWorkspace();
   #legacyWorkspace = emptyWorkspace();
-  persistenceStatus = "Sessions stay in this tab; storage is not enabled.";
+  #persistenceStatus = "Sessions stay in this tab; storage is not enabled.";
+  get persistenceStatus(): string {
+    return this.options.storage instanceof BrowserSessionStorage ? this.options.storage.status + " " + this.#persistenceStatus : this.#persistenceStatus;
+  }
+  set persistenceStatus(value: string) { this.#persistenceStatus = value; }
 
   constructor(readonly events: BrowserTransportEvents, readonly options: LocalOptions) {
     this.mode = options.mode ?? (options.python ? "python" : "general");
@@ -644,7 +649,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
         metrics: this.metrics.snapshot(), turnLimits: this.turnLimits, loopDetection: this.loopDetection,
         theme: this.state.themes.find((theme) => theme.selected)?.theme_id ?? "dracula",
         connection: connection ? connectionMetadata(connection) : null });
-      if (this.options.storage) this.persistenceStatus = "Chats and files are saved unencrypted on this device. API keys are excluded from saved chats. Session files sync with the selected code runtime. Variables reset on reload, stop, mode/permission changes or session switch.";
+      if (this.options.storage) this.persistenceStatus = this.options.storage instanceof BrowserSessionStorage ? "" : "Chats and files are saved unencrypted on this device. API keys are excluded from saved chats. Session files sync with the selected code runtime. Variables reset on reload, stop, mode/permission changes or session switch.";
       this.state.sessions = { sessions: this.#sessions.list().map((item) => ({ session_id: item.id,
         display_name: item.name, fallback_label: item.label, selected: item.id === this.state.session.session_id })), has_more: false };
     } catch (error) {
@@ -660,12 +665,13 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
     catch (error) { this.#workspace = previous; this.publish(); throw error; }
     this.#python?.setWorkspace(this.#workspace);
     this.#dotnet?.setWorkspace(this.#workspace);
-    this.options.onFilesChanged?.(); this.publish();
+    this.options.onFilesChanged?.(changedWorkspacePaths(previous, this.#workspace)); this.publish();
   }
 
   #checkpointWorkspace(workspace: Workspace): void {
     if (this.#closed) return;
-    this.#workspace = dateWorkspace(workspace, this.#workspace);
+    const previous = this.#workspace;
+    this.#workspace = dateWorkspace(workspace, previous);
     // Save files after each completed Python call, even while the model turn continues.
     // Keep the last complete model history; restoring files must not replay partial turns.
     try {
@@ -675,7 +681,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
     } catch (error) {
       this.persistenceStatus = `Workspace not saved: ${error instanceof Error ? error.message : String(error)}`;
       throw error;
-    } finally { this.options.onFilesChanged?.(); this.publish(); }
+    } finally { this.options.onFilesChanged?.(changedWorkspacePaths(previous, this.#workspace)); this.publish(); }
   }
 
   #event(event: RuntimeEvent): void {

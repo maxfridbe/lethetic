@@ -204,6 +204,7 @@ export class SpaApplication implements BrowserTransportEvents {
 
   constructor(root: Element, readonly extensions: {
     paletteCommands?: () => readonly LocalPaletteCommand[];
+    paletteCommandVisible?: (command: PaletteCommand) => boolean;
     headerActions?: () => VNode | null;
     status?: () => VNode;
     promptPlaceholder?: string;
@@ -235,7 +236,7 @@ export class SpaApplication implements BrowserTransportEvents {
 
   attachTransport(transport: ApplicationTransport): void {
     this.#transport = transport;
-    this.#files.attach(new FileClient((endpoint, path, signal) => transport.requestFile(endpoint, path, signal)));
+    this.#files.attach(new FileClient((endpoint, path, signal) => transport.requestFile(endpoint, path, signal), this.extensions.files?.viewBytes));
   }
 
   async openFile(path: string): Promise<void> {
@@ -244,7 +245,7 @@ export class SpaApplication implements BrowserTransportEvents {
     await this.#files.select(path);
   }
 
-  refreshFiles(): void { void this.#files.refresh(); }
+  refreshFiles(changedPaths?: readonly string[]): void { void this.#files.refresh(changedPaths); }
   resetFiles(): void { this.#files.reset(); }
 
   readonly #onPageHide = (): void => {
@@ -754,6 +755,7 @@ export class SpaApplication implements BrowserTransportEvents {
   }
 
   #invokeCommand(command: PaletteCommand): void {
+    if (this.extensions.paletteCommandVisible?.(command) === false) return;
     if (!command.enabled) {
       this.#showToast(command.disabled_reason ?? "Command is unavailable.");
       return;
@@ -1254,6 +1256,7 @@ export class SpaApplication implements BrowserTransportEvents {
       state: {
         panel,
         paletteCommands: this.extensions.paletteCommands?.() ?? [],
+        ...(this.extensions.paletteCommandVisible ? { paletteCommandVisible: this.extensions.paletteCommandVisible } : {}),
         sessionsNotice: this.extensions.sessionsNotice?.() ?? null,
         systemPromptDetails: this.extensions.systemPromptDetails?.() ?? null,
         ...(this.extensions.sessionActions ? { sessionActions: this.extensions.sessionActions } : {}),
@@ -1596,6 +1599,7 @@ export class SpaApplication implements BrowserTransportEvents {
       state: {
         snapshot: this.#remote.view,
         paletteCommands: this.extensions.paletteCommands?.() ?? [],
+        ...(this.extensions.paletteCommandVisible ? { paletteCommandVisible: this.extensions.paletteCommandVisible } : {}),
         palette: this.#palette,
         activePanel: this.#activePanel(),
         debuggerDrawerOpen:

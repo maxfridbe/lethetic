@@ -45,11 +45,14 @@ export async function testDotnetBrowser(evaluate: (expression: string) => Promis
       if(!denied.includes('disabled'))throw Error('Network was not denied: '+denied);
       const edit=tool.snapshotWorkspace();edit.files.push({path:'upload.txt',data:btoa('from UI')});tool.setWorkspace(edit);
       if(!(await run(tool,'File.ReadAllText("upload.txt")')).includes('from UI'))throw Error('Uploaded file unavailable');
+      const large=await run(tool,'File.WriteAllBytes("large.bin", new byte[3 * 1024 * 1024]); Console.WriteLine(new FileInfo("large.bin").Length);');
+      if(!large.includes('3145728') || !tool.snapshotWorkspace().files.some(f=>f.path==='large.bin' && f.data.length===4194304))throw Error('Large .NET checkpoint failed: '+large);
       const controller=new AbortController();
       const pending=tool.execute({code:'while(true) {}'},controller.signal);
       setTimeout(()=>controller.abort(),150);let stopped=false;try{await pending}catch{stopped=true}
       if(!stopped)throw Error('.NET stop failed');
       if((await run(tool,'File.ReadAllText("answer.txt")')).trim()!=='42')throw Error('Files not restored after stop');
+      if((await run(tool,'new FileInfo("large.bin").Length')).trim()!=='3145728')throw Error('Large .NET file not restored');
       if(!(await run(tool,'answer')).includes('CS0103'))throw Error('Variables survived worker termination');
     } finally {tool.reset()}
     const sitesTool=createDotnetTool({siteAccess:true});

@@ -108,7 +108,7 @@ export class SpaApplication {
     }
     attachTransport(transport) {
         this.#transport = transport;
-        this.#files.attach(new FileClient((endpoint, path, signal) => transport.requestFile(endpoint, path, signal)));
+        this.#files.attach(new FileClient((endpoint, path, signal) => transport.requestFile(endpoint, path, signal), this.extensions.files?.viewBytes));
     }
     async openFile(path) {
         if (!this.#files.state.open)
@@ -116,7 +116,7 @@ export class SpaApplication {
         await this.#files.navigate(path.split("/").slice(0, -1).join("/"));
         await this.#files.select(path);
     }
-    refreshFiles() { void this.#files.refresh(); }
+    refreshFiles(changedPaths) { void this.#files.refresh(changedPaths); }
     resetFiles() { this.#files.reset(); }
     #onPageHide = () => {
         this.#files.reset();
@@ -538,6 +538,8 @@ export class SpaApplication {
         return request;
     }
     #invokeCommand(command) {
+        if (this.extensions.paletteCommandVisible?.(command) === false)
+            return;
         if (!command.enabled) {
             this.#showToast(command.disabled_reason ?? "Command is unavailable.");
             return;
@@ -979,6 +981,7 @@ export class SpaApplication {
             state: {
                 panel,
                 paletteCommands: this.extensions.paletteCommands?.() ?? [],
+                ...(this.extensions.paletteCommandVisible ? { paletteCommandVisible: this.extensions.paletteCommandVisible } : {}),
                 sessionsNotice: this.extensions.sessionsNotice?.() ?? null,
                 systemPromptDetails: this.extensions.systemPromptDetails?.() ?? null,
                 ...(this.extensions.sessionActions ? { sessionActions: this.extensions.sessionActions } : {}),
@@ -1264,6 +1267,7 @@ export class SpaApplication {
             state: {
                 snapshot: this.#remote.view,
                 paletteCommands: this.extensions.paletteCommands?.() ?? [],
+                ...(this.extensions.paletteCommandVisible ? { paletteCommandVisible: this.extensions.paletteCommandVisible } : {}),
                 palette: this.#palette,
                 activePanel: this.#activePanel(),
                 debuggerDrawerOpen: this.#remote.view?.debugger.open === true &&

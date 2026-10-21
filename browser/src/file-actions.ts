@@ -23,7 +23,7 @@ export async function copyCode(code: string): Promise<void> {
 
 /** Static HTML/SVG/Markdown and local media, inside an opaque sandbox with no scripts or network. */
 export function previewDocument(code: string, language: string, name: string): string {
-  if (code.length > 2_097_152) throw new Error("Preview is limited to 2 MiB of encoded content.");
+  if (code.length > 24 * 1024 * 1024) throw new Error("Preview is limited to 24 MiB of encoded content.");
   const extension = name.split(".").at(-1)?.toLowerCase() ?? "";
   const kind = language.toLowerCase();
   let html: string;

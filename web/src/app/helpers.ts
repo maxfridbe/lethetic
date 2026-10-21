@@ -379,8 +379,9 @@ export function filteredCommands(
   snapshot: WebAppSnapshot,
   query: string,
   local: readonly LocalPaletteCommand[] = [],
+  visible: (command: PaletteCommand) => boolean = () => true,
 ): PaletteCommand[] {
-  const commands: PaletteCommand[] = [...orderedCommands(snapshot), ...local];
+  const commands: PaletteCommand[] = [...orderedCommands(snapshot), ...local].filter(visible);
   if (query.trim().length === 0) {
     return commands;
   }

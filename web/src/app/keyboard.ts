@@ -27,7 +27,7 @@ export function handlePaletteKeyDown(
     event.key.length === 1
   ) {
     const accelerator = event.key.toLowerCase();
-    const command = snapshot.commands.find(
+    const command = filteredCommands(snapshot, "", context.state.paletteCommands, context.state.paletteCommandVisible).find(
       (candidate) =>
         candidate.enabled &&
         candidate.accelerator?.toLowerCase() === accelerator,
@@ -38,7 +38,7 @@ export function handlePaletteKeyDown(
       return;
     }
   }
-  const commands = filteredCommands(snapshot, palette.query, context.state.paletteCommands);
+  const commands = filteredCommands(snapshot, palette.query, context.state.paletteCommands, context.state.paletteCommandVisible);
   switch (event.key) {
     case "ArrowDown":
       event.preventDefault();

@@ -3,7 +3,7 @@ import type {
 } from "../generated/contracts.js";
 import { parseGitDiff, parseGitStatus } from "./git.js";
 import {
-  FILE_ARCHIVE_BYTES, FILE_DOWNLOAD_BYTES, FILE_JSON_BYTES,
+  FILE_ARCHIVE_BYTES, FILE_DOWNLOAD_BYTES, FILE_JSON_BYTES, FILE_VIEW_BYTES,
   FileServiceError, endpointAllowsRoot, parseFileError, parseFileList, parseFileRead, validFilePath,
 } from "./protocol.js";
 import type { FileEndpoint } from "./protocol.js";
@@ -78,7 +78,7 @@ function archiveExclusions(headers: Headers): FileExclusionCounts {
 
 export class FileClient {
   #active = new Set<AbortController>();
-  constructor(readonly post: FilePost) {}
+  constructor(readonly post: FilePost, readonly viewBytes = FILE_VIEW_BYTES) {}
 
   async list(path: string, signal: AbortSignal): Promise<FilesListResponse> {
     return this.#request("/api/files/list", path, signal, async (response, signal) => {
@@ -90,7 +90,7 @@ export class FileClient {
 
   async read(path: string, signal: AbortSignal): Promise<FilesReadResponse> {
     return this.#request("/api/files/read", path, signal, async (response, signal) => {
-      const value = parseFileRead(await jsonBody(response, FILE_JSON_BYTES, signal), path);
+      const value = parseFileRead(await jsonBody(response, Math.max(FILE_JSON_BYTES, this.viewBytes * 6 + 16_384), signal), path, this.viewBytes);
       if (value === null) throw new FileServiceError("unavailable");
       return value;
     });

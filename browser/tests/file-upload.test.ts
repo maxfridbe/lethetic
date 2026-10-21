@@ -27,12 +27,12 @@ await test("invalid names and workspace quota failures leave the entire upload b
   files.importFiles("", [{name:"keep.bin",bytes:new Uint8Array(FILE_BYTES)}]);
   const before = JSON.stringify(workspace);
   assert.throws(() => files.importFiles("", [{name:"ok",bytes:new Uint8Array()}, {name:"../bad",bytes:new Uint8Array()}]));
-  assert.throws(() => files.importFiles("", [{name:"two",bytes:new Uint8Array(FILE_BYTES)}, {name:"three",bytes:new Uint8Array(1)}]), /2 MiB/);
+  assert.throws(() => files.importFiles("", [{name:"two",bytes:new Uint8Array(FILE_BYTES)}, {name:"three",bytes:new Uint8Array(FILE_BYTES)}, {name:"four",bytes:new Uint8Array(FILE_BYTES)}, {name:"five",bytes:new Uint8Array(1)}]), /64 MiB/);
   assert.equal(JSON.stringify(workspace), before); assert.equal(writes, 1);
   let read = false;
   const tooBig = new File([new Uint8Array(FILE_BYTES+1)], "large.bin");
   tooBig.arrayBuffer = async () => { read = true; return new ArrayBuffer(0); };
-  await assert.rejects(readUploads([tooBig]), /1 MiB/); assert.equal(read, false);
+  await assert.rejects(readUploads([tooBig]), /16 MiB/); assert.equal(read, false);
 });
 
 await test("an upload cannot write into a different or busy session after asynchronous reading", async () => {

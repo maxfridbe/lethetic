@@ -1,3 +1,4 @@
+import { testSessionStorage } from "./session-storage-browser.js";
 import { testDotnetBrowser } from "./dotnet-browser.js";
 import { testPythonNetwork } from "./python-network-browser.js";
 import { testPythonSites } from "./python-sites-browser.js";
@@ -360,9 +361,12 @@ try {
   await writeFile(config.screenshot.replace('.png','-mobile.png'), Buffer.from(String(mobileImage['data']), 'base64'));
   await rpc("Emulation.clearDeviceMetricsOverride");
   process.stdout.write("Shared UI, WASM chat, code capture, and mobile layout passed.\n");
+  await until("!document.querySelector('.browser-persistence:not([hidden])')");
+  await evaluate("globalThis.beforeSessionReload=true");
   await rpc("Page.reload");
+  await until("!globalThis.beforeSessionReload && !!document.querySelector('[data-field=name]')");
   await until("!!document.querySelector('[data-field=name]')");
-  check(await evaluate("document.querySelectorAll('[data-pinned-stat]').length===document.querySelectorAll('[data-stat-pin]').length && document.querySelectorAll('[data-pinned-stat]').length>=30"), "pins did not survive reload");
+  check(await evaluate("document.querySelectorAll('[data-pinned-stat]').length===document.querySelectorAll('[data-stat-pin]').length && document.querySelectorAll('[data-pinned-stat]').length>=30"), "pins did not survive reload: " + JSON.stringify(await evaluate("({pins:localStorage.getItem('lethetic.pinned-stats.v2'),pinned:document.querySelectorAll('[data-pinned-stat]').length,available:document.querySelectorAll('[data-stat-pin]').length,status:document.querySelector('.browser-persistence')?.textContent})")));
   check(await evaluate("document.querySelector('.files-pane').dataset.dock==='left'"), "Files dock did not survive reload");
   await evaluate("document.querySelector('[data-browser-action=connections]').click()");
   check(await evaluate("document.querySelector('[data-field=name]').value==='Browser test' && document.querySelector('[data-field=key]').value==='secret-never-persisted'"), "reload did not preserve connection metadata and tab key");
@@ -406,7 +410,10 @@ try {
   check(await evaluate("location.hash") === originalHash, "enabling Python created a new session");
   check(await evaluate("document.querySelector('.app-shell').textContent.includes('Context restored')"), "enabling Python cleared history");
   await evaluate("document.querySelector('dialog[open]').close()");
+  await until("!document.querySelector('.browser-persistence:not([hidden])')");
+  await evaluate("globalThis.beforeSessionReload=true");
   await rpc("Page.reload");
+  await until("!globalThis.beforeSessionReload && !!document.querySelector('[data-field=name]')");
   await until("!!document.querySelector('[data-field=name]')");
   await evaluate("document.querySelector('[data-browser-action=connections]').click()");
   check(await evaluate("document.querySelector('[data-field=mode]').value==='python' && document.querySelector('[data-field=key]').value==='updated-tab-key'"), "Python or updated credentials did not survive reload");
@@ -432,7 +439,10 @@ try {
   await until(`location.hash.startsWith('#/sessions/') && location.hash!==${JSON.stringify(originalHash)}`);
   check(!await evaluate("document.querySelector('.app-shell').textContent.includes('Context restored')"), "new route retained old transcript");
   const freshHash = await evaluate("location.hash");
+  await until("!document.querySelector('.browser-persistence:not([hidden])')");
+  await evaluate("globalThis.beforeSessionReload=true");
   await rpc("Page.reload");
+  await until("!globalThis.beforeSessionReload && !!document.querySelector('[data-field=name]')");
   await until("!!document.querySelector('[data-browser-action=sessions]')");
   check(await evaluate("location.hash") === freshHash, "empty new session did not survive refresh");
   process.stdout.write("Files, sandbox previews, copy/download, session reload/context, and routes passed.\n");
@@ -504,6 +514,20 @@ try {
     globalThis.fetch=originalFetch; view.destroy();container.remove();return false;
   })()`), "embedded UI Python/model tool loop failed");
   process.stdout.write("Embedded shared UI and Python tool loop passed.\n");
+  await testSessionStorage(evaluate);
+  process.stdout.write("IndexedDB migration, 16 MiB binary files, quota failure/retry and cross-tab conflict passed.\n");
+  check(await evaluate(`(async () => {
+    const {mountLethetic}=await import('./src/embed.js');
+    const root=document.createElement('div'); document.body.replaceChildren(root);
+    for(const mode of ['general','python','dotnet-wasm']) {
+      const view=mountLethetic(root,{mode,connections:[{name:'Palette',provider:'openai',endpoint:location.origin+'/v1/chat/completions',model:'test'}]});
+      root.querySelector('[aria-label="Open command palette"]').click();
+      const reset=root.querySelector('#palette-command-delete-python-runtime');
+      if(Boolean(reset)!==(mode==='python') || root.querySelector('#palette-command-python-strict') || !root.querySelector('#palette-command-agent-mode') || !document.getElementById('palette-command-local:compact-session'))throw Error('Wrong command visibility in '+mode);
+      view.destroy();
+    }
+    return true;
+  })()`), "mode-specific command palette filtering failed");
   const workspaceResult = await evaluate(`(async () => {
     const {mountLethetic}=await import('./src/embed.js');
     localStorage.removeItem('lethetic.sessions.v1'); localStorage.removeItem('lethetic.files.v1');
@@ -564,6 +588,16 @@ try {
       root.querySelector('.files-entry[title="outputs/chart.png"]').click();
       await wait(()=>!root.querySelector('[data-file-action=preview]').disabled);
       if(!root.querySelector('.files-inline-preview')?.srcdoc.includes('data:image/png;base64,'))throw Error('PNG did not preview automatically');
+      const stableFrame=root.querySelector('.files-inline-preview'), stableRow=root.querySelector('.files-entry[title="outputs/chart.png"]');
+      let removedPreview=false;
+      const observeRemovals=records=>{for(const record of records)for(const node of record.removedNodes)if(node===stableFrame || node.contains?.(stableFrame))removedPreview=true;};
+      const observer=new MutationObserver(observeRemovals);observer.observe(root.querySelector('#files-body'),{childList:true,subtree:true});
+      root.querySelector('[data-file-action=upload]').click();
+      const unrelated=new DataTransfer();unrelated.items.add(new File(['unrelated update'],'incremental.txt'));
+      const incrementalInput=root.querySelector('[data-file-upload]');incrementalInput.files=unrelated.files;incrementalInput.dispatchEvent(new Event('change',{bubbles:true}));
+      await wait(()=>!!root.querySelector('.files-entry[title="outputs/incremental.txt"]'));
+      observeRemovals(observer.takeRecords());observer.disconnect();
+      if(removedPreview || stableFrame!==root.querySelector('.files-inline-preview') || stableRow!==root.querySelector('.files-entry[title="outputs/chart.png"]'))throw Error('Unrelated file update replaced the preview or existing row');
       root.querySelector('[data-preview-expand]').click();
       if(!document.querySelector('.browser-preview.is-full-preview[open]'))throw Error('Image Expand did not open full preview');
       if(!document.querySelector('[data-field=preview-frame]').srcdoc.includes('data:image/png;base64,'))throw Error('PNG preview unavailable');
@@ -679,12 +713,15 @@ try {
         const program=await run(PYTHON_PROGRAM_EXAMPLE);
         if(program.trim()!=='42' || !python.snapshotWorkspace().files.some(file=>file.path==='solution.py'))throw Error('Prompt example did not create a downloadable program: '+program);
         const value=await run('print(x + 2)');
+        const large=await run('from pathlib import Path\\nPath("large.bin").write_bytes(bytes(3 * 1024 * 1024))\\nprint(Path("large.bin").stat().st_size)');
+        if(large.trim()!=='3145728' || !python.snapshotWorkspace().files.some(f=>f.path==='large.bin' && f.data.length===4194304))throw Error('Large Python file did not checkpoint: '+large);
         const error=await run('from pathlib import Path\\nPath("saved.bin").write_bytes(bytes([0,255]))\\nraise ValueError("expected-test-error")');
         const controller=new AbortController();
         const loop=python.execute({code:'from pathlib import Path\\nPath("saved.bin").write_bytes(b"unfinished")\\nwhile True: pass'},controller.signal);
         setTimeout(()=>controller.abort(),100);
         let stopped=false;try{await loop}catch{stopped=true}
         const restarted=await run('print("x" in globals())');
+        if((await run('from pathlib import Path\\nprint(Path("large.bin").stat().st_size)')).trim()!=='3145728')throw Error('Large Python file did not restore');
         const restoredFile=await run('from pathlib import Path\\nprint(Path("saved.bin").read_bytes().hex())');
         return {value,error:error.includes('expected-test-error'),stopped,restarted,restoredFile};
       } finally {python.reset()}

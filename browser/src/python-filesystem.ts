@@ -28,9 +28,9 @@ export function captureWorkspace(fs: PythonFS): Workspace {
       if (snapshot.directories.length > 256) throw new Error("Workspace exceeds 256 folders.");
       for (const name of fs.readdir(path)) if (name !== "." && name !== "..") visit(relative ? `${relative}/${name}` : name, depth + 1);
     } else if (relative && fs.isFile(stat.mode)) {
-      if (stat.size > FILE_BYTES) throw new Error(`${relative} exceeds 1 MiB; workspace was not synced.`);
+      if (stat.size > FILE_BYTES) throw new Error(`${relative} exceeds 16 MiB; workspace was not synced.`);
       bytes += stat.size;
-      if (bytes > WORKSPACE_BYTES || snapshot.files.length >= 100) throw new Error("Workspace exceeds 100 files / 2 MiB; workspace was not synced.");
+      if (bytes > WORKSPACE_BYTES || snapshot.files.length >= 100) throw new Error("Workspace exceeds 100 files / 64 MiB; workspace was not synced.");
       snapshot.files.push({ path: relative, data: encodeBytes(fs.readFile(path)) });
     } else throw new Error(`Cannot sync symbolic links or special files: ${relative || WORKSPACE_ROOT}`);
   };

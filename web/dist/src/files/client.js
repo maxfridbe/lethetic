@@ -1,5 +1,5 @@
 import { parseGitDiff, parseGitStatus } from "./git.js";
-import { FILE_ARCHIVE_BYTES, FILE_DOWNLOAD_BYTES, FILE_JSON_BYTES, FileServiceError, endpointAllowsRoot, parseFileError, parseFileList, parseFileRead, validFilePath, } from "./protocol.js";
+import { FILE_ARCHIVE_BYTES, FILE_DOWNLOAD_BYTES, FILE_JSON_BYTES, FILE_VIEW_BYTES, FileServiceError, endpointAllowsRoot, parseFileError, parseFileList, parseFileRead, validFilePath, } from "./protocol.js";
 export async function boundedResponseBytes(response, maximum, signal) {
     const announced = response.headers.get("Content-Length");
     if (announced !== null && (!/^[0-9]+$/u.test(announced) || Number(announced) > maximum)) {
@@ -68,9 +68,11 @@ function archiveExclusions(headers) {
 }
 export class FileClient {
     post;
+    viewBytes;
     #active = new Set();
-    constructor(post) {
+    constructor(post, viewBytes = FILE_VIEW_BYTES) {
         this.post = post;
+        this.viewBytes = viewBytes;
     }
     async list(path, signal) {
         return this.#request("/api/files/list", path, signal, async (response, signal) => {
@@ -82,7 +84,7 @@ export class FileClient {
     }
     async read(path, signal) {
         return this.#request("/api/files/read", path, signal, async (response, signal) => {
-            const value = parseFileRead(await jsonBody(response, FILE_JSON_BYTES, signal), path);
+            const value = parseFileRead(await jsonBody(response, Math.max(FILE_JSON_BYTES, this.viewBytes * 6 + 16_384), signal), path, this.viewBytes);
             if (value === null)
                 throw new FileServiceError("unavailable");
             return value;

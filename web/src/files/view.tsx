@@ -25,6 +25,7 @@ export interface FilePaneActions {
 }
 
 export interface FilePaneExtensions {
+  viewBytes?: number;
   previewContent?: (state: FilePaneState) => VNode | null;
   expandRendered?: (state: FilePaneState) => boolean;
   nativeText?: () => boolean;
@@ -213,7 +214,7 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
       <div attrs={{ class: "files-browser" }}>
         {breadcrumbs(state.directory, live, actions, rootLabel)}
         <div attrs={{ class: "files-list", "aria-label": "Directory entries", "aria-busy": state.listingBusy ? "true" : "false" }}>
-          {state.listingBusy ? <p attrs={{ role: "status" }}>Loading directory…</p> : null}
+          {state.listingBusy && state.listing === null ? <p attrs={{ role: "status" }}>Loading directory…</p> : null}
           {state.listingError === null ? null : <p attrs={{ class: "files-notice", role: "status" }}>{state.listingError}</p>}
           {entries.map((entry) => <button key={entry.path}
             attrs={{ type: "button", class: `files-entry${state.selectedPath === entry.path ? " is-selected" : ""}`,
@@ -260,7 +261,7 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
             props={{ value: state.preview?.content ?? "" }}></textarea>
             : <div key="monaco-host" attrs={{ id: "files-monaco", class: "files-monaco", "aria-label": "Read-only Monaco editor" }}></div>)}
           {state.preview !== null || inlinePreview !== null ? null : <p attrs={{ class: "files-preview-message", role: "status" }}>
-            {state.previewBusy ? "Loading file…" : state.previewError ?? "UTF-8 previews up to 2 MiB. File contents stay outside chat until you explicitly include them in a prompt."}
+            {state.previewBusy ? "Loading file…" : state.previewError ?? `UTF-8 previews up to ${(extensions.viewBytes ?? 2 * 1024 * 1024) / 1024 / 1024} MiB. File contents stay outside chat until you explicitly include them in a prompt.`}
           </p>}
         </div>
       </div>

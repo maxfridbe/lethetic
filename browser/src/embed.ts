@@ -1,3 +1,7 @@
+import { browserCommandVisible } from "./local-state.js";
+import { FILE_BYTES } from "./workspace.js";
+import { BrowserSessionStorage } from "./session-storage.js";
+export { openBrowserStorage } from "./session-storage.js";
 import { createTurnLimitsDialog } from "./turn-limits-dialog.js";
 import { createSitesDialog } from "./sites-dialog.js";
 import { createFileTools } from "./file-tools.js";
@@ -61,6 +65,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   let fileStatus = "";
   const sourceViews = new Set<string>();
   let plainText = false;
+  let renderedPreview: { path: string; data: string; document: string | null } | null = null;
   let exportStatus = "";
   let exporting = false;
   const upload = createFileUpload(files, () => transport ? { id: transport.state.session.session_id, busy: transport.busy } : null,
@@ -78,6 +83,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
     } } }, [uiIcon("copy"), "Copy"]),
   ]);
   const application = new SpaApplication(mount, {
+    paletteCommandVisible: command => browserCommandVisible(command.id, transport?.mode ?? "general"),
     paletteCommands: () => [{ id: "local:turn-limits", label: "Turn limits", description: "Timeout, maximum model/tool rounds and transient retries for this session", icon: "command", behavior: "open_panel", accelerator: null, enabled: true, disabled_reason: null, run: () => limits?.open() }, { id: "local:compact-session", label: "Compact session context", description: "Summarize model context; keep this session, transcript, files and runtime state", icon: "command", behavior: "execute", accelerator: null,
       enabled: transport?.canCompact ?? false, disabled_reason: transport?.busy ? "Finish or stop the running turn first" : "Send a message with a configured connection first",
       run: () => { void transport?.compact().catch(error => { if (transport) { transport.persistenceStatus = `Compaction: ${String(error)}`; transport.publish(); } }); } }],
@@ -103,10 +109,14 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
           finally { exporting = false; transport?.publish(); }
         })();
       } } }, [uiIcon("download"), "Export debug (.tar.gz)"]),
-    files: { local: true, nativeText: () => plainText, count: () => files.snapshotWorkspace().files.length, entries: entries => fileTools.sort(entries), entryTitle: path => fileTools.title(path), scope: options.storage ? "Session files · synced with code runtime" : "Session files · this tab only", rootLabel: "Session files",
+    files: { local: true, viewBytes: FILE_BYTES, nativeText: () => plainText, count: () => files.snapshotWorkspace().files.length, entries: entries => fileTools.sort(entries), entryTitle: path => fileTools.title(path), scope: options.storage ? "Session files · synced with code runtime" : "Session files · this tab only", rootLabel: "Session files",
       previewContent: state => {
         const file = state.selectedPath ? files.get(state.selectedPath) : undefined;
-        return file && canRenderFile(file) && !sourceViews.has(file.path) ? h("iframe", { key: file.path, attrs: { class: "files-inline-preview", title: `Preview: ${file.path}`, sandbox: "", referrerpolicy: "no-referrer" }, props: { srcdoc: workspacePreview(file) } }) : null;
+        if (!file || sourceViews.has(file.path)) return null;
+        if (renderedPreview?.path !== file.path || renderedPreview.data !== file.data) {
+          renderedPreview = { path: file.path, data: file.data, document: canRenderFile(file) ? workspacePreview(file) : null };
+        }
+        return renderedPreview.document === null ? null : h("iframe", { key: file.path, attrs: { class: "files-inline-preview", title: `Preview: ${file.path}`, sandbox: "", referrerpolicy: "no-referrer" }, props: { srcdoc: renderedPreview.document } });
       },
       expandRendered: state => {
         const file = state.selectedPath ? files.get(state.selectedPath) : undefined;
@@ -139,7 +149,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
         } } }, [uiIcon("copy"), "Copy"]),
         h("button", { attrs: { type: "button", "data-file-action": "delete" }, props: { disabled: !state.selectedPath || transport?.busy }, on: { click: () => {
           if (state.selectedPath && confirm(`Delete ${state.selectedPath} from this session?`)) {
-            try { files.remove(state.selectedPath); application.refreshFiles(); } catch (error) { fileStatus = String(error); transport?.publish(); }
+            try { files.remove(state.selectedPath); } catch (error) { fileStatus = String(error); transport?.publish(); }
           }
         } } }, [uiIcon("trash"), "Delete"]),
         h("span", { attrs: { role: "status" } }, fileStatus),
@@ -159,7 +169,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   let initialSession = "latest";
   if (options.sessionRouting) { try { initialSession = sessionRoute(location.hash); } catch (error) { routeError = String(error); initialSession = "new"; } }
   transport = new LocalTransport(application, { ...options, connections, initialSession, files,
-    onFilesChanged: () => application.refreshFiles(),
+    onFilesChanged: paths => application.refreshFiles(paths),
     onSessionChanged: (id) => {
       application.resetFiles(); sourceViews.clear(); preview.clear(); sites?.clear(); if (editor?.dialog.open) editor.dialog.close(); fileStatus = "";
       if (!options.sessionRouting) return;
@@ -173,7 +183,21 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   sites = createSitesDialog(transport);
   settings = createConnectionsDialog(transport, options.storage, options.credentialStorage);
   editor = createFileEditor(files, (path) => { void application.openFile(path); });
-  application.attachTransport(transport); transport.start();
+  const persistence = options.storage instanceof BrowserSessionStorage ? options.storage : null;
+  const notice = document.createElement("div"); notice.className = "browser-persistence"; notice.setAttribute("role", "status");
+  const noticeText = document.createElement("span"), retry = document.createElement("button");
+  retry.type = "button"; retry.textContent = "Retry save";
+  retry.addEventListener("click", () => { void persistence?.flush().catch(() => {}); });
+  notice.append(noticeText, retry);
+  if (persistence) root.prepend(notice);
+  const saving = (): void => {
+    notice.hidden = !persistence?.pending; noticeText.textContent = persistence?.status ?? "";
+    retry.hidden = !persistence?.status.startsWith("Session not saved:"); transport?.publish();
+  };
+  const unsubscribeStorage = persistence?.subscribe(saving);
+  const protectUnsaved = (event: BeforeUnloadEvent): void => { if (persistence?.pending) { event.preventDefault(); event.returnValue = ""; } };
+  if (persistence) globalThis.addEventListener("beforeunload", protectUnsaved);
+  application.attachTransport(transport); transport.start(); saving();
   initializing = false;
   if (routeError) { transport.persistenceStatus = routeError; transport.publish(); }
   const navigate = (): void => {
@@ -188,5 +212,5 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   };
   if (options.sessionRouting) globalThis.addEventListener("hashchange", navigate);
   if (!connections.length) settings.open();
-  return { destroy(): void { upload.destroy(); globalThis.removeEventListener("hashchange", navigate); transport?.dispose(); application.dispose(); settings?.destroy(); limits?.destroy(); sites?.destroy(); editor?.destroy(); preview.destroy(); root.replaceChildren(); } };
+  return { destroy(): void { unsubscribeStorage?.(); globalThis.removeEventListener("beforeunload", protectUnsaved); upload.destroy(); globalThis.removeEventListener("hashchange", navigate); transport?.dispose(); application.dispose(); settings?.destroy(); limits?.destroy(); sites?.destroy(); editor?.destroy(); preview.destroy(); root.replaceChildren(); } };
 }

@@ -158,7 +158,7 @@ export function renderFilesPane(state, live, actions, extensions = {}) {
             h("div", { attrs: { class: "files-browser" } },
                 breadcrumbs(state.directory, live, actions, rootLabel),
                 h("div", { attrs: { class: "files-list", "aria-label": "Directory entries", "aria-busy": state.listingBusy ? "true" : "false" } },
-                    state.listingBusy ? h("p", { attrs: { role: "status" } }, "Loading directory\u2026") : null,
+                    state.listingBusy && state.listing === null ? h("p", { attrs: { role: "status" } }, "Loading directory\u2026") : null,
                     state.listingError === null ? null : h("p", { attrs: { class: "files-notice", role: "status" } }, state.listingError),
                     entries.map((entry) => h("button", { key: entry.path, attrs: { type: "button", class: `files-entry${state.selectedPath === entry.path ? " is-selected" : ""}`,
                             title: entry.path, "aria-pressed": state.selectedPath === entry.path ? "true" : "false" }, props: { disabled: !live }, on: { click: () => entry.kind === "directory" ? actions.navigate(entry.path) : actions.select(entry.path) } },
@@ -209,6 +209,6 @@ export function renderFilesPane(state, live, actions, extensions = {}) {
                 h("div", { attrs: { class: "files-editor-area" } },
                     inlinePreview ?? (extensions.nativeText?.() ? h("textarea", { key: "native-preview", attrs: { class: "files-native-text", readonly: true, spellcheck: "false", "aria-label": `File contents: ${state.selectedPath ?? ""}` }, props: { value: state.preview?.content ?? "" } })
                         : h("div", { key: "monaco-host", attrs: { id: "files-monaco", class: "files-monaco", "aria-label": "Read-only Monaco editor" } })),
-                    state.preview !== null || inlinePreview !== null ? null : h("p", { attrs: { class: "files-preview-message", role: "status" } }, state.previewBusy ? "Loading file…" : state.previewError ?? "UTF-8 previews up to 2 MiB. File contents stay outside chat until you explicitly include them in a prompt."))),
+                    state.preview !== null || inlinePreview !== null ? null : h("p", { attrs: { class: "files-preview-message", role: "status" } }, state.previewBusy ? "Loading file…" : state.previewError ?? `UTF-8 previews up to ${(extensions.viewBytes ?? 2 * 1024 * 1024) / 1024 / 1024} MiB. File contents stay outside chat until you explicitly include them in a prompt.`))),
             !state.downloadBusy ? null : h("div", { attrs: { class: "files-download-status", role: "status" } }, "Preparing download\u2026")));
 }

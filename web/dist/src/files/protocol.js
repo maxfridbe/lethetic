@@ -52,13 +52,13 @@ export function parseFileList(value, path) {
         return null;
     return { path, entries, truncated: value["truncated"], exclusions: value["exclusions"] };
 }
-export function parseFileRead(value, path) {
+export function parseFileRead(value, path, maximumBytes = FILE_VIEW_BYTES) {
     if (!exact(value, ["path", "content", "size"]) || value["path"] !== path ||
         !validFilePath(path, false) || typeof value["content"] !== "string" ||
         !byteSize(value["size"]))
         return null;
     const bytes = encoder.encode(value["content"]).length;
-    if (bytes > FILE_VIEW_BYTES || value["size"] !== String(bytes))
+    if (bytes > maximumBytes || value["size"] !== String(bytes))
         return null;
     return { path, content: value["content"], size: value["size"] };
 }

@@ -25,6 +25,12 @@ const COMMANDS: [CommandId, string, CommandView["behavior"], string | null][] = 
   ["sessions", "Sessions", "open_panel", null],
 ];
 
+/** Mode switches stay available; operations on an absent runtime do not. */
+export function browserCommandVisible(id: string, mode: string): boolean {
+  if (id.startsWith("local:")) return true;
+  return COMMANDS.some(command => command[0] === id) && (id !== "delete-python-runtime" || mode === "python");
+}
+
 export function initialState(): WebAppSnapshot {
   const session_id = crypto.randomUUID();
   return {

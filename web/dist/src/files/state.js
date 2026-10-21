@@ -195,25 +195,25 @@ export class FilesController {
             }
         }
     }
-    async select(path) {
+    async select(path, keepPreview = false) {
         const client = this.#client;
         if (client === null || !this.#state.open)
             return;
         this.#read?.abort();
         const request = new AbortController();
         this.#read = request;
-        this.#state = { ...this.#state, selectedPath: path, preview: null, previewBusy: true, previewError: null };
+        this.#state = { ...this.#state, selectedPath: path, preview: keepPreview && this.#state.selectedPath === path ? this.#state.preview : null, previewBusy: true, previewError: null };
         this.changed();
         try {
             const preview = await client.read(path, request.signal);
             if (this.#read !== request || request.signal.aborted)
                 return;
-            this.#state = { ...this.#state, preview, previewBusy: false };
+            this.#state = { ...this.#state, preview: this.#state.preview?.path === preview.path && this.#state.preview.content === preview.content ? this.#state.preview : preview, previewBusy: false };
         }
         catch (error) {
             if (this.#read !== request || request.signal.aborted)
                 return;
-            this.#state = { ...this.#state, previewBusy: false, previewError: fileFailure(error) };
+            this.#state = { ...this.#state, preview: null, previewBusy: false, previewError: fileFailure(error) };
         }
         finally {
             if (this.#read === request) {
@@ -222,14 +222,45 @@ export class FilesController {
             }
         }
     }
-    async refresh() {
+    /** Refresh in place: keep rows and the selected preview mounted until replacements arrive. */
+    async refresh(changedPaths) {
+        const client = this.#client;
+        if (!client || !this.#state.open || changedPaths?.length === 0)
+            return;
         const path = this.#state.selectedPath;
-        const listing = await this.navigate(this.#state.directory);
-        if (path !== null && listing !== null && this.#state.open &&
-            this.#state.listing === listing && this.#state.selectedPath === null &&
-            listing.entries.some((entry) => entry.path === path)) {
-            await this.select(path);
+        this.#list?.abort();
+        const request = new AbortController();
+        this.#list = request;
+        this.#state = { ...this.#state, listingBusy: true, listingError: null };
+        this.changed();
+        let reread = false;
+        try {
+            const listing = await client.list(this.#state.directory, request.signal);
+            if (this.#list !== request || request.signal.aborted)
+                return;
+            this.#state = { ...this.#state, listing, listingBusy: false };
+            const selected = this.#state.selectedPath;
+            if (selected !== null && !listing.entries.some(entry => entry.path === selected && entry.kind === "file")) {
+                this.#read?.abort();
+                this.#read = null;
+                this.#state = { ...this.#state, selectedPath: null, preview: null, previewBusy: false, previewError: null };
+            }
+            else
+                reread = path !== null && selected === path && (changedPaths === undefined || changedPaths.includes(path));
         }
+        catch (error) {
+            if (this.#list !== request || request.signal.aborted)
+                return;
+            this.#state = { ...this.#state, listingBusy: false, listingError: fileFailure(error) };
+        }
+        finally {
+            if (this.#list === request) {
+                this.#list = null;
+                this.changed();
+            }
+        }
+        if (reread && path !== null)
+            await this.select(path, true);
     }
     async download(archive) {
         const client = this.#client;

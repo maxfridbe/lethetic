@@ -48,6 +48,43 @@ const flush = async (): Promise<void> => { for (let i = 0; i < 6; i += 1) await 
 const actions: FilePaneActions = { expandPreview() {}, nextPreview() {}, toggle() {}, setDock() {}, navigate() {}, select() {}, refresh() {}, download() {}, copyPath() {},
   showTab() {}, refreshChanges() {}, selectChange() {}, toggleFolder() {}, setDiffLayout() {} };
 
+test("file changes preserve existing rows and only reload the affected selected preview", async () => {
+  let rows = list("", [entry("first"), entry("second")]);
+  let listing: Promise<FilesListResponse> | null = null;
+  let reading: Promise<FilesReadResponse> | null = null;
+  let reads = 0;
+  const controller = new FilesController(() => {}, () => {});
+  controller.attach(fakeFileClient({ list: async () => listing ?? rows,
+    read: async path => { reads++; return reading ?? file(path); } }));
+  controller.toggle(); await flush(); await controller.select("first");
+  const preview = controller.state.preview, originalRows = controller.state.listing;
+  const pendingList = deferred<FilesListResponse>(); listing = pendingList.promise;
+  const updating = controller.refresh(["second"]);
+  assert.equal(controller.state.listing, originalRows);
+  assert.equal(controller.state.preview, preview);
+  assert.equal(controller.state.selectedPath, "first");
+  assert.ok(!JSON.stringify(renderFilesPane(controller.state, true, actions)).includes("Loading directory…"));
+  rows = list("", [entry("first"), entry("second"), entry("new")]);
+  pendingList.resolve(rows); await updating; listing = null;
+  assert.equal(reads, 1); assert.equal(controller.state.preview, preview);
+  const pendingRead = deferred<FilesReadResponse>(); reading = pendingRead.promise;
+  const affected = controller.refresh(["first"]); await flush();
+  assert.equal(controller.state.preview, preview); assert.equal(controller.state.previewBusy, true);
+  pendingRead.resolve(file("first", "changed")); await affected; reading = null;
+  assert.equal(reads, 2); assert.equal(controller.state.preview?.content, "changed");
+  await controller.refresh([]); assert.equal(reads, 2);
+  rows = list("", [entry("second")]); await controller.refresh(["first"]);
+  assert.equal(controller.state.selectedPath, null); assert.equal(controller.state.preview, null);
+});
+
+test("manual refresh retains preview identity when bytes did not change", async () => {
+  const controller = new FilesController(() => {}, () => {});
+  controller.attach(fakeFileClient({ list: async () => list("", [entry("same")]), read: async path => file(path) }));
+  controller.toggle(); await flush(); await controller.select("same");
+  const preview = controller.state.preview;
+  await controller.refresh(); assert.equal(controller.state.preview, preview);
+});
+
 test("file paths and exact response shapes are confined before display", () => {
   for (const path of ["/abs", "..", "a/../b", "a/./b", "a//b", "a/", "C:/x", "a/C:/x", "a\\b", "a\0b", "a\u0085b", "a/".repeat(65) + "x", "x".repeat(4097)]) {
     assert.equal(validFilePath(path), false, path);
