@@ -46,7 +46,10 @@ export function previewDocument(code: string, language: string, name: string): s
           (name === "src" && !/^data:image\//iu.test(attribute.value) && !(["AUDIO", "VIDEO", "SOURCE"].includes(element.tagName.toUpperCase()) && /^data:(audio|video)\//iu.test(attribute.value)))) element.removeAttribute(attribute.name);
     }
   }
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; media-src data:; form-action 'none'; base-uri 'none'"><style>body{font:16px system-ui;color:#222;background:white;padding:20px;overflow-wrap:anywhere}pre{white-space:pre-wrap}img,svg,audio,video{max-width:100%}audio,video{display:block;margin:auto}video{max-height:85vh}table{border-collapse:collapse}td,th{border:1px solid #aaa;padding:6px}</style></head><body>${template.innerHTML}</body></html>`;
+  // Sandboxed documents cannot inherit the host's theme variables. Resolve the
+  // colors in the host and use low-specificity defaults so authored styles win.
+  const theme = getComputedStyle(document.documentElement);
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; media-src data:; form-action 'none'; base-uri 'none'"><style>:where(body){color:${theme.color};background:${theme.backgroundColor}}body{font:16px system-ui;padding:20px;overflow-wrap:anywhere}pre{white-space:pre-wrap}img,svg,audio,video{max-width:100%}audio,video{display:block;margin:auto}video{max-height:85vh}table{border-collapse:collapse}td,th{border:1px solid #aaa;padding:6px}</style></head><body>${template.innerHTML}</body></html>`;
 }
 
 function imageType(path: string): string | undefined {

@@ -271,6 +271,17 @@ sent separately** to inspect descriptions and schemas. Saving updates subsequent
 turns while keeping the session, model history, files, and Python variables.
 Only your editable text is saved; mode-specific instructions are composed at
 request time, so turning Python off removes its instructions and tool definition.
+The default instructions ask the agent to maintain a root `tasks.md` while doing
+work with file-writing tools: a Markdown checklist, current step, blockers,
+verification results, and output paths. Existing notes and unrelated tasks are
+preserved. Open **Files → tasks.md** and leave its rendered Markdown preview open
+to follow progress; it refreshes after completed tool calls, not during a running
+call. **Source / Rendered** and **Plain text / Monaco** remain available. Python
+uses `/home/pyodide/tasks.md` and .NET uses `/home/dotnetdide/tasks.md`; these are
+the same relative session file when switching modes. This is model guidance,
+not an automatic task recorder; chat without file-writing tools cannot save it.
+Rendered file previews default to the active theme's background and text colors;
+documents can override these defaults with their own styles.
 Python mode asks the model to write, run, and validate reusable `.py` programs in
 `/home/pyodide`, then point you to **Files** to preview or download the results.
 The included example creates and executes `solution.py`. The availability example

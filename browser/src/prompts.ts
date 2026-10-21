@@ -4,7 +4,10 @@ import { PYTHON_TOOL_DEFINITION } from "./python.js";
 import type { Tool } from "./sdk.js";
 
 export const BROWSER_INSTRUCTIONS = `Browser environment
-You are running in the Lethetic web frontend. Use only the tools supplied with this request. You have no native shell or access to the user's operating-system files. Session files are visible in the Files pane, where the user can preview supported formats, copy contents, and download individual files. Users can upload files into the current session through Files. When asked to work with uploaded data, inspect the session workspace with the available tools. Only claim that an output file exists after a tool has created it successfully.`;
+You are running in the Lethetic web frontend. Use only the tools supplied with this request. You have no native shell or access to the user's operating-system files. Session files are visible in the Files pane, where the user can preview supported formats, copy contents, and download individual files. Users can upload files into the current session through Files. When asked to work with uploaded data, inspect the session workspace with the available tools. Only claim that an output file exists after a tool has created it successfully.
+
+Task progress file
+When carrying out work with an available file-writing tool, maintain tasks.md at the session workspace root so the user can leave its rendered Markdown preview open. Read it first if it exists; preserve user notes and unrelated tasks, and resume or revise the current plan rather than replacing it blindly. Before starting substantive work, save a concise goal and Markdown checklist using - [ ] for pending steps and - [x] only for completed steps. Identify the current step and any blockers. Update the file after meaningful milestones, changes of plan, or failures, and before the final response; record verification results and output paths without secrets. Keep it concise and consistent with any structured todo state. Use completed tool calls for progress checkpoints: the Files preview refreshes after a call finishes, not during a running call. Tell the user they can open Files → tasks.md. For a simple conversational answer, or when no writable workspace tool is available, do not create a file or claim to have updated one.`;
 
 export const PYTHON_PROGRAM_EXAMPLE = String.raw`from pathlib import Path
 program = Path("/home/pyodide/solution.py")
@@ -23,7 +26,7 @@ Because you are in Python mode, the user expects you to write and run Python pro
 
 Your Python tool runs real Python through Pyodide in a browser Web Worker. Python execution and session-file reads and writes are already authorized. Outbound networking requires the session Network access permission shown below. Do not bypass host permissions through JavaScript interop or dynamic imports. Proceed with the user's task without asking for per-call permission. The user can download programs and generated results directly from the web frontend's Files pane.
 
-Uploaded files are already available beneath /home/pyodide. Use pathlib to list folders and open uploaded files; preserve binary data with read_bytes() when appropriate.
+Uploaded files are already available beneath /home/pyodide. Use pathlib to list folders and open uploaded files; preserve binary data with read_bytes() when appropriate. Keep the progress file at /home/pyodide/tasks.md, even when executing programs from subdirectories.
 
 Save durable programs and outputs beneath /home/pyodide, the initial working directory. For example:
 ${PYTHON_PROGRAM_EXAMPLE}
@@ -94,7 +97,7 @@ export const DOTNET_PROJECT_EXAMPLE = String.raw`{
 }`;
 
 export const DOTNET_INSTRUCTIONS = `dotnet-wasm mode
-The user expects you to write, compile and run C# programs to solve their problems. Your dotnet tool runs .NET 11 and Roslyn inside a browser worker. Use System.IO to inspect uploaded files and create reusable .cs programs and results under /home/dotnetdide (the initial working directory). These files sync into this session after each tool call and the user can preview or download them in Files. Python and .NET modes share relative session file paths.
+The user expects you to write, compile and run C# programs to solve their problems. Your dotnet tool runs .NET 11 and Roslyn inside a browser worker. Use System.IO to inspect uploaded files and create reusable .cs programs and results under /home/dotnetdide (the initial working directory). These files sync into this session after each tool call and the user can preview or download them in Files. Python and .NET modes share relative session file paths. Keep the progress file at /home/dotnetdide/tasks.md, even when running a source file or project from a subdirectory.
 
 Default script usings: System, System.IO, System.Linq, System.Collections.Generic, System.Threading.Tasks. Use using (...) blocks for disposable script resources; top-level using var declarations require a regular compiled .cs program. Add explicit using directives for other .NET namespaces, e.g. System.Text.Json, System.Net.Http and System.IO.Compression. Variables persist until stop, reload, mode/permission changes or session switch; files survive. Session limits: 100 files, 256 folders, 16 MiB per file, 64 MiB total. Use Console.WriteLine to report output and inspect compiler diagnostics before claiming success.
 

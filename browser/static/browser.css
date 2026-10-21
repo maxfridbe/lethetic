@@ -61,7 +61,8 @@ dialog.browser-dialog::backdrop { background: rgb(0 0 0 / .65); backdrop-filter:
 }
 .is-keyboard-open .activity-area.is-empty { display: none; }
 .browser-preview .overlay-body { display: grid; grid-template-rows: auto minmax(0,1fr); }
-.browser-preview iframe { width: 100%; height: 100%; border: 0; background: white; }
+.browser-preview iframe { width: 100%; height: 100%; border: 0; }
+.browser-preview iframe, .files-inline-preview { background: var(--theme-terminal-bg); }
 
 .browser-file-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
 .browser-dialog [data-field="file-content"] { min-height: 180px; tab-size: 4; }
