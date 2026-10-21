@@ -27,6 +27,26 @@ await test("iframe console forwarding never starts a worker and stops on reset",
   tool.reset(); tool.recordConsole(entry); assert.equal(entries.length, 1);
 });
 
+await test("stream headers keep the tool busy until completion and checkpoint cancelled response effects", async () => {
+  let finish!: () => void, cancel!: (error: Error) => void;
+  const runtime = Object.assign(new Runtime(), {requestSiteStream: async () => ({status:200,headers:{},
+    body:new ReadableStream<Uint8Array>(), completed:new Promise<void>((resolve, reject) => {finish=resolve;cancel=reject;}),
+    cancel: () => {cancel(new Error("reader cancelled"));},
+  })});
+  const tool = createDotnetTool({siteAccess:true,loadRuntime:async()=>runtime});
+  await tool.execute({code:"start"},signal());
+  const first=await tool.requestSiteStream({port:8080,method:"GET",path:"/"},signal());
+  await assert.rejects(Promise.resolve(tool.execute({code:"42"},signal())), /already running/);
+  runtime.files.files.push(textFile("stream.txt","done")); finish(); await first.completed;
+  assert.equal(tool.snapshotWorkspace().files[0]?.path,"stream.txt");
+  const second=await tool.requestSiteStream({port:8080,method:"GET",path:"/"},signal());
+  runtime.files.files.push(textFile("cancel.txt","kept")); second.cancel();
+  await assert.rejects(second.completed,/reader cancelled/);
+  assert.equal(runtime.terminated,false);
+  assert.ok(tool.snapshotWorkspace().files.some(file => file.path === "cancel.txt"));
+  assert.equal(await tool.execute({code:"42"},signal()),"42"); tool.reset();
+});
+
 await test(".NET tool loads lazily without credentials and reuses its workspace/runtime", async () => {
   const runtime = new Runtime(); let loads = 0;
   const tool = createDotnetTool({ workspace: { ...emptyWorkspace(), files: [textFile("input.txt", "uploaded")] },

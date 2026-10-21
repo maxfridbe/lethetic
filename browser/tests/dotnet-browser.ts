@@ -77,6 +77,12 @@ export async function testDotnetBrowser(evaluate: (expression: string) => Promis
       if(!debugOutput.includes('Lethetic iframe diagnostic')||!debugOutput.includes('GET :8080/api/hello'))throw Error('Debug prompt failed: '+debugOutput);
       const snapshot=sitesTool.snapshotWorkspace().files.find(file=>file.path==='debug-info.json');
       if(!snapshot||!JSON.parse(atob(snapshot.data)).assemblies.length)throw Error('Debug snapshot not saved');
+      await run(sitesTool, 'using Microsoft.AspNetCore.Builder; using Microsoft.AspNetCore.Http; var streamingApp=DotnetDide.Wire.CreateApplication(); streamingApp.Run(async context=>{await context.Response.Body.WriteAsync(new byte[3*1024*1024],context.RequestAborted); File.WriteAllText("stream-finished.txt","done");}); await DotnetDide.Wire.ListenAsync(8081,streamingApp);');
+      const stream=await sitesTool.requestSiteStream({port:8081,method:'GET',path:'/'},new AbortController().signal);
+      if(sitesTool.snapshotWorkspace().files.some(file=>file.path==='stream-finished.txt'))throw Error('Stream completed before consumption');
+      if((await new Response(stream.body).arrayBuffer()).byteLength!==3*1024*1024)throw Error('Stream still limited to 2 MiB');
+      await stream.completed;
+      if(!sitesTool.snapshotWorkspace().files.some(file=>file.path==='stream-finished.txt'))throw Error('Stream completion did not checkpoint workspace');
     } finally {debugSites?.destroy();sitesTool.reset()}
     const online=createDotnetTool({networkAccess:true});
     try { if(!(await run(online,'await Dotnetdide.Net.GetStringAsync("'+location.origin+'/v1/models")')).includes('deepseek/test'))throw Error('Enabled .NET network failed'); }

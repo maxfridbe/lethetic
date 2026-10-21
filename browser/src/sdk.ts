@@ -9,7 +9,7 @@ export type { ProviderUsage } from "./usage.js";
 import type { Connection } from "./connection.js";
 export type { Connection } from "./connection.js";
 export { createDotnetTool } from "./dotnet.js";
-export type { DotnetConsoleMessage, DotnetTool, DotnetRuntime, DotnetLoader, WireSite, WireRequest, WireResponse } from "./dotnet.js";
+export type { DotnetConsoleMessage, DotnetTool, DotnetRuntime, DotnetLoader, WireSite, WireRequest, WireResponse, WireStreamResponse } from "./dotnet.js";
 export { createPythonTool } from "./python.js";
 export type { PythonTool, Workspace } from "./python.js";
 

@@ -29,12 +29,14 @@ export interface DotnetResult {
 export interface WireSite { port: number; webRoot: string | null }
 export interface WireRequest { port: number; method: string; path: string; headers?: Record<string, string[]>; body?: string }
 export interface WireResponse { status: number; headers: Record<string, string[]>; body: string; error?: string | null }
+export interface WireStreamResponse { status: number; headers: Record<string, string[]>; body: ReadableStream<Uint8Array>; error?: string | null; completed: Promise<void>; cancel(reason?: unknown): void }
 export interface DotnetConsoleMessage { level: "debug" | "log" | "info" | "warn" | "error"; message: string; source: string; stack?: string; truncated?: boolean }
 export interface DotnetRuntime {
   recordConsole?(entry: DotnetConsoleMessage): void;
   runCSharpAsync(code: string, options: { signal: AbortSignal }): Promise<DotnetResult>;
   listSites?(): Promise<WireSite[]>;
   requestSite?(request: WireRequest, options: { signal: AbortSignal }): Promise<WireResponse>;
+  requestSiteStream?(request: WireRequest, options: { signal: AbortSignal }): Promise<WireStreamResponse>;
   importWorkspace(workspace: Workspace): Promise<void>;
   exportWorkspace(): Promise<unknown>;
   terminate(): void;
@@ -44,6 +46,7 @@ export interface DotnetTool extends Tool {
   recordConsole(entry: DotnetConsoleMessage): void;
   sites(): WireSite[];
   requestSite(request: WireRequest, signal: AbortSignal): Promise<WireResponse>;
+  requestSiteStream(request: WireRequest, signal: AbortSignal): Promise<WireStreamResponse>;
   reset(): void;
   snapshotWorkspace(): Workspace;
   setWorkspace(workspace: Workspace): void;
@@ -75,7 +78,7 @@ export function createDotnetTool(options: {
     const cancel = (): void => terminate();
     signal.addEventListener("abort", abort, { once: true });
     controller.signal.addEventListener("abort", cancel, { once: true });
-    const timer = setTimeout(() => controller.abort(new Error(".NET timed out; completed session files are kept.")), requestTimeout);
+    const timer = requestTimeout > 0 ? setTimeout(() => controller.abort(new Error(".NET timed out; completed session files are kept.")), requestTimeout) : null;
     try {
       runtime ??= await (options.loadRuntime ?? loadRuntime)({ signal: controller.signal, networkAccess: options.networkAccess ?? false,
         nugetAccess: options.nugetAccess ?? false, siteAccess: options.siteAccess ?? false, ...(options.relay ? { relay: options.relay } : {}) });
@@ -95,19 +98,37 @@ export function createDotnetTool(options: {
       controller.signal.throwIfAborted();
       return { result, warning };
     } catch (error) { terminate(); throw error; }
-    finally { clearTimeout(timer); signal.removeEventListener("abort", abort); controller.signal.removeEventListener("abort", cancel); operation = null; }
+    finally { if (timer !== null) clearTimeout(timer); signal.removeEventListener("abort", abort); controller.signal.removeEventListener("abort", cancel); operation = null; }
   }
   return {
     ...DOTNET_TOOL_DEFINITION,
     recordConsole: entry => { runtime?.recordConsole?.(entry); },
     sites: () => structuredClone(sites),
+    async requestSiteStream(request, signal): Promise<WireStreamResponse> {
+      if (!options.siteAccess) throw new Error("Interactive sites are disabled for this session.");
+      if (!runtime) throw new Error("Run the site's C# program first.");
+      let ready!: (response: WireStreamResponse) => void, failed!: (reason: unknown) => void;
+      const headers = new Promise<WireStreamResponse>((resolve, reject) => { ready = resolve; failed = reject; });
+      const completed = perform(signal, async (worker, requestSignal) => {
+        if (!worker.requestSiteStream) throw new Error("This runtime does not support streaming sites.");
+        const response = await worker.requestSiteStream(request, {signal: requestSignal});
+        ready(response);
+        try { await response.completed; return {failure: null}; }
+        catch (failure) { return {failure}; }
+      }, 0).then(({result, warning}) => {
+        if (result.failure !== null) throw result.failure;
+        if (warning) throw new Error(warning.trim());
+      });
+      completed.catch(failed);
+      return {...await headers, completed};
+    },
     async requestSite(request, signal): Promise<WireResponse> {
       if (!options.siteAccess) throw new Error("Interactive sites are disabled for this session.");
       if (!runtime) throw new Error("Run the site's C# program first.");
       const { result, warning } = await perform(signal, async (worker, requestSignal) => {
         if (!worker.requestSite) throw new Error("This runtime does not support interactive sites.");
         return worker.requestSite(request, { signal: requestSignal });
-      }, 20_000);
+      }, 0);
       if (warning) throw new Error(warning.trim());
       return result;
     },

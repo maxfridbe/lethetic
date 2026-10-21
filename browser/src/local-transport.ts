@@ -13,7 +13,7 @@ import { createRuntime, DEFAULT_PROMPT } from "./sdk.js";
 import type { Connection, LetheticRuntime, RuntimeEvent, Tool } from "./sdk.js";
 import { effectiveSystemPrompt, injectedInstructions, toolDefinitions } from "./prompts.js";
 import { createDotnetTool } from "./dotnet.js";
-import type { DotnetConsoleMessage, DotnetTool, WireRequest, WireResponse, WireSite } from "./dotnet.js";
+import type { DotnetConsoleMessage, DotnetTool, WireRequest, WireResponse, WireSite, WireStreamResponse } from "./dotnet.js";
 import type { AgentMode } from "./sessions.js";
 import { createPythonTool } from "./python.js";
 import type { PythonTool } from "./python.js";
@@ -331,6 +331,25 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
     if (!this.#closed && sessionId === this.state.session.session_id && this.siteAccess && this.mode === "dotnet-wasm") {
       this.#dotnet?.recordConsole(entry);
     }
+  }
+
+  async requestSiteStream(request: WireRequest, sessionId: string): Promise<WireStreamResponse> {
+    this.#requireIdle();
+    if (sessionId !== this.state.session.session_id || !this.siteAccess || this.mode !== "dotnet-wasm" || !this.#dotnet) throw new Error("This session's interactive site is no longer available.");
+    const controller = new AbortController(); this.#operation = controller;
+    this.state.activity = { kind: "processing", fully_idle: false, cancellable: true, cancel_id: crypto.randomUUID(), progress_percent: null };
+    this.state.status.stop_reason = `Site :${request.port} · ${request.method} ${request.path}`; this.publish();
+    const finish = (): void => {
+      this.#operation = null;
+      this.state.activity = { kind: "idle", fully_idle: true, cancellable: false, cancel_id: null, progress_percent: null };
+      this.state.status.stop_reason = "Ready";
+      if (!this.#closed) this.#saveSession(); this.publish();
+    };
+    try {
+      const response = await this.#dotnet.requestSiteStream(request, controller.signal);
+      const completed = response.completed.finally(finish); completed.catch(() => {});
+      return {...response, completed};
+    } catch (error) { finish(); throw error; }
   }
 
   async requestSite(request: WireRequest, sessionId: string): Promise<WireResponse> {

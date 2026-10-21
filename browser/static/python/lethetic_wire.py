@@ -14,7 +14,8 @@ import sys
 import traceback
 from urllib.parse import parse_qs, unquote
 
-MAX_BODY = 2 * 1024 * 1024
+MAX_BODY = 64 * 1024 * 1024
+MAX_REQUEST_BODY = 16 * 1024 * 1024
 REQUEST_TIMEOUT = 15
 _enabled = False
 _workspace = Path("/home/pyodide")
@@ -164,7 +165,7 @@ def _encode(response, method="GET", error=None):
     if not isinstance(body, bytes):
         raise TypeError("Response body must be bytes or str.")
     if len(body) > MAX_BODY:
-        raise ValueError("Response body exceeds 2 MiB.")
+        raise ValueError("Response body exceeds 64 MiB.")
     headers = {k: v for k, v in _headers(response.headers).items()
                if k.lower() not in {"set-cookie", "connection", "transfer-encoding", "content-length"}}
     if method == "HEAD" or response.status in {204, 205, 304}:
@@ -198,7 +199,7 @@ def _wsgi(site, request):
             raise TypeError("WSGI must start the response and write bytes.")
         size += len(value)
         if size > MAX_BODY:
-            raise ValueError("Response body exceeds 2 MiB.")
+            raise ValueError("Response body exceeds 64 MiB.")
         chunks.append(value)
 
     def start_response(value, pairs, exc_info=None):
@@ -246,7 +247,7 @@ async def _serve(site, request):
                 path = path / "index.html"
             if path.is_relative_to(site.web_root) and path.resolve() == path and path.is_file():
                 if path.stat().st_size > MAX_BODY:
-                    return Response("File exceeds 2 MiB.", 413)
+                    return Response("File exceeds 64 MiB.", 413)
                 mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
                 response = Response(path.read_bytes(), headers={"Content-Type": mime})
         return response
@@ -275,11 +276,11 @@ async def _dispatch(value):
         if "\\" in path or any(ord(c) < 32 or ord(c) == 127 for c in path) or any(p in {".", ".."} for p in path.split("/")):
             return _error(400, "Unsafe request path.")
         encoded = value.get("body", "")
-        if not isinstance(encoded, str) or len(encoded) > (MAX_BODY + 2) // 3 * 4:
-            return _error(413, "Request body exceeds 2 MiB.")
+        if not isinstance(encoded, str) or len(encoded) > (MAX_REQUEST_BODY + 2) // 3 * 4:
+            return _error(413, "Request body exceeds 16 MiB.")
         body = base64.b64decode(encoded, validate=True)
-        if len(body) > MAX_BODY:
-            return _error(413, "Request body exceeds 2 MiB.")
+        if len(body) > MAX_REQUEST_BODY:
+            return _error(413, "Request body exceeds 16 MiB.")
         headers = _headers(value.get("headers", {}))
         headers = {k.lower(): v for k, v in headers.items() if k.lower() not in _private_headers}
         parsed = parse_qs(query, keep_blank_values=True, max_num_fields=256)

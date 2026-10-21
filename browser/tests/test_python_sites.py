@@ -112,6 +112,19 @@ class PythonSitesTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Set-Cookie", response["headers"])
         self.assertEqual([True], closed)
 
+    async def test_session_sized_files_and_uploads_exceed_the_old_limit(self):
+        wire._configure(True, str(self.root))
+        data = b"x" * (3 * 1024 * 1024)
+        Path("large.bin").write_bytes(data)
+        wire.listen(8080, web_root=".")
+        response = await self.request(path="/large.bin")
+        self.assertEqual(200, response["status"])
+        self.assertEqual(data, base64.b64decode(response["body"]))
+        wire.stop(8080)
+        wire.listen(8080, handler=lambda request: wire.Response(request.body))
+        response = await self.request(method="POST", body=data)
+        self.assertEqual(data, base64.b64decode(response["body"]))
+
     async def test_fallback_errors_limits_and_timeout(self):
         wire._configure(True, str(self.root))
         Path("index.html").write_text("fallback")
@@ -120,7 +133,7 @@ class PythonSitesTests(unittest.IsolatedAsyncioTestCase):
         wire.stop(8080)
         wire.listen(8080, handler=lambda request: wire.Response(b"x" * (wire.MAX_BODY + 1)))
         self.assertEqual(500, (await self.request())["status"])
-        self.assertEqual(413, (await self.request(method="POST", body=b"x" * (wire.MAX_BODY + 1)))["status"])
+        self.assertEqual(413, (await self.request(method="POST", body=b"x" * (wire.MAX_REQUEST_BODY + 1)))["status"])
         self.assertEqual(400, (await self.request(headers={"Bad\nName": ["x"]}))["status"])
         self.assertEqual(431, (await self.request(headers={"X-Large": ["x" * 16385]}))["status"])
         wire.stop(8080)

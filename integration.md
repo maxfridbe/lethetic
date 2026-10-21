@@ -415,7 +415,7 @@ not contain API keys or downloaded Pyodide packages. Build outputs live under
 
 Download `lethetic-browser.zip` from a release and extract it under your site's
 `/vendor/lethetic/` directory. Serve `.wasm` as `application/wasm` and `.js` as
-JavaScript. Keep the extracted `src/`, `browser/`, and `web/` trees and stylesheets
+JavaScript. Keep the extracted `src/`, `browser/`, `web/`, and `assets/` trees and stylesheets
 together. The `src/` entry points remain stable; the shared UI and libraries live
 under `web/`, and the WASM module lives under `browser/wasm/`.
 
@@ -675,7 +675,7 @@ completed session files. Sites are never replayed automatically on reload.
 The shared preview supports classic scripts, CSS, media and local fetch calls.
 Forms must preventDefault and use fetch. Cookies, direct external preview fetch,
 ES modules, XHR, ASGI, WebSockets and streaming are unsupported. Request/response
-bodies are buffered up to 2 MiB, with a 15-second cooperative deadline and a
+bodies are buffered up to 16 MiB for requests and 64 MiB for responses, with a 15-second cooperative deadline and a
 20-second worker timeout; existing smaller session-file limits still apply.
 The iframe cannot access parent DOM/storage or model credentials. Python itself
 has the session network permission and route applied to fetch, XHR and browser
@@ -797,7 +797,7 @@ In a Firefox Wire preview test, removing the custom `User-Agent` resolved an
 Open-Meteo geocoding fetch failure. An HTTP 200 is still not proof of a successful
 ZIP lookup: check the returned locations before making a forecast request.
 
-ES modules, dynamic asset URLs, XHR, CSS @import, WebSockets and streaming are
+ES modules, dynamic asset URLs, XHR, CSS @import and WebSockets are
 not implemented in this message transport. Use explicit JSON serialization with
 `Response.WriteAsync(JsonSerializer.Serialize(value))`; .NET 11 RC2 WASM has a
 known failure in the tested automatic object-response/WriteAsJsonAsync path.
@@ -994,5 +994,9 @@ use `openBrowserStorage` for the larger workspace capacity. `storage.status` rep
 saving/failure, `storage.pending` signals uncommitted edits, and `storage.subscribe`
 notifies hosts. A rejected `flush()` must be handled before disposing the view.
 Static media previews support the 16 MiB file limit; the text viewer also accepts
-16 MiB in browser mode. Virtual-site request/response bodies retain their separate
-2 MiB ceiling. Network, model-context, and package-cache limits are unchanged.
+16 MiB in browser mode. Virtual sites accept 16 MiB request bodies and 64 MiB response bodies by default.
+.NET Sites fetch responses stream in binary chunks up to 64 KiB with backpressure
+and a 30-second idle timeout. Python responses remain buffered. The .NET SDK host
+can set `siteResponseLimitBytes` up to 512 MiB; Lethetic uses the 64 MiB default.
+The legacy `requestSite` API and HTML/media preview preparation still collect
+complete responses. Workspace, model-context, and package-cache limits are separate.

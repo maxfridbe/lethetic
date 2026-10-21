@@ -206,6 +206,7 @@ export class SpaApplication implements BrowserTransportEvents {
     paletteCommands?: () => readonly LocalPaletteCommand[];
     paletteCommandVisible?: (command: PaletteCommand) => boolean;
     headerActions?: () => VNode | null;
+    paletteIcon?: () => VNode;
     status?: () => VNode;
     promptPlaceholder?: string;
     sessionsNotice?: () => string;
@@ -1178,6 +1179,7 @@ export class SpaApplication implements BrowserTransportEvents {
         snapshot,
         originalPythonBlocks: this.#originalPythonBlocks,
         headerActions: this.extensions.headerActions?.() ?? null,
+        paletteIcon: this.extensions.paletteIcon?.() ?? null,
         customStatus: this.extensions.status?.() ?? null,
         promptPlaceholder: this.extensions.promptPlaceholder ?? null,
         ...(this.extensions.codeActions ? { codeActions: this.extensions.codeActions } : {}),

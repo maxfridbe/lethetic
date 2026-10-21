@@ -17,7 +17,7 @@ function renderHeader(context) {
                 class: "icon-button palette-button",
                 "aria-label": "Open command palette",
                 title: "Command palette (Ctrl+P)",
-            }, props: { disabled: snapshot === null }, on: { click: context.actions.openPalette } }, uiIcon("command")),
+            }, props: { disabled: snapshot === null }, on: { click: context.actions.openPalette } }, context.state.paletteIcon ?? uiIcon("command")),
         h("div", { attrs: { class: "connection-summary" } },
             h("span", { attrs: {
                     class: `connection-dot ${live ? "is-live" : "is-stale"}`,

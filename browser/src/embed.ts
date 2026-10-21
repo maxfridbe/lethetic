@@ -154,6 +154,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
         } } }, [uiIcon("trash"), "Delete"]),
         h("span", { attrs: { role: "status" } }, fileStatus),
       ]) },
+    paletteIcon: () => h("img", { attrs: { class: "browser-brand-icon", src: new URL("../../assets/lethetic-icon.svg", import.meta.url).href, width: "30", height: "30", alt: "", "aria-hidden": "true" } }),
     headerActions: () => { sites?.refresh(); return h("div", { attrs: { class: "browser-header-actions" } }, [
       h("button", { attrs: { type: "button", "data-browser-action": "connections" }, on: { click: () => settings?.open() } }, [uiIcon("connection"), "Connections"]),
       h("button", { attrs: { type: "button", "data-browser-action": "sessions" }, on: { click: () => transport?.send({ type: "invoke_command", command_id: "sessions" }, 0) } }, [uiIcon("history"), "Sessions"]),

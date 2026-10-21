@@ -1,4 +1,4 @@
-# Lethetic Intelligence Engine
+<h1><img src="res/lethetic-logo.svg" alt="Lethetic Intelligence Engine" width="540"></h1>
 
 > "...so many various filters and enhancements, so many possible patterns, that it was as much an art as a craft. We didn't have the trained personnel that we needed, and as good as the lethetic intelligence engines were, they still lacked the ability to make intuitive leaps. LIs could give you statistical probabilities; they couldn't give you hunches—although the last I'd heard, they were working on adding that function too."
 

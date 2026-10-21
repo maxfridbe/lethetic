@@ -902,6 +902,7 @@ export class SpaApplication {
                 snapshot,
                 originalPythonBlocks: this.#originalPythonBlocks,
                 headerActions: this.extensions.headerActions?.() ?? null,
+                paletteIcon: this.extensions.paletteIcon?.() ?? null,
                 customStatus: this.extensions.status?.() ?? null,
                 promptPlaceholder: this.extensions.promptPlaceholder ?? null,
                 ...(this.extensions.codeActions ? { codeActions: this.extensions.codeActions } : {}),

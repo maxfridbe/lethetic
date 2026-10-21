@@ -1,10 +1,11 @@
 import { buttonIconHtml } from "../../web/src/icons.js";
 import { createDialog, errorMessage, field } from "./dialog.js";
 import type { LocalTransport } from "./local-transport.js";
-import type { DotnetConsoleMessage, WireRequest, WireResponse } from "./dotnet.js";
+import type { DotnetConsoleMessage, WireRequest, WireResponse, WireStreamResponse } from "./dotnet.js";
 
 type Preview = { reload(): Promise<void>; navigate(path: string): Promise<void>; destroy(): void };
 type PreviewFactory = (options: { iframe: HTMLIFrameElement; port: number; path: string;
+  requestStream?: (value: WireRequest) => Promise<WireStreamResponse>;
   request(value: WireRequest): Promise<WireResponse>; onNavigate(path: string): void; onConsole(entry: DotnetConsoleMessage): void }) => Promise<Preview>;
 
 export function createSitesDialog(transport: LocalTransport): { open(): void; refresh(): void; clear(): void; destroy(): void } {
@@ -67,6 +68,14 @@ export function createSitesDialog(transport: LocalTransport): { open(): void; re
       const created = await sdk.createWirePreview({ iframe: frame, port, path: path.value || "/",
         onNavigate: value => { path.value = value; },
         onConsole: entry => { if (mine === generation && dialog.open) transport.recordSiteConsole(entry, sessionId); },
+        ...(transport.mode === "dotnet-wasm" ? {requestStream: (value: WireRequest): Promise<WireStreamResponse> => {
+          const next = queue.catch(() => {}).then(async () => {
+            if (mine !== generation || !dialog.open) throw new Error("Preview closed.");
+            return transport.requestSiteStream(value, sessionId);
+          });
+          queue = next.then(response => response.completed); queue.catch(() => {});
+          return next;
+        }} : {}),
         request: value => {
           // Serialize parallel fetches from a page while keeping model turns exclusive.
           const next = queue.catch(() => {}).then(async () => {

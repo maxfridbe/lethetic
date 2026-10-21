@@ -53,7 +53,7 @@ function renderHeader(context: ChatViewContext): VNode {
         props={{ disabled: snapshot === null }}
         on={{ click: context.actions.openPalette }}
       >
-        {uiIcon("command")}
+        {context.state.paletteIcon ?? uiIcon("command")}
       </button>
       <div attrs={{ class: "connection-summary" }}>
         <span

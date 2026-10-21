@@ -46,6 +46,7 @@ export interface ApprovalConfirmation {
 export interface ChatViewState {
   readonly originalPythonBlocks?: ReadonlySet<string>;
   readonly headerActions?: VNode | null;
+  readonly paletteIcon?: VNode | null;
   readonly customStatus?: VNode | null;
   readonly promptPlaceholder?: string | null;
   readonly blockActions?: (block: RenderBlockView) => VNode | null;
