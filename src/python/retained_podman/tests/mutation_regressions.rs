@@ -76,6 +76,7 @@ fn podman_legacy_retained_supervisor_is_attested() {
     let mut fixture = serde_json::to_value(matching_inspection(&config, &id)).unwrap();
     fixture["Config"]["Entrypoint"] = CONTAINER_ENTRYPOINT.into();
     fixture["Config"]["StopSignal"] = 15.into();
+    fixture["Config"]["CreateCommand"][0] = config.podman.to_str().unwrap().into();
     fixture["HostConfig"]
         .as_object_mut()
         .unwrap()
@@ -98,12 +99,24 @@ fn podman_legacy_inspection_keeps_signal_and_annotation_checks() {
     // https://github.com/containers/podman/blob/v4.9.3/libpod/define/container_inspect.go
     fixture["Config"]["Entrypoint"] = json!("python3");
     fixture["Config"]["StopSignal"] = json!(15);
+    fixture["Config"]["CreateCommand"][0] = config.podman.to_str().unwrap().into();
     fixture["HostConfig"]
         .as_object_mut()
         .unwrap()
         .remove("Annotations");
     let inspection: ContainerInspection = serde_json::from_value(fixture.clone()).unwrap();
     validate_transient_inspection(&config, &id, &inspection).unwrap();
+
+    for program in ["/tmp/podman", "/untrusted/bin/podman", "", "sh"] {
+        let mut value = fixture.clone();
+        value["Config"]["CreateCommand"][0] = json!(program);
+        let inspection: ContainerInspection = serde_json::from_value(value).unwrap();
+        assert!(validate_transient_inspection(&config, &id, &inspection).is_err());
+    }
+    let mut changed_args = fixture.clone();
+    changed_args["Config"]["CreateCommand"][1] = json!("run");
+    let inspection: ContainerInspection = serde_json::from_value(changed_args).unwrap();
+    assert!(validate_transient_inspection(&config, &id, &inspection).is_err());
 
     for signal in [json!(9), json!(0), json!("SIGKILL"), json!(" SIGTERM")] {
         let mut value = fixture.clone();

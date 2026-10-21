@@ -159,8 +159,11 @@ impl TransientInspectionAttestation<'_> {
         let container = &self.inspection.config;
         let worker_args = transient_worker_args();
         let expected_user = format!("{}:{}", self.config.worker_uid, self.config.worker_gid);
-        if container.create_command != expected_create
-            || container.entrypoint != ["python3"]
+        if !create_command_matches(
+            &container.create_command,
+            &expected_create,
+            &self.config.podman,
+        ) || container.entrypoint != ["python3"]
             || container.cmd != worker_args
             || container.user != expected_user
             || !container.open_stdin
@@ -590,8 +593,11 @@ impl RetainedInspectionAttestation<'_> {
     fn validate_container_config(&self, expected_args: &[String]) -> Result<(), String> {
         let expected_create = expected_create_command(self.config)?;
         let container = &self.inspection.config;
-        if container.create_command != expected_create
-            || container.entrypoint != [CONTAINER_ENTRYPOINT]
+        if !create_command_matches(
+            &container.create_command,
+            &expected_create,
+            &self.config.podman,
+        ) || container.entrypoint != [CONTAINER_ENTRYPOINT]
             || container.cmd != expected_args
             || container.user != "0:0"
             || !container.open_stdin
@@ -736,6 +742,19 @@ pub(super) fn expected_create_command(
         );
     }
     Ok(command)
+}
+
+fn create_command_matches(observed: &[String], expected: &[String], podman: &Path) -> bool {
+    // Native Podman records its absolute invocation path. Distrobox forwards
+    // the same command with argv[0] = "podman". Accept only those two exact
+    // spellings, never an arbitrary path with a matching basename.
+    match (observed.split_first(), expected.split_first()) {
+        (Some((program, args)), Some((expected_program, expected_args))) => {
+            args == expected_args
+                && (program == expected_program || Some(program.as_str()) == podman.to_str())
+        }
+        _ => false,
+    }
 }
 
 fn validate_podman_annotations(
