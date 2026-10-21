@@ -1,7 +1,5 @@
 #browser-root { position: fixed; top: 0; left: 0; width: 100%; height: 100dvh; }
 .app-shell { width: 100%; height: 100%; }
-.browser-brand-icon { display: block; width: 30px; height: 30px; }
-.palette-button:has(.browser-brand-icon) { padding: 2px; }
 .session-header { grid-template-columns: auto auto minmax(8rem, 1fr) minmax(6rem, auto) auto; }
 .browser-header-actions, .browser-code-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
 .browser-header-actions { margin-left: auto; }

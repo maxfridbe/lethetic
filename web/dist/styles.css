@@ -231,6 +231,9 @@ button .ui-icon {
   color: var(--theme-highlight-fg);
 }
 
+.lethetic-brand-icon { display: block; width: 30px; height: 30px; }
+.palette-button:has(.lethetic-brand-icon) { width: 34px; height: 34px; padding: 2px; }
+
 .text-button {
   min-height: 30px;
   padding-block: 0.2rem;

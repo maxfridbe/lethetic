@@ -8,6 +8,7 @@ import type {
   WebAppSnapshot,
 } from "../generated/contracts.js";
 import { activitySpinner, uiIcon } from "../icons.js";
+import { letheticLogo } from "../brand.js";
 import { jsonPreformattedThunk } from "../json.js";
 import {
   isMarkdownBlockKind,
@@ -53,7 +54,7 @@ function renderHeader(context: ChatViewContext): VNode {
         props={{ disabled: snapshot === null }}
         on={{ click: context.actions.openPalette }}
       >
-        {context.state.paletteIcon ?? uiIcon("command")}
+        {context.state.paletteIcon ?? letheticLogo()}
       </button>
       <div attrs={{ class: "connection-summary" }}>
         <span

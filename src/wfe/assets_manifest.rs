@@ -924,6 +924,7 @@ tracked_assets!(
     "src/app/status.js",
     "src/background-protocol.js",
     "src/bootstrap.js",
+    "src/brand.js",
     "src/chat-follow.js",
     "src/files/client.js",
     "src/files/editor.js",

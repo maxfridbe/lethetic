@@ -2,6 +2,7 @@ import { highlightCode } from "../highlight.js";
 import { pythonToolCode } from "./helpers.js";
 import { jsx as h } from "../../lib/snabbdom/build/index.js";
 import { activitySpinner, uiIcon } from "../icons.js";
+import { letheticLogo } from "../brand.js";
 import { jsonPreformattedThunk } from "../json.js";
 import { isMarkdownBlockKind, markdownContentThunk, toolResultContentThunk, } from "../markdown.js";
 import { boundedText } from "../safety.js";
@@ -17,7 +18,7 @@ function renderHeader(context) {
                 class: "icon-button palette-button",
                 "aria-label": "Open command palette",
                 title: "Command palette (Ctrl+P)",
-            }, props: { disabled: snapshot === null }, on: { click: context.actions.openPalette } }, context.state.paletteIcon ?? uiIcon("command")),
+            }, props: { disabled: snapshot === null }, on: { click: context.actions.openPalette } }, context.state.paletteIcon ?? letheticLogo()),
         h("div", { attrs: { class: "connection-summary" } },
             h("span", { attrs: {
                     class: `connection-dot ${live ? "is-live" : "is-stale"}`,
