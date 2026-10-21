@@ -110,7 +110,7 @@ export async function testDotnetBrowser(evaluate: (expression: string) => Promis
     const wait=async predicate=>{for(let i=0;i<1200;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,50))}throw Error('Timed out: '+root.innerText.slice(-2000))};
     const change=(selector,value)=>{const el=document.querySelector(selector);if(el.type==='checkbox')el.checked=value;else el.value=value;el.dispatchEvent(new Event('change'))};
     const saved=()=>JSON.parse(localStorage.getItem('lethetic.sessions.v1')).sessions[0];
-    const send=async text=>{const input=root.querySelector('#composer-input');input.value=text;input.dispatchEvent(new Event('input',{bubbles:true}));root.querySelector('form.composer').requestSubmit();await wait(()=>root.innerText.includes('C# says:'));await wait(()=>!!root.querySelector('.activity-idle'));};
+    const send=async text=>{const input=root.querySelector('#composer-input');input.value=text;input.dispatchEvent(new Event('input',{bubbles:true}));root.querySelector('form.composer').requestSubmit();await wait(()=>root.querySelector('#chat-scroll')?.textContent.includes('C# says:'));await wait(()=>!!root.querySelector('.activity-idle'));};
     root.querySelector('[data-browser-action=connections]').click();
     const id=saved().id;change('[data-field=mode]','dotnet-wasm');
     if(document.querySelector('[data-field=nuget]').checked)throw Error('NuGet should start disabled');
@@ -195,7 +195,15 @@ export async function testDotnetBrowser(evaluate: (expression: string) => Promis
     await wait(()=>document.querySelector('[data-browser-action=sites]')?.textContent.includes('(1)'));
     await wait(()=>!!document.querySelector('.activity-idle'));
     if(saved().id!==id || !saved().workspace.files.some(file=>file.path==='wireapp/bin/Site.dll'))throw Error('Project Run lost files/session');
-    if(!document.body.innerText.includes('Site ready on virtual port'))throw Error('Run output missing');
+    const title='Run wireapp/Site.csproj', expected='Site ready on virtual port';
+    const result=saved().blocks.findLast(block=>block.title===title);
+    if(!result || result.success===false || !result.content.includes(expected))throw Error('Saved Run output missing: '+JSON.stringify(result));
+    // content-visibility:auto omits offscreen chat text from innerText. Check the
+    // specific result's DOM content first, then reveal it and check visible text.
+    const runBlock=()=>Array.from(document.querySelectorAll('#chat-scroll .chat-block')).find(block=>block.querySelector('.block-header strong')?.textContent===title);
+    await wait(()=>runBlock()?.textContent.includes(expected));
+    runBlock().scrollIntoView({block:'center',behavior:'instant'});
+    await wait(()=>runBlock()?.innerText.includes(expected));
     document.querySelector('[data-browser-action=sites]').click();
     await wait(()=>document.querySelector('[data-field=site-frame]')?.src.includes('wire-preview-host.html'));
     const networkNote=document.querySelector('[data-field=site-network]').textContent;
