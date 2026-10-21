@@ -8,7 +8,7 @@ import {
   styleModule,
 } from "../lib/snabbdom/build/index.js";
 import type { VNode } from "../lib/snabbdom/build/index.js";
-import { ChatFollowController } from "./chat-follow.js";
+import { ChatFollowController, hasNewChatOutput } from "./chat-follow.js";
 import type { ChatScrollMetrics } from "./chat-follow.js";
 import {
   captureChatAnchor,
@@ -357,6 +357,11 @@ export class SpaApplication implements BrowserTransportEvents {
     }
     this.#reconcileDebuggerDismissal();
     this.#render();
+    if (previous.view !== null && nextView !== null &&
+      previous.view.session.session_id === nextView.session.session_id &&
+      hasNewChatOutput(previous.view.blocks, nextView.blocks)) {
+      this.#chatFollow.noteNewOutput();
+    }
   }
 
   commandResponse(response: ICommandResponse, request: ICommandRequest): void {
@@ -1065,6 +1070,11 @@ export class SpaApplication implements BrowserTransportEvents {
         : null);
     this.#synchronizeOverlayFocus(focusKey);
     this.#renderedPanelKey = focusKey;
+    const chat = globalThis.document.getElementById("chat-scroll");
+    if (globalThis.matchMedia("(any-hover: hover)").matches) {
+      this.#chatFollow.setPointerOver(chat instanceof HTMLElement && chat.matches(":hover"));
+    }
+    this.#chatFollow.setFocusWithin(chat instanceof HTMLElement && chat.contains(globalThis.document.activeElement));
     this.#synchronizeChatPosition(snapshot, anchor);
   }
 
@@ -1249,6 +1259,8 @@ export class SpaApplication implements BrowserTransportEvents {
         onChatKeyDown: this.#onChatKeyDown,
         onChatManualIntent: this.#onChatManualIntent,
         onChatScroll: this.#onChatScroll,
+        onChatPointer: this.#onChatPointer,
+        onChatFocus: this.#onChatFocus,
       },
     };
   }
@@ -1563,6 +1575,16 @@ export class SpaApplication implements BrowserTransportEvents {
     const chat = globalThis.document.getElementById("chat-scroll");
     return chat instanceof HTMLElement ? chatScrollMetrics(chat) : null;
   }
+
+  readonly #onChatPointer = (event: PointerEvent): void => {
+    if (event.pointerType !== "touch") this.#chatFollow.setPointerOver(event.type === "pointerenter");
+  };
+
+  readonly #onChatFocus = (event: FocusEvent): void => {
+    const chat = event.currentTarget;
+    this.#chatFollow.setFocusWithin(event.type === "focusin" ||
+      (chat instanceof HTMLElement && event.relatedTarget instanceof Node && chat.contains(event.relatedTarget)));
+  };
 
   readonly #onChatManualIntent = (event: Event): void => {
     const target = event.currentTarget;

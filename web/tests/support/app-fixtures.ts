@@ -14,6 +14,8 @@ export function noopChatViewActions(
     onChatKeyDown: () => {},
     onChatManualIntent: () => {},
     onChatScroll: () => {},
+    onChatPointer: () => {},
+    onChatFocus: () => {},
     ...overrides,
   };
 }

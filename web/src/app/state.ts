@@ -79,6 +79,8 @@ export interface ChatViewActions {
   readonly onChatKeyDown: (event: KeyboardEvent) => void;
   readonly onChatManualIntent: (event: Event) => void;
   readonly onChatScroll: (event: Event) => void;
+  readonly onChatPointer: (event: PointerEvent) => void;
+  readonly onChatFocus: (event: FocusEvent) => void;
 }
 
 export interface ChatViewContext {

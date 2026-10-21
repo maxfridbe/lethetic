@@ -1,4 +1,18 @@
-export const CHAT_FOLLOW_HOLD_MILLISECONDS = 5_000;
+import type { BlockListView } from "./generated/contracts.js";
+
+export const CHAT_FOLLOW_HOLD_MILLISECONDS = 10_000;
+
+/** Ignore status-only snapshots; include streamed text and structured tool output. */
+export function hasNewChatOutput(before: BlockListView, after: BlockListView): boolean {
+  if (before === after) return false;
+  const offset = after.omitted_before - before.omitted_before;
+  return after.blocks.some((block, index) => {
+    const old = before.blocks[index + offset];
+    return old === undefined || block.kind !== old.kind || block.content !== old.content ||
+      block.title !== old.title || block.success !== old.success ||
+      (block.tool !== old.tool && JSON.stringify(block.tool) !== JSON.stringify(old.tool));
+  });
+}
 export const CHAT_BOTTOM_TOLERANCE_PX = 56;
 
 const POSITION_EPSILON_PX = 0.5;
@@ -53,6 +67,10 @@ export class ChatFollowController {
   readonly #onResumeFollowing: () => void;
   #mode: ChatFollowMode = "following";
   #turnActive = false;
+  #newOutput = false;
+  #pointerOver = false;
+  #focusWithin = false;
+  #automaticResume: { top: number; deadline: number } | null = null;
   #manualScrollTop: number | null = null;
   #manualDeadline: number | null = null;
   #manualTimer: number | null = null;
@@ -89,10 +107,41 @@ export class ChatFollowController {
       return;
     }
     this.#turnActive = active;
+    if (!active) this.#newOutput = false;
+    this.#updateAutoFollow();
+  }
+
+  noteNewOutput(): void {
+    if (this.#mode !== "manual" || !this.#turnActive) return;
+    this.#newOutput = true;
+    this.#updateAutoFollow();
+  }
+
+  setPointerOver(over: boolean): void {
+    this.#pointerOver = over;
+    this.#updateAutoFollow();
+  }
+
+  setFocusWithin(within: boolean): void {
+    this.#focusWithin = within;
+    this.#updateAutoFollow();
+  }
+
+  #updateAutoFollow(): void {
     this.#clearManualTimer();
-    this.#manualDeadline = null;
-    if (active && this.#mode === "manual" && this.#manualScrollTop !== null) {
-      this.#startManualTimer();
+    const allowed = this.#turnActive && this.#newOutput && !this.#pointerOver && !this.#focusWithin;
+    // An enter/focus/idle event can arrive between timer expiry and its scroll frame.
+    if (!allowed && this.#automaticResume !== null) {
+      this.#cancelFrame();
+      this.#mode = "manual";
+      this.#manualScrollTop = this.#automaticResume.top;
+      this.#manualDeadline = this.#automaticResume.deadline;
+      this.#automaticResume = null;
+    }
+    if (allowed && this.#mode === "manual" && this.#manualDeadline !== null) {
+      this.#manualTimer = this.#scheduler.setTimeout(
+        () => this.#manualTimerExpired(), this.remainingManualHoldMilliseconds,
+      );
     }
   }
 
@@ -101,6 +150,10 @@ export class ChatFollowController {
     this.#cancelFrame();
     this.#mode = "following";
     this.#turnActive = false;
+    this.#newOutput = false;
+    this.#pointerOver = false;
+    this.#focusWithin = false;
+    this.#automaticResume = null;
     this.#manualScrollTop = null;
     this.#manualDeadline = null;
     this.#ownedScrollTop = null;
@@ -215,6 +268,7 @@ export class ChatFollowController {
       if (actual === null || !Number.isFinite(actual)) {
         return;
       }
+      if (current.mode === "following") this.#automaticResume = null;
       this.#ownedScrollTop = Math.max(0, actual);
       if (current.mode === "manual") {
         this.#manualScrollTop = this.#ownedScrollTop;
@@ -252,26 +306,16 @@ export class ChatFollowController {
     this.#intentStartTop = null;
     this.#mode = "manual";
     this.#manualScrollTop = Math.max(0, scrollTop);
-    this.#clearManualTimer();
-    this.#manualDeadline = null;
-    if (this.#turnActive) {
-      this.#startManualTimer();
-    }
-  }
-
-  #startManualTimer(): void {
-    this.#manualDeadline =
-      this.#scheduler.now() + CHAT_FOLLOW_HOLD_MILLISECONDS;
-    this.#clearManualTimer();
-    this.#manualTimer = this.#scheduler.setTimeout(
-      () => this.#manualTimerExpired(),
-      CHAT_FOLLOW_HOLD_MILLISECONDS,
-    );
+    this.#automaticResume = null;
+    this.#newOutput = false;
+    this.#manualDeadline = this.#scheduler.now() + CHAT_FOLLOW_HOLD_MILLISECONDS;
+    this.#updateAutoFollow();
   }
 
   #manualTimerExpired(): void {
     this.#manualTimer = null;
-    if (!this.#turnActive || this.#mode !== "manual" || this.#manualDeadline === null) {
+    if (!this.#turnActive || !this.#newOutput || this.#pointerOver || this.#focusWithin ||
+      this.#mode !== "manual" || this.#manualDeadline === null) {
       return;
     }
     const remaining = this.#manualDeadline - this.#scheduler.now();
@@ -282,10 +326,12 @@ export class ChatFollowController {
       );
       return;
     }
-    this.#resumeFollowing(true);
+    const pending = { top: this.#manualScrollTop ?? 0, deadline: this.#manualDeadline };
+    this.#resumeFollowing(true, pending);
   }
 
-  #resumeFollowing(notify: boolean): void {
+  #resumeFollowing(notify: boolean, automatic: { top: number; deadline: number } | null = null): void {
+    this.#automaticResume = automatic;
     const changed = this.#mode !== "following";
     this.#clearManualTimer();
     this.#cancelFrame();

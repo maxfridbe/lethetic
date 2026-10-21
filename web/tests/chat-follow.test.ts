@@ -5,6 +5,7 @@ import {
   CHAT_FOLLOW_HOLD_MILLISECONDS,
   ChatFollowController,
   isAtChatBottom,
+  hasNewChatOutput,
   type ChatFollowScheduler,
   type ChatScrollMetrics,
 } from "../src/chat-follow.js";
@@ -81,252 +82,226 @@ function metrics(
   return { scrollTop, scrollHeight, clientHeight };
 }
 
-function activeController(scheduler: FakeScheduler, onResume: () => void): ChatFollowController {
-  const controller = new ChatFollowController(scheduler, onResume);
-  controller.setTurnActive(true);
-  return controller;
+function fixture(active = true) {
+  const scheduler = new FakeScheduler();
+  let resumed = 0;
+  const controller = new ChatFollowController(scheduler, () => { resumed += 1; });
+  controller.setTurnActive(active);
+  return { scheduler, controller, resumes: () => resumed };
 }
 
-test("bottom detection uses one exported tolerance", () => {
+test("bottom detection uses the shared tolerance and the hold is ten seconds", () => {
+  assert.equal(CHAT_FOLLOW_HOLD_MILLISECONDS, 10_000);
   assert.equal(CHAT_BOTTOM_TOLERANCE_PX, 56);
   assert.equal(isAtChatBottom(metrics(744)), true);
   assert.equal(isAtChatBottom(metrics(743.99)), false);
   assert.equal(isAtChatBottom(metrics(0, 100, 200)), true);
-  assert.equal(isAtChatBottom(metrics(Number.NaN, 1_000, 200)), false);
+  assert.equal(isAtChatBottom(metrics(Number.NaN)), false);
 });
 
-test("manual activity replaces one five-second inactivity deadline", () => {
-  const scheduler = new FakeScheduler();
-  let resumed = 0;
-  const controller = activeController(scheduler, () => {
-    resumed += 1;
-  });
-
-  controller.observeScroll(metrics(500));
+test("active status alone never resumes; new output after ten seconds does", () => {
+  const {scheduler, controller, resumes} = fixture();
+  controller.observeScroll(metrics(300));
+  scheduler.advance(20_000);
   assert.equal(controller.mode, "manual");
-  assert.equal(controller.manualScrollTop, 500);
-  assert.equal(
-    controller.remainingManualHoldMilliseconds,
-    CHAT_FOLLOW_HOLD_MILLISECONDS,
-  );
-  assert.equal(scheduler.timers.size, 1);
-
-  scheduler.advance(3_000);
-  controller.noteUserIntent(metrics(480), () => metrics(480));
-  scheduler.flushAnimationFrame();
-  assert.equal(controller.manualScrollTop, 480);
-  assert.equal(controller.remainingManualHoldMilliseconds, 5_000);
-  assert.equal(scheduler.timers.size, 1);
-
-  let preservedTarget: number | null = null;
-  controller.requestPreservedPosition((target) => {
-    preservedTarget = target;
-    return 470;
-  });
-  scheduler.flushAnimationFrame();
-  assert.equal(preservedTarget, 480);
-  assert.equal(controller.manualScrollTop, 470);
-
-  scheduler.advance(4_999);
-  controller.observeScroll(metrics(470));
-  assert.equal(controller.remainingManualHoldMilliseconds, 1);
-  assert.equal(resumed, 0);
-  scheduler.advance(1);
+  assert.equal(scheduler.timers.size, 0);
+  controller.noteNewOutput();
+  scheduler.advance(0);
   assert.equal(controller.mode, "following");
-  assert.equal(controller.manualScrollTop, null);
-  assert.equal(resumed, 1);
+  assert.equal(resumes(), 1);
 });
 
-test("manually reaching the bottom resumes immediately", () => {
-  const scheduler = new FakeScheduler();
-  let resumed = 0;
-  const controller = activeController(scheduler, () => {
-    resumed += 1;
-  });
+test("new output waits ten seconds since the last scroll, not since its arrival", () => {
+  const {scheduler, controller, resumes} = fixture();
+  controller.observeScroll(metrics(500));
+  scheduler.advance(6_000);
+  controller.noteNewOutput();
+  scheduler.advance(3_999);
+  assert.equal(controller.mode, "manual");
+  assert.equal(controller.remainingManualHoldMilliseconds, 1);
+  controller.setTurnActive(true);
+  controller.noteNewOutput();
+  scheduler.advance(1);
+  assert.equal(resumes(), 1);
+});
 
-  controller.observeScroll(metrics(400));
-  scheduler.advance(750);
+test("a new manual scroll restarts the deadline and requires fresh output", () => {
+  const {scheduler, controller, resumes} = fixture();
+  controller.observeScroll(metrics(500));
+  controller.noteNewOutput();
+  scheduler.advance(9_000);
+  controller.noteUserIntent(metrics(500), () => metrics(400));
+  scheduler.flushAnimationFrame();
+  assert.equal(controller.manualScrollTop, 400);
+  scheduler.advance(10_000);
+  assert.equal(resumes(), 0);
+  controller.noteNewOutput();
+  scheduler.advance(0);
+  assert.equal(resumes(), 1);
+});
+
+for (const blocker of ["pointer", "focus"] as const) {
+  test(`${blocker} blocks auto-follow beyond the deadline without resetting scroll time`, () => {
+    const {scheduler, controller, resumes} = fixture();
+    controller.observeScroll(metrics(300));
+    if (blocker === "pointer") controller.setPointerOver(true);
+    else controller.setFocusWithin(true);
+    controller.noteNewOutput();
+    scheduler.advance(30_000);
+    assert.equal(controller.mode, "manual");
+    assert.equal(resumes(), 0);
+    if (blocker === "pointer") controller.setPointerOver(false);
+    else controller.setFocusWithin(false);
+    scheduler.advance(0);
+    assert.equal(resumes(), 1);
+  });
+}
+
+test("both hover and focus must clear; leaving early still waits for ten seconds", () => {
+  const {scheduler, controller, resumes} = fixture();
+  controller.observeScroll(metrics(300));
+  controller.setPointerOver(true);
+  controller.setFocusWithin(true);
+  controller.noteNewOutput();
+  scheduler.advance(4_000);
+  controller.setPointerOver(false);
+  assert.equal(scheduler.timers.size, 0);
+  controller.setFocusWithin(false);
+  scheduler.advance(5_999);
+  assert.equal(resumes(), 0);
+  scheduler.advance(1);
+  assert.equal(resumes(), 1);
+});
+
+test("manually reaching bottom overrides hover, focus, missing output and the timer", () => {
+  const {scheduler, controller, resumes} = fixture(false);
+  controller.observeScroll(metrics(300));
+  controller.setPointerOver(true);
+  controller.setFocusWithin(true);
   controller.observeScroll(metrics(800));
   assert.equal(controller.mode, "following");
-  assert.equal(controller.remainingManualHoldMilliseconds, 0);
+  assert.equal(resumes(), 1);
   assert.equal(scheduler.timers.size, 0);
-  assert.equal(resumed, 1);
 });
 
-test("pre-input bottom tolerance cannot override an upward manual scroll", () => {
-  const scheduler = new FakeScheduler();
-  let resumed = 0;
-  const controller = activeController(scheduler, () => {
-    resumed += 1;
+test("idle, completed and disconnected turns do not jump on old output", () => {
+  const {scheduler, controller, resumes} = fixture();
+  controller.observeScroll(metrics(300));
+  controller.noteNewOutput();
+  scheduler.advance(9_999);
+  controller.setTurnActive(false);
+  controller.noteNewOutput();
+  scheduler.advance(20_000);
+  controller.setTurnActive(true);
+  scheduler.advance(0);
+  assert.equal(controller.mode, "manual");
+  assert.equal(resumes(), 0);
+  controller.noteNewOutput();
+  scheduler.advance(0);
+  assert.equal(resumes(), 1);
+});
+
+for (const blocker of ["pointer", "focus", "idle"] as const) {
+  test(`${blocker} arriving before the queued bottom write cancels the jump`, () => {
+    const scheduler = new FakeScheduler();
+    let writes = 0;
+    const controller = new ChatFollowController(scheduler, () => {
+      controller.requestBottomPosition(() => { writes += 1; return 800; });
+    });
+    controller.setTurnActive(true);
+    controller.observeScroll(metrics(300));
+    controller.noteNewOutput();
+    scheduler.advance(10_000);
+    if (blocker === "pointer") controller.setPointerOver(true);
+    else if (blocker === "focus") controller.setFocusWithin(true);
+    else controller.setTurnActive(false);
+    scheduler.flushAnimationFrame();
+    assert.equal(writes, 0);
+    assert.equal(controller.mode, "manual");
+    assert.equal(controller.manualScrollTop, 300);
   });
+}
 
-  controller.observeScroll(metrics(700));
-  assert.equal(controller.mode, "manual");
+test("position restoration and owned scroll events do not extend the hold", () => {
+  const {scheduler, controller} = fixture();
+  controller.observeScroll(metrics(500));
+  controller.noteNewOutput();
+  scheduler.advance(6_000);
+  controller.requestPreservedPosition(target => { assert.equal(target, 500); return 480; });
+  scheduler.flushAnimationFrame();
+  controller.observeScroll(metrics(480));
+  assert.equal(controller.remainingManualHoldMilliseconds, 4_000);
+  assert.equal(controller.manualScrollTop, 480);
+  scheduler.advance(4_000);
+  assert.equal(controller.mode, "following");
+});
 
-  const nearBottomAfterResize = metrics(700, 950, 200);
-  assert.equal(isAtChatBottom(nearBottomAfterResize), true);
-  controller.noteUserIntent(
-    nearBottomAfterResize,
-    () => metrics(100, 950, 200),
-  );
-  assert.equal(controller.mode, "manual");
-  assert.equal(resumed, 0);
+test("new user input invalidates queued following and upward intent wins over tolerance", () => {
+  const scheduler = new FakeScheduler();
+  let writes = 0;
+  const controller = new ChatFollowController(scheduler, () => {
+    controller.requestBottomPosition(() => { writes += 1; return 800; });
+  });
+  controller.setTurnActive(true);
+  controller.observeScroll(metrics(300));
+  controller.noteNewOutput();
+  scheduler.advance(10_000);
+  controller.noteUserIntent(metrics(800), () => metrics(650));
+  scheduler.flushAnimationFrame();
+  assert.equal(writes, 0);
+  assert.equal(controller.manualScrollTop, 650);
+  controller.noteUserIntent(metrics(650, 900), () => metrics(100, 900));
   scheduler.flushAnimationFrame();
   assert.equal(controller.mode, "manual");
   assert.equal(controller.manualScrollTop, 100);
-  assert.equal(resumed, 0);
 });
 
-test("active-turn expiry resumes without a patch and position restoration preserves its deadline", () => {
-  const scheduler = new FakeScheduler();
-  let resumed = 0;
-  const controller = activeController(scheduler, () => {
-    resumed += 1;
-  });
-
+test("session reset cancels stale timers, frames, output and reading state", () => {
+  const {scheduler, controller, resumes} = fixture();
   controller.observeScroll(metrics(300));
-  scheduler.advance(2_000);
+  controller.noteNewOutput();
   controller.requestPreservedPosition(() => 300);
+  controller.reset();
+  scheduler.advance(20_000);
   scheduler.flushAnimationFrame();
-  assert.equal(controller.mode, "manual");
-  assert.equal(controller.remainingManualHoldMilliseconds, 3_000);
-
-  scheduler.advance(3_000);
+  assert.equal(resumes(), 0);
   assert.equal(controller.mode, "following");
-  assert.equal(resumed, 1);
+  assert.equal(scheduler.timers.size, 0);
 });
 
-test("owned scroll events are suppressed and positioning is coalesced", () => {
-  const scheduler = new FakeScheduler();
-  const controller = activeController(scheduler, () => {});
-  const applied: string[] = [];
-
-  controller.requestBottomPosition(() => {
-    applied.push("stale");
-    return 800;
-  });
-  controller.requestBottomPosition((target) => {
-    assert.equal(target, null);
-    applied.push("latest");
-    return 800;
-  });
-  assert.equal(scheduler.frames.size, 1);
-  scheduler.flushAnimationFrame();
-  assert.deepEqual(applied, ["latest"]);
-
-  controller.observeScroll(metrics(800));
-  assert.equal(controller.mode, "following");
-  controller.observeScroll(metrics(800));
-  assert.equal(controller.mode, "following");
+test("output detection ignores identical snapshots and metadata but sees new blocks and streamed text", () => {
+  const item = { kind: "text" as const, content: "hello", title: null, tool: null,
+    content_loss: {filtered:false, redacted:false, truncation:null},
+    title_loss: {filtered:false, redacted:false, truncation:null}, success:null,
+    usage:null, estimated_cost:null, duration_label:null };
+  const before = {blocks: [item], omitted_before:0, truncated:false};
+  assert.equal(hasNewChatOutput(before, structuredClone(before)), false);
+  assert.equal(hasNewChatOutput(before, {...before, blocks:[{...item, duration_label:"1s"}]}), false);
+  assert.equal(hasNewChatOutput(before, {...before, blocks:[{...item, content:"hello world"}]}), true);
+  assert.equal(hasNewChatOutput(before, {...before, blocks:[item,item]}), true);
+  assert.equal(hasNewChatOutput(before, {...before, blocks:[]}), false);
 });
 
-test("new input invalidates a queued bottom write", () => {
-  const scheduler = new FakeScheduler();
-  let bottomWrites = 0;
-  const controller: ChatFollowController = activeController(scheduler, () => {
-    controller.requestBottomPosition(() => {
-      bottomWrites += 1;
-      return 800;
-    });
-  });
-
-  controller.observeScroll(metrics(250));
-  scheduler.advance(5_000);
-  assert.equal(controller.mode, "following");
-  assert.equal(scheduler.frames.size, 1);
-
-  controller.noteUserIntent(metrics(800), () => metrics(650));
+test("following coalesces writes and ignores its own scroll events", () => {
+  const {scheduler, controller} = fixture();
+  const writes: string[] = [];
+  controller.requestBottomPosition(() => { writes.push("old"); return 800; });
+  controller.requestBottomPosition(() => { writes.push("latest"); return 800; });
   assert.equal(scheduler.frames.size, 1);
   scheduler.flushAnimationFrame();
-  assert.equal(bottomWrites, 0);
-  assert.equal(controller.mode, "manual");
-  assert.equal(controller.manualScrollTop, 650);
+  controller.observeScroll(metrics(800));
+  assert.deepEqual(writes, ["latest"]);
+  assert.equal(controller.mode, "following");
 });
 
 test("input probes distinguish user movement from content growth", () => {
-  const scheduler = new FakeScheduler();
-  let resumeRequests = 0;
-  const controller = activeController(scheduler, () => {
-    resumeRequests += 1;
-  });
-
-  controller.noteUserIntent(metrics(800), () => metrics(800, 1_200, 200));
+  const {scheduler, controller, resumes} = fixture();
+  controller.noteUserIntent(metrics(800), () => metrics(800, 1_200));
   scheduler.flushAnimationFrame();
   assert.equal(controller.mode, "following");
-  assert.equal(resumeRequests, 1);
-
-  controller.noteUserIntent(metrics(800), () => metrics(700));
+  assert.equal(resumes(), 1);
+  controller.noteUserIntent(metrics(800), () => metrics(600));
   scheduler.flushAnimationFrame();
   assert.equal(controller.mode, "manual");
-  assert.equal(controller.manualScrollTop, 700);
-});
-
-test("session or authentication reset cancels stale timers and frames", () => {
-  const scheduler = new FakeScheduler();
-  let resumed = 0;
-  const controller = activeController(scheduler, () => {
-    resumed += 1;
-  });
-
-  controller.observeScroll(metrics(200));
-  controller.requestPreservedPosition(() => 200);
-  assert.equal(scheduler.timers.size, 1);
-  assert.equal(scheduler.frames.size, 1);
-  scheduler.advance(1_000);
-
-  controller.reset();
-  assert.equal(controller.mode, "following");
-  assert.equal(controller.remainingManualHoldMilliseconds, 0);
-  assert.equal(scheduler.timers.size, 0);
-  assert.equal(scheduler.frames.size, 0);
-  scheduler.advance(10_000);
-  scheduler.flushAnimationFrame();
-  assert.equal(resumed, 0);
-});
-
-
-test("idle history stays at the reader's position beyond five seconds and status patches", () => {
-  const scheduler = new FakeScheduler();
-  let resumed = 0;
-  const controller = new ChatFollowController(scheduler, () => { resumed += 1; });
-  controller.observeScroll(metrics(300));
-  for (let tick = 0; tick < 10; tick++) {
-    scheduler.advance(1_000);
-    controller.setTurnActive(false);
-    controller.requestPreservedPosition(target => {
-      assert.equal(target, 300);
-      return target;
-    });
-    scheduler.flushAnimationFrame();
-  }
-  assert.equal(controller.mode, "manual");
-  assert.equal(controller.manualScrollTop, 300);
-  assert.equal(scheduler.timers.size, 0);
-  assert.equal(resumed, 0);
-  controller.observeScroll(metrics(800));
-  assert.equal(controller.mode, "following");
-  assert.equal(resumed, 1);
-});
-
-test("finishing or disconnecting a turn cancels the pending follow deadline", () => {
-  const scheduler = new FakeScheduler();
-  let resumed = 0;
-  const controller = activeController(scheduler, () => { resumed += 1; });
-  controller.observeScroll(metrics(250));
-  scheduler.advance(4_999);
-  controller.setTurnActive(false);
-  scheduler.advance(10_000);
-  assert.equal(controller.mode, "manual");
-  assert.equal(controller.manualScrollTop, 250);
-  assert.equal(controller.remainingManualHoldMilliseconds, 0);
-  assert.equal(scheduler.timers.size, 0);
-  assert.equal(resumed, 0);
-
-  controller.setTurnActive(true);
-  scheduler.advance(4_999);
-  controller.setTurnActive(true);
-  assert.equal(controller.mode, "manual");
-  scheduler.advance(1);
-  assert.equal(controller.mode, "following");
-  assert.equal(resumed, 1);
+  assert.equal(controller.manualScrollTop, 600);
 });
