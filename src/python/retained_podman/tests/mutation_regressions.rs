@@ -77,6 +77,14 @@ fn podman_legacy_retained_supervisor_is_attested() {
     fixture["Config"]["Entrypoint"] = CONTAINER_ENTRYPOINT.into();
     fixture["Config"]["StopSignal"] = 15.into();
     fixture["Config"]["CreateCommand"][0] = config.podman.to_str().unwrap().into();
+    fixture["Config"]["Annotations"]
+        .as_object_mut()
+        .unwrap()
+        .remove("io.podman.annotations.pids-limit");
+    fixture["Config"]["Annotations"]
+        .as_object_mut()
+        .unwrap()
+        .remove("io.podman.annotations.userns");
     fixture["HostConfig"]
         .as_object_mut()
         .unwrap()
@@ -100,12 +108,46 @@ fn podman_legacy_inspection_keeps_signal_and_annotation_checks() {
     fixture["Config"]["Entrypoint"] = json!("python3");
     fixture["Config"]["StopSignal"] = json!(15);
     fixture["Config"]["CreateCommand"][0] = config.podman.to_str().unwrap().into();
+    fixture["Config"]["Annotations"]
+        .as_object_mut()
+        .unwrap()
+        .remove("io.podman.annotations.pids-limit");
+    fixture["Config"]["Annotations"]
+        .as_object_mut()
+        .unwrap()
+        .remove("io.podman.annotations.userns");
     fixture["HostConfig"]
         .as_object_mut()
         .unwrap()
         .remove("Annotations");
     let inspection: ContainerInspection = serde_json::from_value(fixture.clone()).unwrap();
     validate_transient_inspection(&config, &id, &inspection).unwrap();
+
+    // Missing legacy metadata never excuses a changed enforced limit or
+    // namespace identity, or conflicting metadata that is actually present.
+    for (field, value) in [("PidsLimit", json!(0)), ("UsernsMode", json!("host"))] {
+        let mut changed = fixture.clone();
+        changed["HostConfig"][field] = value;
+        let inspection: ContainerInspection = serde_json::from_value(changed).unwrap();
+        assert!(validate_transient_inspection(&config, &id, &inspection).is_err());
+    }
+    let mut changed = fixture.clone();
+    changed["HostConfig"]["IDMappings"]["UidMap"] = json!(["0:0:65536"]);
+    let inspection: ContainerInspection = serde_json::from_value(changed).unwrap();
+    assert!(validate_transient_inspection(&config, &id, &inspection).is_err());
+    for (key, value) in [("pids-limit", "0"), ("userns", "host")] {
+        let mut changed = fixture.clone();
+        changed["Config"]["Annotations"][format!("io.podman.annotations.{key}")] = json!(value);
+        let inspection: ContainerInspection = serde_json::from_value(changed).unwrap();
+        assert!(validate_transient_inspection(&config, &id, &inspection).is_err());
+    }
+    let mut modern = serde_json::to_value(matching_transient_inspection(&config, &id)).unwrap();
+    modern["Config"]["Annotations"]
+        .as_object_mut()
+        .unwrap()
+        .remove("io.podman.annotations.pids-limit");
+    let inspection: ContainerInspection = serde_json::from_value(modern).unwrap();
+    assert!(validate_transient_inspection(&config, &id, &inspection).is_err());
 
     for program in ["/tmp/podman", "/untrusted/bin/podman", "", "sh"] {
         let mut value = fixture.clone();

@@ -233,9 +233,13 @@ impl TransientInspectionAttestation<'_> {
                 "keep-id".to_string(),
             ),
         ]);
-        validate_podman_annotations(&self.inspection.config.annotations, &expected_annotations)?;
+        validate_podman_annotations(
+            &self.inspection.config.annotations,
+            &expected_annotations,
+            self.inspection.host_config.annotations.is_none(),
+        )?;
         if let Some(annotations) = &self.inspection.host_config.annotations {
-            validate_podman_annotations(annotations, &expected_annotations)?;
+            validate_podman_annotations(annotations, &expected_annotations, false)?;
         }
         let host = &self.inspection.host_config;
         let expected_network = match self.config.network {
@@ -633,9 +637,13 @@ impl RetainedInspectionAttestation<'_> {
                 "keep-id".to_string(),
             ),
         ]);
-        validate_podman_annotations(&self.inspection.config.annotations, &expected_annotations)?;
+        validate_podman_annotations(
+            &self.inspection.config.annotations,
+            &expected_annotations,
+            self.inspection.host_config.annotations.is_none(),
+        )?;
         if let Some(annotations) = &self.inspection.host_config.annotations {
-            validate_podman_annotations(annotations, &expected_annotations)?;
+            validate_podman_annotations(annotations, &expected_annotations, false)?;
         }
 
         let host = &self.inspection.host_config;
@@ -760,8 +768,21 @@ fn create_command_matches(observed: &[String], expected: &[String], podman: &Pat
 fn validate_podman_annotations(
     observed: &BTreeMap<String, String>,
     expected: &BTreeMap<String, String>,
+    allow_legacy_omissions: bool,
 ) -> Result<(), String> {
     for (key, value) in expected {
+        // Podman 4 has neither HostConfig.Annotations nor these two newer
+        // metadata copies. The actual PID limit, private user namespace and
+        // exact UID/GID mappings are still checked separately for every format.
+        if allow_legacy_omissions
+            && !observed.contains_key(key)
+            && matches!(
+                key.as_str(),
+                "io.podman.annotations.pids-limit" | "io.podman.annotations.userns"
+            )
+        {
+            continue;
+        }
         if observed.get(key) != Some(value) {
             return Err(format!(
                 "retained container Podman annotation {key} changed"
