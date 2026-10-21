@@ -12,6 +12,9 @@ Standalone and embedded browser modes reuse the existing remote-mode
 A local transport connects that UI to WASM through its existing typed commands and
 snapshots. The native remote controller continues to use its WebSocket transport.
 
+See the [architecture diagrams](docs/architecture.md) for isolation boundaries,
+remote-control flow, and browser-only execution, storage, and virtual sites.
+
 The browser footer shows endpoint-reported input/output tokens and measured turn
 time. Expand **Stats** for cache and reasoning counts, turn/session totals, request
 counts, model response time, and tool time. Missing or invalid usage is **Not

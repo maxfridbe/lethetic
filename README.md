@@ -136,6 +136,7 @@ file sharing, TLS, authentication and service operation.
 
 | Topic | Documentation |
 | --- | --- |
+| Isolation modes, remote control, and browser-only diagrams | [Architecture diagrams](docs/architecture.md) |
 | Browser UI, files, saved sessions and embedding | [Integration guide](integration.md) |
 | Native configuration, providers and model switching | [Native reference](docs/native-reference.md#configuration) |
 | Native C# runspace, SDK builds, files and permissions | [Native .NET mode](docs/dotnet-native.md) |
