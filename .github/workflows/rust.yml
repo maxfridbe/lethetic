@@ -28,7 +28,7 @@ jobs:
           cargo clippy --workspace --all-targets --locked -- -D warnings
           cargo clippy -p lethetic-wasm --target wasm32-unknown-unknown --locked -- -D warnings
       - name: Native and WASM unit tests, local integration tests
-        run: python3 scripts/test_rust.py
+        run: python3 scripts/ci_run.py python3 scripts/test_rust.py
       - name: Build isolated C# runtime (no host SDK)
         run: |
           sudo apt-get update
@@ -37,7 +37,7 @@ jobs:
       - name: Isolated C# runspace integration
         env:
           LETHETIC_DOTNET: /does-not-exist/no-host-sdk
-        run: cargo test --test test_dotnet_native --locked -- --include-ignored
+        run: python3 scripts/ci_run.py cargo test --test test_dotnet_native --locked -- --include-ignored
       - name: Source size policy
         run: |
           python3 scripts/test_check_source_lines.py
