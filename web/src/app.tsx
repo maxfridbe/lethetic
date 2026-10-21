@@ -1033,6 +1033,10 @@ export class SpaApplication implements BrowserTransportEvents {
 
   #render(): void {
     const snapshot = this.#remote.view;
+    this.#chatFollow.setTurnActive(
+      this.#remote.phase === "live" &&
+      (snapshot?.activity.kind === "processing" || snapshot?.activity.kind === "executing_tool"),
+    );
     const chatBeforePatch = globalThis.document.getElementById("chat-scroll");
     const anchor =
       this.#chatFollow.mode === "manual" &&

@@ -52,6 +52,7 @@ export class ChatFollowController {
   readonly #scheduler: ChatFollowScheduler;
   readonly #onResumeFollowing: () => void;
   #mode: ChatFollowMode = "following";
+  #turnActive = false;
   #manualScrollTop: number | null = null;
   #manualDeadline: number | null = null;
   #manualTimer: number | null = null;
@@ -83,10 +84,23 @@ export class ChatFollowController {
     return Math.max(0, this.#manualDeadline - this.#scheduler.now());
   }
 
+  setTurnActive(active: boolean): void {
+    if (active === this.#turnActive) {
+      return;
+    }
+    this.#turnActive = active;
+    this.#clearManualTimer();
+    this.#manualDeadline = null;
+    if (active && this.#mode === "manual" && this.#manualScrollTop !== null) {
+      this.#startManualTimer();
+    }
+  }
+
   reset(): void {
     this.#clearManualTimer();
     this.#cancelFrame();
     this.#mode = "following";
+    this.#turnActive = false;
     this.#manualScrollTop = null;
     this.#manualDeadline = null;
     this.#ownedScrollTop = null;
@@ -238,6 +252,14 @@ export class ChatFollowController {
     this.#intentStartTop = null;
     this.#mode = "manual";
     this.#manualScrollTop = Math.max(0, scrollTop);
+    this.#clearManualTimer();
+    this.#manualDeadline = null;
+    if (this.#turnActive) {
+      this.#startManualTimer();
+    }
+  }
+
+  #startManualTimer(): void {
     this.#manualDeadline =
       this.#scheduler.now() + CHAT_FOLLOW_HOLD_MILLISECONDS;
     this.#clearManualTimer();
@@ -249,7 +271,7 @@ export class ChatFollowController {
 
   #manualTimerExpired(): void {
     this.#manualTimer = null;
-    if (this.#mode !== "manual" || this.#manualDeadline === null) {
+    if (!this.#turnActive || this.#mode !== "manual" || this.#manualDeadline === null) {
       return;
     }
     const remaining = this.#manualDeadline - this.#scheduler.now();

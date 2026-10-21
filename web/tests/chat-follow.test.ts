@@ -81,6 +81,12 @@ function metrics(
   return { scrollTop, scrollHeight, clientHeight };
 }
 
+function activeController(scheduler: FakeScheduler, onResume: () => void): ChatFollowController {
+  const controller = new ChatFollowController(scheduler, onResume);
+  controller.setTurnActive(true);
+  return controller;
+}
+
 test("bottom detection uses one exported tolerance", () => {
   assert.equal(CHAT_BOTTOM_TOLERANCE_PX, 56);
   assert.equal(isAtChatBottom(metrics(744)), true);
@@ -92,7 +98,7 @@ test("bottom detection uses one exported tolerance", () => {
 test("manual activity replaces one five-second inactivity deadline", () => {
   const scheduler = new FakeScheduler();
   let resumed = 0;
-  const controller = new ChatFollowController(scheduler, () => {
+  const controller = activeController(scheduler, () => {
     resumed += 1;
   });
 
@@ -134,7 +140,7 @@ test("manual activity replaces one five-second inactivity deadline", () => {
 test("manually reaching the bottom resumes immediately", () => {
   const scheduler = new FakeScheduler();
   let resumed = 0;
-  const controller = new ChatFollowController(scheduler, () => {
+  const controller = activeController(scheduler, () => {
     resumed += 1;
   });
 
@@ -150,7 +156,7 @@ test("manually reaching the bottom resumes immediately", () => {
 test("pre-input bottom tolerance cannot override an upward manual scroll", () => {
   const scheduler = new FakeScheduler();
   let resumed = 0;
-  const controller = new ChatFollowController(scheduler, () => {
+  const controller = activeController(scheduler, () => {
     resumed += 1;
   });
 
@@ -171,10 +177,10 @@ test("pre-input bottom tolerance cannot override an upward manual scroll", () =>
   assert.equal(resumed, 0);
 });
 
-test("expiry resumes without a state patch and ordinary reconnect work preserves it", () => {
+test("active-turn expiry resumes without a patch and position restoration preserves its deadline", () => {
   const scheduler = new FakeScheduler();
   let resumed = 0;
-  const controller = new ChatFollowController(scheduler, () => {
+  const controller = activeController(scheduler, () => {
     resumed += 1;
   });
 
@@ -192,7 +198,7 @@ test("expiry resumes without a state patch and ordinary reconnect work preserves
 
 test("owned scroll events are suppressed and positioning is coalesced", () => {
   const scheduler = new FakeScheduler();
-  const controller = new ChatFollowController(scheduler, () => {});
+  const controller = activeController(scheduler, () => {});
   const applied: string[] = [];
 
   controller.requestBottomPosition(() => {
@@ -217,7 +223,7 @@ test("owned scroll events are suppressed and positioning is coalesced", () => {
 test("new input invalidates a queued bottom write", () => {
   const scheduler = new FakeScheduler();
   let bottomWrites = 0;
-  const controller: ChatFollowController = new ChatFollowController(scheduler, () => {
+  const controller: ChatFollowController = activeController(scheduler, () => {
     controller.requestBottomPosition(() => {
       bottomWrites += 1;
       return 800;
@@ -240,7 +246,7 @@ test("new input invalidates a queued bottom write", () => {
 test("input probes distinguish user movement from content growth", () => {
   const scheduler = new FakeScheduler();
   let resumeRequests = 0;
-  const controller = new ChatFollowController(scheduler, () => {
+  const controller = activeController(scheduler, () => {
     resumeRequests += 1;
   });
 
@@ -258,7 +264,7 @@ test("input probes distinguish user movement from content growth", () => {
 test("session or authentication reset cancels stale timers and frames", () => {
   const scheduler = new FakeScheduler();
   let resumed = 0;
-  const controller = new ChatFollowController(scheduler, () => {
+  const controller = activeController(scheduler, () => {
     resumed += 1;
   });
 
@@ -276,4 +282,51 @@ test("session or authentication reset cancels stale timers and frames", () => {
   scheduler.advance(10_000);
   scheduler.flushAnimationFrame();
   assert.equal(resumed, 0);
+});
+
+
+test("idle history stays at the reader's position beyond five seconds and status patches", () => {
+  const scheduler = new FakeScheduler();
+  let resumed = 0;
+  const controller = new ChatFollowController(scheduler, () => { resumed += 1; });
+  controller.observeScroll(metrics(300));
+  for (let tick = 0; tick < 10; tick++) {
+    scheduler.advance(1_000);
+    controller.setTurnActive(false);
+    controller.requestPreservedPosition(target => {
+      assert.equal(target, 300);
+      return target;
+    });
+    scheduler.flushAnimationFrame();
+  }
+  assert.equal(controller.mode, "manual");
+  assert.equal(controller.manualScrollTop, 300);
+  assert.equal(scheduler.timers.size, 0);
+  assert.equal(resumed, 0);
+  controller.observeScroll(metrics(800));
+  assert.equal(controller.mode, "following");
+  assert.equal(resumed, 1);
+});
+
+test("finishing or disconnecting a turn cancels the pending follow deadline", () => {
+  const scheduler = new FakeScheduler();
+  let resumed = 0;
+  const controller = activeController(scheduler, () => { resumed += 1; });
+  controller.observeScroll(metrics(250));
+  scheduler.advance(4_999);
+  controller.setTurnActive(false);
+  scheduler.advance(10_000);
+  assert.equal(controller.mode, "manual");
+  assert.equal(controller.manualScrollTop, 250);
+  assert.equal(controller.remainingManualHoldMilliseconds, 0);
+  assert.equal(scheduler.timers.size, 0);
+  assert.equal(resumed, 0);
+
+  controller.setTurnActive(true);
+  scheduler.advance(4_999);
+  controller.setTurnActive(true);
+  assert.equal(controller.mode, "manual");
+  scheduler.advance(1);
+  assert.equal(controller.mode, "following");
+  assert.equal(resumed, 1);
 });
