@@ -22,7 +22,7 @@ pub use model_catalog::ModelCatalogState;
 pub use remote_control::{RcInfoState, RcResumeOffer, RcSetupStage, RcSetupState};
 pub use session_state::{
     SessionDirectoryBinding, SessionSettings, SessionState, SessionWorkspaceBinding,
-    describe_python_policy, normalize_session_display_name,
+    describe_python_policy, normalize_session_display_name, read_session_file,
 };
 pub use skills_panel::{SkillRow, SkillsPanel};
 pub use tool_calls::{

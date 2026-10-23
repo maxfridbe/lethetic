@@ -103,14 +103,10 @@ pub(crate) fn handle_large_output_classified_in(
     let total_bytes = result.len();
     let excerpt = bounded_head_tail(&result);
     let file_name = large_output_file_name(id, result.as_bytes());
-    match crate::platform::atomic_write_nofollow(
-        workspace_root,
-        &[".lethetic", "tool_responses"],
-        &file_name,
-        result.as_bytes(),
-        0o600,
-    ) {
-        Ok(file_path) => {
+    let directory = workspace_root.join(".lethetic/tool_responses");
+    match crate::storage::native::write(&directory, &file_name, result.as_bytes()) {
+        Ok(()) => {
+            let file_path = directory.join(&file_name);
             let display_path = file_path.display();
             LargeOutputHandling {
                 context: format!(
@@ -382,7 +378,10 @@ mod tests {
             .path()
             .join(".lethetic/tool_responses")
             .join(large_output_file_name("host-call", output.as_bytes()));
-        assert_eq!(std::fs::read_to_string(stored).unwrap(), output);
+        assert_eq!(
+            crate::storage::native::read_text_path(&stored).unwrap(),
+            output
+        );
     }
 
     #[test]
@@ -417,11 +416,11 @@ mod tests {
         assert!(second_presented.context.contains(&second_name));
         let responses = workspace.path().join(".lethetic/tool_responses");
         assert_eq!(
-            std::fs::read_to_string(responses.join(first_name)).unwrap(),
+            crate::storage::native::read_text_path(&responses.join(first_name)).unwrap(),
             first
         );
         assert_eq!(
-            std::fs::read_to_string(responses.join(second_name)).unwrap(),
+            crate::storage::native::read_text_path(&responses.join(second_name)).unwrap(),
             second
         );
     }

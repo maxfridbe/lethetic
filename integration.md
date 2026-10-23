@@ -238,15 +238,18 @@ file scripts, forms, external resources and navigation are disabled. A nonce-sco
 trusted navigation bridge handles preview arrows and swipes; it has no access to the host. Download the file
 to use it elsewhere. This is a static preview, not a JavaScript app runner.
 
-Files are **unencrypted**. The Pages app stores sessions in the IndexedDB database
-`lethetic.sessions.v2`, with file contents stored as raw binary bytes. Each workspace
+Files are **unencrypted**. The Pages app embeds Turso in the shared Rust/WASM module and stores a separate SQLite-compatible
+database image per session in IndexedDB `lethetic.sessions.v2`. Messages, tool calls, transcript blocks and usage are normalized into queryable SQL tables ([schema and SQL examples](docs/storage.md#relational-schema-and-queries)), with file contents stored as raw
+binary BLOBs. Sessions offers a **Database (.db)** download. See [embedded storage](docs/storage.md)
+for the schema, migration, and extraction examples. Each workspace
 supports **100 files, 256 folders, 16 MiB per file and 64 MiB total**. The shared
 session snapshot budget is 256 MiB (including base64 used in memory/runtime snapshots
 and chat history); the browser's disk quota may be lower. Runtime snapshots retain
 base64 for compatibility; yEnc is not used because its low overhead assumes an
 8-bit transport, while JSON/localStorage introduce escaping and Unicode overhead.
 
-Existing `lethetic.sessions.v1` localStorage sessions migrate before the app mounts.
+Existing `lethetic.sessions.v1` localStorage sessions and older binary IndexedDB
+records migrate to Turso before the app mounts.
 The migrated record is removed only after the IndexedDB transaction commits. If an
 IndexedDB database already exists, a later legacy record from an older client is
 left untouched rather than overwritten or deleted. A failed
@@ -988,7 +991,7 @@ files and session settings under the standalone page's CSP and project subpath.
 
 ### Binary persistence for embedded hosts
 
-The Pages application enables IndexedDB automatically. Embedded hosts opt in before
+The Pages application enables embedded Turso with IndexedDB durability automatically. Embedded hosts opt in before
 mounting (use a distinct database name for independent embedded applications):
 
 ```javascript

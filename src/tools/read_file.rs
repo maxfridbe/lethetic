@@ -1,7 +1,7 @@
 use super::icons;
 use crate::tools::{FunctionDefinition, Tool};
 use serde_json::json;
-use std::fs;
+
 use std::path::Path;
 
 pub fn get_definition() -> Tool {
@@ -57,7 +57,7 @@ pub async fn execute(
         biased;
         _ = cancellation_token.cancelled() => "[Operation Cancelled by User]".to_string(),
         res = async {
-            match fs::read_to_string(&full_path) {
+            match crate::storage::native::read_text_path(&full_path) {
                 Ok(content) => {
                     let ext = full_path.extension().and_then(|e| e.to_str()).unwrap_or("");
                     let lang = match ext {

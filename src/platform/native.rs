@@ -202,6 +202,7 @@ pub(crate) fn remove_file_nofollow(
 }
 
 /// Appends bytes to a trusted regular file without following any relative symlink.
+#[cfg(test)]
 pub(crate) fn append_file_nofollow(
     root: &Path,
     directories: &[&str],
@@ -519,7 +520,7 @@ fn remove_file_nofollow_impl(
     Ok(true)
 }
 
-#[cfg(unix)]
+#[cfg(all(test, unix))]
 fn append_file_nofollow_impl(
     root: &Path,
     directories: &[&str],
@@ -570,22 +571,29 @@ fn open_lock_file_nofollow_impl(
     for component in directories {
         directory = open_or_create_child_directory(&directory, component)?;
     }
-    let fd = rustix::fs::openat(
+    let flags = OFlags::RDWR | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let (fd, created) = match rustix::fs::openat(
         &directory,
         file_name,
-        OFlags::RDWR | OFlags::CREATE | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        flags | OFlags::CREATE | OFlags::EXCL,
         Mode::from_raw_mode(mode),
-    )
-    .map_err(|error| {
-        if error == rustix::io::Errno::LOOP {
-            std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
-                format!("refusing symlink lock destination {file_name:?}"),
-            )
-        } else {
-            errno_to_io(error)
-        }
-    })?;
+    ) {
+        Ok(fd) => (fd, true),
+        Err(error) if error == rustix::io::Errno::EXIST => (
+            rustix::fs::openat(&directory, file_name, flags, Mode::empty()).map_err(|error| {
+                if error == rustix::io::Errno::LOOP {
+                    std::io::Error::new(
+                        std::io::ErrorKind::PermissionDenied,
+                        format!("refusing symlink lock destination {file_name:?}"),
+                    )
+                } else {
+                    errno_to_io(error)
+                }
+            })?,
+            false,
+        ),
+        Err(error) => return Err(errno_to_io(error)),
+    };
     let stat = rustix::fs::fstat(&fd).map_err(errno_to_io)?;
     if !FileType::from_raw_mode(stat.st_mode).is_file()
         || stat.st_uid != rustix::process::geteuid().as_raw()
@@ -596,8 +604,13 @@ fn open_lock_file_nofollow_impl(
             format!("refusing untrusted lock destination {file_name:?}"),
         ));
     }
-    rustix::fs::fchmod(&fd, Mode::from_raw_mode(mode)).map_err(errno_to_io)?;
-    rustix::fs::fsync(&directory).map_err(errno_to_io)?;
+    if stat.st_mode & 0o7777 != mode {
+        rustix::fs::fchmod(&fd, Mode::from_raw_mode(mode)).map_err(errno_to_io)?;
+    }
+    // An existing lock/database file does not change the directory entry.
+    if created {
+        rustix::fs::fsync(&directory).map_err(errno_to_io)?;
+    }
     Ok(std::fs::File::from(fd))
 }
 
@@ -1158,7 +1171,7 @@ fn chmod_directory_handle<Fd: std::os::fd::AsFd>(directory: &Fd, mode: u32) -> s
     let proc_path = PathBuf::from(format!("/proc/self/fd/{}", directory.as_fd().as_raw_fd()));
     std::fs::set_permissions(proc_path, std::fs::Permissions::from_mode(mode))?;
     let stat = rustix::fs::fstat(directory).map_err(errno_to_io)?;
-    if stat.st_mode & 0o777 != mode {
+    if stat.st_mode & 0o7777 != mode {
         return Err(std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
             "directory permission repair did not affect the opened inode",
@@ -1352,7 +1365,7 @@ fn replace_file_nonunix(source: &Path, destination: &Path) -> std::io::Result<()
     std::fs::rename(source, destination)
 }
 
-#[cfg(not(unix))]
+#[cfg(all(test, not(unix)))]
 fn append_file_nofollow_impl(
     root: &Path,
     directories: &[&str],

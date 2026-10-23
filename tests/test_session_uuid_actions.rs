@@ -118,9 +118,11 @@ async fn session_manager_actions_use_registered_uuids() {
     };
 
     let copied_binding_path = create_private_session_dir("session_20991231_binding_copy");
-    std::fs::copy(
-        std::path::Path::new(&first_path).join("session_state.json"),
+    std::fs::write(
         copied_binding_path.join("session_state.json"),
+        lethetic::app::read_session_file(&first_path, "session_state.json")
+            .unwrap()
+            .unwrap(),
     )
     .unwrap();
     app.refresh_session_list();

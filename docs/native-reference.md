@@ -175,7 +175,7 @@ The model receives exactly one tool:
 |---|---|
 | `python` | Executes one notebook-style cell. Imports, variables, `_`, and `os.chdir()` persist for the active worker. Captures stdout/stderr, the final expression `repr`, and tracebacks. |
 
-Task state remains host-backed at `.lethetic/todos.json`, but Python-only mode accesses it through `import lethetic_todo` and the module's revision-checked `get()` / `set(...)` API. General mode may continue to use the legacy `todowrite` model tool.
+Task state remains host-backed at the `todos.json` record in `.lethetic/lethetic.db`, but Python-only mode accesses it through `import lethetic_todo` and the module's revision-checked `get()` / `set(...)` API. General mode may continue to use the legacy `todowrite` model tool.
 
 For a resolved Python-only policy, Lethetic appends noneditable effective-policy guidance after the selected prompt template. It declares `python` as the only model tool; `lethetic_todo` is an imported host module and `lethetic-pkg` is an in-Python subprocess helper, not another model tool. Package-helper instructions appear only for the exact valid retained Podman/Nonlocal/read-write/session-package/no-extra-grant route. Every other or invalid policy explicitly advertises no Lethetic-managed package path. Operational runtime/container identities are never added to model context.
 
@@ -248,7 +248,7 @@ python_runtime:
     podman_image: docker.io/library/python:3.13-slim
 ```
 
-> The sandbox applies to the Python process, not Lethetic’s LLM HTTP transport. `lethetic_todo` uses only a typed host capability for `.lethetic/todos.json`; it is not a filesystem, command, or network bridge. Namespace/container restrictions are not a VM and do not guarantee CPU, memory, time, or kernel isolation. Broad path grants and Full network reduce isolation.
+> The sandbox applies to the Python process, not Lethetic’s LLM HTTP transport. `lethetic_todo` uses only a typed host capability for the `todos.json` record in `.lethetic/lethetic.db`; it is not a filesystem, command, or network bridge. Namespace/container restrictions are not a VM and do not guarantee CPU, memory, time, or kernel isolation. Broad path grants and Full network reduce isolation.
 
 Headless `--command` cannot open the policy wizard. Any effective retained Nonlocal policy, including a YAML/global selection, must choose one exact durable identity before provider work and use a positive timeout:
 
@@ -396,7 +396,7 @@ All other model-originated tool names are rejected at dispatch in Python-only mo
 | Tool | Description |
 |---|---|
 | `repo_overview` | Ecosystem detection, 2-level dir tree, README preview, entry points. |
-| `todowrite` | Write a structured todo list (status + priority) to `.lethetic/todos.json`. F9 shows it live in a right-hand pane. |
+| `todowrite` | Write a structured todo list (status + priority) to the `todos.json` record in `.lethetic/lethetic.db`. F9 shows it live in a right-hand pane. |
 | `background_task` | Run a long command in the background and keep working: `start` returns an id (`bg1`…); `status`, `wait`, `output`, `stop`, `list` follow it. Progress comes from percentages in the output, a `progress_pattern` regex, or a growing `watch_path` (with optional `expected_bytes`). Full output is logged to `.lethetic/background/`. Not offered to headless sub-agents. |
 | `skill` | Load an enabled skill's instructions by name (offered only when a skill is enabled). |
 | `task` | Spawn an autonomous sub-agent with all tools except `task` and `ask_the_user`. 5-minute timeout; sub-agent progress streamed to parent UI. |
@@ -459,7 +459,7 @@ When a model request fails for a transient reason, Lethetic discards any partial
 
 ### Plan tracking
 
-Every tool call except `todowrite` carries a required `todo_id` naming the todo item it serves. After each call the harness checks `.lethetic/todos.json` and appends a **HARNESS WARNING** to the tool result when the id is missing, unknown, or already completed/cancelled, so the model keeps its plan accurate. `todowrite` items need ids (missing ones are assigned `t1`, `t2`, …). The current list travels with the latest message as a `<todos>` block that names each item's id, so the model can reference items even after compaction, and F9 shows it. Sub-agents see the same list.
+Every tool call except `todowrite` carries a required `todo_id` naming the todo item it serves. After each call the harness checks the `todos.json` record in `.lethetic/lethetic.db` and appends a **HARNESS WARNING** to the tool result when the id is missing, unknown, or already completed/cancelled, so the model keeps its plan accurate. `todowrite` items need ids (missing ones are assigned `t1`, `t2`, …). The current list travels with the latest message as a `<todos>` block that names each item's id, so the model can reference items even after compaction, and F9 shows it. Sub-agents see the same list.
 
 ### Timing
 
@@ -522,7 +522,7 @@ These keys describe the terminal UI. Browser palette accelerators, editable-targ
 |---|---|
 | Hotkeys | Show key reference |
 | Themes | Pick from 30 built-in themes |
-| Input History | Browse and restore previous prompts (shared across sessions of a project via `.lethetic/history.json`) |
+| Input History | Browse and restore previous prompts (shared across sessions of a project via the `history.json` record in `.lethetic/lethetic.db`) |
 | Loop Detection | Cycle detection mode (Off / Block limit only / NGram / Phrase / Combined / Combined + block limit) |
 | System Prompt | Edit or switch prompt template |
 | Clear UI (Keep Context) | Clear display, keep context |

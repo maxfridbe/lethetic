@@ -31,13 +31,15 @@ reasoning; readable thinking appears when the model supplies it.
   generated files appear after execution for preview, copy, and download.
 - Keep `tasks.md` open as a Markdown preview to follow the model's progress notes.
 - Open **Sessions** to resume a chat or **Export debug (.tar.gz)** to download its
-  transcript, diagnostics, and files.
+  transcript, diagnostics, and files. **Database (.db)** downloads the selected
+  chat and files as a SQLite-compatible database.
 - Use [latest session](https://maxfridbe.github.io/lethetic/#/latest) or
   [new session](https://maxfridbe.github.io/lethetic/#/new) links. A session URL refers
   to local data; it does not share that chat with another device.
 
 Chats, files, and settings survive refresh when browser storage is available;
-worker variables restart. Chats and files are unencrypted on your device. The
+worker variables restart. The shared WASM module embeds Turso; IndexedDB holds
+a separate database image per session. See [storage and migration](../storage.md). Chats and files are unencrypted on your device. The
 hosted app keeps API keys in tab-scoped sessionStorage, outside saved chats.
 
 ## Adjust the run

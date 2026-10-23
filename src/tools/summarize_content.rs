@@ -3,7 +3,7 @@ use super::icons;
 use crate::client::{RequestStartedHook, summarize_llm_accounted_with_hook};
 use crate::tools::{FunctionDefinition, Tool};
 use serde_json::json;
-use std::fs;
+
 use std::path::Path;
 
 pub fn get_definition() -> Tool {
@@ -75,7 +75,7 @@ pub async fn execute_with_hook(
     let raw_content = if let Some(p) = path {
         let p = p.trim_matches(|c| c == '\'' || c == '"');
         let full_path = Path::new(cwd).join(p);
-        match fs::read_to_string(&full_path) {
+        match crate::storage::native::read_text_path(&full_path) {
             Ok(c) => c,
             Err(e) => return format!("ERROR: Failed to read file {}: {}", full_path.display(), e),
         }

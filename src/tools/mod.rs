@@ -1466,7 +1466,7 @@ mod tests {
         .await;
 
         assert!(!execution.is_error, "{}", execution.output);
-        assert!(nested.join(".lethetic/todos.json").is_file());
+        assert!(crate::storage::native::read_path(&nested.join(".lethetic/todos.json")).is_ok());
         assert!(!workspace.join(".lethetic/todos.json").exists());
     }
 
@@ -1489,10 +1489,10 @@ mod tests {
         assert!(!file_name.contains('/'));
         assert!(!file_name.contains(".."));
         assert!(
-            workspace
-                .join(".lethetic/tool_responses")
-                .join(file_name)
-                .is_file()
+            crate::storage::native::read_path(
+                &workspace.join(".lethetic/tool_responses").join(file_name)
+            )
+            .is_ok()
         );
     }
 

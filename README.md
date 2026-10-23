@@ -72,6 +72,7 @@ native engine; browser-only mode runs the harness and code workers in your brows
 | Remote authentication, TLS, and file disclosure | [Remote-control reference](docs/web-remote-control.md) |
 | Browser APIs, files, limits, hosting, and releases | [Integration reference](integration.md) |
 | Shared CLI/WASM behavior and remaining gaps | [Browser parity](docs/browser-parity.md) |
+| Relational session schema, SQL queries, migration, and SQLite exports | [Embedded storage](docs/storage.md) |
 | Builds and validation | [Development checks](docs/development.md) |
 
 ## The name

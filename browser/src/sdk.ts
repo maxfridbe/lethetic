@@ -74,6 +74,7 @@ export interface WasmCompaction {
   requests(): string; accept(id: number, text: string): void; progress(): string; result(): string | undefined; free(): void;
 }
 interface WasmModule {
+  BrowserDatabase: new (bytes: Uint8Array) => WasmDatabase;
   BrowserCompaction: new (history: string, context: number, output: number) => WasmCompaction;
   check_loop(text: string, mode: string): string | undefined;
   retryable_error(error: string): boolean;
@@ -102,6 +103,21 @@ function loadRuntimeModule(wasm?: BufferSource): Promise<WasmModule> {
 
 /** Preload the shared CLI WASM module without creating a conversation or making model requests. */
 export async function initializeWasm(): Promise<void> { await loadRuntimeModule(); }
+
+export interface WasmDatabase {
+  /** Execute SQL against this instance; returns JSON {columns, rows}. */
+  query(sql: string, parametersJson: string): string;
+  read(scope: string, name: string): Uint8Array | undefined;
+  put(scope: string, name: string, bytes: Uint8Array): void;
+  append(scope: string, name: string, bytes: Uint8Array): void;
+  remove_scope(scope: string): void;
+  names(scope: string): string;
+  export(): Uint8Array;
+  free(): void;
+}
+export async function contentDatabaseFactory(wasm?: BufferSource): Promise<new (bytes: Uint8Array) => WasmDatabase> {
+  return (await loadRuntimeModule(wasm)).BrowserDatabase;
+}
 
 /** Host binding to the same compaction coordinator used by the native CLI. */
 export async function createCompactionPlan(messages: readonly unknown[], options: Pick<RuntimeOptions, "wasm" | "contextTokens" | "maxOutputTokens">): Promise<WasmCompaction> {

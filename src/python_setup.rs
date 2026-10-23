@@ -429,7 +429,7 @@ impl PythonSetupDialog {
                     None => lines.push("Runtime: unresolved".to_string()),
                 }
                 lines.push("Python globals reset on session/profile/backend/policy change or cancellation.".to_string());
-                lines.push("lethetic_todo remains host-backed and can update .lethetic/todos.json even when the Python workspace is read-only or masked.".to_string());
+                lines.push("lethetic_todo remains host-backed and can update .lethetic/lethetic.db (todos record) even when the Python workspace is read-only or masked.".to_string());
                 lines.push("The LLM connection runs outside the Python sandbox.".to_string());
                 lines.push("Sandboxing is not a VM and does not guarantee CPU, memory, kernel, or runtime isolation.".to_string());
             }

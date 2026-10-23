@@ -247,12 +247,17 @@ impl TodoStore {
     }
 
     fn read_locked(&self) -> Result<TodoSnapshot, TodoStoreError> {
-        let bytes = crate::platform::read_file_nofollow(
-            &self.root.canonical_path,
-            &[TODO_DIRECTORY],
+        let bytes = crate::storage::native::read(
+            &self.root.canonical_path.join(TODO_DIRECTORY),
             TODO_FILE_NAME,
         )
-        .map_err(|error| TodoStoreError::storage("Could not safely read todos", error))?;
+        .map_err(|error| {
+            if error.starts_with("invalid todos:") {
+                TodoStoreError::new(TodoStoreErrorCode::Invalid, error)
+            } else {
+                TodoStoreError::storage("Could not safely read todos", error)
+            }
+        })?;
         let Some(bytes) = bytes else {
             return Ok(TodoSnapshot::default());
         };
@@ -306,12 +311,10 @@ impl TodoStore {
                 format!("Encoded todo file exceeds {MAX_TODO_FILE_BYTES} bytes"),
             ));
         }
-        crate::platform::atomic_write_nofollow(
-            &self.root.canonical_path,
-            &[TODO_DIRECTORY],
+        crate::storage::native::write(
+            &self.root.canonical_path.join(TODO_DIRECTORY),
             TODO_FILE_NAME,
             &encoded,
-            0o600,
         )
         .map_err(|error| TodoStoreError::storage("Could not safely write todos", error))?;
         self.root.verify()?;
@@ -530,7 +533,8 @@ mod tests {
         let updated = store.replace(vec![item("new", "replacement")], 0).unwrap();
         assert_eq!(updated.revision, 1);
         let value: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(store.path()).unwrap()).unwrap();
+            serde_json::from_slice(&crate::storage::native::read_path(&store.path()).unwrap())
+                .unwrap();
         assert_eq!(value["revision"], 1);
         assert!(value["todos"].is_array());
     }

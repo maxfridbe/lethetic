@@ -28,6 +28,9 @@ async function start(): Promise<void> {
     if (!view) {
       report("Loading application and saved sessions…");
       const { mountLethetic, openBrowserStorage } = await import("./embed.js");
+      const loading = document.createElement("div");
+      loading.className = "session-header"; loading.textContent = "Loading saved sessions from Turso…";
+      root!.replaceChildren(loading);
       const persistent = storage ? await openBrowserStorage(storage) : undefined;
       view = mountLethetic(root!, {storage: persistent, credentialStorage, sessionRouting: true,
         startInBackground: true, compact: new URLSearchParams(location.search).get("embed") === "1"});

@@ -529,16 +529,8 @@ impl SessionState {
     }
 }
 
-fn read_session_file(session_dir: &str, file_name: &str) -> Result<Option<Vec<u8>>, String> {
-    let path = std::path::Path::new(session_dir);
-    let result = if path.is_absolute() {
-        crate::platform::read_file_nofollow(path, &[], file_name)
-    } else {
-        let components = relative_session_components(path)?;
-        let component_refs = components.iter().map(String::as_str).collect::<Vec<_>>();
-        crate::platform::read_file_nofollow(std::path::Path::new("."), &component_refs, file_name)
-    };
-    result.map_err(|error| format!("could not read session file {file_name}: {error}"))
+pub fn read_session_file(session_dir: &str, file_name: &str) -> Result<Option<Vec<u8>>, String> {
+    crate::storage::native::read(std::path::Path::new(session_dir), file_name)
 }
 
 pub(crate) fn write_session_file(
@@ -546,23 +538,7 @@ pub(crate) fn write_session_file(
     file_name: &str,
     content: &[u8],
 ) -> Result<(), String> {
-    let path = std::path::Path::new(session_dir);
-    let result = if path.is_absolute() {
-        crate::platform::atomic_write_nofollow(path, &[], file_name, content, 0o600)
-    } else {
-        let components = relative_session_components(path)?;
-        let component_refs = components.iter().map(String::as_str).collect::<Vec<_>>();
-        crate::platform::atomic_write_nofollow(
-            std::path::Path::new("."),
-            &component_refs,
-            file_name,
-            content,
-            0o600,
-        )
-    };
-    result
-        .map(|_| ())
-        .map_err(|error| format!("could not save session file {file_name}: {error}"))
+    crate::storage::native::write(std::path::Path::new(session_dir), file_name, content)
 }
 
 pub(crate) fn append_session_file(
@@ -570,43 +546,7 @@ pub(crate) fn append_session_file(
     file_name: &str,
     content: &[u8],
 ) -> Result<(), String> {
-    let path = std::path::Path::new(session_dir);
-    let result = if path.is_absolute() {
-        crate::platform::append_file_nofollow(path, &[], file_name, content, 0o600)
-    } else {
-        let components = relative_session_components(path)?;
-        let component_refs = components.iter().map(String::as_str).collect::<Vec<_>>();
-        crate::platform::append_file_nofollow(
-            std::path::Path::new("."),
-            &component_refs,
-            file_name,
-            content,
-            0o600,
-        )
-    };
-    result
-        .map(|_| ())
-        .map_err(|error| format!("could not append session file {file_name}: {error}"))
-}
-
-fn relative_session_components(path: &std::path::Path) -> Result<Vec<String>, String> {
-    let mut components = Vec::new();
-    for component in path.components() {
-        let std::path::Component::Normal(component) = component else {
-            return Err(
-                "session directory must not contain root, parent, or current-directory components"
-                    .to_string(),
-            );
-        };
-        let component = component
-            .to_str()
-            .ok_or_else(|| "session directory must be UTF-8".to_string())?;
-        components.push(component.to_string());
-    }
-    if components.is_empty() {
-        return Err("session directory must not be empty".to_string());
-    }
-    Ok(components)
+    crate::storage::native::append(std::path::Path::new(session_dir), file_name, content)
 }
 
 fn read_legacy_session_file(session_dir: &str, file_name: &str) -> Result<Option<String>, String> {

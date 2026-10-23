@@ -93,7 +93,19 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
     promptPlaceholder: "Message your model…",
     systemPromptDetails: () => transport?.promptDetails ?? null,
     sessionsNotice: () => [transport?.persistenceStatus, exportStatus].filter(Boolean).join(" "),
-    sessionActions: (id) => h("button", { attrs: { type: "button", "data-session-export": id, title: "Download this session, its files and debug information as .tar.gz" },
+    sessionActions: (id) => h("span.browser-code-actions", [options.storage instanceof BrowserSessionStorage ? h("button", {
+      attrs: { type: "button", "data-session-database": id, title: "Download this session and its files as a SQLite database" },
+      on: { click: () => {
+        try {
+          const bytes = (options.storage as BrowserSessionStorage).exportDatabase(id);
+          const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], {type: "application/vnd.sqlite3"}));
+          const link = document.createElement("a"); link.href = url; link.download = `lethetic-session-${id}.db`; link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          exportStatus = "Session database downloaded. Connection keys are excluded.";
+        } catch (error) { exportStatus = `Export failed: ${String(error)}`; }
+        transport?.publish();
+      } }
+    }, [uiIcon("download"), "Database (.db)"]) : null, h("button", { attrs: { type: "button", "data-session-export": id, title: "Download this session, its files and debug information as .tar.gz" },
       props: { disabled: exporting }, on: { click: () => {
         if (!transport || exporting) return;
         exporting = true; exportStatus = "Preparing debug bundle…"; transport.publish();
@@ -110,7 +122,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
           } catch (error) { exportStatus = `Export failed: ${String(error)}`; }
           finally { exporting = false; transport?.publish(); }
         })();
-      } } }, [uiIcon("download"), "Export debug (.tar.gz)"]),
+      } } }, [uiIcon("download"), "Export debug (.tar.gz)"])]),
     files: { local: true, viewBytes: FILE_BYTES, nativeText: () => plainText, count: () => files.snapshotWorkspace().files.length, entries: entries => fileTools.sort(entries), entryTitle: path => fileTools.title(path), scope: options.storage ? "Session files · synced with code runtime" : "Session files · this tab only", rootLabel: "Session files",
       previewContent: state => {
         const file = state.selectedPath ? files.get(state.selectedPath) : undefined;

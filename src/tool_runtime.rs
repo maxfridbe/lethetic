@@ -1157,7 +1157,7 @@ mod tests {
             .await;
         assert!(!second.is_error, "{}", second.output);
         assert!(second.output.contains("'revision': 1"), "{}", second.output);
-        assert!(workspace.join(".lethetic/todos.json").is_file());
+        assert!(crate::storage::native::read_path(&workspace.join(".lethetic/todos.json")).is_ok());
         assert!(!workspace.join("nested/.lethetic/todos.json").exists());
         let progress_event = progress_rx.try_recv().unwrap();
         assert!(matches!(

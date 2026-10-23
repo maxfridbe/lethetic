@@ -56,7 +56,7 @@ updated = lethetic_todo.set(
 
 `get()` returns the current list and its revision. `set(todos, expected_revision=...)` atomically replaces the list only if the revision still matches, then returns the new snapshot. A stale revision fails rather than overwriting a newer update.
 
-The data remains host-backed at `<launch-cwd>/.lethetic/todos.json`. The module uses a bounded, typed worker/host exchange that recognizes only todo reads and compare-and-swap replacements. Python cannot provide a path, command, socket destination, or network target through this interface; it is not a general host bridge. Todo values are validated by the same host-side rules used by General mode. After a successful audited `set`, Lethetic emits a typed host-only snapshot event so TUI/headless output refreshes with the new revision and task count.
+The data remains host-backed at the `todos.json` record in `<launch-cwd>/.lethetic/lethetic.db`. The module uses a bounded, typed worker/host exchange that recognizes only todo reads and compare-and-swap replacements. Python cannot provide a path, command, socket destination, or network target through this interface; it is not a general host bridge. Todo values are validated by the same host-side rules used by General mode. After a successful audited `set`, Lethetic emits a typed host-only snapshot event so TUI/headless output refreshes with the new revision and task count.
 
 ## `lethetic_output`
 

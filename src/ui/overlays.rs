@@ -93,7 +93,7 @@ fn python_approval_policy_lines(app: &App) -> Vec<String> {
         None => lines.push("Target: unresolved".to_string()),
     }
     lines.push(
-        "todowrite remains host-side and may write .lethetic/todos.json; the LLM transport is outside the sandbox."
+        "todowrite remains host-side and may write .lethetic/lethetic.db (todos record); the LLM transport is outside the sandbox."
             .to_string(),
     );
     lines

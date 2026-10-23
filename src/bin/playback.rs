@@ -7,7 +7,7 @@ fn main() {
         .nth(1)
         .unwrap_or_else(|| ".lethetic/tokens.jsonl".to_string());
 
-    let file = match std::fs::File::open(&path) {
+    let file = match lethetic::storage::native::read_path(std::path::Path::new(&path)) {
         Ok(f) => f,
         Err(e) => {
             eprintln!("Cannot open '{}': {}", path, e);
@@ -24,7 +24,7 @@ fn main() {
         std::collections::HashMap::new();
     let mut last_state = parser.state;
 
-    for (line_no, line) in BufReader::new(file).lines().enumerate() {
+    for (line_no, line) in BufReader::new(file.as_slice()).lines().enumerate() {
         let line = match line {
             Ok(l) if !l.trim().is_empty() => l,
             _ => continue,

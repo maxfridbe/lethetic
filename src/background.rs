@@ -9,7 +9,6 @@
 
 use regex::Regex;
 use std::collections::VecDeque;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{LazyLock, Mutex, MutexGuard};
@@ -480,14 +479,9 @@ fn log_file(cwd: &str, id: &str) -> PathBuf {
         .join(format!("{id}-{}.log", std::process::id()))
 }
 
-fn open_log(cwd: &str, id: &str) -> Option<std::fs::File> {
+fn open_log(cwd: &str, id: &str) -> Option<()> {
     let path = log_file(cwd, id);
-    std::fs::create_dir_all(path.parent()?).ok()?;
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .ok()
+    crate::storage::native::append(path.parent()?, path.file_name()?.to_str()?, &[]).ok()
 }
 
 /// Reads one output stream, splitting on `\n` and treating `\r` as "replace
@@ -497,8 +491,6 @@ async fn pump<R: tokio::io::AsyncRead + Unpin>(
     mut reader: R,
     log_path: Option<PathBuf>,
 ) {
-    let mut log =
-        log_path.and_then(|path| std::fs::OpenOptions::new().append(true).open(path).ok());
     let mut logged = 0_u64;
     let mut buffer = vec![0_u8; 16 * 1024];
     let mut pending: Vec<u8> = Vec::new();
@@ -507,10 +499,14 @@ async fn pump<R: tokio::io::AsyncRead + Unpin>(
             Ok(0) | Err(_) => break,
             Ok(read) => read,
         };
-        if let Some(file) = log.as_mut()
+        if let Some(path) = log_path.as_ref()
             && logged < LOG_BYTES
         {
-            let _ = file.write_all(&buffer[..read]);
+            if let (Some(parent), Some(name)) =
+                (path.parent(), path.file_name().and_then(|v| v.to_str()))
+            {
+                let _ = crate::storage::native::append(parent, name, &buffer[..read]);
+            }
             logged += read as u64;
         }
         pending.extend_from_slice(&buffer[..read]);

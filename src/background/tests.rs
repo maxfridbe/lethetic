@@ -28,7 +28,7 @@ async fn task_runs_in_background_and_reports_output_and_exit() {
     assert_eq!(done.state, TaskState::Exited(Some(3)));
     assert_eq!(output_tail(&started.id, 10).unwrap(), vec!["one", "two"]);
     assert_eq!(done.last_line, "two");
-    let log = std::fs::read_to_string(done.log_path.unwrap()).unwrap();
+    let log = crate::storage::native::read_text_path(&done.log_path.unwrap()).unwrap();
     assert_eq!(log, "one\ntwo\n");
 }
 

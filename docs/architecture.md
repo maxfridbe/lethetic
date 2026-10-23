@@ -164,7 +164,7 @@ flowchart TD
         Workers["Selected code worker: Pyodide or DotnetDide"]
         VFS["Worker virtual filesystem"]
         Workspace["Session workspace and Files pane"]
-        Sessions["IndexedDB: saved sessions and files"]
+        Sessions["Turso in shared Rust/WASM: one SQLite image per session in IndexedDB"]
         Preferences["localStorage: connection metadata and preferences"]
         Keys["sessionStorage: tab-scoped API keys"]
         UI <--> Local
@@ -183,7 +183,9 @@ flowchart TD
     HTTP --> Services["External services"]
 ```
 
-The hosted application stores chats and files unencrypted locally. API keys are
+The hosted application stores chats and files unencrypted locally using the
+[shared embedded Turso schema](storage.md). Each native session stores content in
+`.lethetic/sessions/<session>/lethetic.db`; `python.ipynb` remains a Jupyter notebook file. API keys are
 excluded from saved chats and connection metadata; tab-scoped storage retains them
 across refresh. Embedding hosts can supply their own storage options. Restoring a
 session restores files and history, not worker variables or running programs.

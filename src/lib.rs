@@ -54,6 +54,7 @@ pub mod session_store;
 pub mod skills;
 #[cfg(feature = "native")]
 pub mod status_summary;
+pub mod storage;
 #[cfg(feature = "native")]
 pub mod system_prompt;
 #[cfg(feature = "native")]

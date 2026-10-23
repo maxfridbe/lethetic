@@ -34,7 +34,7 @@ def package(stage: Path) -> None:
         "exports": {".": {"types": "./src/sdk.d.ts", "import": "./src/sdk.js"},
                     "./embed": {"types": "./src/embed.d.ts", "import": "./src/embed.js"},
                     "./styles.css": "./styles.css"},
-        "files": ["src", "browser", "web", "runtimes", "python", "assets", "styles.css", "browser.css", "splash.css", "integration.md"],
+        "files": ["src", "browser", "web", "docs", "runtimes", "python", "assets", "styles.css", "browser.css", "splash.css", "integration.md"],
         "private": True,
     }, indent=2) + "\n")
     # A readable, escaped copy needs no Markdown renderer, CDN, or script privileges.

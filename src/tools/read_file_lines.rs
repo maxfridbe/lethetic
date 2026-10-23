@@ -1,6 +1,7 @@
 use super::icons;
 use crate::tools::{FunctionDefinition, Tool};
 use serde_json::json;
+#[cfg(test)]
 use std::fs;
 use std::path::Path;
 
@@ -78,7 +79,7 @@ pub async fn execute(
                     start_line, end_line
                 );
             }
-            match fs::read_to_string(&full_path) {
+            match crate::storage::native::read_text_path(&full_path) {
                 Ok(content) => {
                     let lines: Vec<&str> = content.lines().collect();
                     let start = start_line - 1;

@@ -18,22 +18,23 @@ use its headless SDK to supply your own interface.
    <link rel="stylesheet" href="/vendor/lethetic/styles.css">
    <div id="assistant" style="height: 80vh"></div>
    <script type="module">
-     import { mountLethetic } from '/vendor/lethetic/src/embed.js';
+     import { mountLethetic, openBrowserStorage } from '/vendor/lethetic/src/embed.js';
+     const storage = await openBrowserStorage(localStorage);
      const view = mountLethetic(document.getElementById('assistant'), {
        connections: [{
          name: 'My service', provider: 'openai', model: 'my-model',
          endpoint: 'https://models.example.com/v1/chat/completions'
        }],
-       storage: localStorage
+       storage
      });
-     // Call view.destroy() when removing the application.
+     // Await storage.flush(), then view.destroy() and storage.close() when removing it.
    </script>
    ```
 
 Replace the endpoint and model with your service. Browser CORS rules apply.
 Let users supply their own credentials or use an authenticated server proxy;
 do not publish a shared secret in client-side HTML. Passing storage enables local,
-unencrypted persistence; the [API reference](../../integration.md#embed-the-complete-ui)
+unencrypted Turso/SQLite persistence; the [API reference](../../integration.md#embed-the-complete-ui)
 describes storage adapters, credentials, runtime options, and session routing.
 
 ## Use your own interface

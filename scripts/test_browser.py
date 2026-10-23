@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -154,6 +155,18 @@ def main():
                 assert "apiKey" not in json.loads(session)["connection"]
                 assert archive.getmember("diagnostics.json").isfile()
             print("Downloaded session debug archive verified with Python tarfile.")
+            with sqlite3.connect(f"file:{ROOT / 'target/browser-preview-session.db'}?mode=ro", uri=True) as database:
+                assert database.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+                assert database.execute("PRAGMA foreign_key_check").fetchall() == []
+                assert database.execute("PRAGMA user_version").fetchone() == (2,)
+                assert database.execute("SELECT content FROM files WHERE path=?", ("reports/analysis.py",)).fetchone() == (b"print('private snippet')",)
+                assert database.execute("SELECT COUNT(*) FROM sessions").fetchone() == (1,)
+                assert database.execute("SELECT COUNT(*) FROM messages").fetchone()[0] > 0
+                assert not database.execute("SELECT name FROM sqlite_schema WHERE name='content_records'").fetchall()
+                connection = database.execute("SELECT name,model,extra_json FROM connections").fetchone()
+                assert connection and "apiKey" not in json.loads(connection[2])
+            print("Browser Turso export verified with Python SQLite integrity_check and binary file read.")
+
             with zipfile.ZipFile(ROOT / "target/browser-preview-files.zip") as archive:
                 assert archive.testzip() is None
                 assert archive.read("outputs/raw.bin") == bytes([0, 255, 1])

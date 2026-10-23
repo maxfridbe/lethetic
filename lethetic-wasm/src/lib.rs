@@ -1,5 +1,42 @@
 //! JavaScript bindings for the CLI library. Agent logic belongs in `lethetic`.
 use wasm_bindgen::prelude::*;
+mod storage_clock;
+
+/// The same embedded Turso engine and schema used by native session storage.
+#[wasm_bindgen]
+pub struct BrowserDatabase(lethetic::storage::ContentDatabase);
+#[wasm_bindgen]
+impl BrowserDatabase {
+    #[wasm_bindgen(constructor)]
+    pub fn new(bytes: &[u8]) -> Result<Self, String> {
+        lethetic::storage::ContentDatabase::memory_with_clock(
+            bytes,
+            std::sync::Arc::new(storage_clock::BrowserClock),
+        )
+        .map(Self)
+    }
+    pub fn read(&self, scope: &str, name: &str) -> Result<Option<Vec<u8>>, String> {
+        self.0.read(scope, name)
+    }
+    pub fn put(&self, scope: &str, name: &str, bytes: &[u8]) -> Result<(), String> {
+        self.0.put(scope, name, bytes)
+    }
+    pub fn append(&self, scope: &str, name: &str, bytes: &[u8]) -> Result<(), String> {
+        self.0.append(scope, name, bytes)
+    }
+    pub fn remove_scope(&self, scope: &str) -> Result<(), String> {
+        self.0.remove_scope(scope)
+    }
+    pub fn names(&self, scope: &str) -> Result<String, String> {
+        serde_json::to_string(&self.0.names(scope)?).map_err(|e| e.to_string())
+    }
+    pub fn query(&self, sql: &str, parameters_json: &str) -> Result<String, String> {
+        self.0.query_json(sql, parameters_json)
+    }
+    pub fn export(&self) -> Result<Vec<u8>, String> {
+        self.0.export()
+    }
+}
 
 #[wasm_bindgen]
 pub struct BrowserRuntime(lethetic::engine::Conversation);

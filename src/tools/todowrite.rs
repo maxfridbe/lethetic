@@ -157,7 +157,10 @@ mod tests {
         let result = execute(&todos, dir.path().to_str().unwrap()).await;
         assert!(result.contains("2 tasks"), "{}", result);
         assert!(result.contains("Write tests"));
-        assert!(fs::read_to_string(dir.path().join(".lethetic/todos.json")).is_ok());
+        assert!(
+            crate::storage::native::read_text_path(&dir.path().join(".lethetic/todos.json"))
+                .is_ok()
+        );
     }
 
     #[tokio::test]

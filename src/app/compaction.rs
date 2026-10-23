@@ -41,22 +41,26 @@ impl CompactionPopupState {
     }
 }
 
-const GLOBAL_HISTORY_PATH: &str = ".lethetic/history.json";
 const GLOBAL_HISTORY_CAP: usize = 500;
 
 impl App {
     /// Input history shared across sessions of this project.
     pub fn load_global_history() -> Vec<String> {
-        std::fs::read_to_string(GLOBAL_HISTORY_PATH)
+        crate::storage::native::read(std::path::Path::new(".lethetic"), "history.json")
+            .map(|bytes| bytes.map(|bytes| String::from_utf8_lossy(&bytes).into_owned()))
             .ok()
+            .flatten()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default()
     }
 
     pub(super) fn persist_global_history(history: &[String]) {
         if let Ok(json) = serde_json::to_string(history) {
-            let _ = std::fs::create_dir_all(".lethetic");
-            let _ = std::fs::write(GLOBAL_HISTORY_PATH, json);
+            let _ = crate::storage::native::write(
+                std::path::Path::new(".lethetic"),
+                "history.json",
+                json.as_bytes(),
+            );
         }
     }
 
@@ -140,8 +144,8 @@ impl App {
     /// Read the diagnostic log of a session for compaction. Falls back to the
     /// durable messages when the session predates `ui_log.txt`.
     pub fn compaction_source_text(session_dir: &str) -> Result<String, String> {
-        let path = std::path::Path::new(session_dir).join("ui_log.txt");
-        if let Ok(text) = std::fs::read_to_string(&path)
+        if let Some(bytes) = read_session_file(session_dir, "ui_log.txt")?
+            && let Ok(text) = String::from_utf8(bytes)
             && !text.trim().is_empty()
         {
             return Ok(text);
@@ -277,10 +281,9 @@ impl App {
             let _ = store.remove_locked_session(&lease);
             return Err(error);
         }
-        let _ = std::fs::copy(
-            std::path::Path::new(&source_path).join("ui_log.txt"),
-            path.join("ui_log_original.txt"),
-        );
+        if let Some(bytes) = read_session_file(&source_path, "ui_log.txt")? {
+            write_session_file(&path_string, "ui_log_original.txt", &bytes)?;
+        }
         drop(lease);
         self.refresh_session_list();
         Ok(session_id)

@@ -111,7 +111,8 @@ try {
   await until("!!document.querySelector('#startup-splash:modal')");
   check(await evaluate("document.querySelector('#startup-splash').getAttribute('aria-busy')==='true'"), "startup did not announce loading");
   check(await evaluate("(()=>{const splash=document.querySelector('#startup-splash');splash.click();return splash.open && !splash.dispatchEvent(new Event('cancel',{cancelable:true}))})()"), "loading splash dismissed before readiness");
-  await until("!!document.querySelector('.app-shell')");
+  // Turso must load before saved sessions can be hydrated; show a loading header meanwhile.
+  await until("!!document.querySelector('.session-header')");
   check(await evaluate("(()=>{const r=document.querySelector('#startup-splash').getBoundingClientRect();return Math.abs(r.width-innerWidth*.7)<2 && Math.abs(r.height-innerHeight*.7)<2})()"), "splash must occupy 70% of the viewport dimensions");
   check(await evaluate("!document.querySelector('#startup-splash button') && !!document.querySelector('.session-header')"), "loading splash has a continue button or background UI is missing");
   const splashImage = await rpc("Page.captureScreenshot", { format: "png" });
@@ -475,6 +476,11 @@ try {
   const debugArchive = await evaluate("(async()=>btoa(String.fromCharCode(...new Uint8Array(await globalThis.exportedBundle.arrayBuffer()))))()");
   await writeFile(config.screenshot.replace('.png','-session.tar.gz'),Buffer.from(String(debugArchive),'base64'));
   check(await evaluate("location.hash")===originalHash,"export changed the current session");
+  await evaluate("document.querySelector('[data-session-database]').click()");
+  await until("globalThis.exportedName?.endsWith('.db')");
+  const databaseImage = await evaluate("(async()=>{const bytes=new Uint8Array(await globalThis.exportedBundle.arrayBuffer());let text='';for(let i=0;i<bytes.length;i+=8192)text+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(text)})()");
+  await writeFile(config.screenshot.replace('.png','-session.db'),Buffer.from(String(databaseImage),'base64'));
+
   await evaluate("URL.createObjectURL=globalThis.exportObjectURL; HTMLAnchorElement.prototype.click=globalThis.exportAnchorClick");
   await evaluate("document.querySelector('.sessions-panel .primary-button').click()");
   await until("!document.querySelector('.sessions-panel')");

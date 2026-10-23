@@ -339,13 +339,9 @@ impl SessionStore {
         if lifecycle
             .as_ref()
             .is_some_and(|record| record.state == SessionLifecycleState::Creating)
-            && crate::platform::read_file_nofollow(
-                lease.canonical_path(),
-                &[],
-                "session_state.json",
-            )
-            .map_err(|error| format!("could not inspect creating session state: {error}"))?
-            .is_none()
+            && crate::storage::native::read(lease.canonical_path(), "session_state.json")
+                .map_err(|error| format!("could not inspect creating session state: {error}"))?
+                .is_none()
         {
             let outcome = self.remove_locked_session(&lease)?;
             let warning = if outcome.durability_warnings.is_empty() {
@@ -671,6 +667,7 @@ impl SessionStore {
             std::fs::Permissions::from_mode(0o700),
         )
         .map_err(|error| format!("could not normalize locked session permissions: {error}"))?;
+        crate::storage::native::remove_scope(lease.canonical_path())?;
         let state_name = std::ffi::OsStr::new("session_state.json");
         let entries = std::fs::read_dir(&lease.canonical_path)
             .map_err(|error| format!("could not enumerate locked session directory: {error}"))?

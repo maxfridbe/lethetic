@@ -32,7 +32,9 @@ offers native tools subject to their approval policies. Select a restricted tool
 profile with [Python-only](python.md#native-python) or [.NET-only](dotnet.md#native-net).
 
 Resuming a session restores its model, prompt, mode, theme, and loop-detection
-settings. See the [shortcut reference](../native-reference.md#tui-hotkeys).
+settings. Each session stores its content in `.lethetic/sessions/<session>/lethetic.db` by the embedded Turso engine;
+legacy text records migrate automatically. `python.ipynb` remains a normal notebook.
+See [storage and migration](../storage.md) and the [shortcut reference](../native-reference.md#tui-hotkeys).
 
 ## Headless commands
 

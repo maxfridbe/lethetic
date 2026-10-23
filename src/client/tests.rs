@@ -124,7 +124,9 @@ async fn persisted_agent_diagnostic_is_the_exact_openai_wire_body() {
         }
     }
     let wire_body = server.await.unwrap();
-    let diagnostic = std::fs::read(session.path().join("last_request.json")).unwrap();
+    let diagnostic = crate::storage::native::read(session.path(), "last_request.json")
+        .map(|v| v.unwrap())
+        .unwrap();
     assert_eq!(diagnostic, wire_body);
     let body: serde_json::Value = serde_json::from_slice(&wire_body).unwrap();
     assert_eq!(body["tools"].as_array().unwrap().len(), 1);
@@ -205,7 +207,9 @@ async fn persisted_agent_diagnostic_is_the_exact_anthropic_wire_body() {
         }
     }
     let wire_body = server.await.unwrap();
-    let diagnostic = std::fs::read(session.path().join("last_request.json")).unwrap();
+    let diagnostic = crate::storage::native::read(session.path(), "last_request.json")
+        .map(|v| v.unwrap())
+        .unwrap();
     assert_eq!(diagnostic, wire_body);
     let body: serde_json::Value = serde_json::from_slice(&wire_body).unwrap();
     assert_eq!(body["tools"].as_array().unwrap().len(), 1);
@@ -293,7 +297,9 @@ async fn prepared_request_reuses_one_fresh_file_snapshot_after_durable_start_sea
     assert!(encoded.contains("PREPARED-SNAPSHOT-V1"), "{encoded}");
     assert!(!encoded.contains("MUTATED-AFTER-PREPARE-V2"), "{encoded}");
     assert_eq!(
-        std::fs::read(session.path().join("last_request.json")).unwrap(),
+        crate::storage::native::read(session.path(), "last_request.json")
+            .map(|v| v.unwrap())
+            .unwrap(),
         wire_body
     );
 }
