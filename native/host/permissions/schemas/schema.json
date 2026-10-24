@@ -307,6 +307,18 @@
           "markdownDescription": "Denies the choose_directory command without any pre-configured scope."
         },
         {
+          "description": "Enables the grant_network command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-grant-network",
+          "markdownDescription": "Enables the grant_network command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the grant_network command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-grant-network",
+          "markdownDescription": "Denies the grant_network command without any pre-configured scope."
+        },
+        {
           "description": "Enables the revoke_directory command without any pre-configured scope.",
           "type": "string",
           "const": "allow-revoke-directory",
@@ -317,6 +329,18 @@
           "type": "string",
           "const": "deny-revoke-directory",
           "markdownDescription": "Denies the revoke_directory command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the revoke_network command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-revoke-network",
+          "markdownDescription": "Enables the revoke_network command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the revoke_network command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-revoke-network",
+          "markdownDescription": "Denies the revoke_network command without any pre-configured scope."
         },
         {
           "description": "Enables the set_working command without any pre-configured scope.",

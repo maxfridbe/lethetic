@@ -1,4 +1,6 @@
 import { executionTimeout } from "./lifecycle.js";
+import { NativeNetwork } from "./native-network.js";
+import { nativeAvailable } from "./native-host.js";
 import { emptyWorkspace, parseWorkspace } from "./workspace.js";
 import type { Workspace } from "./workspace.js";
 export type { Workspace } from "./workspace.js";
@@ -65,8 +67,9 @@ export function createPythonTool(options: {
   let sequence = 0;
   let ready = false;
   let sites: WireSite[] = [];
+  const nativeNetwork = new NativeNetwork();
   type Reply = { output: string; response?: WireResponse; warning: string };
-  const terminate = (): void => { worker?.terminate(); worker = null; ready = false; sites = []; };
+  const terminate = (): void => { nativeNetwork.reset(); worker?.terminate(); worker = null; ready = false; sites = []; };
   const reset = (): void => {
     pending?.(new Error("Python worker was reset; variables were cleared; last completed files are kept."));
     terminate();
@@ -90,8 +93,13 @@ export function createPythonTool(options: {
       const abort = (): void => fail(new DOMException("Python stopped; session reset.", "AbortError"));
       const error = (): void => fail(new Error("Python worker could not load. Check Pyodide access and CSP."));
       const run = (): void => {
-        try { activeWorker.postMessage({ id, protocol: 1, code, indexURL: indexURL.href, workspace: checkpoint, siteAccess: options.siteAccess ?? false, networkAccess, relay, ...(siteRequest ? { siteRequest } : {}) }); }
-        catch { fail(new Error("Could not start Python execution.")); }
+        const post = (route: DotnetRelay | null): void => {
+          if (worker !== activeWorker || signal.aborted) return;
+          activeWorker.postMessage({ id, protocol: 1, code, indexURL: indexURL.href, workspace: checkpoint, siteAccess: options.siteAccess ?? false, networkAccess, relay: route, ...(siteRequest ? { siteRequest } : {}) });
+        };
+        if (!nativeAvailable()) { try { post(relay); } catch { fail(new Error("Could not start Python execution.")); } }
+        else void nativeNetwork.route(networkAccess, relay, signal).then(post)
+          .catch(error => { if (worker === activeWorker) fail(error instanceof Error ? error : new Error(String(error))); });
       };
       const message = (event: MessageEvent<unknown>): void => {
         const data = event.data as { id?: unknown; protocol?: unknown; type?: unknown; output?: unknown; workspace?: unknown; workspaceError?: unknown; capabilities?: string[]; sites?: WireSite[]; response?: WireResponse } | null;

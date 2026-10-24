@@ -1,5 +1,6 @@
 use lethetic_directory::{Grant, Workspace};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::sync::Mutex;
 use tauri::{Manager, State};
 #[cfg(not(target_os = "android"))]
@@ -8,10 +9,16 @@ use tauri_plugin_dialog::DialogExt;
 struct Host {
     token: String,
     directory: Mutex<Option<Grant>>,
+    network: Mutex<NetworkGrants>,
     #[cfg(not(target_os = "android"))]
     awake: Mutex<Option<keepawake::KeepAwake>>,
     #[cfg(target_os = "android")]
     mobile: tauri::plugin::PluginHandle<tauri::Wry>,
+}
+#[derive(Default)]
+struct NetworkGrants {
+    epoch: u64,
+    grants: HashMap<String, lethetic_network::Grant>,
 }
 fn authorize(host: &Host, token: &str) -> Result<(), String> {
     if token == host.token {
@@ -19,6 +26,45 @@ fn authorize(host: &Host, token: &str) -> Result<(), String> {
     } else {
         Err("Native access is restricted to the main application".into())
     }
+}
+#[tauri::command]
+async fn grant_network(
+    state: State<'_, Host>,
+    token: String,
+) -> Result<lethetic_network::Route, String> {
+    authorize(&state, &token)?;
+    let epoch = state
+        .network
+        .lock()
+        .map_err(|error| error.to_string())?
+        .epoch;
+    let grant = lethetic_network::Grant::open().await?;
+    let mut grants = state.network.lock().map_err(|error| error.to_string())?;
+    if grants.epoch != epoch {
+        return Err("Network grants were reset during initialization".into());
+    }
+    if grants.grants.len() >= 8 {
+        return Err("Too many active network runtimes".into());
+    }
+    let route = grant.route.clone();
+    grants.grants.insert(route.token.clone(), grant);
+    Ok(route)
+}
+#[tauri::command]
+fn revoke_network(
+    state: State<'_, Host>,
+    token: String,
+    grant: Option<String>,
+) -> Result<(), String> {
+    authorize(&state, &token)?;
+    let mut grants = state.network.lock().map_err(|error| error.to_string())?;
+    if let Some(grant) = grant {
+        grants.grants.remove(&grant);
+    } else {
+        grants.epoch = grants.epoch.wrapping_add(1);
+        grants.grants.clear();
+    }
+    Ok(())
 }
 #[tauri::command]
 async fn choose_directory(
@@ -142,6 +188,8 @@ pub fn init(token: String) -> tauri::plugin::TauriPlugin<tauri::Wry> {
             choose_directory,
             sync_directory,
             revoke_directory,
+            grant_network,
+            revoke_network,
             set_working
         ])
         .setup(move |app, _api| {
@@ -151,6 +199,7 @@ pub fn init(token: String) -> tauri::plugin::TauriPlugin<tauri::Wry> {
             app.manage(Host {
                 token,
                 directory: Mutex::new(None),
+                network: Mutex::new(NetworkGrants::default()),
                 #[cfg(not(target_os = "android"))]
                 awake: Mutex::new(None),
                 #[cfg(target_os = "android")]
@@ -169,6 +218,7 @@ mod tests {
         let host = Host {
             token: "per-launch-secret".into(),
             directory: Mutex::new(None),
+            network: Mutex::new(NetworkGrants::default()),
             awake: Mutex::new(None),
         };
         assert!(authorize(&host, "").is_err());

@@ -1061,6 +1061,14 @@ real folder is synchronized through a revocable capability without exposing host
 process execution. Native keep-awake is scoped to model responses only, never
 idle or tool execution. OS termination remains possible.
 
+In the executable, enabling **Network access** automatically supplies a revocable
+native HTTP route to Python and .NET, including site handlers. There is no proxy
+configuration UI and no destination CORS requirement. Browser-only builds keep
+their direct/relay controls. Native requests support the usual HTTP methods and
+explicit API headers, with 8 MiB bodies, a 60-second deadline, no browser cookies
+and no automatic redirects. Reset, stop, permission/session changes and app exit
+revoke the runtime's route; it is never persisted or exported with a session.
+
 Turn/Python/.NET deadlines count responsive foreground time: hidden time and
 scheduler gaps longer than five seconds do not consume the budget. While a model
 response is pending, visible browser documents request a best-effort screen wake

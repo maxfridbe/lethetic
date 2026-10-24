@@ -3,7 +3,7 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-  <application>
+  <application android:networkSecurityConfig="@xml/lethetic_network_security_config">
     <service android:name="io.github.maxfridbe.lethetic.host.ResponseService" android:exported="false" android:foregroundServiceType="specialUse" android:stopWithTask="true">
       <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User initiated LLM response streaming in the local WASM harness; foreground notification for the user-initiated turn; CPU wake lock only while awaiting a model response"/>
     </service>

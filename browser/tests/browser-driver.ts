@@ -845,6 +845,20 @@ try {
     });
     process.stdout.write("Real Pyodide sites: async HTTP, Flask WSGI, .py Run, iframe forms, checkpoints and revocation passed.\n");
   }
+  check(await evaluate(`(async()=>{
+    const {createConnectionsDialog}=await import('./src/connections-dialog.js');
+    const {LocalTransport}=await import('./src/local-transport.js');
+    Object.defineProperty(window,'__LETHETIC_HOST_TOKEN__',{configurable:true,value:'native-ui-test'});
+    const transport=new LocalTransport({socketOpened(){},authenticationEpochChanged(){},transportStatus(){},protocolFault(){},serverMessage(){},commandResponse(){}},{connections:[]});
+    const view=createConnectionsDialog(transport);
+    try {
+      view.open();
+      const route=view.dialog.querySelector('[data-field=browser-network-route]');
+      const hidden=route.hidden && route.getBoundingClientRect().height===0;
+      const message=view.dialog.innerText.includes('No proxy setup or destination CORS required');
+      return hidden && message;
+    } finally {view.destroy();transport.dispose();delete window.__LETHETIC_HOST_TOKEN__;}
+  })()`), 'native Connections should hide proxy settings and explain automatic HTTP');
   process.stdout.write(`Browser acceptance passed${config.pyodide ? " (including real Pyodide)" : ""}.\n`);
 } finally {
   for (const request of pending.values()) clearTimeout(request.timer);

@@ -26,8 +26,8 @@ folder's contents. Save/export existing virtual files first if you want to keep
 them separately. Completed code calls and file edits save changed files back to
 the selected directory. Runtimes still see a virtual filesystem, not host paths.
 
-- Only the selected tree is available. No shell, arbitrary host-filesystem or
-  native HTTP command is exposed to generated code.
+- Only the selected tree is available. No shell or arbitrary host-filesystem
+  command is exposed to generated code. Network access has its own permission.
 - Hidden paths (including `.env` and `.git`), symbolic links and special files are excluded.
   Desktop filesystem operations use directory capabilities that reject escapes.
 - The browser limits still apply: 16 MiB/file, 64 MiB/workspace, 100 files and
@@ -44,10 +44,33 @@ the selected directory. Runtimes still see a virtual filesystem, not host paths.
 
 The main application is trusted. Sandboxed previews and code workers do not get
 its per-launch native capability token. Tauri permissions are limited to folder
-grants, workspace synchronization, revocation and response keep-awake. No remote
+grants, workspace synchronization, revocable runtime HTTP access and response keep-awake. No remote
 origin has an IPC grant. This is the browser runtime's isolation model with a
 narrow directory bridge, not Podman/container isolation or a defense against a
 compromised operating system/document provider.
+
+## Network access without proxy setup
+
+In the executable, enable **Network access** in Connections → Runtime & security.
+Python `await pyodide.http.pyfetch(...)`, C# `HttpClient`, and their site handlers
+then use the app's native HTTP client automatically. No SOCKS proxy, external relay,
+token entry, or destination CORS configuration is needed. The browser distribution
+retains its direct/relay selector; those controls are hidden in the executable.
+Saved browser relay settings are ignored by native runtimes and remain available
+when the session is opened in a browser.
+
+The app supplies a temporary, authenticated loopback HTTP route to each enabled
+runtime. Disabling Network access, stopping/resetting the runtime, switching
+sessions or closing the app revokes it and cancels pending requests. Reloading the
+main page revokes prior grants. The main UI's native capability is never passed
+to code workers or previews. Native HTTP can reach public and local-network
+services; it does not grant filesystem or shell access.
+
+GET, HEAD, OPTIONS, POST, PUT, PATCH and DELETE support explicit API authorization
+headers and binary bodies up to 8 MiB in each direction. Requests time out after
+60 seconds. Browser cookies and automatic redirects are not forwarded; raw sockets
+and WebSocket proxying are not provided. NuGet and bundled runtime package downloads
+keep their existing separate permissions/routes. Model connections are unchanged.
 
 ## Background responses
 

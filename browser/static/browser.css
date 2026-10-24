@@ -138,6 +138,8 @@ dialog.browser-preview.is-full-preview {
 
 .browser-relay-fields { display: grid; gap: .5rem; min-width: 0; }
 .browser-relay-fields[hidden] { display: none; }
+.browser-route-controls { display: grid; gap: .5rem; min-width: 0; }
+.browser-route-controls[hidden] { display: none; }
 .browser-relay-fields input { width: 100%; min-width: 0; box-sizing: border-box; }
 .browser-runtime .browser-note { overflow-wrap: anywhere; }
 .browser-runtime { min-width: 0; }

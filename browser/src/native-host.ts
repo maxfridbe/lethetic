@@ -10,6 +10,9 @@ async function invoke<T>(command: string, args: Record<string, unknown> = {}): P
   return host.__TAURI__.core.invoke<T>(`plugin:lethetic-host|${command}`, { ...args, token: host.__LETHETIC_HOST_TOKEN__ });
 }
 let wakeQueue = Promise.resolve();
+let networkReset = Promise.resolve();
+export { invoke as invokeNative };
+export function nativeNetworkReady(): Promise<void> { return networkReset; }
 let turns = 0, responses = 0;
 function updateNativeWork(): Promise<void> {
   if (!nativeAvailable()) return Promise.resolve();
@@ -31,6 +34,10 @@ export function beginNativeTurn(): () => void {
 /** A reload must not inherit the old document's native sleep inhibitor. */
 export function resetNativeWork(): void {
   turns = 0; responses = 0; void updateNativeWork().catch(() => {});
+  if (nativeAvailable()) {
+    networkReset = invoke<void>("revoke_network", { grant: null });
+    void networkReset.catch(() => {});
+  }
 }
 /** A grant lasts only until session change, explicit revoke or app exit. */
 export class NativeDirectory {

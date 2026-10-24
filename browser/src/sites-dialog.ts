@@ -1,3 +1,4 @@
+import { nativeAvailable } from "./native-host.js";
 import { buttonIconHtml } from "../../web/src/icons.js";
 import { createDialog, errorMessage, field } from "./dialog.js";
 import type { LocalTransport } from "./local-transport.js";
@@ -38,7 +39,7 @@ export function createSitesDialog(transport: LocalTransport): { open(): void; re
     if (!dialog.open) return;
     const language = transport.pythonEnabled ? "Python" : "C#";
     field(dialog, "site-network").textContent = transport.networkAccess
-      ? `${language} Network access: enabled · ${transport.dotnetRelay ? "HTTP relay" : "direct requests; destination must allow CORS"}. Preview JavaScript can fetch this site's ${language} routes.`
+      ? `${language} Network access: enabled · ${nativeAvailable() ? "native HTTP; no proxy or destination CORS needed" : transport.dotnetRelay ? "HTTP relay" : "direct requests; destination must allow CORS"}. Preview JavaScript can fetch this site's ${language} routes.`
       : `${language} Network access: disabled. External API calls are blocked. Enable Network access in Connections → Runtime & security, then run the site file again.`;
     const sites = transport.sites;
     if (activeSession && (activeSession !== transport.state.session.session_id || !transport.siteAccess || !sites.some(site => site.port === activePort))) clear();

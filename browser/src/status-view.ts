@@ -1,4 +1,5 @@
 import { fileSize } from "../../web/src/files/size.js";
+import { nativeAvailable } from "./native-host.js";
 import { h } from "../../web/lib/snabbdom/build/index.js";
 import type { VNode } from "../../web/lib/snabbdom/build/index.js";
 import { uiIcon } from "../../web/src/icons.js";
@@ -10,7 +11,7 @@ export function renderBrowserStatus(transport: LocalTransport | null, pins = new
   const metrics = transport?.metrics, turn = metrics?.turn;
   const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)}s`;
   const started = (turn?.requests ?? 0) > 0;
-  const network = !transport?.networkAccess ? "network off" : transport.dotnetRelay ? transport.dotnetRelay.token ? "HTTP relay" : "relay token needed" : "direct network";
+  const network = !transport?.networkAccess ? "network off" : nativeAvailable() ? "native HTTP" : transport.dotnetRelay ? transport.dotnetRelay.token ? "HTTP relay" : "relay token needed" : "direct network";
   const limits = transport?.effectiveTurnLimits, model = transport?.modelLimits.value;
   const tokens = (value: number | null | undefined): string => value == null ? "Not reported" : value.toLocaleString();
   const source = metrics?.context.source === "server_usage" ? "last provider input" : "CLI estimate";

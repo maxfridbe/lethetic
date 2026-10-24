@@ -3,6 +3,8 @@ fn main() {
         "choose_directory",
         "sync_directory",
         "revoke_directory",
+        "grant_network",
+        "revoke_network",
         "set_working",
     ])
     .android_path("android")

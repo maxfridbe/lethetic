@@ -1,4 +1,5 @@
 import { connectionLimits, connectionLimitsHtml } from "./connection-limits.js";
+import { nativeAvailable } from "./native-host.js";
 import { buttonIconHtml } from "../../web/src/icons.js";
 import { validateConnection, normalizeApiKey, saveConnections, saveConnectionKeys } from "./connection.js";
 import { fetchModels } from "./models.js";
@@ -62,6 +63,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     <a href="${new URL("../../runtimes/dotnetdide/llm.md", import.meta.url).href}" target="_blank" rel="noopener">.NET usage guide</a>
     <a href="${new URL("../../runtimes/dotnetdide/docs/media-and-packages.md", import.meta.url).href}" target="_blank" rel="noopener">Media libraries &amp; NuGet guide</a>
     <p data-field="permissions" class="browser-note" role="status"></p>
+    <div class="browser-route-controls" data-field="browser-network-route"${nativeAvailable() ? " hidden" : ""}>
     <label>HTTP route (Python and .NET) <select data-field="network-route"><option value="direct">Direct · destination CORS required</option><option value="relay">HTTP relay · optional server-side SOCKS5 / Tor</option></select></label>
     <div data-field="relay-fields" class="browser-relay-fields" hidden>
       <label>Relay endpoint<input data-field="relay-endpoint" type="url" placeholder="https://your-relay.example/relay" autocomplete="off" spellcheck="false"></label>
@@ -73,6 +75,8 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     <button type="button" data-field="apply-route">${buttonIconHtml("save")}Apply HTTP route</button>
     <p data-field="route-state" role="status" class="browser-note"></p>
     <p class="browser-note">Mode, permission and route changes keep this chat and its files; code variables restart. Direct HTTP needs destination CORS.</p>
+    </div>
+    ${nativeAvailable() ? '<p class="browser-note">When Network access is enabled, Python and .NET use the app’s HTTP client automatically. No proxy setup or destination CORS required. Mode and permission changes keep chat and files; code variables restart.</p>' : ""}
     </fieldset>
     <p class="connection-hint">${credentialStorage ? "Keys stay in this tab and survive refresh." : "Keys stay in memory."} Switching connections keeps this session’s history, files, and code variables.</p>
     <p data-field="status" role="status"></p>`);
@@ -172,7 +176,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     input("network").checked = transport.networkAccess;
     input("network").disabled = transport.busy || transport.mode === "general";
     field(dialog, "permissions").textContent = transport.mode !== "general"
-      ? `Session files: read/write enabled · Network: ${transport.networkAccess ? "enabled" : "disabled"} · Sites: ${transport.siteAccess ? "enabled" : "disabled"}${transport.pythonEnabled ? "" : ` · NuGet: ${transport.nugetAccess ? "enabled (NuGet.org)" : "disabled"}`} · Saved HTTP route: ${transport.dotnetRelay ? transport.dotnetRelay.endpoint + (transport.dotnetRelay.token ? " · token present" : " · token required") : "direct (browser CORS)"}`
+      ? `Session files: read/write enabled · Network: ${transport.networkAccess ? "enabled" : "disabled"} · Sites: ${transport.siteAccess ? "enabled" : "disabled"}${transport.pythonEnabled ? "" : ` · NuGet: ${transport.nugetAccess ? "enabled (NuGet.org)" : "disabled"}`} · HTTP route: ${nativeAvailable() ? "native app · automatic" : transport.dotnetRelay ? transport.dotnetRelay.endpoint + (transport.dotnetRelay.token ? " · token present" : " · token required") : "direct (browser CORS)"}`
       : "Code execution is off.";
   };
   const routeEditor = (): void => {

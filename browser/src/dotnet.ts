@@ -1,4 +1,5 @@
 import { executionTimeout } from "./lifecycle.js";
+import { NativeNetwork } from "./native-network.js";
 import type { DotnetRelay } from "./network-route.js";
 import { emptyWorkspace, parseWorkspace } from "./workspace.js";
 import type { Workspace } from "./workspace.js";
@@ -12,7 +13,7 @@ export const DOTNET_TOOL_DEFINITION = {
     "Create parent directories before writing; await Run and check run.Success, run.Build.Output, run.Error and run.ExitCode. " +
     "A .cs path builds only that file; a directory or .csproj builds multiple files. Builds emit bin/*.dll and bin/*.pdb. " +
     "Default usings: System, System.IO, System.Linq, System.Collections.Generic, System.Threading.Tasks. " +
-    "Add explicit using directives for other available .NET libraries. Dotnetdide.Net provides async HTTP when the host enables Network access; browser CORS applies. " +
+    "Add explicit using directives for other available .NET libraries. Dotnetdide.Net provides async HTTP when the host enables Network access; browser-only direct requests require destination CORS. " +
     "No shell, native OS or full MSBuild/NuGet project restore. StbImageSharp/StbImageWriteSharp, NAudio.Core and Concentus/Oggfile are bundled for images, WAV and Ogg Opus. Await DotnetDide.Nuget.Load(name, optionalVersion) in a separate call before using extra managed packages; requires NuGet package access. " +
     "DotnetDide.Wire hosts ASP.NET middleware and HttpContext routes on virtual ports when Interactive sites is enabled; await Wire.ListenAsync and return, then open Sites. " +
     "In a later submission, Dotnet.GetDebugInfo() returns JSON with prior console/iframe logs, virtual HTTP requests and loaded assemblies; parse, filter or save it to debug-info.json. " +
@@ -71,7 +72,8 @@ export function createDotnetTool(options: {
   const timeout = options.timeoutMs ?? 120_000;
   if (!Number.isFinite(timeout) || timeout < 1 || timeout > 3_600_000) throw new Error(".NET timeout must be between 1 ms and one hour.");
   let sites: WireSite[] = [];
-  const terminate = (): void => { runtime?.terminate(); runtime = null; installed = ""; sites = []; };
+  const nativeNetwork = new NativeNetwork();
+  const terminate = (): void => { nativeNetwork.reset(); runtime?.terminate(); runtime = null; installed = ""; sites = []; };
   async function perform<T>(signal: AbortSignal, action: (runtime: DotnetRuntime, signal: AbortSignal) => Promise<T>, requestTimeout = timeout): Promise<{ result: T; warning: string }> {
     if (operation) throw new Error(".NET is already running.");
     signal.throwIfAborted();
@@ -82,8 +84,9 @@ export function createDotnetTool(options: {
     controller.signal.addEventListener("abort", cancel, { once: true });
     const cancelDeadline = executionTimeout(() => controller.abort(new Error(".NET timed out; completed session files are kept.")), requestTimeout);
     try {
+      const relay = await nativeNetwork.route(options.networkAccess ?? false, options.relay ?? null, controller.signal);
       runtime ??= await (options.loadRuntime ?? loadRuntime)({ signal: controller.signal, networkAccess: options.networkAccess ?? false,
-        nugetAccess: options.nugetAccess ?? false, siteAccess: options.siteAccess ?? false, ...(options.relay ? { relay: options.relay } : {}) });
+        nugetAccess: options.nugetAccess ?? false, siteAccess: options.siteAccess ?? false, ...(relay ? { relay } : {}) });
       controller.signal.throwIfAborted();
       const current = JSON.stringify(checkpoint);
       if (installed !== current) { await runtime.importWorkspace(checkpoint); installed = current; }
