@@ -3,7 +3,6 @@ package io.github.maxfridbe.lethetic.host
 import android.app.Activity
 import android.view.View
 import android.view.ViewGroup
-import android.webkit.WebView
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -20,12 +19,14 @@ import org.robolectric.annotation.Config
 class SafeWebViewInsetsTest {
     private lateinit var activity: Activity
     private lateinit var content: ViewGroup
-    private lateinit var web: WebView
+    private lateinit var viewport: View
 
     @Before fun setup() {
         activity = Robolectric.buildActivity(Activity::class.java).setup().get()
-        web = WebView(activity)
-        activity.setContentView(web)
+        // Robolectric's WebView provider stubs setFrame(), so its bounds stay zero.
+        // Use a match-parent View to exercise the native viewport's real layout.
+        viewport = View(activity)
+        activity.setContentView(viewport)
         content = activity.findViewById(android.R.id.content)
         SafeWebViewInsets.install(activity)
     }
@@ -44,28 +45,28 @@ class SafeWebViewInsetsTest {
 
     @Test fun systemBarsShrinkTheWebViewAndAreNotAppliedTwice() {
         val remaining = dispatch(Insets.of(0, 24, 0, 48))
-        assertEquals(24, web.top)
-        assertEquals(752, web.bottom)
+        assertEquals(24, viewport.top)
+        assertEquals(752, viewport.bottom)
         assertEquals(Insets.NONE, remaining.getInsets(WindowInsetsCompat.Type.systemBars()))
         dispatch(Insets.of(0, 24, 0, 48))
-        assertEquals(24, web.top)
-        assertEquals(752, web.bottom)
+        assertEquals(24, viewport.top)
+        assertEquals(752, viewport.bottom)
     }
 
     @Test fun keyboardReplacesNavigationInsetAndRestoresOnDismissal() {
         val remaining = dispatch(Insets.of(0, 24, 0, 24), keyboard = 300)
-        assertEquals(500, web.bottom)
+        assertEquals(500, viewport.bottom)
         assertEquals(Insets.NONE, remaining.getInsets(WindowInsetsCompat.Type.ime()))
         dispatch(Insets.of(0, 24, 0, 24))
-        assertEquals(776, web.bottom)
+        assertEquals(776, viewport.bottom)
     }
 
     @Test fun landscapeCutoutAndChangedNavigationEdgesRemainOutsideWebView() {
         dispatch(Insets.of(0, 0, 24, 0), cutout = Insets.of(60, 0, 0, 0))
-        assertEquals(60, web.left)
-        assertEquals(376, web.right)
+        assertEquals(60, viewport.left)
+        assertEquals(376, viewport.right)
         dispatch(Insets.of(0, 24, 0, 48))
-        assertEquals(0, web.left)
-        assertEquals(400, web.right)
+        assertEquals(0, viewport.left)
+        assertEquals(400, viewport.right)
     }
 }

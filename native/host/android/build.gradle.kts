@@ -13,6 +13,12 @@ android {
     }
 }
 kotlin { compilerOptions { jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8 } }
+tasks.withType<Test>().configureEach {
+    testLogging {
+        events("passed", "failed", "skipped")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}
 dependencies {
     implementation(project(":tauri-android"))
     implementation("androidx.documentfile:documentfile:1.1.0")
