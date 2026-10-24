@@ -1789,7 +1789,7 @@ dependencies = [
 
 [[package]]
 name = "gemma-chat"
-version = "26.1024.2"
+version = "26.1024.3"
 dependencies = [
  "async-stream",
  "futures-util",
@@ -2739,7 +2739,7 @@ checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
 
 [[package]]
 name = "lethetic"
-version = "26.1024.2"
+version = "26.1024.3"
 dependencies = [
  "async-stream",
  "axum",
@@ -2794,7 +2794,7 @@ dependencies = [
 
 [[package]]
 name = "lethetic-wasm"
-version = "26.1024.2"
+version = "26.1024.3"
 dependencies = [
  "lethetic",
  "serde",

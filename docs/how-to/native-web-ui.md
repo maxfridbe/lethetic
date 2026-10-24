@@ -112,6 +112,7 @@ For Android, install Java 21, Android SDK platform/build-tools 36 and NDK
 rustup target add aarch64-linux-android
 cd native
 cargo tauri android init --ci
+cp -R src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
 cargo tauri android build --target aarch64 --apk
 python3 ../scripts/android_release.py --sign
 ```

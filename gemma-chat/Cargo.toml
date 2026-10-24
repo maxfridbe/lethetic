@@ -1,6 +1,6 @@
 [package]
 name = "gemma-chat"
-version = "26.1024.2"
+version = "26.1024.3"
 edition = "2024"
 
 [dependencies]

@@ -107,6 +107,8 @@ jobs:
           workspaces: native
       - run: cargo install tauri-cli --version 2.12.4 --locked
       - run: cargo tauri android init --ci
+      - name: Install Lethetic adaptive and themed launcher icons
+        run: cp -R src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
       - name: Build optimized Android release APK
         run: cargo tauri android build --target aarch64 --apk
       - name: Android system bars, keyboard and cutout regression tests

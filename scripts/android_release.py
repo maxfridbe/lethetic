@@ -12,6 +12,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import zipfile
 
 from release_version import current
 
@@ -45,6 +46,30 @@ def check_certificate(certificates: str) -> None:
         raise ValueError("APK has no verified signer certificate")
 
 
+def check_icons(apk: Path) -> None:
+    # aapt renames resources in optimized APKs. Inspect compiled XML and PNG
+    # dimensions rather than source filenames, which do not survive packaging.
+    adaptive = False
+    sizes = set()
+    with zipfile.ZipFile(apk) as archive:
+        for name in archive.namelist():
+            if not name.startswith("res/"):
+                continue
+            if name.endswith(".xml"):
+                data = archive.read(name)
+                adaptive |= any(all(tag.encode(encoding) in data for tag in ("adaptive-icon", "monochrome"))
+                                for encoding in ("utf-8", "utf-16-le"))
+            elif name.endswith(".png"):
+                with archive.open(name) as image:
+                    header = image.read(24)
+                if header[:8] == b"\x89PNG\r\n\x1a\n" and header[12:16] == b"IHDR":
+                    width, height = int.from_bytes(header[16:20], "big"), int.from_bytes(header[20:24], "big")
+                    if width == height:
+                        sizes.add(width)
+    if not adaptive or not {108, 162, 216, 324, 432}.issubset(sizes):
+        raise ValueError("APK is missing Lethetic adaptive/themed icons; copy src-tauri/icons/android into the generated Android res directory after init")
+
+
 def package(sign: bool) -> Path:
     key_bytes = signing_key() if sign else None
     root = Path("src-tauri/gen/android/app/build/outputs/apk")
@@ -54,6 +79,7 @@ def package(sign: bool) -> Path:
     sdk = Path(os.environ["ANDROID_HOME"]) / "build-tools" / "36.0.0"
     badging = subprocess.check_output([sdk / "aapt", "dump", "badging", apks[0]], text=True)
     check_manifest(badging)
+    check_icons(apks[0])
     destination = Path("android-release")
     destination.mkdir(exist_ok=True)
     if any(destination.iterdir()):

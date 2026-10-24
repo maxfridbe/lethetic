@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import patch
 
 import android_release
@@ -47,6 +48,24 @@ class AndroidReleaseTests(unittest.TestCase):
         values["ANDROID_KEYSTORE_BASE64"] = base64.b64encode(b"keystore").decode() + "\n"
         with patch.dict(os.environ, values, clear=True):
             self.assertEqual(android_release.signing_key(), b"keystore")
+
+    def test_packaged_icons_reject_default_launcher_and_missing_densities(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            apk = Path(tmp) / "app.apk"
+            def fixture(sizes, themed):
+                with zipfile.ZipFile(apk, "w") as archive:
+                    if themed:
+                        archive.writestr("res/a.xml", b"adaptive-icon\0foreground\0monochrome\0")
+                    for size in sizes:
+                        archive.writestr(f"res/{size}.png", b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR" + size.to_bytes(4, "big") * 2)
+            fixture([48, 72, 96, 144, 192], False)
+            with self.assertRaisesRegex(ValueError, "themed icons"):
+                android_release.check_icons(apk)
+            fixture([108, 162, 216, 324], True)
+            with self.assertRaisesRegex(ValueError, "themed icons"):
+                android_release.check_icons(apk)
+            fixture([108, 162, 216, 324, 432], True)
+            android_release.check_icons(apk)
 
     def test_publication_rejects_debug_or_unsigned_apks(self):
         for name in ("app-debug.apk", "com.TechHurts.Lethetic_v26.1024.01-unsigned.apk"):
@@ -103,7 +122,7 @@ class AndroidReleaseTests(unittest.TestCase):
             apk = Path("src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-release-unsigned.apk")
             apk.parent.mkdir(parents=True)
             apk.write_bytes(b"input")
-            with patch.object(android_release.subprocess, "check_output", return_value="package: name='app'"), patch.object(android_release.subprocess, "run", side_effect=run):
+            with patch.object(android_release, "check_icons"), patch.object(android_release.subprocess, "check_output", return_value="package: name='app'"), patch.object(android_release.subprocess, "run", side_effect=run):
                 with self.assertRaisesRegex(RuntimeError, "Signing failed"):
                     android_release.package(True)
             self.assertFalse(list(Path("android-release").glob("*.apk")))

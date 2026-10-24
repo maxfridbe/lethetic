@@ -2021,7 +2021,7 @@ dependencies = [
 
 [[package]]
 name = "lethetic-desktop"
-version = "26.1024.2"
+version = "26.1024.3"
 dependencies = [
  "serde_json",
  "tauri",
@@ -2033,7 +2033,7 @@ dependencies = [
 
 [[package]]
 name = "lethetic-directory"
-version = "26.1024.2"
+version = "26.1024.3"
 dependencies = [
  "base64 0.22.1",
  "cap-std",
@@ -3718,7 +3718,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-lethetic-host"
-version = "26.1024.2"
+version = "26.1024.3"
 dependencies = [
  "keepawake",
  "lethetic-directory",
