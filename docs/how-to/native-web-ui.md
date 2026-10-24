@@ -98,7 +98,7 @@ system dependencies. Bundles are written to `native/target/release/bundle/`.
 Build on each target OS; Windows/macOS signing and macOS notarization need your
 own certificates. Unsigned builds may trigger OS installation warnings.
 
-For Android, install Java 17+, Android SDK platform/build-tools 36 and NDK
+For Android, install Java 21, Android SDK platform/build-tools 36 and NDK
 29.0.14206865. Set `ANDROID_HOME` and `NDK_HOME`, then:
 
 ```sh

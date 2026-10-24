@@ -18,7 +18,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
-      - name: Keep the latest 20 published releases
+      - name: Keep the latest 30 published releases
         uses: actions/github-script@v7
         with:
           script: |
@@ -29,11 +29,11 @@ jobs:
             const published = releases
               .filter(release => !release.draft && release.published_at)
               .sort((a, b) => Date.parse(b.published_at) - Date.parse(a.published_at) || b.id - a.id);
-            for (const release of published.slice(20)) {
+            for (const release of published.slice(30)) {
               core.info(`Deleting old release ${release.tag_name}; keeping its Git tag.`);
               await github.rest.repos.deleteRelease({
                 ...context.repo,
                 release_id: release.id,
               });
             }
-            core.info(`Retained ${Math.min(published.length, 20)} published releases; drafts and Git tags are unchanged.`);
+            core.info(`Retained ${Math.min(published.length, 30)} published releases; drafts and Git tags are unchanged.`);

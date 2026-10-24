@@ -78,11 +78,15 @@ jobs:
         with:
           name: native-frontend
           path: native/dist
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
-      - uses: android-actions/setup-android@v3
+          java-version: '21'
+      - name: Set up supported Android command-line tools
+        uses: android-actions/setup-android@v4
+        with:
+          # The legacy "tools" package requested by v3 is no longer published.
+          packages: platform-tools
       - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;29.0.14206865'
       - run: echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
