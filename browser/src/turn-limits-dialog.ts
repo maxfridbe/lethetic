@@ -34,7 +34,7 @@ export function createTurnLimitsDialog(transport: LocalTransport) {
     const model = transport.modelLimits.value;
     if (!model?.context) return;
     const limits = effectiveLimits({...transport.turnLimits, contextTokens: 2000000,
-      maxOutputTokens: Math.min(Number(input("output").value) || 4096, 131072)}, model);
+      maxOutputTokens: Math.min(Number(input("output").value) || DEFAULT_TURN_LIMITS.maxOutputTokens, 131072)}, model);
     input("output").value = String(limits.maxOutputTokens);
     input("context").value = String(limits.contextTokens);
     field(dialog, "status").textContent = "Model context filled, reserving output tokens. Save to apply to this session.";

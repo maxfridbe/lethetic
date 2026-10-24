@@ -163,8 +163,17 @@ refresh, and apply to its next turn without changing its files or worker variabl
 | Entire-turn timeout | 10 minutes | 0–1,440 minutes; 0 disables it |
 | Model requests per turn | 32 | 1–1,000 |
 | Transient retries per request | 2 | 0–10 |
-| Context input budget | 32,768 tokens | 256–2,000,000 |
-| Maximum output, including reasoning | 4,096 tokens | 1–131,072 |
+| Context input budget | 131,072 tokens | 256–2,000,000 |
+| Maximum output, including reasoning | 16,384 tokens | 1–131,072 |
+
+Connections also shows these editable limits. **Test connection** discovers the
+selected model's context/output capacity (including OpenRouter provider caps),
+fills the context budget with room reserved for output, and validates a model
+response. **Apply limits** saves to the current session without replacing its
+history or files. Discovery failure leaves manual budgets available. Stale
+results from a different model or endpoint cannot overwrite the editor.
+Use **Defaults → Apply limits** to give an existing session the new fourfold
+token defaults; saved budgets are otherwise preserved.
 
 Choose budgets supported by the model. Context estimates use the CLI's approximate
 byte-based accounting, not the provider's tokenizer. The current user turn is
@@ -329,6 +338,16 @@ and a normal session save/reload. Traces use normalized `provider_traces` rows i
 the session database. Byte/request omissions and incomplete reads are explicit;
 see [diagnostic limits and SQL examples](docs/storage.md#provider-diagnostics).
 Older reports cannot recover streams discarded before capture was introduced.
+
+Provider failures show their public error message/code instead of a generic
+transport error. An output-limit failure (including OpenRouter's
+`native_finish_reason: "max_output_tokens"`) displays **Output limit reached**,
+the requested output budget including reasoning, and **Ctrl+P → Turn limits →
+Maximum output tokens**. Adjust that limit within the model's supported maximum,
+or split the task into smaller steps. Limits are never raised automatically.
+Incomplete tool calls are never executed, even if a provider labels the response
+`tool_calls`. Known connection and relay keys are redacted before error display;
+arbitrary provider metadata and HTML error pages are kept out of the message.
 
 SDK hosts can receive completed attempts with `createRuntime({ ...,
 onTrace(trace) { /* store redacted diagnostics */ } })` and read

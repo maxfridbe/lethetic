@@ -19,3 +19,5 @@ pub mod retry;
 
 pub mod request;
 pub use request::{RESERVED_EXTRA_BODY_FIELDS, build_request, validate_extra_body};
+
+pub mod provider_error;

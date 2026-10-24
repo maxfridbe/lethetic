@@ -16,7 +16,7 @@ await test("OpenRouter model and provider limits use authenticated canonical end
   assert.equal(result.context,10000); assert.equal(result.output,2000); assert.equal(result.endpoints[0]?.context,8000);
   const limits=effectiveLimits(DEFAULT_TURN_LIMITS,result);
   assert.equal(limits.contextTokens,7000); assert.equal(limits.maxOutputTokens,1000);
-  assert.equal(DEFAULT_TURN_LIMITS.contextTokens,32768);
+  assert.equal(DEFAULT_TURN_LIMITS.contextTokens,131072);
   assert.deepEqual(effectiveLimits(DEFAULT_TURN_LIMITS,null),DEFAULT_TURN_LIMITS);
 });
 await test("invalid and missing limits stay unknown; provider lookup failure retains catalog", async () => {

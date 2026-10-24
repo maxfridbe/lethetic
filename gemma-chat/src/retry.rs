@@ -29,6 +29,13 @@ pub fn is_retryable(error: &str) -> bool {
     if let Some(status) = http_status(error) {
         return status == 429 || status >= 500;
     }
+    if error.starts_with("Provider stopped because")
+        || error.starts_with("Provider blocked")
+        || error.starts_with("Provider error")
+        || error.starts_with("Provider could not complete")
+    {
+        return false;
+    }
     TRANSIENT.iter().any(|marker| error.contains(marker))
 }
 

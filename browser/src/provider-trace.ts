@@ -151,3 +151,8 @@ export function parseProviderTraces(value:unknown):ProviderTraceSnapshot {
     responseComplete:trace.responseComplete,redacted:trace.redacted,error:trace.error,
   }))};
 }
+
+/** Remove known credentials before displaying provider-controlled error text. */
+export function redactProviderText(text: string, secrets: readonly string[]): string {
+  return clip(new Redactor(variants(secrets)).push(text, true), 4096);
+}

@@ -125,7 +125,7 @@ await test("Anthropic uses its own headers and content blocks", async () => {
       assert.equal(headers.get("Authorization"), null);
       const body = JSON.parse(String(init?.body));
       assert.equal(body.messages[0].role, "user");
-      assert.equal(body.max_tokens, 4096);
+      assert.equal(body.max_tokens, 16384);
       return Response.json({ role: "assistant", stop_reason: "end_turn", content: [{ type: "text", text: "hi" }] });
     } });
   assert.equal(await runtime.send("hello"), "hi");

@@ -1,4 +1,4 @@
-import { TraceCapture } from "./provider-trace.js";
+import { TraceCapture, redactProviderText } from "./provider-trace.js";
 import type { ProviderTrace } from "./provider-trace.js";
 import { DEFAULT_TURN_LIMITS, parseTurnLimits, LOOP_MODES, parseLoopMode } from "./turn-limits.js";
 import { abortable, delay } from "./async.js";
@@ -51,9 +51,9 @@ export interface RuntimeOptions {
   timeoutMs?: number;
   /** Transient retries per model request, default 2; no completed tool is replayed. */
   providerRetries?: number;
-  /** CLI context input budget, estimated at four bytes per token; default 32768. */
+  /** CLI context input budget, estimated at four bytes per token; default 131072. */
   contextTokens?: number;
-  /** Model output budget, including reasoning; default 4096. */
+  /** Model output budget, including reasoning; default 16384. */
   maxOutputTokens?: number;
   /** CLI loop detection mode; default combined. */
   loopDetection?: string;
@@ -80,6 +80,7 @@ export interface WasmCompaction {
   requests(): string; accept(id: number, text: string): void; progress(): string; result(): string | undefined; free(): void;
 }
 interface WasmModule {
+  provider_error_message(body: string): string | undefined;
   BrowserDatabase: new (bytes: Uint8Array) => WasmDatabase;
   BrowserCompaction: new (history: string, context: number, output: number) => WasmCompaction;
   check_loop(text: string, mode: string): string | undefined;
@@ -185,6 +186,7 @@ export class LetheticRuntime {
       `Turn timed out after ${Math.round(timeoutMs / 1000)} seconds. Change Ctrl+P → Turn limits for longer work.`)), timeoutMs);
     let responsePending = false;
     const turnId = crypto.randomUUID();
+    const secrets = [this.#options.connection.apiKey ?? "", ...(this.#options.traceSecrets ?? [])];
     this.#active = controller;
     try {
       controller.signal.throwIfAborted();
@@ -230,8 +232,9 @@ export class LetheticRuntime {
                 const duration = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - Date.now();
                 if (Number.isFinite(duration)) retryAfter = Math.max(0, Math.min(60_000, duration));
               }
-              await captureErrorResponse(response, controller.signal, this.#trace).catch(() => {});
-              throw new Error(`Model request failed (HTTP ${response.status}). Check your endpoint, model, and key.`);
+              const errorBody = await captureErrorResponse(response, controller.signal, this.#trace).catch(() => "");
+              const detail = module.provider_error_message(errorBody);
+              throw new Error(`Model request failed (HTTP ${response.status}). ${detail ?? "Check your endpoint, model, and key."}`);
             }
             responseText = await readModelResponse(response, controller.signal,
               () => new module.BrowserStream(connection.provider), event => {
@@ -246,7 +249,7 @@ export class LetheticRuntime {
           } catch (error) {
             this.#finishTrace(controller.signal.aborted ? "cancelled" : "error", controller.signal.aborted ? controller.signal.reason : error);
             controller.signal.throwIfAborted();
-            const message = error instanceof Error ? error.message : String(error);
+            const message = redactProviderText(error instanceof Error ? error.message : String(error), secrets);
             if (attempt >= providerRetries || !(error instanceof TypeError || module.retryable_error(message))) throw error;
             this.#emit({ type: "response_reset" });
             const delayMs = retryAfter ?? module.retry_delay_ms(attempt + 1);
@@ -289,7 +292,11 @@ export class LetheticRuntime {
       if (error instanceof TypeError) {
         throw new Error("Could not reach the model. Check CORS, TLS, and the endpoint address.");
       }
-      throw error instanceof Error ? error : new Error(String(error));
+      let message = redactProviderText(error instanceof Error ? error.message : String(error), secrets);
+      if (message.startsWith("Provider stopped because the output token limit")) {
+        message += `\nRequested output budget: ${limits.maxOutputTokens.toLocaleString("en-US")} tokens (including reasoning). Change Ctrl+P → Turn limits → Maximum output tokens, or split the task into smaller steps.`;
+      }
+      throw new Error(message);
     } finally {
       if (timer !== null) clearTimeout(timer);
       signal?.removeEventListener("abort", cancel);

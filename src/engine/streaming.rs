@@ -50,8 +50,8 @@ impl ProviderStream {
         } else {
             if data != "[DONE]" {
                 let value: Value = serde_json::from_str(data).map_err(|e| e.to_string())?;
-                if value.get("error").is_some() {
-                    return Err("provider returned a streaming error".into());
+                if let Some(error) = gemma_chat::provider_error::response_error(&value) {
+                    return Err(error);
                 }
                 if let Some(usage) = value.get("usage").filter(|v| v.is_object()) {
                     merge(&mut self.usage, usage);

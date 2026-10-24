@@ -155,3 +155,29 @@ await test("a stalled HTTP error body cannot prevent the provider retry",async()
     assert.equal(traces[1]!.outcome,'complete');
   }finally{runtime.dispose();}
 });
+
+await test("OpenRouter native output limit is explained with configured budget and never runs tools",async()=>{
+  const traces: import('../src/provider-trace.js').ProviderTrace[]=[];let executions=0,requests=0;
+  const runtime=await createRuntime({connection,wasm,maxOutputTokens:4096,onTrace:t=>traces.push(t),tools:[{name:'dotnet',description:'run',parameters:{type:'object'},execute:()=>{executions++;return 'unused';}}],fetch:async()=>{
+    requests++;
+    return sse(frame(chunk({tool_calls:[{index:0,id:'one',type:'function',function:{name:'dotnet',arguments:''}}]}))+
+      frame({choices:[{delta:{},finish_reason:'tool_calls',native_finish_reason:'max_output_tokens'}]})+
+      frame({choices:[{delta:{},finish_reason:'tool_calls',native_finish_reason:'max_output_tokens'}],usage:{prompt_tokens:5387,completion_tokens:4142}})+frame('[DONE]'));
+  }});
+  try {await assert.rejects(runtime.send('create SVG'),error=>{assert.match(String(error),/output token limit/);assert.match(String(error),/4,096/);assert.match(String(error),/Ctrl\+P → Turn limits/);assert.match(String(error),/max_output_tokens/);return true;});
+    assert.equal(executions,0);assert.equal(requests,1);assert.deepEqual(runtime.history(),[]);
+    assert.equal(traces[0]!.responseComplete,true);assert.match(traces[0]!.error!,/max_output_tokens/);
+  }finally{runtime.dispose();}
+});
+await test("HTTP and SSE provider messages are useful, bounded and redact credentials",async()=>{
+  for(const streamed of [false,true]) {
+    const traces: import('../src/provider-trace.js').ProviderTrace[]=[];let requests=0;
+    const runtime=await createRuntime({connection:{...connection,apiKey:'diagnostic-secret'},wasm,onTrace:t=>traces.push(t),fetch:async()=>{
+      requests++;const error={error:{code:402,message:'Insufficient credits for diagnostic-secret',metadata:{raw:'private-metadata'}}};
+      return streamed?sse(frame(error)):Response.json(error,{status:402});
+    }});
+    try {await assert.rejects(runtime.send('hi'),error=>{assert.match(String(error),/HTTP 402/);assert.match(String(error),/Insufficient credits for \[REDACTED\]/);assert.ok(!String(error).includes('diagnostic-secret'));assert.ok(!String(error).includes('private-metadata'));return true;});
+      assert.equal(requests,1);assert.deepEqual(runtime.history(),[]);assert.ok(!JSON.stringify(traces).includes('diagnostic-secret'));
+    }finally{runtime.dispose();}
+  }
+});

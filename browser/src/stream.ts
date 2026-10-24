@@ -19,7 +19,9 @@ export async function readModelResponse(response: Response, signal: AbortSignal,
   let bytes = 0, buffer = "", data: string[] = [], completed = false;
   const dispatch = (): void => {
     if (!data.length) return;
-    const event = JSON.parse(stream!.push(data.join("\n"))) as { updates: StreamDelta[]; done: boolean };
+    const payload = data.join("\n");
+    if (payload === "[DONE]") observer?.received();
+    const event = JSON.parse(stream!.push(payload)) as { updates: StreamDelta[]; done: boolean };
     data = [];
     for (const delta of event.updates) onDelta(delta);
     completed = event.done;
@@ -66,10 +68,10 @@ export async function readModelResponse(response: Response, signal: AbortSignal,
 }
 
 /** Error bodies are useful diagnostics, but never need the full model-response budget. */
-export async function captureErrorResponse(response: Response, signal: AbortSignal, observer: ResponseObserver): Promise<void> {
+export async function captureErrorResponse(response: Response, signal: AbortSignal, observer: ResponseObserver): Promise<string> {
   const reader = response.body?.getReader();
-  if (!reader) { observer.received(); return; }
-  const decoder = new TextDecoder(); let received = 0;
+  if (!reader) { observer.received(); return ""; }
+  const decoder = new TextDecoder(); let received = 0, body = "";
   // An error response must not hold up retry just because its body never closes.
   const deadline = new AbortController();
   const abort = (): void => deadline.abort(signal.reason);
@@ -79,12 +81,15 @@ export async function captureErrorResponse(response: Response, signal: AbortSign
   try {
     while (received < 64 * 1024) {
       const chunk = await abortable(reader.read(), deadline.signal);
-      if (chunk.done) { observer.chunk(decoder.decode(), 0); observer.received(); return; }
+      if (chunk.done) { const tail = decoder.decode(); observer.chunk(tail, 0); observer.received(); return body + tail; }
       // The trace window bounds storage even if the final network chunk exceeds this read budget.
-      observer.chunk(decoder.decode(chunk.value, {stream:true}), chunk.value.byteLength);
+      const text = decoder.decode(chunk.value, {stream:true});
+      observer.chunk(text, chunk.value.byteLength);
+      body = (body + text).slice(0, 64 * 1024);
       received += chunk.value.byteLength;
     }
     observer.chunk(decoder.decode(), 0);
+    return body;
   } finally {
     clearTimeout(timer); signal.removeEventListener("abort", abort);
     await reader.cancel().catch(() => {}); reader.releaseLock();

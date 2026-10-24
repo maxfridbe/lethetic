@@ -45,6 +45,7 @@ pub struct StreamParser {
     is_reasoning: bool,
     is_text: bool,
     latest_usage: Option<Usage>,
+    failed: bool,
     pending_done: Option<PendingDone>,
 }
 
@@ -61,12 +62,16 @@ impl StreamParser {
             is_reasoning: false,
             is_text: false,
             latest_usage: None,
+            failed: false,
             pending_done: None,
         }
     }
 
     /// Process one raw SSE line. Returns zero or more events.
     pub fn process_line(&mut self, line: &str) -> Vec<StreamEvent> {
+        if self.failed {
+            return Vec::new();
+        }
         let trimmed = line.trim();
         if trimmed
             .strip_prefix("data:")
@@ -85,6 +90,13 @@ impl StreamParser {
             Err(e) => return vec![StreamEvent::Error(format!("JSON parse error: {e}"))],
         };
 
+        if let Some(error) = chunk.error.as_ref().and_then(|error| {
+            crate::provider_error::response_error(&serde_json::json!({"error":error}))
+        }) {
+            self.abort();
+            self.failed = true;
+            return vec![StreamEvent::Error(error)];
+        }
         let mut events = Vec::new();
         let choices_are_empty = chunk
             .choices
@@ -116,6 +128,13 @@ impl StreamParser {
                     .as_deref()
                     .filter(|reason| *reason != "null")
                     .is_none_or(|reason| Some(reason) == pending.stop_reason.as_deref());
+            if let Some(error) = crate::provider_error::finish_error(
+                choices[0].finish_reason.as_deref(),
+                choices[0].native_finish_reason.as_deref(),
+            ) {
+                pending.terminal_error = Some(error);
+                self.tool_calls.clear();
+            }
             if !harmless_echo {
                 if pending.terminal_error.is_none() {
                     pending.terminal_error =
@@ -145,7 +164,11 @@ impl StreamParser {
         else {
             return events;
         };
-        let terminal_error = match reason {
+        let terminal_error = crate::provider_error::finish_error(
+            Some(reason),
+            choice.native_finish_reason.as_deref(),
+        )
+        .or_else(|| match reason {
             "stop" if self.tool_calls.is_empty() => None,
             "stop" => Some("Provider returned tool calls with finish reason 'stop'".to_string()),
             "tool_calls" if self.tool_calls.is_empty() => {
@@ -167,7 +190,7 @@ impl StreamParser {
             unsupported => Some(format!(
                 "Provider ended with non-complete finish reason '{unsupported}'"
             )),
-        };
+        });
         if terminal_error.is_some() {
             self.tool_calls.clear();
         }
@@ -527,7 +550,7 @@ mod tests {
         let events = parser.process_line("data:[DONE]");
         assert!(matches!(
             events.as_slice(),
-            [StreamEvent::Error(error)] if error.contains("non-complete finish reason 'length'")
+            [StreamEvent::Error(error)] if error.contains("output token limit")
         ));
     }
 
@@ -768,5 +791,44 @@ mod tests {
                 .iter()
                 .any(|event| matches!(event, StreamEvent::ToolCallComplete { .. }))
         );
+    }
+    #[test]
+    fn openrouter_native_limit_precedes_empty_or_valid_tool_arguments() {
+        for arguments in ["", "{}"] {
+            for late_reason in [false, true] {
+                let mut parser = StreamParser::new();
+                parser.process_line(&tool_start(0, "c1", "dotnet"));
+                parser.process_line(&tool_args(0, arguments));
+                let terminal = serde_json::json!({"choices":[{"delta":{},"finish_reason":"tool_calls",
+                    "native_finish_reason":if late_reason {None} else {Some("max_output_tokens")}}]});
+                parser.process_line(&format!("data: {terminal}"));
+                let usage = serde_json::json!({"choices":[{"delta":{},"finish_reason":"tool_calls","native_finish_reason":"max_output_tokens"}],
+                    "usage":{"prompt_tokens":5387,"completion_tokens":4142}});
+                let updates = parser.process_line(&format!("data: {usage}"));
+                assert!(
+                    updates
+                        .iter()
+                        .any(|e| matches!(e, StreamEvent::UsageUpdate(_)))
+                );
+                let events = parser.process_line("data: [DONE]");
+                assert!(
+                    matches!(events.as_slice(),[StreamEvent::Error(error)] if error.contains("output token limit") && error.contains("max_output_tokens"))
+                );
+                assert!(parser.take_tool_calls().is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn provider_error_frames_preserve_details_without_authorizing_tools() {
+        let mut parser = StreamParser::new();
+        parser.process_line(&tool_start(0, "c1", "dotnet"));
+        let events=parser.process_line(r#"data: {"error":{"code":402,"message":"Insufficient credits","metadata":{"raw":"secret"}}}"#);
+        assert!(
+            matches!(events.as_slice(),[StreamEvent::Error(error)] if error=="Provider error (HTTP 402): Insufficient credits")
+        );
+        assert!(parser.process_line(&tool_args(0, "{}")).is_empty());
+        assert!(parser.process_line(&finish("tool_calls")).is_empty());
+        assert!(parser.take_tool_calls().is_empty());
     }
 }

@@ -24,7 +24,7 @@ await test("discovered limits cap real WASM requests without replacing session b
     };
     transport.start(); const id=transport.state.session.session_id;
     await transport.modelLimits.ensure(connection);
-    assert.equal(transport.effectiveTurnLimits.contextTokens,8000); assert.equal(transport.turnLimits.contextTokens,32768);
+    assert.equal(transport.effectiveTurnLimits.contextTokens,8000); assert.equal(transport.turnLimits.contextTokens,131072);
     for(let turn=0;turn<2;turn++){
       transport.send({type:'send_prompt',session_id:id,prompt:'hello'},0); await Promise.resolve();
       for(let n=0;transport.busy && n<100;n++)await new Promise(resolve=>setTimeout(resolve,5));
@@ -34,6 +34,6 @@ await test("discovered limits cap real WASM requests without replacing session b
     assert.equal(transport.state.status.context_tokens,'1200'); assert.equal(transport.state.status.context_limit_tokens,'8000');
     assert.equal(transport.state.status.context_source,'server_usage'); assert.equal(transport.state.status.request_usage?.total_tokens,'1220');
     transport.openSession(id); assert.equal(transport.metrics.context.tokens,1200);
-    assert.equal(transport.turnLimits.contextTokens,32768);
+    assert.equal(transport.turnLimits.contextTokens,131072);
   } finally {transport.dispose();globalThis.fetch=original;}
 });

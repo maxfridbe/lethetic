@@ -1,5 +1,5 @@
 export interface TurnLimits { timeoutMs: number; maxRounds: number; providerRetries: number; contextTokens: number; maxOutputTokens: number }
-export const DEFAULT_TURN_LIMITS: Readonly<TurnLimits> = { timeoutMs: 600_000, maxRounds: 32, providerRetries: 2, contextTokens: 32_768, maxOutputTokens: 4096 };
+export const DEFAULT_TURN_LIMITS: Readonly<TurnLimits> = { timeoutMs: 600_000, maxRounds: 32, providerRetries: 2, contextTokens: 131_072, maxOutputTokens: 16_384 };
 export function parseTurnLimits(value: unknown): TurnLimits {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("Invalid turn limits.");
   const limits = {...DEFAULT_TURN_LIMITS, ...value} as TurnLimits;

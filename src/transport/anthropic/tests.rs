@@ -792,8 +792,12 @@ fn rejects_native_tools_without_tool_use_stop_reason() {
         assert!(
             events.iter().any(|event| matches!(
                 event,
-                StreamEvent::Error(error) if error.contains("was not accepted")
-                    || error.contains("refusing to execute")
+                StreamEvent::Error(error) if match reason {
+                    Some("max_tokens") => error.contains("output token limit"),
+                    Some("refusal") => error.contains("content filter"),
+                    Some("end_turn") => error.contains("refusing to execute"),
+                    _ => error.contains("was not accepted"),
+                }
             )),
             "expected a refusal for stop reason {reason:?}: {events:?}"
         );
@@ -901,7 +905,11 @@ fn rejects_partial_or_refused_native_text_turns() {
         let events = parser.process_data(&json!({"type":"message_stop"}).to_string());
         assert!(events.iter().any(|event| matches!(
             event,
-            StreamEvent::Error(error) if error.contains("was not accepted")
+            StreamEvent::Error(error) if match reason {
+                Some("max_tokens") => error.contains("output token limit"),
+                Some("refusal") => error.contains("content filter"),
+                _ => error.contains("was not accepted"),
+            }
         )));
         assert!(
             !events

@@ -43,10 +43,60 @@ export async function testConnectionCredentials(evaluate: (source: string) => Pr
       const runtime=await createRuntime({connection:{...connection,apiKey:'  '+originalKey+'  '}});
       try{await runtime.send('chat credential regression');}finally{runtime.dispose();}
       assert(requests.at(-1)?.headers.get('Authorization')==='Bearer '+originalKey,'Chat used a different credential');
-      assert(requests.length===3,'Unexpected credential request count');
+      assert(requests.length===4 && requests.every(request=>request.headers.get('Authorization')==='Bearer '+originalKey),'Unexpected credential request count or model-discovery credential');
       assert(location.hash===session,'Testing changed the active session');
     } finally {
       window.fetch=originalFetch;key.value=originalKey;key.dispatchEvent(new Event('input'));
     }
+  })()`);
+}
+
+export async function testConnectionLimits(evaluate: (source: string) => Promise<unknown>): Promise<void> {
+  await evaluate(`(async()=>{
+    const {LocalTransport}=await import('./src/local-transport.js');
+    const {createConnectionsDialog}=await import('./src/connections-dialog.js');
+    const {SessionStore}=await import('./src/sessions.js');
+    const check=(ok,message)=>{if(!ok)throw Error(message)};
+    const wait=async f=>{for(let i=0;i<400;i++){if(f())return;await new Promise(r=>setTimeout(r,20));}throw Error('Connection limits timed out')};
+    const connection={name:'Limits test',provider:'openai',endpoint:'https://openrouter.ai/api/v1/chat/completions',model:'vendor/model',apiKey:'limits-test-key'};
+    const original=fetch;let failMetadata=false,unavailable=false,chatCalls=0,staleResolve;
+    const values=new Map(),storage={getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v)};
+    globalThis.fetch=async(url,init)=>{
+      const path=new URL(String(url)).pathname;
+      check(new Headers(init?.headers).get('Authorization')==='Bearer limits-test-key','Limits lookup omitted key');
+      if(path.endsWith('/endpoints'))return Response.json({data:{endpoints:[{name:'Provider',context_length:100000,max_prompt_tokens:80000,max_completion_tokens:8000}]}});
+      if(path.endsWith('/models')){
+        if(unavailable)return new Response('',{status:503});
+        if(failMetadata)return new Promise(resolve=>{staleResolve=resolve});
+        return Response.json({data:[{id:'vendor/model',context_length:128000,top_provider:{max_completion_tokens:16000}}]});
+      }
+      const body=JSON.parse(init.body);check(body.max_tokens===8000,'Test ignored provider output cap');chatCalls++;
+      return Response.json({choices:[{finish_reason:'stop',message:{role:'assistant',content:'Connected'}}]});
+    };
+    const transport=new LocalTransport({socketOpened(){},authenticationEpochChanged(){},transportStatus(){},protocolFault(){},commandResponse(){},serverMessage(){}},{connections:[connection],storage});
+    let editor;
+    try {
+      transport.start();const id=transport.state.session.session_id;
+      check(transport.turnLimits.contextTokens===131072 && transport.turnLimits.maxOutputTokens===16384,'Fourfold defaults missing');
+      editor=createConnectionsDialog(transport);editor.open();const field=n=>editor.dialog.querySelector('[data-field="'+n+'"]');
+      await wait(()=>!field('test').disabled && chatCalls===1);
+      check(field('connection-context').value==='80000','Test did not populate context with provider cap and output reservation');
+      check(field('connection-output').value==='8000','Test did not cap output');
+      check(field('connection-model-limits').textContent.includes('128,000'),'Model capacity not shown');
+      check(field('connection-timeout').value==='10' && field('connection-rounds').value==='32','Operational defaults changed');
+      check(transport.turnLimits.contextTokens===131072,'Test silently changed saved budget');
+      field('connection-limits-form').requestSubmit();
+      check(transport.turnLimits.contextTokens===80000 && transport.turnLimits.maxOutputTokens===8000,'Apply did not persist budgets');
+      check(transport.state.session.session_id===id && transport.sessionForExport(id).messages.length===0,'Testing or Apply replaced session/history');
+      check(new SessionStore(storage).list()[0].turnLimits.contextTokens===80000,'Limits not saved');
+      field('connection-default-limits').click();check(field('connection-context').value==='131072' && field('connection-output').value==='16384','Defaults button did not restore new budgets');
+      unavailable=true;field('test').click();await wait(()=>!field('test').disabled && chatCalls===2);
+      check(field('connection-model-limits').textContent.includes('unavailable'),'Missing metadata failure status');unavailable=false;
+      failMetadata=true;field('test').click();await wait(()=>!!staleResolve);
+      field('model').value='vendor/other';field('model').dispatchEvent(new Event('input'));
+      staleResolve(Response.json({data:[{id:'vendor/model',context_length:999999}]}));await new Promise(r=>setTimeout(r,50));
+      check(field('connection-context').value==='131072' && !field('connection-model-limits').textContent.includes('999,999'),'Stale metadata overwrote editor');
+      check(chatCalls===2,'Cancelled test still called chat');
+    }finally{editor?.destroy();transport.dispose();globalThis.fetch=original;}
   })()`);
 }

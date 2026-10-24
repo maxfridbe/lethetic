@@ -618,7 +618,9 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
       this.state.status.stop_reason = "Ready";
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.state.blocks.blocks.push({ ...block("text", message + "\nIncomplete turn removed from model history; tool effects may remain.", "Turn interrupted"), success: false });
+      const title = message.startsWith("Provider stopped because the output token limit") ? "Output limit reached" :
+        message.startsWith("Provider ") || message.startsWith("Model request failed (HTTP ") ? "Provider error" : "Turn interrupted";
+      this.state.blocks.blocks.push({ ...block("text", message + "\n\nIncomplete turn removed from model history; tool effects may remain.", title), success: false });
       this.state.status.stop_reason = message;
     } finally {
       if (this.#ticker !== null) clearInterval(this.#ticker);

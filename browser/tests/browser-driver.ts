@@ -2,7 +2,7 @@ import { testSessionStorage } from "./session-storage-browser.js";
 import { testDotnetBrowser } from "./dotnet-browser.js";
 import { testPythonNetwork } from "./python-network-browser.js";
 import { testPythonSites } from "./python-sites-browser.js";
-import { testConnectionCredentials } from "./connection-browser.js";
+import { testConnectionCredentials, testConnectionLimits } from "./connection-browser.js";
 import { testStreamingControls } from "./streaming-browser.js";
 import { testConnectionThinking } from "./thinking-browser.js";
 import { spawn } from "node:child_process";
@@ -210,7 +210,7 @@ try {
   await until("document.querySelector('.app-shell').textContent.includes('Hello from the browser test')");
   await until("document.querySelector('.browser-usage-summary').textContent.includes('1,200 in')");
   check(await evaluate("document.querySelector('.browser-status').textContent.includes('1,024') && !document.querySelector('.transport-level')"), "provider cache usage or browser status failed");
-  check(await evaluate("document.querySelector('[data-pinned-stat=context]').textContent.includes('1,200 / 32,768')"), "context must use latest provider input and session input budget");
+  check(await evaluate("document.querySelector('[data-pinned-stat=context]').textContent.includes('1,200 / 131,072')"), "context must use latest provider input and session input budget");
   for (const stat of ["contextMax", "outputBudget", "requestUsage", "thinking", "files", "blocks", "timeout", "rounds", "retries"]) {
     check(await evaluate(`!!document.querySelector('[data-stat-pin=${stat}]')`), `Missing CLI-style stat ${stat}`);
   }
@@ -456,7 +456,7 @@ try {
   await evaluate("document.querySelector('dialog[open]').close()");
   check(await evaluate("location.hash") === originalHash, "refresh switched sessions");
   await until("document.querySelector('.app-shell').textContent.includes('Hello from the browser test')");
-  check(await evaluate("document.querySelector('.browser-usage-summary').textContent.includes('1,200 in') && document.querySelector('[data-pinned-stat=context]').textContent.includes('1,200 / 32,768')"), "usage/context did not survive reload");
+  check(await evaluate("document.querySelector('.browser-usage-summary').textContent.includes('1,200 in') && document.querySelector('[data-pinned-stat=context]').textContent.includes('1,200 / 131,072')"), "usage/context did not survive reload");
   await evaluate("document.querySelector('#files-toggle').click()");
   await until("!!document.querySelector('.files-entry[title=reports]')");
   await evaluate("document.querySelector('.files-entry[title=reports]').click()");
@@ -785,6 +785,7 @@ try {
   await evaluate("globalThis.dotnetTestView.destroy()");
   await testConnectionThinking(evaluate);
   await testStreamingControls(evaluate);
+  await testConnectionLimits(evaluate);
   process.stdout.write("Thinking preferences, transcript, tool continuation and reload passed.\n");
   if (config.pyodide) {
     await evaluate(`(async () => {

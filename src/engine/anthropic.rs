@@ -352,13 +352,10 @@ impl AnthropicStreamParser {
                 if let Some(update) = self.usage.update_event() {
                     events.push(update);
                 }
-                let message = event
-                    .pointer("/error/message")
-                    .and_then(Value::as_str)
-                    .unwrap_or("Unknown stream error");
-                events.push(StreamEvent::Error(format!(
-                    "claude-code-proxy stream error: {message}"
-                )));
+                events.push(StreamEvent::Error(
+                    gemma_chat::provider_error::response_error(&event)
+                        .unwrap_or_else(|| "Provider error: No error message supplied.".into()),
+                ));
             }
             "ping" => {}
             _ => {}
@@ -377,6 +374,11 @@ impl AnthropicStreamParser {
         }
         if !self.started_blocks.is_empty() {
             self.record_error("claude-code-proxy sent message_stop with unfinished content blocks");
+        }
+        if let Some(error) =
+            gemma_chat::provider_error::finish_error(self.stop_reason.as_deref(), None)
+        {
+            self.pending_error = Some(error);
         }
         if let Some(error) = self.pending_error.take() {
             self.tool_calls.clear();

@@ -419,3 +419,29 @@ fn browser_context_usage_is_the_cli_projected_estimate() {
     assert_eq!(runtime.last_request_tokens(), expected);
     assert!(expected > 0);
 }
+
+#[test]
+fn nonstream_provider_errors_and_native_limits_preserve_the_cause() {
+    for (reply, expected) in [
+        (
+            json!({"error":{"code":402,"message":"Insufficient credits"}}),
+            "Insufficient credits",
+        ),
+        (
+            json!({"choices":[{"finish_reason":"tool_calls","native_finish_reason":"max_output_tokens","message":{"role":"assistant","tool_calls":[{"id":"c1","type":"function","function":{"name":"calculate","arguments":""}}]}}]}),
+            "output token limit",
+        ),
+    ] {
+        let mut runtime = runtime();
+        runtime.begin("hello").unwrap();
+        runtime.request("openai", "model").unwrap();
+        assert!(
+            runtime
+                .accept("openai", &reply.to_string())
+                .unwrap_err()
+                .contains(expected)
+        );
+        runtime.rollback();
+        assert_eq!(runtime.history(), "[]");
+    }
+}

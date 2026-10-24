@@ -227,6 +227,7 @@ pub struct Completion {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Chunk {
+    pub error: Option<Value>,
     pub choices: Option<Vec<ChunkChoice>>,
     pub usage: Option<Usage>,
     pub timings: Option<Timings>,
@@ -242,6 +243,7 @@ pub(crate) struct Timings {
 pub(crate) struct ChunkChoice {
     pub delta: Option<Delta>,
     pub finish_reason: Option<String>,
+    pub native_finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

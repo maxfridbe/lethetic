@@ -48,6 +48,17 @@ export async function testStreamingControls(evaluate: (source: string) => Promis
       view.destroy();view=mountLethetic(root,options);
       const reopened=JSON.parse(records.get('lethetic.sessions.v1')).sessions.find(session=>session.id===id);
       assert(JSON.stringify(reopened.providerTrace)===JSON.stringify(failed.providerTrace),'Reload lost provider traces');
+      controller=null;
+      const limitedInput=root.querySelector('#composer-input');limitedInput.value='large SVG';limitedInput.dispatchEvent(new Event('input',{bubbles:true}));root.querySelector('form.composer').requestSubmit();
+      await wait(()=>!!controller);
+      emit(chunk({tool_calls:[{index:0,id:'limit',type:'function',function:{name:'lookup',arguments:''}}]}));
+      emit({choices:[{delta:{},finish_reason:'tool_calls',native_finish_reason:'max_output_tokens'}]});emit('[DONE]');
+      await wait(()=>!!root.querySelector('.activity-idle'));
+      assert(root.textContent.includes('Output limit reached'),'Missing output-limit error title');
+      assert(root.textContent.includes('8,192 tokens') && root.textContent.includes('Ctrl+P → Turn limits'),'Missing effective budget and recovery instructions');
+      const limited=JSON.parse(records.get('lethetic.sessions.v1')).sessions.find(session=>session.id===id);
+      assert(limited.providerTrace.requests.at(-1).error.includes('max_output_tokens'),'Provider reason missing from trace');
+      assert(JSON.stringify(limited.messages)===JSON.stringify(saved.messages),'Truncated response committed to history');
       root.querySelector('[aria-label="Open command palette"]').click();root.querySelector('#palette-command-loop-detection').click();
       await wait(()=>root.textContent.includes('Combined'));
     } finally {view?.destroy();window.fetch=originalFetch;root.remove();}

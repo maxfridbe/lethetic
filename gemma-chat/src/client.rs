@@ -249,6 +249,14 @@ pub async fn complete_with_usage(
         return Err(format!("Server {status}: {text}"));
     }
     let json: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    if let Some(error) = crate::provider_error::response_error(&json).or_else(|| {
+        crate::provider_error::finish_error(
+            json["choices"][0]["finish_reason"].as_str(),
+            json["choices"][0]["native_finish_reason"].as_str(),
+        )
+    }) {
+        return Err(error);
+    }
     let usage = json
         .get("usage")
         .cloned()
@@ -455,7 +463,7 @@ mod tests {
             .unwrap();
         let error_position = events
             .iter()
-            .position(|event| matches!(event, StreamEvent::Error(error) if error.contains("non-complete finish reason 'length'")))
+            .position(|event| matches!(event, StreamEvent::Error(error) if error.contains("output token limit")))
             .unwrap();
         assert!(usage_position < error_position);
         assert!(!events.iter().any(|event| matches!(

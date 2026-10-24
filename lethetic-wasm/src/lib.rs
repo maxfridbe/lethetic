@@ -140,3 +140,8 @@ impl BrowserCompaction {
         self.0.result().map(str::to_owned)
     }
 }
+
+#[wasm_bindgen]
+pub fn provider_error_message(body: &str) -> Option<String> {
+    lethetic::engine::provider_error_message(body)
+}

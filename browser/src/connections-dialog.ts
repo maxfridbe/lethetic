@@ -1,3 +1,4 @@
+import { connectionLimits, connectionLimitsHtml } from "./connection-limits.js";
 import { buttonIconHtml } from "../../web/src/icons.js";
 import { validateConnection, normalizeApiKey, saveConnections, saveConnectionKeys } from "./connection.js";
 import { fetchModels } from "./models.js";
@@ -51,6 +52,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
         </form>
       </section>
     </div>
+    ${connectionLimitsHtml}
     <fieldset class="browser-runtime"><legend>Runtime &amp; security · current session</legend>
     <label>Code runtime <select data-field="mode"><option value="general">Chat</option><option value="python">Python · Pyodide</option><option value="dotnet-wasm">.NET 11 · WASM</option></select></label>
     <label><input data-field="network" type="checkbox"> Network access (Python and .NET code)</label>
@@ -90,6 +92,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
   const draft = (): Connection => ({ name: input("name").value.trim(), endpoint: input("endpoint").value.trim(),
     model: input("model").value.trim(), provider: select("provider").value as Connection["provider"], apiKey: input("key").value,
     ...(select("provider").value === "openai" && select("thinking").value !== "default" ? { thinking: select("thinking").value as Connection["thinking"] } : {}) });
+  const limitsEditor = connectionLimits(dialog, transport, draft);
   const dirty = (): boolean => {
     const saved = transport.options.connections[selected], current = draft();
     return !saved || saved.name !== current.name || identity(saved) !== identity(current);
@@ -160,6 +163,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     button("test").disabled = !valid || operation !== null;
     button("fetch-models").disabled = !!keyError || modelOperation !== null;
     field(dialog, "test-state").replaceChildren(healthBadge(current));
+    limitsEditor.describe();
     select("mode").value = transport.mode; select("mode").disabled = transport.busy;
     input("sites").checked = transport.siteAccess;
     input("sites").disabled = transport.busy || transport.mode === "general";
@@ -194,7 +198,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
   const cancelTest = (): void => {
     operation?.abort(); operation = null;
     if (operationKey && health.get(operationKey)?.state === "testing") health.delete(operationKey);
-    operationKey = null;
+    operationKey = null; limitsEditor.reset();
   };
   const fill = (): void => {
     cancelModels(); cancelTest();
@@ -204,7 +208,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     select("thinking").value = connection?.thinking ?? "default";
     input("key").type = "password"; button("show-key").setAttribute("aria-pressed", "false");
     button("show-key").setAttribute("aria-label", "Show API key"); button("show-key").innerHTML = buttonIconHtml("preview") + "Show";
-    updateEditor(); renderCards(); fillRoute();
+    limitsEditor.fill(); updateEditor(); renderCards(); fillRoute();
   };
   const persist = (): void => {
     try {
@@ -335,7 +339,9 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     void (async () => {
       let runtime: LetheticRuntime | null = null;
       try {
-        runtime = await createRuntime({ connection, timeoutMs: 30_000 });
+        await limitsEditor.discover(connection, controller.signal);
+        controller.signal.throwIfAborted();
+        runtime = await createRuntime({ connection, ...limitsEditor.testLimits(), timeoutMs: 30_000 });
         controller.signal.throwIfAborted();
         await runtime.send("Reply with the single word Connected.", controller.signal);
         if (operation !== controller || destroyed) return;

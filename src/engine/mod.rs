@@ -311,3 +311,10 @@ pub fn retryable_error(error: &str) -> bool {
 pub fn retry_delay_ms(attempt: u32) -> u32 {
     u32::try_from(gemma_chat::retry::delay(attempt).as_millis()).unwrap_or(30_000)
 }
+
+/// Bounded public provider error details for browser HTTP failures.
+pub fn provider_error_message(body: &str) -> Option<String> {
+    serde_json::from_str(body)
+        .ok()
+        .and_then(|value| gemma_chat::provider_error::response_error(&value))
+}

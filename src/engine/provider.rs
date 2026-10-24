@@ -75,13 +75,19 @@ pub(crate) fn request(
 }
 
 pub(crate) fn response(provider: &str, value: &Value) -> Result<(Value, Turn), String> {
-    if value.get("error").is_some() {
-        return Err("provider returned an error response".into());
+    if let Some(error) = gemma_chat::provider_error::response_error(value) {
+        return Err(error);
     }
     let mut thinking = String::new();
     let (text, calls, blocks) = match provider {
         "openai" => {
             let choice = &value["choices"][0];
+            if let Some(error) = gemma_chat::provider_error::finish_error(
+                choice["finish_reason"].as_str(),
+                choice["native_finish_reason"].as_str(),
+            ) {
+                return Err(error);
+            }
             if !matches!(
                 choice["finish_reason"].as_str(),
                 Some("stop" | "tool_calls")
@@ -147,6 +153,11 @@ pub(crate) fn response(provider: &str, value: &Value) -> Result<(Value, Turn), S
             (text, calls, None)
         }
         "anthropic" => {
+            if let Some(error) =
+                gemma_chat::provider_error::finish_error(value["stop_reason"].as_str(), None)
+            {
+                return Err(error);
+            }
             if value["role"] != "assistant"
                 || !matches!(
                     value["stop_reason"].as_str(),
