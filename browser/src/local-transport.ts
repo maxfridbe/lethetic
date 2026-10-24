@@ -1,3 +1,4 @@
+import { ProviderTraceLog } from "./provider-trace.js";
 import { BrowserSessionStorage } from "./session-storage.js";
 import { ModelLimitState, effectiveLimits } from "./model-limits.js";
 import { DEFAULT_TURN_LIMITS, parseTurnLimits, LOOP_MODES, parseLoopMode } from "./turn-limits.js";
@@ -70,6 +71,7 @@ export class LocalTransport implements ApplicationTransport {
   #revision = 0;
   #closed = false;
   #runtime: LetheticRuntime | null = null;
+  #traces: ProviderTraceLog;
   #python: PythonTool | null = null;
   #dotnet: DotnetTool | null = null;
   #operation: AbortController | null = null;
@@ -102,6 +104,7 @@ export class LocalTransport implements ApplicationTransport {
     }
     this.#system = options.systemPrompt ?? DEFAULT_PROMPT;
     this.#sessions = new SessionStore(options.storage);
+    this.#traces = new ProviderTraceLog(this.#sessions.byteLimit / 4);
     if (options.files) {
       // Retain the old global record; import a copy only for pre-workspace sessions.
       try { this.#legacyWorkspace = options.files.snapshotWorkspace(); } catch { /* Leave damaged legacy data untouched. */ }
@@ -176,7 +179,9 @@ export class LocalTransport implements ApplicationTransport {
     try {
       await this.modelLimits.ready(connection, controller.signal);
       controller.signal.throwIfAborted();
-      const summary = await summarizeContext({ connection, ...this.effectiveTurnLimits, onEvent: event => {
+      const summary = await summarizeContext({ connection, ...this.effectiveTurnLimits,
+        onTrace: trace => this.#traces.add(trace),
+        traceSecrets: [...this.options.connections.map(item => item.apiKey ?? ""), ...this.relaySecrets], onEvent: event => {
         if (event.type === "request" || event.type === "response") { this.metrics.event(event); this.publish(); }
       } }, original.messages, controller.signal, (part, total) => {
         this.state.status.stop_reason = `Compacting context · ${part}/${total}`;
@@ -187,7 +192,7 @@ export class LocalTransport implements ApplicationTransport {
         {role:"assistant",content:"I will continue using this context and the existing session files."}];
       const blocks = [...this.state.blocks.blocks, block("markdown", summary, "Context compacted")];
       // Persist before replacing working context; quota failures leave the original intact.
-      this.#sessions.save({...original, messages, blocks, updatedAt:new Date().toISOString(), metrics:this.metrics.snapshot()});
+      this.#sessions.save({...original, messages, blocks, providerTrace:this.#traces.snapshot(), updatedAt:new Date().toISOString(), metrics:this.metrics.snapshot()});
       this.#runtime?.dispose(); this.#runtime = null; this.#savedMessages = messages;
       this.state.blocks.blocks = blocks; this.state.status.stop_reason = "Context compacted";
     } catch (error) {
@@ -603,7 +608,8 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
         if (this.mode === "dotnet-wasm") {
           tools.push(this.#dotnetTool());
         }
-        const runtime = await createRuntime({ connection, ...limits, loopDetection: this.loopDetection, tools, systemPrompt: effectiveSystemPrompt(this.#system, this.mode, this.networkAccess, !!this.#relayEndpoint, this.nugetAccess, this.siteAccess), onEvent: (event) => this.#event(event) });
+        const runtime = await createRuntime({ connection, onTrace: trace => this.#traces.add(trace),
+          traceSecrets: [...this.options.connections.map(item => item.apiKey ?? ""), ...this.relaySecrets], ...limits, loopDetection: this.loopDetection, tools, systemPrompt: effectiveSystemPrompt(this.#system, this.mode, this.networkAccess, !!this.#relayEndpoint, this.nugetAccess, this.siteAccess), onEvent: (event) => this.#event(event) });
         if (this.#closed) { runtime.dispose(); return; }
         try { runtime.restore(this.#savedMessages); } catch (error) { runtime.dispose(); throw error; }
         this.#runtime = runtime;
@@ -625,6 +631,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
   }
 
   #newSession(): void {
+    this.#traces.restore();
     this.loopDetection = "combined";
     this.turnLimits = {...DEFAULT_TURN_LIMITS};
     this.reset(); this.#history = []; this.#workspace = emptyWorkspace();
@@ -646,6 +653,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
       this.reset();
       this.state.session = { session_id: session.id, display_name: session.name, fallback_label: session.label };
       this.state.blocks.blocks = session.blocks; this.#savedMessages = session.messages; this.#history = session.inputs;
+      this.#traces.restore(session.providerTrace);
       this.#workspace = structuredClone(session.workspace ?? this.#legacyWorkspace);
       this.loopDetection = session.loopDetection ?? "combined";
       this.turnLimits = {...(session.turnLimits ?? DEFAULT_TURN_LIMITS)};
@@ -676,9 +684,10 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
     if (id === this.state.session.session_id) this.#saveSession();
     const saved = this.#sessions.list().find(item => item.id === id);
     if (!saved) throw new Error("Session not found on this device.");
+    if (id === this.state.session.session_id && this.#runtime?.activeTrace) this.#traces.add(this.#runtime.activeTrace);
     // Include current diagnostics/transcript even during a running or failed turn.
     return structuredClone(id === this.state.session.session_id ? { ...saved,
-      blocks: this.state.blocks.blocks, metrics: this.metrics.snapshot(), workspace: this.#workspace } : saved);
+      blocks: this.state.blocks.blocks, metrics: this.metrics.snapshot(), workspace: this.#workspace, providerTrace: this.#traces.snapshot() } : saved);
   }
 
   #saveSession(mustSave = false): void {
@@ -691,7 +700,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
       this.#sessions.save({ id: this.state.session.session_id, name: this.state.session.display_name, label,
         updatedAt: new Date().toISOString(), blocks: this.state.blocks.blocks, messages: this.#savedMessages,
         inputs: this.#history, system: this.#system, python: this.pythonEnabled, mode: this.mode, networkAccess: this.networkAccess, nugetAccess: this.nugetAccess, siteAccess: this.siteAccess, dotnetRelayEndpoint: this.#relayEndpoint, workspace: this.#workspace,
-        metrics: this.metrics.snapshot(), turnLimits: this.turnLimits, loopDetection: this.loopDetection,
+        providerTrace: this.#traces.snapshot(), metrics: this.metrics.snapshot(), turnLimits: this.turnLimits, loopDetection: this.loopDetection,
         theme: this.state.themes.find((theme) => theme.selected)?.theme_id ?? "dracula",
         connection: connection ? connectionMetadata(connection) : null });
       if (this.options.storage) this.persistenceStatus = this.options.storage instanceof BrowserSessionStorage ? "" : "Chats and files are saved unencrypted on this device. API keys are excluded from saved chats. Session files sync with the selected code runtime. Variables reset on reload, stop, mode/permission changes or session switch.";

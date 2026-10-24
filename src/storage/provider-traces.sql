@@ -1,0 +1,31 @@
+-- Additive migration from relational schema v2 to v3.
+CREATE TABLE provider_traces (
+    id INTEGER PRIMARY KEY,
+    record_id INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    trace_id TEXT,
+    turn_id TEXT,
+    round INTEGER,
+    attempt INTEGER,
+    provider TEXT,
+    model TEXT,
+    started_at TEXT,
+    ended_at TEXT,
+    outcome TEXT,
+    http_status INTEGER,
+    content_type TEXT,
+    request_body TEXT,
+    request_bytes INTEGER,
+    request_omitted_bytes INTEGER,
+    response_head TEXT,
+    response_tail TEXT,
+    received_bytes INTEGER,
+    response_omitted_bytes INTEGER,
+    response_complete INTEGER,
+    redacted INTEGER,
+    error TEXT,
+    fields_json TEXT NOT NULL,
+    extra_json TEXT NOT NULL,
+    UNIQUE(record_id, position)
+);
+CREATE INDEX provider_traces_turn ON provider_traces(record_id, turn_id, round, attempt);

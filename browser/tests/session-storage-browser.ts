@@ -15,12 +15,17 @@ export async function testSessionStorage(evaluate: (expression: string) => Promi
     check(prefs.getItem(SESSION_KEY)===null,'Legacy data not removed after migration');
     check(JSON.stringify(store.list()[0])===JSON.stringify(new SessionStore({getItem:()=>JSON.stringify({version:1,sessions:[original]}),setItem(){}}).list()[0]),'Migration changed session');
     const bytes=new Uint8Array(FILE_BYTES);for(let i=0;i<bytes.length;i++)bytes[i]=i%256;
-    const large={...original,label:'Large',workspace:{version:1,directories:['empty'],files:[{path:'large.bin',data:encodeBytes(bytes),modifiedAt:456}]}};
+    const {TraceCapture,ProviderTraceLog,parseProviderTraces}=await import('./src/provider-trace.js');
+    const trace=new TraceCapture({turnId:'failed-turn',round:1,attempt:1,provider:'openai',model:'test'},'{}',[]);
+    trace.chunk('data: invalid-tool-arguments',28);trace.finish('error','Invalid arguments');
+    const traces=new ProviderTraceLog();traces.add(trace.value);
+    const large={...original,providerTrace:traces.snapshot(),label:'Large',workspace:{version:1,directories:['empty'],files:[{path:'large.bin',data:encodeBytes(bytes),modifiedAt:456}]}};
     store.save(large); check(disk.pending,'Save claimed durable before transaction');
     store.save({...large,label:'Latest'}); await disk.flush();
     check(!disk.pending && disk.status.includes('saved'),'Save did not commit');
     disk.close(); disk=await openBrowserStorage(prefs,name);store=new SessionStore(disk);
     check(store.list()[0].label==='Latest','Queued latest save lost');
+    check(JSON.stringify(store.list()[0].providerTrace)===JSON.stringify(parseProviderTraces(traces.snapshot())),'Reload lost failed trace');
     const restored=store.list()[0].workspace.files[0];
     check(restored.modifiedAt===456 && restored.data===large.workspace.files[0].data,'Large binary bytes/date changed on reopen');
     const rawDb=await new Promise((resolve,reject)=>{const r=indexedDB.open(name);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
@@ -30,6 +35,7 @@ export async function testSessionStorage(evaluate: (expression: string) => Promi
     const Database=await contentDatabaseFactory(), database=new Database(raw.database);
     const stored=database.read('browser/files/'+original.id,'large.bin');
     check(stored.length===FILE_BYTES && stored.every((byte,i)=>byte===bytes[i]),'Database changed binary file bytes');
+    check(JSON.parse(database.query('SELECT outcome,response_head FROM provider_traces','[]')).rows[0][1]==='data: invalid-tool-arguments','Trace not normalized');
     database.free();rawDb.close();
     check(new TextDecoder().decode(disk.exportDatabase(original.id).slice(0,16))==='SQLite format 3\\0','Export is not SQLite');
     // A second session owns a separate image. Updating/deleting it never writes
@@ -41,7 +47,8 @@ export async function testSessionStorage(evaluate: (expression: string) => Promi
     try{store.save({...second,label:'Changed second'});await disk.flush()}finally{IDBObjectStore.prototype.put=observePut}
     check(touched.includes('session:'+second.id) && !touched.includes('session:'+original.id),'Saving one session rewrote another database');
     const secondDb=new Database(disk.exportDatabase(second.id));
-    check(JSON.parse(secondDb.names('browser/sessions')).join(',')===second.id,'Session database contains another chat');secondDb.free();
+    check(JSON.parse(secondDb.names('browser/sessions')).join(',')===second.id,'Session database contains another chat');
+    check(JSON.parse(secondDb.query('SELECT count(*) FROM provider_traces','[]')).rows[0][0]===0,'Session leaked another chat trace');secondDb.free();
     store.remove(second.id);await disk.flush();
     const afterDelete=await openBrowserStorage(prefs,name);
     check(new SessionStore(afterDelete).list().length===1 && new SessionStore(afterDelete).list()[0].id===original.id,'Deleting one database removed another');afterDelete.close();
@@ -97,8 +104,10 @@ export async function testSessionStorage(evaluate: (expression: string) => Promi
     const split=await openBrowserStorage(memory(),aggregateName);
     check(new SessionStore(split).list().length===2,'Aggregate migration lost a session');
     for(const id of [original.id,second.id]){const db=new Database(split.exportDatabase(id));check(JSON.parse(db.names('browser/sessions')).join(',')===id,'Aggregate database was not split');db.free()}split.close();
-    // A genuine v1 per-session SQLite image upgrades transactionally in IndexedDB.
+    // Both older schemas upgrade transactionally in IndexedDB.
+    for (const schemaVersion of [1,2]) {
     const v1=new Database(new Uint8Array());
+    if(schemaVersion===1) {
     v1.query('PRAGMA foreign_keys=OFF','[]');
     for(const [table] of JSON.parse(v1.query("SELECT name FROM sqlite_schema WHERE type='view'",'[]')).rows)v1.query('DROP VIEW '+table,'[]');
     for(const [table] of JSON.parse(v1.query("SELECT name FROM sqlite_schema WHERE type='table'",'[]')).rows)v1.query('DROP TABLE '+table,'[]');
@@ -107,16 +116,22 @@ export async function testSessionStorage(evaluate: (expression: string) => Promi
     const metadata={...original,workspace:{...original.workspace,files:[{path:'old.bin',modifiedAt:123}]}};
     v1.query("INSERT INTO content_records VALUES('browser/sessions',?,0,CAST(? AS BLOB))",JSON.stringify([original.id,JSON.stringify(metadata)]));
     v1.query("INSERT INTO content_records VALUES(?,'old.bin',0,X'00ff')",JSON.stringify(['browser/files/'+original.id]));
+    } else {
+      v1.put('browser/sessions',original.id,new TextEncoder().encode(JSON.stringify({...original,workspace:{...original.workspace,files:[{path:'old.bin',modifiedAt:123}]}})));
+      v1.put('browser/files/'+original.id,'old.bin',new Uint8Array([0,255]));
+      v1.query('DROP TABLE provider_traces','[]');v1.query('PRAGMA user_version=2','[]');
+    }
     const v1image=v1.export();v1.free();
-    const v1name=name+'-v1',v1db=await new Promise((resolve,reject)=>{const r=indexedDB.open(v1name,1);r.onupgradeneeded=()=>r.result.createObjectStore('sessions');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
+    const v1name=name+'-v'+schemaVersion,v1db=await new Promise((resolve,reject)=>{const r=indexedDB.open(v1name,1);r.onupgradeneeded=()=>r.result.createObjectStore('sessions');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
     await new Promise((resolve,reject)=>{const tx=v1db.transaction('sessions','readwrite'),store=tx.objectStore('sessions');store.put({revision:1,ids:[original.id]},'all');store.put({sessionId:original.id,database:v1image},'session:'+original.id);tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error)});
     const normalized=await openBrowserStorage(memory(),v1name);
     check(new SessionStore(normalized).list()[0].workspace.files[0].data==='AP8=','Relational migration changed file bytes');normalized.close();
     const persisted=await new Promise((resolve,reject)=>{const tx=v1db.transaction('sessions'),r=tx.objectStore('sessions').get('session:'+original.id);tx.oncomplete=()=>resolve(r.result.database);tx.onabort=()=>reject(tx.error)});v1db.close();
-    check(new DataView(persisted.buffer,persisted.byteOffset,persisted.byteLength).getUint32(60)===2,'Relational migration was not persisted');
+    check(new DataView(persisted.buffer,persisted.byteOffset,persisted.byteLength).getUint32(60)===3,'Relational migration was not persisted');
     const relational=new Database(persisted);
     check(JSON.parse(relational.query('SELECT session_id,system_prompt FROM sessions','[]')).rows[0][1]==='keep','Session columns missing after migration');
     check(JSON.parse(relational.query('SELECT path,size_bytes FROM session_files','[]')).rows[0][1]===2,'Normalized file query failed');relational.free();
+    }
     const migrationPrefs=memory();new SessionStore(migrationPrefs).save(original);
     const savedPut=IDBObjectStore.prototype.put;
     IDBObjectStore.prototype.put=function(){throw new DOMException('Migration quota exceeded','QuotaExceededError')};

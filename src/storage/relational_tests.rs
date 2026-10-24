@@ -214,7 +214,7 @@ fn v1_blob_database_migrates_and_invalid_source_is_not_silently_accepted() {
     );
     assert_eq!(
         migrated.query("PRAGMA user_version", &[]).unwrap()[0][0].as_int(),
-        Some(2)
+        Some(3)
     );
     assert!(ContentDatabase::memory(&legacy_image(b"not json")).is_err());
 }
@@ -239,4 +239,66 @@ fn unsigned_counters_remain_lossless_and_todos_are_relational() {
             .to_text(),
         Some("query data")
     );
+}
+
+#[test]
+fn provider_traces_are_normalized_and_v2_upgrade_preserves_conversations() {
+    let db = ContentDatabase::memory(&[]).unwrap();
+    let mut state = native_session();
+    db.put(
+        "",
+        "session_state.json",
+        &serde_json::to_vec(&state).unwrap(),
+    )
+    .unwrap();
+    // Construct an actual v2 image, with no trace table, from the shared schema.
+    db.connection
+        .execute("DROP TABLE provider_traces; PRAGMA user_version=2")
+        .unwrap();
+    let old = db.export().unwrap();
+    let upgraded = ContentDatabase::memory(&old).unwrap();
+    assert_eq!(read_json(&upgraded, "", "session_state.json"), state);
+    assert_eq!(
+        upgraded.query("PRAGMA user_version", &[]).unwrap()[0][0].as_int(),
+        Some(3)
+    );
+    state["providerTrace"] = json!({"version":1,"omittedRequests":2,"requests":[{
+        "id":"attempt-1","turnId":"turn-1","round":2,"attempt":1,"provider":"openai","model":"test",
+        "startedAt":"2026-10-23T00:00:00Z","endedAt":null,"outcome":"error","httpStatus":200,"contentType":"text/event-stream",
+        "requestBody":"{}","requestBytes":2,"requestOmittedBytes":0,"responseHead":"data: malformed","responseTail":"",
+        "receivedBytes":15,"responseOmittedBytes":0,"responseComplete":false,"redacted":true,"error":"invalid arguments"}]});
+    upgraded
+        .put(
+            "",
+            "session_state.json",
+            &serde_json::to_vec(&state).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(read_json(&upgraded, "", "session_state.json"), state);
+    let rows = upgraded
+        .query(
+            "SELECT turn_id,http_status,response_head FROM provider_traces WHERE outcome='error'",
+            &[],
+        )
+        .unwrap();
+    assert_eq!(rows[0][0].to_text(), Some("turn-1"));
+    assert_eq!(rows[0][1].as_int(), Some(200));
+    assert_eq!(rows[0][2].to_text(), Some("data: malformed"));
+    assert!(
+        !upgraded
+            .query("SELECT extra_json FROM sessions", &[])
+            .unwrap()[0][0]
+            .to_text()
+            .unwrap()
+            .contains("data: malformed")
+    );
+    upgraded
+        .query("UPDATE provider_traces SET error='edited via SQL'", &[])
+        .unwrap();
+    assert_eq!(
+        read_json(&upgraded, "", "session_state.json")["providerTrace"]["requests"][0]["error"],
+        "edited via SQL"
+    );
+    upgraded.query("DELETE FROM records", &[]).unwrap();
+    assert_eq!(count(&upgraded, "provider_traces"), 0);
 }

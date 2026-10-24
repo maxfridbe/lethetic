@@ -30,11 +30,24 @@ export async function testStreamingControls(evaluate: (source: string) => Promis
       await wait(()=>!!root.querySelector('.activity-idle'));
       assert(root.querySelectorAll('.block-thought').length===1,'Duplicate thinking blocks');
       const saved=JSON.parse(records.get('lethetic.sessions.v1')).sessions.find(session=>session.id===id);
+      assert(saved.providerTrace.requests[0].outcome==='complete','Completed trace not saved');
       assert(saved.messages.at(-1).content==='Partial answer','Final streamed text duplicated or incomplete');
       assert(saved.turnLimits.timeoutMs===0 && saved.turnLimits.contextTokens===64000,'Limits not persisted');
       view.destroy();view=mountLethetic(root,options);
       root.querySelector('[aria-label="Open command palette"]').click();root.querySelector('[id="palette-command-local:turn-limits"]').click();
       assert(document.querySelector('dialog[open] [data-field=timeout]').value==='0','Reload lost timeout');document.querySelector('dialog[open]').close();
+      controller=null;
+      const retryInput=root.querySelector('#composer-input');retryInput.value='bad args';retryInput.dispatchEvent(new Event('input',{bubbles:true}));root.querySelector('form.composer').requestSubmit();
+      await wait(()=>!!controller);
+      emit(chunk({tool_calls:[{index:0,id:'bad',type:'function',function:{name:'lookup',arguments:'bad-json'}}]},'tool_calls'));emit('[DONE]');
+      await wait(()=>!!root.querySelector('.activity-idle'));
+      const failed=JSON.parse(records.get('lethetic.sessions.v1')).sessions.find(session=>session.id===id);
+      assert(failed.providerTrace.requests.length===2 && failed.providerTrace.requests[1].outcome==='error','Failed trace missing');
+      assert(failed.providerTrace.requests[1].responseHead.includes('bad-json'),'Malformed original payload missing');
+      assert(JSON.stringify(failed.messages)===JSON.stringify(saved.messages),'Failure changed committed history');
+      view.destroy();view=mountLethetic(root,options);
+      const reopened=JSON.parse(records.get('lethetic.sessions.v1')).sessions.find(session=>session.id===id);
+      assert(JSON.stringify(reopened.providerTrace)===JSON.stringify(failed.providerTrace),'Reload lost provider traces');
       root.querySelector('[aria-label="Open command palette"]').click();root.querySelector('#palette-command-loop-detection').click();
       await wait(()=>root.textContent.includes('Combined'));
     } finally {view?.destroy();window.fetch=originalFetch;root.remove();}

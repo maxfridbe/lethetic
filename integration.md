@@ -322,6 +322,20 @@ Connection keys are excluded and known keys are redacted from text. The archive
 is assembled locally; it is not uploaded. Every turn also has **Copy** at
 its bottom-right, copying the source text or tool payload without UI labels.
 
+The bundle also contains `provider-traces.jsonl`: redacted request bodies and raw
+SSE/JSON response text captured before parsing. Failed tool arguments, partial
+streams, retries and cancellations remain available after model-history rollback
+and a normal session save/reload. Traces use normalized `provider_traces` rows in
+the session database. Byte/request omissions and incomplete reads are explicit;
+see [diagnostic limits and SQL examples](docs/storage.md#provider-diagnostics).
+Older reports cannot recover streams discarded before capture was introduced.
+
+SDK hosts can receive completed attempts with `createRuntime({ ...,
+onTrace(trace) { /* store redacted diagnostics */ } })` and read
+`runtime.activeTrace` for a snapshot during a request. `traceSecrets` supplies
+additional known credentials to redact, beyond the selected connection's API key.
+The UI supplies its known connection and relay keys automatically.
+
 Use **Upload** in the Files toolbar to select one or more device files. They are
 imported into the currently open folder and synced to the active session's Pyodide
 workspace before its next call. Text and binary data are preserved. Files remain

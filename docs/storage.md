@@ -79,7 +79,7 @@ Omitting storage keeps the embedded session in memory.
 
 ## Relational schema and queries
 
-Schema version **2** stores conversation data in relational tables. The exact
+Schema version **3** stores conversation data in relational tables. The exact
 DDL compiled into both native and WASM builds is [schema.sql](../src/storage/schema.sql).
 There is no `content_records` table and no serialized session BLOB. Resuming a
 session reconstructs the application's transport objects from these rows.
@@ -196,7 +196,7 @@ into the app's active session or IndexedDB. Exported database import is not yet 
 feature. BLOB query cells are returned as byte arrays.
 
 Version-1 `content_records` databases migrate in a single transaction: parse and
-insert all domain rows, remove the old table, then set `user_version=2`. A failure
+insert all domain rows, remove the old table, then set `user_version=3`. A failure
 rolls back the migration. Browser upgrades replace the IndexedDB images only after
 the new databases are complete. Legacy files likewise remain until their import
 commits; `python.ipynb` stays a normal notebook.
@@ -215,3 +215,36 @@ with sqlite3.connect("file:session.db?mode=ro", uri=True) as db:
     )
     Path("transcript.txt").write_text("".join(row[0] for row in chunks), encoding="utf-8")
 ```
+
+### Provider diagnostics
+
+Browser sessions retain provider attempts separately from model history in
+`provider_traces`. Each row has a turn ID, round/attempt number, provider/model,
+timestamps, outcome, HTTP status, request body, response head/tail, byte counts,
+completion/redaction flags and error. These remain queryable after a failed
+turn rolls back its model history. Version 2 databases migrate transactionally
+by adding this table; existing conversation rows remain unchanged.
+
+```sql
+SELECT turn_id, round, attempt, http_status, outcome, error,
+       response_head, response_tail, response_omitted_bytes
+FROM provider_traces ORDER BY position;
+```
+
+Sessions → Export debug bundle includes `provider-traces.jsonl`. Capture happens
+before SSE/JSON parsing and retains malformed tool arguments, partial responses,
+retries and cancellations. HTTP error bodies retain at most 64 KiB (head/tail of received text), with
+`responseComplete=false` if reading stops at that limit. Known connection keys and relay credentials are
+redacted before storage; authorization headers are never recorded. Request and
+response bodies can still contain conversation and tool content.
+
+Limits: 16 recent attempts and 8 MiB per session, 128 KiB per request body,
+1 MiB per response (first and last 512 KiB). Small embedding stores reduce the
+per-session trace budget to one quarter of their storage limit, truncating the
+latest attempt if needed. Omitted request/byte counts are
+explicit. Head and tail concatenate only when no response bytes were omitted.
+`responseComplete` indicates EOF or protocol end was observed, independently
+of parsing success. Pending traces exported during a turn are snapshots.
+Completed attempts persist with the session at the end of the turn; closing a
+tab mid-turn can lose the current turn's diagnostics. Existing reports cannot
+recover response data discarded before this capture was introduced.

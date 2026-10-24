@@ -99,3 +99,59 @@ await test("Stop cancels an unlimited live stream and discards partial history",
     assert.ok(events.some(event=>event.type==="response_reset"));
   }finally{runtime.dispose();}
 });
+
+await test("malformed streamed tool arguments are captured before parsing and survive rollback", async()=>{
+  const traces: import('../src/provider-trace.js').ProviderTrace[]=[];let executions=0;
+  const payload=frame(chunk({tool_calls:[{index:0,id:"bad",type:"function",function:{name:"lookup",arguments:'{"code":broken trace-secret'}}]},"tool_calls"))+frame("[DONE]");
+  const runtime=await createRuntime({connection:{...connection,apiKey:"trace-secret"},wasm,providerRetries:0,onTrace:trace=>traces.push(trace),
+    tools:[{name:"lookup",description:"lookup",parameters:{type:"object"},execute:()=>{executions++;return "unused";}}],fetch:async()=>sse(payload)});
+  try {await assert.rejects(runtime.send("inspect trace-secret"),/invalid.*arguments/i);
+    assert.equal(executions,0);assert.deepEqual(runtime.history(),[]);assert.equal(traces.length,1);
+    const trace=traces[0]!;assert.equal(trace.outcome,"error");assert.equal(trace.httpStatus,200);
+    assert.match(trace.responseHead+trace.responseTail,/broken \[REDACTED\]/);
+    assert.ok(!JSON.stringify(traces).includes("trace-secret"));assert.equal(runtime.activeTrace,null);
+  }finally{runtime.dispose();}
+});
+await test("nonstream validation failure and successful retry attempts retain distinct traces", async()=>{
+  const traces: import('../src/provider-trace.js').ProviderTrace[]=[];let requests=0;
+  const runtime=await createRuntime({connection,wasm,stream:false,onTrace:trace=>traces.push(trace),fetch:async()=>{
+    if(++requests===1)return new Response("busy",{status:429,headers:{"Retry-After":"0"}});
+    return Response.json({choices:[{message:{role:"assistant",content:null,tool_calls:[{id:"bad",type:"function",function:{name:"lookup",arguments:"broken-json"}}]},finish_reason:"tool_calls"}]});
+  }});
+  try {await assert.rejects(runtime.send("go"));assert.equal(traces.length,2);
+    assert.deepEqual(traces.map(t=>[t.attempt,t.outcome,t.httpStatus]),[[1,"error",429],[2,"error",200]]);
+    assert.equal(traces[0]!.responseHead,"busy");assert.equal(traces[0]!.responseComplete,true);
+    assert.equal(traces[0]!.turnId,traces[1]!.turnId);assert.notEqual(traces[0]!.id,traces[1]!.id);
+    assert.equal(traces[1]!.responseComplete,true);assert.match(traces[1]!.responseHead,/broken-json/);
+    assert.deepEqual(runtime.history(),[]);
+  }finally{runtime.dispose();}
+});
+await test("active exports and cancellations retain partial provider output",async()=>{
+  const traces: import('../src/provider-trace.js').ProviderTrace[]=[];
+  const runtime=await createRuntime({connection,wasm,timeoutMs:0,onTrace:trace=>traces.push(trace),fetch:async()=>new Response(new ReadableStream({
+    start(controller){controller.enqueue(encoder.encode(frame(chunk({content:"partial diagnostic"}))));}
+  }),{headers})});
+  try {const sending=runtime.send("go");await wait(()=>!!runtime.activeTrace?.receivedBytes);
+    assert.match(runtime.activeTrace!.responseHead,/partial diagnostic/);runtime.cancel();await assert.rejects(sending,/stopped/);
+    assert.equal(traces[0]!.outcome,"cancelled");assert.equal(traces[0]!.responseComplete,false);assert.deepEqual(runtime.history(),[]);
+  }finally{runtime.dispose();}
+});
+await test("oversized HTTP error bodies have bounded head/tail and explicit incomplete capture",async()=>{
+  const traces: import('../src/provider-trace.js').ProviderTrace[]=[];
+  const runtime=await createRuntime({connection,wasm,providerRetries:0,onTrace:trace=>traces.push(trace),fetch:async()=>new Response('x'.repeat(96*1024),{status:400})});
+  try {await assert.rejects(runtime.send('go'),/HTTP 400/);
+    const trace=traces[0]!;assert.equal(trace.receivedBytes,96*1024);assert.equal(trace.responseComplete,false);
+    assert.equal(trace.responseOmittedBytes,32*1024);assert.equal(trace.responseHead.length+trace.responseTail.length,64*1024);
+  }finally{runtime.dispose();}
+});
+await test("a stalled HTTP error body cannot prevent the provider retry",async()=>{
+  const traces: import('../src/provider-trace.js').ProviderTrace[]=[];let calls=0,cancelled=false;
+  const runtime=await createRuntime({connection,wasm,timeoutMs:0,onTrace:trace=>traces.push(trace),fetch:async()=>{
+    if(++calls===1)return new Response(new ReadableStream({start(c){c.enqueue(encoder.encode('busy'));},cancel(){cancelled=true;}}),{status:429,headers:{'Retry-After':'0'}});
+    return Response.json({choices:[{finish_reason:'stop',message:{role:'assistant',content:'recovered'}}]});
+  }});
+  try {assert.equal(await runtime.send('go'),'recovered');assert.equal(cancelled,true);
+    assert.equal(traces[0]!.responseHead,'busy');assert.equal(traces[0]!.responseComplete,false);
+    assert.equal(traces[1]!.outcome,'complete');
+  }finally{runtime.dispose();}
+});

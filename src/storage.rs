@@ -16,7 +16,7 @@ pub use turso_core::{Clock as DatabaseClock, MonotonicInstant, WallClockInstant}
 pub mod native;
 
 pub const DATABASE_NAME: &str = "lethetic.db";
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 const MAX_DATABASE_BYTES: usize = 512 * 1024 * 1024;
 
 pub struct ContentDatabase {
@@ -70,18 +70,22 @@ impl ContentDatabase {
         {
             return Err("unversioned database is not a Lethetic session".to_owned());
         }
-        if version == 0 || version == 1 {
+        if (0..SCHEMA_VERSION).contains(&version) {
             store.transaction(|| {
                 store
                     .connection
-                    .execute(include_str!("storage/schema.sql"))
+                    .execute(if version == 2 {
+                        include_str!("storage/provider-traces.sql")
+                    } else {
+                        include_str!("storage/schema.sql")
+                    })
                     .map_err(message)?;
                 if version == 1 {
                     store.migrate_v1()?;
                 }
                 store
                     .connection
-                    .execute("PRAGMA user_version=2")
+                    .execute("PRAGMA user_version=3")
                     .map_err(message)
             })?;
         } else if version != SCHEMA_VERSION {
@@ -110,8 +114,12 @@ impl ContentDatabase {
         // byte slice requests a new store; foreign/corrupt images never hydrate
         // as a blank replacement session database.
         if !bytes.is_empty()
-            && ![1_u32.to_be_bytes(), (SCHEMA_VERSION as u32).to_be_bytes()]
-                .contains(&bytes[60..64].try_into().map_err(message)?)
+            && ![
+                1_u32.to_be_bytes(),
+                2_u32.to_be_bytes(),
+                (SCHEMA_VERSION as u32).to_be_bytes(),
+            ]
+            .contains(&bytes[60..64].try_into().map_err(message)?)
         {
             return Err("unsupported content database image schema".to_owned());
         }

@@ -258,6 +258,13 @@ pub(super) fn save_json(
             save_messages(db, id, rows::detach_array(&mut state, "messages")?)?;
             save_items(
                 db,
+                "provider_traces",
+                f::PROVIDER_TRACE,
+                id,
+                rows::detach_array(&mut state, "providerTrace.requests")?,
+            )?;
+            save_items(
+                db,
                 "transcript_blocks",
                 &f::block(browser),
                 id,
@@ -397,6 +404,11 @@ pub(super) fn read_json(db: &ContentDatabase, id: i64, kind: &str) -> Result<Vec
             .ok_or("missing session row")?
             .1;
             rows::restore_array(&mut state, "messages", messages(db, id)?)?;
+            rows::restore_array(
+                &mut state,
+                "providerTrace.requests",
+                items(db, "provider_traces", f::PROVIDER_TRACE, id)?,
+            )?;
             rows::restore_array(
                 &mut state,
                 "blocks",

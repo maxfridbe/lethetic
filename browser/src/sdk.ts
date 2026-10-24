@@ -1,6 +1,8 @@
+import { TraceCapture } from "./provider-trace.js";
+import type { ProviderTrace } from "./provider-trace.js";
 import { DEFAULT_TURN_LIMITS, parseTurnLimits, LOOP_MODES, parseLoopMode } from "./turn-limits.js";
 import { abortable, delay } from "./async.js";
-import { readModelResponse } from "./stream.js";
+import { readModelResponse, captureErrorResponse } from "./stream.js";
 import type { WasmStream, StreamDelta } from "./stream.js";
 import { validateConnection, modelAuthHeaders } from "./connection.js";
 import { readUsage } from "./usage.js";
@@ -37,6 +39,10 @@ export interface RuntimeOptions {
   systemPrompt?: string;
   tools?: readonly Tool[];
   onEvent?: (event: RuntimeEvent) => void;
+  /** Completed, redacted provider attempts, including failed/cancelled responses. */
+  onTrace?: (trace: ProviderTrace) => void;
+  /** Additional known secrets to remove before diagnostic capture. */
+  traceSecrets?: readonly string[];
   /** Defaults to 32 model requests per user turn. */
   maxRounds?: number;
   /** Disable only for endpoints without streaming; defaults to true. */
@@ -142,6 +148,14 @@ export class LetheticRuntime {
   #options: RuntimeOptions;
   #active: AbortController | null = null;
   #disposed = false;
+  #trace: TraceCapture | null = null;
+  get activeTrace(): ProviderTrace | null { return this.#trace ? structuredClone(this.#trace.value) : null; }
+  #finishTrace(outcome: "complete" | "error" | "cancelled", error?: unknown): void {
+    const trace = this.#trace; this.#trace = null;
+    if (!trace) return;
+    trace.finish(outcome, error);
+    try { this.#options.onTrace?.(structuredClone(trace.value)); } catch { /* Diagnostics must not change the model transaction. */ }
+  }
 
   constructor(wasm: WasmRuntime, options: RuntimeOptions) {
     this.#wasm = wasm;
@@ -170,6 +184,7 @@ export class LetheticRuntime {
     const timer = timeoutMs === 0 ? null : setTimeout(() => controller.abort(new Error(
       `Turn timed out after ${Math.round(timeoutMs / 1000)} seconds. Change Ctrl+P → Turn limits for longer work.`)), timeoutMs);
     let responsePending = false;
+    const turnId = crypto.randomUUID();
     this.#active = controller;
     try {
       controller.signal.throwIfAborted();
@@ -197,6 +212,8 @@ export class LetheticRuntime {
         for (let attempt = 0; ; attempt++) {
           controller.signal.throwIfAborted();
           this.#emit({ type: "request", round, contextTokens: this.#wasm.last_request_tokens() });
+          this.#trace = new TraceCapture({ turnId, round, attempt: attempt + 1, provider: connection.provider, model: connection.model },
+            body, [connection.apiKey ?? "", ...(this.#options.traceSecrets ?? [])]);
           let retryAfter: number | null = null;
           try {
             let thinking = "", checked = 0;
@@ -205,6 +222,7 @@ export class LetheticRuntime {
               referrerPolicy: "no-referrer", cache: "no-store", signal: controller.signal,
               headers: requestHeaders(connection), body,
             }), controller.signal);
+            this.#trace.response(response.status, response.headers.get("Content-Type"));
             if (!response.ok) {
               const header = response.headers.get("Retry-After");
               if (header !== null) {
@@ -212,7 +230,7 @@ export class LetheticRuntime {
                 const duration = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - Date.now();
                 if (Number.isFinite(duration)) retryAfter = Math.max(0, Math.min(60_000, duration));
               }
-              await response.body?.cancel();
+              await captureErrorResponse(response, controller.signal, this.#trace).catch(() => {});
               throw new Error(`Model request failed (HTTP ${response.status}). Check your endpoint, model, and key.`);
             }
             responseText = await readModelResponse(response, controller.signal,
@@ -222,10 +240,11 @@ export class LetheticRuntime {
                   if (thinking.length - checked >= 512) { checked = thinking.length; checkLoop(thinking); }
                 }
                 this.#emit(event);
-              });
+              }, this.#trace);
             if (thinking) checkLoop(thinking);
             break;
           } catch (error) {
+            this.#finishTrace(controller.signal.aborted ? "cancelled" : "error", controller.signal.aborted ? controller.signal.reason : error);
             controller.signal.throwIfAborted();
             const message = error instanceof Error ? error.message : String(error);
             if (attempt >= providerRetries || !(error instanceof TypeError || module.retryable_error(message))) throw error;
@@ -241,6 +260,7 @@ export class LetheticRuntime {
         const turn = JSON.parse(this.#wasm.accept(connection.provider, responseText)) as {
           text: string; thinking: string; calls: ToolCall[];
         };
+        this.#finishTrace("complete");
         responsePending = false;
         if (turn.thinking) this.#emit({ type: "thinking", text: turn.thinking });
         if (turn.text) this.#emit({ type: "assistant", text: turn.text });
@@ -262,6 +282,7 @@ export class LetheticRuntime {
       }
       throw new Error("Tool round limit reached. Start a new turn with a smaller task.");
     } catch (error) {
+      this.#finishTrace(controller.signal.aborted ? "cancelled" : "error", controller.signal.aborted ? controller.signal.reason : error);
       if (responsePending) this.#emit({ type: "response_reset" });
       this.#wasm.rollback();
       if (controller.signal.aborted) throw controller.signal.reason;

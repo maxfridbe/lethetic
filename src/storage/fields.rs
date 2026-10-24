@@ -162,3 +162,27 @@ pub(super) const BROWSER_LATEST: &[&str] = &[
     "cache_write_tokens=cacheWrite:n",
     "reasoning_tokens=reasoning:n",
 ];
+
+pub(super) const PROVIDER_TRACE: &[&str] = &[
+    "trace_id=id:s",
+    "turn_id=turnId:s",
+    "round=round:n",
+    "attempt=attempt:n",
+    "provider=provider:s",
+    "model=model:s",
+    "started_at=startedAt:s",
+    "ended_at=endedAt:s",
+    "outcome=outcome:s",
+    "http_status=httpStatus:n",
+    "content_type=contentType:s",
+    "request_body=requestBody:s",
+    "request_bytes=requestBytes:n",
+    "request_omitted_bytes=requestOmittedBytes:n",
+    "response_head=responseHead:s",
+    "response_tail=responseTail:s",
+    "received_bytes=receivedBytes:n",
+    "response_omitted_bytes=responseOmittedBytes:n",
+    "response_complete=responseComplete:b",
+    "redacted=redacted:b",
+    "error=error:s",
+];

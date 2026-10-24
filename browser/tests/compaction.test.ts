@@ -46,10 +46,12 @@ await test("compaction commits context in place, preserves files and transcript,
     assert.equal(transport.state.session.session_id,id); assert.equal(transport.pythonEnabled,true);
     assert.equal(files.list()[0]?.content,'preserved');
     const saved=new SessionStore(storage).list()[0]!;
+    assert.equal(saved.providerTrace?.requests[0]?.outcome,'complete');
     assert.equal(saved.messages.length,2); assert.ok(JSON.stringify(saved.messages).includes('Keep the requirement'));
     assert.equal(saved.blocks.at(-1)?.title,'Context compacted'); assert.equal(saved.system,'custom system');
     globalThis.fetch=async()=>new Response('',{status:500});
     await assert.rejects(()=>transport.compact(),/HTTP 500/);
+    assert.equal(new SessionStore(storage).list()[0]!.providerTrace?.requests.at(-1)?.httpStatus,500);
     assert.deepEqual(new SessionStore(storage).list()[0]!.messages,saved.messages);
     globalThis.fetch=async()=>{quota=true;return Response.json({choices:[{finish_reason:'stop',message:{role:'assistant',content:'replacement'}}]})};
     await assert.rejects(()=>transport.compact(),/quota/); quota=false;

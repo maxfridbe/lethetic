@@ -1,3 +1,5 @@
+import { parseProviderTraces } from "./provider-trace.js";
+import type { ProviderTraceSnapshot } from "./provider-trace.js";
 import { parseTurnLimits, parseLoopMode } from "./turn-limits.js";
 import type { TurnLimits } from "./turn-limits.js";
 import { relayEndpoint } from "./network-route.js";
@@ -24,6 +26,7 @@ export interface SavedSession {
   mode?: AgentMode; networkAccess?: boolean; nugetAccess?: boolean; siteAccess?: boolean; dotnetRelayEndpoint?: string | null;
   metrics?: MetricsSnapshot;
   workspace?: Workspace;
+  providerTrace?: ProviderTraceSnapshot;
 }
 export const SESSION_BYTES = 256 * 1024 * 1024;
 export const SESSION_KEY = "lethetic.sessions.v1";
@@ -94,6 +97,7 @@ function parseSession(value: unknown): SavedSession {
     ...(item.siteAccess !== undefined ? { siteAccess: item.siteAccess } : {}),
     ...(item.nugetAccess !== undefined ? { nugetAccess: item.nugetAccess } : {}), theme: item.theme, connection,
     ...(item.dotnetRelayEndpoint !== undefined ? { dotnetRelayEndpoint: item.dotnetRelayEndpoint === null ? null : relayEndpoint(item.dotnetRelayEndpoint) } : {}),
+    ...(item.providerTrace !== undefined ? { providerTrace: parseProviderTraces(item.providerTrace) } : {}),
     ...(item.workspace !== undefined ? { workspace: parseWorkspace(item.workspace) } : {}),
     ...(item.metrics ? { metrics: parseMetrics(item.metrics) } : {}) };
 }
