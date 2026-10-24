@@ -2,7 +2,7 @@ name: Release retention
 
 on:
   workflow_run:
-    workflows: ['Release', 'Browser and WASM']
+    workflows: ['Release', 'Browser and WASM', 'Native Web UI']
     types: [completed]
   workflow_dispatch:
 

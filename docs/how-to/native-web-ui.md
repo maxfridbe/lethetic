@@ -113,7 +113,10 @@ The debug APK is installable for testing. Production APK/AAB builds require
 projects and native build outputs are ignored; the checked-in host plugin supplies
 the foreground service and directory picker. The **Native Web UI** GitHub workflow
 builds Windows NSIS, macOS DMG, Linux DEB/AppImage and an Android debug APK as
-artifacts. It can also be run manually.
+artifacts for branch builds. Tag builds (`browser-v*` or `v*`) also attach all five
+installers and their SHA-256 checksums to the same [GitHub release](https://github.com/maxfridbe/lethetic/releases/latest)
+as the browser ZIP. Look under **Assets** on that release; an Actions artifact is
+only an intermediate build download. The workflow can also be run manually.
 
 Before distributing, test real-directory import/write/conflict/revoke, untrusted
 iframe IPC rejection, background streaming, stop/error cleanup, app closing,
