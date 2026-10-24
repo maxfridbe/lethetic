@@ -5,6 +5,13 @@ engine, Pyodide and Dotnetdide runtimes** as the browser distribution. Windows,
 macOS, Linux and Android have build targets. It does not run generated Python or
 .NET code on the host or require a host Python interpreter/.NET SDK.
 
+Android reserves space for status/navigation bars, display cutouts and the
+keyboard outside the WebView, including in landscape and fullscreen previews.
+The launcher uses the current Lethetic emblem with an Android 13+ monochrome
+layer for launchers with **Themed icons** enabled. The in-app emblem follows the
+selected application theme. Regenerate packaged icons from `res/lethetic-mark.svg`
+with `python3 scripts/generate_native_icons.py` (requires the Tauri CLI).
+
 ## Choose your workspace
 
 The default is **Virtual directory**. Session files live in the application's

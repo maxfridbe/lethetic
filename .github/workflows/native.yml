@@ -109,6 +109,8 @@ jobs:
       - run: cargo tauri android init --ci
       - name: Build optimized Android release APK
         run: cargo tauri android build --target aarch64 --apk
+      - name: Android system bars, keyboard and cutout regression tests
+        run: ./src-tauri/gen/android/gradlew -p src-tauri/gen/android :tauri-plugin-lethetic-host:testDebugUnitTest
       - name: Verify and sign tagged APK
         id: package
         env:

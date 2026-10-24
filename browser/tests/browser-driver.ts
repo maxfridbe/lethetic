@@ -418,6 +418,19 @@ try {
   check(await evaluate("document.querySelector('.files-pane').getBoundingClientRect().bottom<=document.querySelector('#chat-scroll').getBoundingClientRect().top+1 && document.documentElement.scrollWidth<=innerWidth"), "left dock did not fall back to top on mobile");
   await evaluate("document.querySelector('#files-toggle').click()");
   check(await evaluate("(()=>{const bar=document.querySelector('.browser-usage-summary');return bar.clientHeight>40 && bar.clientHeight<=parseFloat(getComputedStyle(bar).lineHeight)*3+8})()"), "pinned stats did not wrap within three lines");
+  await rpc("Emulation.setSafeAreaInsetsOverride", {insets:{top:24,bottom:34,left:0,right:0}});
+  const safeControls = await evaluate(`(async () => {
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    const controls=[...document.querySelectorAll('.session-header button,.browser-status>summary')];
+    const visible=controls.filter(button=>button.getBoundingClientRect().height>0);
+    return visible.length>0 && visible.every(button=>{
+      const r=button.getBoundingClientRect();
+      const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+      return r.top>=24 && r.bottom<=innerHeight-34 && (hit===button || button.contains(hit));
+    });
+  })()`);
+  check(safeControls, "mobile system bars obscure header/status controls or intercept their hit targets");
+  await rpc("Emulation.setSafeAreaInsetsOverride", {insets:{top:0,bottom:0,left:0,right:0}});
   const viewportResult = await evaluate(`(async () => {
     const {fitViewport}=await import('./src/viewport.js');
     const root=document.getElementById('browser-root');

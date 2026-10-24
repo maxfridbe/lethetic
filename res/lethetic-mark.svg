@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160" color="#f8fafc">
+  <defs>
+    <mask id="cutouts" maskUnits="userSpaceOnUse" x="0" y="0" width="160" height="160">
+      <rect width="160" height="160" fill="white"/>
+      <g transform="translate(80 80)" fill="black">
+        <circle cx="-36" cy="-26" r="3"/><circle cx="-36" cy="0" r="3.2"/><circle cx="-36" cy="26" r="3"/>
+        <path d="M -10,-46 C 12,-22 -10,18 12,46" fill="none" stroke="black" stroke-width="18" stroke-linecap="round"/>
+      </g>
+    </mask>
+  </defs>
+  <g mask="url(#cutouts)">
+    <g transform="translate(80 80)" fill="none" stroke="currentColor">
+      <circle r="70" stroke-width="5"/>
+      <g stroke-width="4.5" stroke-linecap="round">
+        <path d="M-70 0H-58 M58 0H70 M0-70V-58 M0 58V70"/>
+        <path d="M-36-26L-10-12 M-36 0H-10 M-36 26L-10 12"/>
+      </g>
+      <g fill="currentColor" stroke="none">
+        <circle cx="-36" cy="-26" r="9"/><circle cx="-36" cy="0" r="9.5"/><circle cx="-36" cy="26" r="9"/>
+      </g>
+      <path d="M18-9L33-15 M18 9L33 15" stroke-width="3.5" stroke-dasharray="3 4" stroke-linecap="round"/>
+      <circle cx="42" cy="-18" r="8" stroke-width="4" stroke-dasharray="5 4"/>
+      <circle cx="42" cy="18" r="8" stroke-width="4" stroke-dasharray="5 4"/>
+    </g>
+  </g>
+  <path transform="translate(80 80)" d="M -10,-46 C 12,-22 -10,18 12,46" fill="none" stroke="currentColor" stroke-width="8.5" stroke-linecap="round"/>
+</svg>

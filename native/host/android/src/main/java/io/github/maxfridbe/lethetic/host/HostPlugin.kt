@@ -25,7 +25,10 @@ class HostPlugin(private val activity: Activity) : Plugin(activity) {
     private var waiting = false
     private var askedNotifications = false
     private var serviceRunning = false
-    override fun load(webView: WebView) { this.webView = webView }
+    override fun load(webView: WebView) {
+        this.webView = webView
+        activity.runOnUiThread { SafeWebViewInsets.install(activity) }
+    }
     private fun task(invoke: Invoke, work: () -> JSObject) {
         io.execute { try { invoke.resolve(work()) } catch (error: Exception) { invoke.reject(error.message ?: "Workspace operation failed") } }
     }

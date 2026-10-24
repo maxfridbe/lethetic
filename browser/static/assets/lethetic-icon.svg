@@ -1,23 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="14 14 92 92" role="img" aria-labelledby="title">
-  <title id="title">Lethetic</title>
-  <defs>
-    <linearGradient id="washWaveGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#00f2fe"/>
-      <stop offset="50%" stop-color="#6366f1"/>
-      <stop offset="100%" stop-color="#38bdf8"/>
-    </linearGradient>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160" color="#0f172a">
+  <style>@media (prefers-color-scheme: dark) { :root { color: #f8fafc; } }</style><defs>
+    <mask id="cutouts" maskUnits="userSpaceOnUse" x="0" y="0" width="160" height="160">
+      <rect width="160" height="160" fill="white" />
+      <g transform="translate(80 80)" fill="black">
+        <circle cx="-36" cy="-26" r="3" /><circle cx="-36" cy="0" r="3.2" /><circle cx="-36" cy="26" r="3" />
+        <path d="M -10,-46 C 12,-22 -10,18 12,46" fill="none" stroke="black" stroke-width="18" stroke-linecap="round" />
+      </g>
+    </mask>
   </defs>
-  <g transform="translate(60, 60)">
-    <circle cx="0" cy="0" r="44" fill="#0f172a" stroke="#1e293b" stroke-width="1.5"/>
-    <circle cx="-26" cy="-18" r="4" fill="#00f2fe"/>
-    <circle cx="-26" cy="0" r="4" fill="#38bdf8"/>
-    <circle cx="-26" cy="18" r="4" fill="#00f2fe"/>
-    <line x1="-22" y1="-18" x2="-8" y2="-8" stroke="#334155" stroke-width="2"/>
-    <line x1="-22" y1="0" x2="-8" y2="0" stroke="#334155" stroke-width="2"/>
-    <line x1="-22" y1="18" x2="-8" y2="8" stroke="#334155" stroke-width="2"/>
-    <path d="M -8,-28 C 6,-14 -6,10 8,28" fill="none" stroke="url(#washWaveGrad)" stroke-width="5" stroke-linecap="round"/>
-    <path d="M 6,-28 C 20,-14 8,10 22,28" fill="none" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" stroke-opacity="0.6"/>
-    <circle cx="28" cy="-12" r="3.5" fill="none" stroke="#64748b" stroke-width="1.5" stroke-dasharray="2 2"/>
-    <circle cx="28" cy="12" r="3.5" fill="none" stroke="#64748b" stroke-width="1.5" stroke-dasharray="2 2"/>
+  <g mask="url(#cutouts)">
+    <g transform="translate(80 80)" fill="none" stroke="currentColor">
+      <circle r="70" stroke-width="5" />
+      <g stroke-width="4.5" stroke-linecap="round">
+        <path d="M-70 0H-58 M58 0H70 M0-70V-58 M0 58V70" />
+        <path d="M-36-26L-10-12 M-36 0H-10 M-36 26L-10 12" />
+      </g>
+      <g fill="currentColor" stroke="none">
+        <circle cx="-36" cy="-26" r="9" /><circle cx="-36" cy="0" r="9.5" /><circle cx="-36" cy="26" r="9" />
+      </g>
+      <path d="M18-9L33-15 M18 9L33 15" stroke-width="3.5" stroke-dasharray="3 4" stroke-linecap="round" />
+      <circle cx="42" cy="-18" r="8" stroke-width="4" stroke-dasharray="5 4" />
+      <circle cx="42" cy="18" r="8" stroke-width="4" stroke-dasharray="5 4" />
+    </g>
   </g>
+  <path transform="translate(80 80)" d="M -10,-46 C 12,-22 -10,18 12,46" fill="none" stroke="currentColor" stroke-width="8.5" stroke-linecap="round" />
 </svg>
