@@ -3,7 +3,6 @@
 import base64
 from contextlib import chdir
 import hashlib
-import json
 import os
 from pathlib import Path
 import tempfile
@@ -12,9 +11,16 @@ from unittest.mock import patch
 
 import android_release
 import package_native_release
+from release_version import Version
 
 
 class AndroidReleaseTests(unittest.TestCase):
+    def setUp(self):
+        for module in (android_release, package_native_release):
+            replacement = patch.object(module, "current", return_value=Version("26.1024.01"))
+            replacement.start()
+            self.addCleanup(replacement.stop)
+
     def test_debuggable_manifest_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "debuggable"):
             android_release.check_manifest("package: name='app'\napplication-debuggable\n")
@@ -42,18 +48,8 @@ class AndroidReleaseTests(unittest.TestCase):
         with patch.dict(os.environ, values, clear=True):
             self.assertEqual(android_release.signing_key(), b"keystore")
 
-    def test_tag_updates_native_version_without_dropping_config(self):
-        with tempfile.TemporaryDirectory() as tmp, chdir(tmp):
-            android_release.CONFIG.parent.mkdir(parents=True)
-            android_release.CONFIG.write_text(json.dumps({"version": "0.1.0", "identifier": "unchanged"}))
-            android_release.set_version("browser-v0.9.0")
-            self.assertEqual(json.loads(android_release.CONFIG.read_text()), {"version": "0.9.0", "identifier": "unchanged"})
-        for bad in ("master", "v1.2", "v01.2.3", "../1.2.3"):
-            with self.assertRaises(ValueError):
-                android_release.release_version(bad)
-
     def test_publication_rejects_debug_or_unsigned_apks(self):
-        for name in ("app-debug.apk", "com.TechHurts.Lethetic_v0.9.0-unsigned.apk"):
+        for name in ("app-debug.apk", "com.TechHurts.Lethetic_v26.1024.01-unsigned.apk"):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 self.installers(root, name)
@@ -64,10 +60,10 @@ class AndroidReleaseTests(unittest.TestCase):
     def test_complete_release_preserves_name_and_checksums(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            self.installers(root, "com.TechHurts.Lethetic_v0.9.0.apk")
+            self.installers(root, "com.TechHurts.Lethetic_v26.1024.01.apk")
             files = package_native_release.package(root, root / "out")
             self.assertEqual(len(files), 5)
-            self.assertIn("com.TechHurts.Lethetic_v0.9.0.apk", [p.name for p in files])
+            self.assertIn("com.TechHurts.Lethetic_v26.1024.01.apk", [p.name for p in files])
             for file in files:
                 expected = hashlib.sha256(file.read_bytes()).hexdigest() + "  " + file.name + "\n"
                 self.assertEqual(file.with_name(file.name + ".sha256").read_text(), expected)
@@ -89,7 +85,6 @@ class AndroidReleaseTests(unittest.TestCase):
             apk = Path("src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-release-unsigned.apk")
             apk.parent.mkdir(parents=True)
             apk.write_bytes(b"input")
-            android_release.CONFIG.write_text('{"version":"0.9.0"}')
             with patch.object(android_release.subprocess, "check_output", return_value="package: name='app'"), patch.object(android_release.subprocess, "run", side_effect=run):
                 with self.assertRaisesRegex(RuntimeError, "Signing failed"):
                     android_release.package(True)

@@ -5,7 +5,7 @@ on:
     branches: [master]
   push:
     branches: [master]
-    tags: ['v*', 'browser-v*']
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -48,10 +48,10 @@ jobs:
           path: target/browser-preview*.png
       - uses: actions/upload-artifact@v4
         with:
-          name: lethetic-browser
+          name: lethetic-web-wasm
           path: |
-            target/lethetic-browser.zip
-            target/lethetic-browser.zip.sha256
+            target/lethetic-web-wasm_v*.zip
+            target/lethetic-web-wasm_v*.zip.sha256
       - uses: actions/upload-pages-artifact@v3
         if: github.ref == 'refs/heads/master'
         with:
@@ -77,7 +77,7 @@ jobs:
         uses: actions/deploy-pages@v4
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/browser-v')
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -85,10 +85,12 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: lethetic-browser
+          name: lethetic-web-wasm
           path: release
       - uses: softprops/action-gh-release@v2
         with:
+          name: Lethetic ${{ github.ref_name }}
+          fail_on_unmatched_files: true
           files: |
-            release/lethetic-browser.zip
-            release/lethetic-browser.zip.sha256
+            release/lethetic-web-wasm_v*.zip
+            release/lethetic-web-wasm_v*.zip.sha256

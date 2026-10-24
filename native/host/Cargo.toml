@@ -1,6 +1,6 @@
 [package]
 name = "tauri-plugin-lethetic-host"
-version = "0.1.0"
+version = "26.1024.1"
 edition = "2024"
 links = "tauri-plugin-lethetic-host"
 [build-dependencies]

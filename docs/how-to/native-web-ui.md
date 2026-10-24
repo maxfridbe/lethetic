@@ -120,10 +120,10 @@ the foreground service and directory picker.
 The **Native Web UI** GitHub workflow builds Windows NSIS, macOS DMG, Linux
 DEB/AppImage and an Android release APK. Branch/PR builds produce an explicitly
 **unsigned** Android Actions artifact for build verification; it is not installable
-or published as a release download. Tag builds (`browser-v*` or `v*`) require the
+or published as a release download. Tag builds (`vyy.mmdd.##`) require the
 release signing secrets below. Missing or invalid signing credentials fail the
 Android job; there is no debug-key fallback. Android's app version and download
-filename use the numeric version from the tag.
+filename are generated from the central `VERSION` file. See [release versioning](../releases.md).
 
 Tags attach all five installers and their SHA-256 checksums to the same
 [GitHub release](https://github.com/maxfridbe/lethetic/releases/latest) as the browser

@@ -7,32 +7,18 @@ from __future__ import annotations
 
 import argparse
 import base64
-import json
 import os
 from pathlib import Path
-import re
 import shutil
 import subprocess
 import tempfile
+
+from release_version import current
 
 SIGNING_VARIABLES = (
     "ANDROID_KEYSTORE_BASE64", "ANDROID_KEYSTORE_PASSWORD",
     "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD",
 )
-CONFIG = Path("src-tauri/tauri.conf.json")
-
-
-def release_version(value: str) -> str:
-    version = value.removeprefix("browser-v").removeprefix("v")
-    if not re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", version):
-        raise ValueError("Android releases require a numeric major.minor.patch version")
-    return version
-
-
-def set_version(tag: str) -> None:
-    config = json.loads(CONFIG.read_text())
-    config["version"] = release_version(tag)
-    CONFIG.write_text(json.dumps(config, indent=2) + "\n")
 
 
 def signing_key() -> bytes:
@@ -72,8 +58,9 @@ def package(sign: bool) -> Path:
     destination.mkdir(exist_ok=True)
     if any(destination.iterdir()):
         raise ValueError("Android release output directory must be empty")
-    version = release_version(json.loads(CONFIG.read_text())["version"])
-    name = f"com.TechHurts.Lethetic_v{version}" + (".apk" if sign else "-unsigned.apk")
+    name = current().asset("android", ".apk")
+    if not sign:
+        name = name.removesuffix(".apk") + "-unsigned.apk"
     output = destination / name
     # Keep keystore and intermediate APK outside artifacts/caches, including on failure.
     with tempfile.TemporaryDirectory(prefix="lethetic-android-") as temporary:
@@ -103,9 +90,5 @@ def package(sign: bool) -> Path:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sign", action="store_true", help="Require release credentials and sign")
-    parser.add_argument("--set-version", help="Set the app version from a release tag before building")
     args = parser.parse_args()
-    if args.set_version:
-        set_version(args.set_version)
-    else:
-        print(package(args.sign))
+    print(package(args.sign))

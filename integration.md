@@ -452,17 +452,19 @@ at `/lethetic/`, custom subpaths, and domain roots. Pages deployment requires th
 `github-pages` environment to allow the deploying branch. See GitHub's
 [custom workflow instructions](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
 
-Pushing an ordinary commit deploys Pages. Pushing a `v*` tag additionally attaches
-`lethetic-browser.zip` and `lethetic-browser.zip.sha256` to the GitHub release,
-alongside the existing native release workflow. A `browser-v*` tag (for example,
-`browser-v0.6.0`) publishes an independent embedding release with those same assets.
-A commit does not create a version tag automatically. The ZIP contains both standalone and embedding modes; it does
-not contain API keys or downloaded Pyodide packages. Build outputs live under
-`target/` and are not committed. `manifest.json` contains per-file SHA-256 hashes.
+Pushing an ordinary commit deploys Pages. All distributions use the root `VERSION`
+file in `yy.mmdd.##` format. Pushing its matching `vyy.mmdd.##` tag publishes one
+**Lethetic** release containing the web/WASM embedding ZIP, CLI archive, and native
+platform installers. The web archive is `lethetic-web-wasm_v<yy.mmdd.##>.zip` with
+its `.sha256` checksum. See [central release versioning](https://github.com/maxfridbe/lethetic/blob/master/docs/releases.md).
+A commit does not create a version tag automatically. The ZIP contains both standalone
+and embedding modes; it does not contain API keys or downloaded Pyodide packages.
+Build outputs live under `target/` and are not committed. `manifest.json` contains
+the padded release version and per-file SHA-256 hashes.
 
 ## Embed the complete UI
 
-Download `lethetic-browser.zip` from a release and extract it under your site's
+Download `lethetic-web-wasm_v<yy.mmdd.##>.zip` from a release and extract it under your site's
 `/vendor/lethetic/` directory. Serve `.wasm` as `application/wasm` and `.js` as
 JavaScript. Keep the extracted `src/`, `browser/`, `web/`, and `assets/` trees and stylesheets
 together. The `src/` entry points remain stable; the shared UI and libraries live

@@ -5,12 +5,11 @@ from __future__ import annotations
 import hashlib
 import html
 import json
-import os
 from pathlib import Path
-import re
 import sys
-import tomllib
 import zipfile
+
+from release_version import current
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -23,13 +22,10 @@ def package(stage: Path) -> None:
         declaration = module.with_suffix(".d.ts")
         if declaration.exists():
             (stage / "src" / declaration.name).write_text(f'export * from "../browser/src/{module.name}";\n')
-    crate = tomllib.loads((ROOT / "lethetic-wasm/Cargo.toml").read_text())
-    version = os.environ.get("LETHETIC_RELEASE_VERSION", crate["package"]["version"])
-    version = version.removeprefix("browser-v").removeprefix("v")
-    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?", version):
-        raise ValueError("release version must be a semantic version")
+    version = current()
+    (stage / "VERSION").write_text(version.text + "\n")
     (stage / "package.json").write_text(json.dumps({
-        "name": "@lethetic/browser", "version": version, "type": "module",
+        "name": "@lethetic/browser", "version": version.semver, "letheticVersion": version.text, "type": "module",
         "description": "Lethetic browser WASM runtime, Pyodide and .NET tools, and embeddable UI",
         "exports": {".": {"types": "./src/sdk.d.ts", "import": "./src/sdk.js"},
                     "./embed": {"types": "./src/embed.d.ts", "import": "./src/embed.js"},
@@ -46,8 +42,8 @@ def package(stage: Path) -> None:
         '<body><main><a href="./">← Lethetic</a><h1>Integration guide</h1><pre>' + guide + '</pre></main></body></html>')
     checksums = {str(path.relative_to(stage)): hashlib.sha256(path.read_bytes()).hexdigest()
                  for path in sorted(stage.rglob("*")) if path.is_file() and path.name != "manifest.json"}
-    (stage / "manifest.json").write_text(json.dumps({"version": version, "sha256": checksums}, indent=2) + "\n")
-    archive = ROOT / "target" / "lethetic-browser.zip"
+    (stage / "manifest.json").write_text(json.dumps({"version": version.text, "sha256": checksums}, indent=2) + "\n")
+    archive = ROOT / "target" / version.asset("web-wasm", ".zip")
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as output:
         for path in sorted(stage.rglob("*")):
             if path.is_file():

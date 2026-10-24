@@ -16,6 +16,7 @@ done
 cargo test -p lethetic --no-default-features --lib --locked
 cargo test -p gemma-chat --no-default-features --lib --locked
 cargo test -p lethetic-wasm --locked
+python3 scripts/release_version.py --check
 cargo build -p lethetic-wasm --target wasm32-unknown-unknown --release --locked
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s browser/tests -p 'test_python_*.py'
 stage="$(mktemp -d "$ROOT/target/browser-build.XXXXXX")"

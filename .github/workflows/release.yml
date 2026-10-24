@@ -13,6 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Validate central release version
+        run: |
+          python3 scripts/release_version.py --check
+          python3 scripts/test_release_version.py
 
       - name: Enforce source line ceiling
         env:
@@ -22,12 +28,17 @@ jobs:
           python3 scripts/check_source_lines.py
 
       - name: Build
-        run: cargo build --release --locked
+        run: cargo build --release --locked --bin lethetic --bin lethetic-runtime
+
+      - name: Package CLI and runtime helper
+        run: python3 scripts/package_cli_release.py
         
       - name: Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: target/release/lethetic
+          name: Lethetic ${{ github.ref_name }}
+          fail_on_unmatched_files: true
+          files: target/cli-release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

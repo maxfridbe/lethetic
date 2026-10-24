@@ -75,6 +75,7 @@ native engine; browser-only mode runs the harness and code workers in your brows
 | Shared CLI/WASM behavior and remaining gaps | [Browser parity](docs/browser-parity.md) |
 | Relational session schema, SQL queries, migration, and SQLite exports | [Embedded storage](docs/storage.md) |
 | Builds and validation | [Development checks](docs/development.md) |
+| Unified calendar versions and platform downloads | [Releases](docs/releases.md) |
 
 ## The name
 

@@ -7,7 +7,7 @@ use its headless SDK to supply your own interface.
 
 ## Embed the web UI
 
-1. Download `lethetic-browser.zip` from a
+1. Download `lethetic-web-wasm_v<yy.mmdd.##>.zip` from a
    [release](https://github.com/maxfridbe/lethetic/releases/latest).
 2. Extract it under a directory such as `/vendor/lethetic/` on your web server.
    Keep the extracted trees and stylesheets together. Serve `.wasm` as

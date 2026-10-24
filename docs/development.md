@@ -3,7 +3,8 @@
 [Back to README](../README.md) · [Shared-core architecture](browser-parity.md)
 
 Run these commands from the repository root. Native and browser behavior both
-need coverage when changing shared Rust code.
+need coverage when changing shared Rust code. All distributions share the root
+`VERSION`; see [release versioning](releases.md) before preparing a tag.
 
 ## Native baseline
 

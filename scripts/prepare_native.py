@@ -2,10 +2,13 @@
 """Stage the existing browser distribution for Tauri; no npm frontend toolchain."""
 from pathlib import Path
 import shutil
+from release_version import current
 root = Path(__file__).resolve().parent.parent
 source = root / 'target/browser'
 if not (source / 'browser/wasm/lethetic_wasm_bg.wasm').exists():
     raise SystemExit('Run ./build-browser.sh first')
+if (source / 'VERSION').read_text().strip() != current().text:
+    raise SystemExit('Browser assets have a different version; run ./build-browser.sh first')
 target = root / 'native/dist'
 shutil.rmtree(target, ignore_errors=True)
 shutil.copytree(source, target)

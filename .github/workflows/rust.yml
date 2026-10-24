@@ -5,7 +5,7 @@ on:
     branches: [master]
   push:
     branches: [master]
-    tags: ['v*', 'browser-v*']
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -21,6 +21,11 @@ jobs:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+      - name: Central version and packaging checks
+        run: |
+          python3 scripts/release_version.py --check
+          python3 scripts/test_release_version.py
+          python3 scripts/test_android_release.py
       - name: Formatting
         run: cargo fmt --all -- --check
       - name: Clippy (workspace and browser target)

@@ -5,8 +5,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 from pathlib import Path
-import re
 import shutil
+
+from release_version import current
 
 INSTALLERS = {
     "lethetic-Windows": (".exe",),
@@ -17,15 +18,16 @@ INSTALLERS = {
 
 
 def package(source: Path, destination: Path) -> list[Path]:
+    version = current()
+    platforms = {"lethetic-Windows": "windows-x86_64", "lethetic-macOS": "macos-arm64", "lethetic-Linux": "linux-x86_64", "lethetic-Android": "android"}
     selected: list[tuple[Path, str]] = []
     for artifact, extensions in INSTALLERS.items():
         for extension in extensions:
             files = sorted((source / artifact).rglob(f"*{extension}"))
             if len(files) != 1 or not files[0].is_file() or files[0].stat().st_size == 0:
                 raise ValueError(f"Expected one nonempty {extension} installer in {artifact}; found {len(files)}")
-            # Tauri desktop filenames already include their version/architecture.
-            name = files[0].name
-            if extension == ".apk" and not re.fullmatch(r"com\.TechHurts\.Lethetic_v[0-9]+\.[0-9]+\.[0-9]+\.apk", name):
+            name = version.asset(platforms[artifact], extension)
+            if extension == ".apk" and files[0].name != name:
                 raise ValueError("Only the verified, release-signed Android APK can be published")
             selected.append((files[0], name))
     if len({name for _, name in selected}) != len(selected):
