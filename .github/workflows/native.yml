@@ -4,9 +4,9 @@ on:
   push:
     branches: [master]
     tags: ['v*', 'browser-v*']
-    paths: ['native/**', 'browser/**', 'web/**', 'lethetic-wasm/**', 'src/engine/**', 'src/storage/**', 'scripts/prepare_native.py', 'scripts/package_native_release.py', 'build-browser.sh', '.github/workflows/native.yml', 'Cargo.lock']
+    paths: ['native/**', 'browser/**', 'web/**', 'lethetic-wasm/**', 'src/engine/**', 'src/storage/**', 'scripts/prepare_native.py', 'scripts/package_native_release.py', 'scripts/*android_release.py', 'build-browser.sh', '.github/workflows/native.yml', 'Cargo.lock']
   pull_request:
-    paths: ['native/**', 'browser/**', 'scripts/prepare_native.py', 'scripts/package_native_release.py', '.github/workflows/native.yml']
+    paths: ['native/**', 'browser/**', 'scripts/prepare_native.py', 'scripts/package_native_release.py', 'scripts/*android_release.py', '.github/workflows/native.yml']
 permissions:
   contents: read
 jobs:
@@ -30,6 +30,7 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then export LETHETIC_RELEASE_VERSION="$RELEASE_REF"; fi
           ./build-browser.sh
       - run: python3 scripts/prepare_native.py
+      - run: python3 scripts/test_android_release.py
       - uses: actions/upload-artifact@v4
         with:
           name: native-frontend
@@ -103,14 +104,30 @@ jobs:
           workspaces: native
       - run: cargo install tauri-cli --version 2.12.4 --locked
       - run: cargo tauri android init --ci
-      # Debug APK is installable without publishing a signing key. Release/store
-      # builds require the owner's signing configuration; see docs/how-to/native-web-ui.md.
-      - run: cargo tauri android build --debug --target aarch64 --apk
+      - name: Apply release version
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
+        run: python3 ../scripts/android_release.py --set-version "$RELEASE_REF"
+      - name: Build optimized Android release APK
+        run: cargo tauri android build --target aarch64 --apk
+      - name: Verify and sign tagged APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ startsWith(github.ref, 'refs/tags/') && secrets.ANDROID_KEYSTORE_BASE64 || '' }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/') && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+          ANDROID_KEY_ALIAS: ${{ startsWith(github.ref, 'refs/tags/') && secrets.ANDROID_KEY_ALIAS || '' }}
+          ANDROID_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/') && secrets.ANDROID_KEY_PASSWORD || '' }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            python3 ../scripts/android_release.py --sign
+          else
+            python3 ../scripts/android_release.py
+          fi
       - uses: actions/upload-artifact@v4
         with:
-          name: lethetic-Android
+          name: ${{ startsWith(github.ref, 'refs/tags/') && 'lethetic-Android' || 'lethetic-Android-unsigned' }}
           if-no-files-found: error
-          path: native/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          path: native/android-release/*.apk
 
   release:
     if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/browser-v')
@@ -135,4 +152,4 @@ jobs:
           body: |
             Native Web UI downloads: Windows `.exe`, macOS `.dmg`, Linux `.deb` / `.AppImage`, and Android ARM64 `.apk`. Each installer includes a SHA-256 checksum.
 
-            The Android APK is debug-signed for testing. Desktop installers are not signed/notarized with publisher certificates. See [the native app guide](https://github.com/maxfridbe/lethetic/blob/${{ github.ref_name }}/docs/how-to/native-web-ui.md).
+            The Android APK is an optimized, non-debuggable build signed with the project's release key. Desktop installers are not signed/notarized with publisher certificates. See [the native app guide](https://github.com/maxfridbe/lethetic/blob/${{ github.ref_name }}/docs/how-to/native-web-ui.md).

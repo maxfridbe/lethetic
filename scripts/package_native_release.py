@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 from pathlib import Path
+import re
 import shutil
 
 INSTALLERS = {
@@ -23,7 +24,9 @@ def package(source: Path, destination: Path) -> list[Path]:
             if len(files) != 1 or not files[0].is_file() or files[0].stat().st_size == 0:
                 raise ValueError(f"Expected one nonempty {extension} installer in {artifact}; found {len(files)}")
             # Tauri desktop filenames already include their version/architecture.
-            name = "lethetic-android-arm64-debug.apk" if extension == ".apk" else files[0].name
+            name = files[0].name
+            if extension == ".apk" and not re.fullmatch(r"com\.TechHurts\.Lethetic_v[0-9]+\.[0-9]+\.[0-9]+\.apk", name):
+                raise ValueError("Only the verified, release-signed Android APK can be published")
             selected.append((files[0], name))
     if len({name for _, name in selected}) != len(selected):
         raise ValueError("Native installer filenames collide")

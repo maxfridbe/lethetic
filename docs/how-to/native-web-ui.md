@@ -105,18 +105,71 @@ For Android, install Java 21, Android SDK platform/build-tools 36 and NDK
 rustup target add aarch64-linux-android
 cd native
 cargo tauri android init --ci
-cargo tauri android build --debug --target aarch64 --apk
+cargo tauri android build --target aarch64 --apk
+python3 ../scripts/android_release.py --sign
 ```
 
-The debug APK is installable for testing. Production APK/AAB builds require
-[Android signing](https://v2.tauri.app/distribute/sign/android/). Generated Android
+This builds the optimized release variant. The packaging script reads the signing
+environment variables described below, rejects debuggable APKs and debug signing
+certificates, aligns the APK, signs it, and verifies its signature and alignment.
+It writes `native/android-release/com.TechHurts.Lethetic_v<version>.apk` (ARM64).
+The download filename does not change the Android application ID. Generated Android
 projects and native build outputs are ignored; the checked-in host plugin supplies
-the foreground service and directory picker. The **Native Web UI** GitHub workflow
-builds Windows NSIS, macOS DMG, Linux DEB/AppImage and an Android debug APK as
-artifacts for branch builds. Tag builds (`browser-v*` or `v*`) also attach all five
-installers and their SHA-256 checksums to the same [GitHub release](https://github.com/maxfridbe/lethetic/releases/latest)
-as the browser ZIP. Look under **Assets** on that release; an Actions artifact is
-only an intermediate build download. The workflow can also be run manually.
+the foreground service and directory picker.
+
+The **Native Web UI** GitHub workflow builds Windows NSIS, macOS DMG, Linux
+DEB/AppImage and an Android release APK. Branch/PR builds produce an explicitly
+**unsigned** Android Actions artifact for build verification; it is not installable
+or published as a release download. Tag builds (`browser-v*` or `v*`) require the
+release signing secrets below. Missing or invalid signing credentials fail the
+Android job; there is no debug-key fallback. Android's app version and download
+filename use the numeric version from the tag.
+
+Tags attach all five installers and their SHA-256 checksums to the same
+[GitHub release](https://github.com/maxfridbe/lethetic/releases/latest) as the browser
+ZIP. Look under **Assets** on that release; an Actions artifact is an intermediate
+build download. Manually running the workflow against a release tag also signs
+and publishes; running it against a branch produces unsigned Android output.
+
+### Android release signing setup
+
+Use a persistent release keystore, following the
+[Android signing guide](https://v2.tauri.app/distribute/sign/android/). To create one,
+run this interactively outside the repository; `keytool` prompts for the password:
+
+```sh
+keytool -genkeypair -keystore /secure/path/lethetic-release.jks -storetype JKS \
+  -alias lethetic -keyalg RSA -keysize 3072 -validity 10000
+```
+
+Back up the keystore, alias, and passwords securely. Reuse the same key for future
+releases so installed apps can be updated. Add these repository **Actions secrets**
+under Settings → Secrets and variables → Actions:
+
+| Secret | Value |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | Base64 encoding of the keystore file |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
+| `ANDROID_KEY_ALIAS` | Signing alias, e.g. `lethetic` |
+| `ANDROID_KEY_PASSWORD` | Password for that alias |
+
+With an authenticated GitHub CLI, upload the keystore without printing its contents:
+
+```sh
+base64 < /secure/path/lethetic-release.jks | gh secret set ANDROID_KEYSTORE_BASE64 --repo maxfridbe/lethetic
+gh secret set ANDROID_KEYSTORE_PASSWORD --repo maxfridbe/lethetic
+gh secret set ANDROID_KEY_ALIAS --repo maxfridbe/lethetic
+gh secret set ANDROID_KEY_PASSWORD --repo maxfridbe/lethetic
+```
+
+For local signing, supply the same four environment variables securely. The helper
+uses a temporary keystore outside artifacts and build caches, and removes it on
+success or failure. It does not save passwords in generated Gradle files.
+
+The old `browser-v0.8.0` APK was debug-signed. Switching to a release key requires
+exporting any sessions you want to preserve, uninstalling that debug app, then
+installing the release APK; Android will not accept it as an in-place update with
+a different signing certificate.
 
 Before distributing, test real-directory import/write/conflict/revoke, untrusted
 iframe IPC rejection, background streaming, stop/error cleanup, app closing,
