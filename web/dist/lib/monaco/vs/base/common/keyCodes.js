@@ -300,7 +300,7 @@ var KeyCodeUtils;
     function toString(keyCode) {
         return uiMap.keyCodeToStr(keyCode);
     }
-    KeyCodeUtils.toString = toString;
+    Object.defineProperty(KeyCodeUtils, "toString", { value: toString, writable: true, enumerable: true, configurable: true });
     function fromString(key) {
         return uiMap.strToKeyCode(key);
     }

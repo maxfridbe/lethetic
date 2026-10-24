@@ -1,5 +1,13 @@
 let assets = null;
 let editorSequence = 0;
+/** Bundled Tauri origins and loopback development servers are local, not a CDN. */
+export function editorWorkerAllowed(worker, page) {
+    if (worker.protocol !== page.protocol || worker.host !== page.host)
+        return false;
+    return worker.protocol === "https:" ||
+        (worker.protocol === "tauri:" && worker.host === "localhost") ||
+        (worker.protocol === "http:" && ["tauri.localhost", "localhost", "127.0.0.1", "[::1]"].includes(worker.hostname));
+}
 async function loadMonaco() {
     if (assets !== null)
         return assets;
@@ -10,8 +18,8 @@ async function loadMonaco() {
                 if (label !== "editorWorkerService")
                     throw new Error("Unsupported editor worker");
                 const url = new URL("../../lib/monaco/vs/editor/editor.worker.js", import.meta.url);
-                if (url.origin !== globalThis.location.origin || url.protocol !== "https:") {
-                    throw new Error("A same-origin HTTPS editor worker is required");
+                if (!editorWorkerAllowed(url, new URL(globalThis.location.href))) {
+                    throw new Error("A same-origin HTTPS or local app editor worker is required");
                 }
                 return new Worker(url, { type: "module", name: "lethetic-file-editor" });
             },

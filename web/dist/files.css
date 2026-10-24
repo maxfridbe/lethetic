@@ -311,65 +311,56 @@
 
 .files-dock-controls { display: inline-flex; }
 
-@media (min-width: 900px) {
-  .conversation-column:has(> .files-pane[data-dock="left"]) {
-    grid-template-columns: 2rem minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto auto;
-  }
-  .conversation-column:has(> .files-pane.is-open[data-dock="left"]) {
-    grid-template-columns: clamp(260px, 34%, 440px) minmax(0, 1fr);
-  }
-  .files-pane[data-dock="left"] {
-    display: flex;
-    flex-direction: column;
-    grid-column: 1;
-    grid-row: 1 / 4;
-    height: auto !important;
-    min-height: 0;
-    max-height: none;
-    width: auto !important;
-    resize: none;
-    border-right: 1px solid var(--border);
-    border-bottom: 0;
-    box-shadow: 10px 0 22px -6px rgb(0 0 0 / 55%);
-  }
-  .files-pane[data-dock="left"] ~ .chat-scroll { grid-column: 2; grid-row: 1; }
-  .files-pane[data-dock="left"] ~ .activity-area { grid-column: 2; grid-row: 2; }
-  .files-pane[data-dock="left"] ~ .composer { grid-column: 2; grid-row: 3; }
-  .files-pane:not(.is-open)[data-dock="left"] ~ .chat-scroll { scrollbar-gutter: stable; }
-  .files-pane:not(.is-open)[data-dock="left"] ~ .chat-scroll .chat-window { padding-inline: .65rem; }
-  .files-pane:not(.is-open)[data-dock="left"] .files-toolbar {
-    flex-direction: column;
-    flex-wrap: nowrap;
-    align-items: center;
-    height: 100%;
-    min-height: 0;
-    box-sizing: border-box;
-    padding: .4rem 0;
-    overflow: auto;
-  }
-  .files-pane:not(.is-open)[data-dock="left"] .files-toolbar button,
-  .files-pane:not(.is-open)[data-dock="left"] .files-scope {
-    writing-mode: vertical-rl;
-    white-space: nowrap;
-  }
-  .files-pane:not(.is-open)[data-dock="left"] .files-toolbar button { padding: .15rem .1rem; }
-  .files-pane:not(.is-open)[data-dock="left"] .files-scope {
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .files-pane:not(.is-open)[data-dock="left"] .files-dock-controls { flex-direction: column; }
-  .files-pane:not(.is-open)[data-dock="left"] .ui-icon { margin: 0 0 .25rem; }
-  .files-pane.is-open[data-dock="left"] .files-body {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(100px, 35%) minmax(0, 1fr);
-  }
-  .files-pane.is-open[data-dock="left"] .files-browser {
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
-  }
+.conversation-column:has(> .files-pane[data-dock="left"]) {
+  grid-template-columns: 2rem minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto auto;
+}
+.files-pane[data-dock="left"] {
+  display: flex;
+  flex-direction: column;
+  grid-column: 1;
+  grid-row: 1 / 4;
+  height: auto !important;
+  min-height: 0;
+  max-height: none;
+  width: auto !important;
+  resize: none;
+  border-right: 1px solid var(--border);
+  border-bottom: 0;
+  box-shadow: 10px 0 22px -6px rgb(0 0 0 / 55%);
+}
+.files-pane[data-dock="left"] ~ .chat-scroll { grid-column: 2; grid-row: 1; }
+.files-pane[data-dock="left"] ~ .activity-area { grid-column: 2; grid-row: 2; }
+.files-pane[data-dock="left"] ~ .composer { grid-column: 2; grid-row: 3; }
+.files-pane:not(.is-open)[data-dock="left"] ~ .chat-scroll { scrollbar-gutter: stable; }
+.files-pane:not(.is-open)[data-dock="left"] ~ .chat-scroll .chat-window { padding-inline: .65rem; }
+.files-pane:not(.is-open)[data-dock="left"] .files-toolbar {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: center;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: .4rem 0;
+  overflow: auto;
+}
+.files-pane:not(.is-open)[data-dock="left"] .files-toolbar button,
+.files-pane:not(.is-open)[data-dock="left"] .files-scope {
+  writing-mode: vertical-rl;
+  white-space: nowrap;
+}
+.files-pane:not(.is-open)[data-dock="left"] .files-toolbar button { padding: .15rem .1rem; }
+.files-pane:not(.is-open)[data-dock="left"] .files-scope {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.files-pane:not(.is-open)[data-dock="left"] .files-dock-controls { flex-direction: column; }
+.files-pane:not(.is-open)[data-dock="left"] .ui-icon { margin: 0 0 .25rem; }
+.files-pane.is-open[data-dock="left"] .files-browser {
+  border-right: 0;
+  border-bottom: 1px solid var(--border);
 }
 
 .files-entry .ui-icon { margin: 0; font-size: 1rem; }
@@ -398,20 +389,24 @@
   content: ""; position: absolute; left: calc(50% - 18px); top: 2px;
   width: 36px; height: 2px; border-radius: 1px; background: var(--theme-system-fg);
 }
-@media (min-width: 900px) {
-  .conversation-column:has(> .files-pane.is-open[data-dock="left"]) { grid-template-columns: clamp(220px, var(--files-width, 34%), 80%) minmax(0, 1fr); }
-  .files-pane.is-open[data-dock="left"] { padding-right: 6px; padding-bottom: 0; }
-  .files-pane.is-open[data-dock="left"] .files-body {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(65px, var(--files-list-height, 35%)) 6px minmax(0, 1fr);
-  }
-  .files-pane.is-open[data-dock="left"] .files-splitter { cursor: row-resize; }
-  .files-pane.is-open[data-dock="left"] .files-outer-splitter {
-    top: 0; left: auto; right: 0; bottom: 0; width: 6px; height: auto; cursor: col-resize;
-  }
-  .files-pane.is-open[data-dock="left"] .files-outer-splitter::after {
-    left: 2px; top: calc(50% - 18px); width: 2px; height: 36px;
-  }
+.conversation-column:has(> .files-pane.is-open[data-dock="left"]) { grid-template-columns: clamp(min(160px, 45%), var(--files-width, 34%), 80%) minmax(0, 1fr); }
+.files-pane.is-open[data-dock="left"] { padding-right: 6px; padding-bottom: 0; }
+.files-pane.is-open[data-dock="left"] .files-body {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(65px, var(--files-list-height, 35%)) 6px minmax(0, 1fr);
+}
+.files-pane.is-open[data-dock="left"] .files-splitter { cursor: row-resize; }
+.files-pane.is-open[data-dock="left"] .files-outer-splitter {
+  top: 0; left: auto; right: 0; bottom: 0; width: 6px; height: auto; cursor: col-resize;
+}
+.files-pane.is-open[data-dock="left"] .files-outer-splitter::after {
+  left: 2px; top: calc(50% - 18px); width: 2px; height: 36px;
 }
 
 .files-inline-preview { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: white; }
+
+@media (max-width: 899px) {
+  .files-pane.is-open[data-dock="left"] .files-toolbar { max-height: 30%; overflow: auto; padding: .25rem; gap: .25rem; }
+  .files-pane.is-open[data-dock="left"] .files-actions { margin-left: 0; }
+  .files-pane.is-open[data-dock="left"] .files-content-actions { max-height: 5rem; overflow: auto; align-content: start; }
+}

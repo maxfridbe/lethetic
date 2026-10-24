@@ -218,6 +218,20 @@
       ]
     },
     {
+      "path": "vs/base/common/keyCodes.js",
+      "upstream_sha256": "5cfe17c52e57cbdf18558acd837345542fef3784eec9d95660013b5e1c04fc0b",
+      "changes": [
+        "define own toString under Tauri frozen Object.prototype"
+      ]
+    },
+    {
+      "path": "vs/base/common/severity.js",
+      "upstream_sha256": "7528fa646ba1da83a5a703b132258eb986c58bcc2e3a96c2bab74bccbe33732a",
+      "changes": [
+        "define own toString under Tauri frozen Object.prototype"
+      ]
+    },
+    {
       "path": "vs/editor/browser/controller/editContext/native/nativeEditContext.js",
       "upstream_sha256": "e6579f0bf4ea4d61ccc4fe7361733c872c9aaed61786fb27bc70ddfc83ce0d62",
       "changes": [
@@ -453,6 +467,20 @@
       "upstream_sha256": "e3a887b2c27ecbac6c38a2dff7d2b37ec861d1b1793cd0a7be7e3485be53f061",
       "changes": [
         "move side-effect CSS imports to the linked stylesheet"
+      ]
+    },
+    {
+      "path": "vs/platform/instantiation/common/instantiation.js",
+      "upstream_sha256": "8c5d992903d59b5eb4dc8c3a8baf7bb98499c563aced75d199b43af7fb4e6869",
+      "changes": [
+        "define own toString under Tauri frozen Object.prototype"
+      ]
+    },
+    {
+      "path": "vs/platform/markers/common/markers.js",
+      "upstream_sha256": "79191e80c7888a9e843af28da38983a92d4292145c5e6c28be950462619061d9",
+      "changes": [
+        "define own toString under Tauri frozen Object.prototype"
       ]
     },
     {

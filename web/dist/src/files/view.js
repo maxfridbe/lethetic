@@ -7,7 +7,7 @@ import { CHANGE_LETTERS, changeRows } from "./git.js";
 function splitter(outer = false) {
     const context = (target) => {
         const pane = target.closest(".files-pane");
-        const left = pane.dataset["dock"] === "left" && matchMedia("(min-width: 900px)").matches;
+        const left = pane.dataset["dock"] === "left";
         const host = outer ? pane.parentElement : target.parentElement;
         const vertical = outer ? !left : left;
         const pixels = outer && vertical;
@@ -137,7 +137,7 @@ export function renderFilesPane(state, live, actions, extensions = {}) {
             h("span", { attrs: { class: "files-dock-controls" } },
                 h("button", { attrs: { type: "button", "data-files-dock": state.dock === "top" ? "left" : "top",
                         "aria-label": state.dock === "top" ? "Dock Files left (currently top)" : "Dock Files top (currently left)",
-                        title: state.dock === "top" ? "Dock Files left. Narrow screens use the top layout." : "Dock Files above the conversation" }, on: { click: () => actions.setDock(state.dock === "top" ? "left" : "top") } }, uiIcon(state.dock === "top" ? "columns" : "list"))),
+                        title: state.dock === "top" ? "Dock Files left" : "Dock Files above the conversation" }, on: { click: () => actions.setDock(state.dock === "top" ? "left" : "top") } }, uiIcon(state.dock === "top" ? "columns" : "list"))),
             !state.open || state.tab !== "changes" ? null : h("div", { attrs: { class: "files-actions" } },
                 h("button", { attrs: { type: "button" }, props: { disabled: !live || state.changesBusy }, on: { click: actions.refreshChanges } },
                     uiIcon("refresh"),

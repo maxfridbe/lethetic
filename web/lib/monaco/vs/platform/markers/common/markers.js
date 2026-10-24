@@ -25,7 +25,7 @@ var MarkerSeverity;
     function toString(a) {
         return _displayStrings[a] || '';
     }
-    MarkerSeverity.toString = toString;
+    Object.defineProperty(MarkerSeverity, "toString", { value: toString, writable: true, enumerable: true, configurable: true });
     const _displayStringsPlural = Object.create(null);
     _displayStringsPlural[MarkerSeverity.Error] = localize(1798, "Errors");
     _displayStringsPlural[MarkerSeverity.Warning] = localize(1799, "Warnings");

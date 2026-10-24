@@ -12,6 +12,11 @@ layer for launchers with **Themed icons** enabled. The in-app emblem follows the
 selected application theme. Regenerate packaged icons from `res/lethetic-mark.svg`
 with `python3 scripts/generate_native_icons.py` (requires the Tauri CLI).
 
+The Files dock toggle supports both **left** and **top** layouts on phones,
+tablets and desktops. In left mode, the file list sits above the preview beside
+the conversation; drag the divider to resize it. Monaco syntax highlighting and
+its worker are bundled locally and do not need Network access or a CDN.
+
 ## Choose your workspace
 
 The default is **Virtual directory**. Session files live in the application's

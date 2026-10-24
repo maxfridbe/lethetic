@@ -45,7 +45,7 @@ var Severity;
             default: return _ignore;
         }
     }
-    Severity.toString = toString;
+    Object.defineProperty(Severity, "toString", { value: toString, writable: true, enumerable: true, configurable: true });
 })(Severity || (Severity = {}));
 var Severity$1 = Severity;
 

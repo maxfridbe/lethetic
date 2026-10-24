@@ -5,7 +5,7 @@ import { renderChatView } from "../src/app/chat-view.js";
 import { historyRecallMatches, type PendingHistoryRecall } from "../src/app/history-recall.js";
 import { FileClient, boundedResponseBytes } from "../src/files/client.js";
 import { fileSize } from "../src/files/size.js";
-import { fileLanguage } from "../src/files/editor.js";
+import { editorWorkerAllowed, fileLanguage } from "../src/files/editor.js";
 import {
   FILE_VIEW_BYTES,
   parseFileError,
@@ -28,6 +28,18 @@ import { deferred, nth, type Deferred } from "./support/collections.js";
 import { all, attr, classAttr, find, isRecord } from "./support/vnode.js";
 
 type FakeFileClient = Pick<FileClient, "list" | "read">;
+
+test("Monaco workers stay on the page origin, including native and loopback origins", () => {
+  for (const origin of ["https://example.com", "http://tauri.localhost", "https://tauri.localhost",
+    "tauri://localhost", "http://localhost:8080", "http://127.0.0.1:8080", "http://[::1]:8080"]) {
+    assert.equal(editorWorkerAllowed(new URL(`${origin}/lib/worker.js`), new URL(`${origin}/index.html`)), true, origin);
+    assert.equal(editorWorkerAllowed(new URL("https://cdn.example.com/worker.js"), new URL(`${origin}/index.html`)), false);
+  }
+  for (const origin of ["http://example.com", "file://", "tauri://other"]) {
+    assert.equal(editorWorkerAllowed(new URL(`${origin}/worker.js`), new URL(`${origin}/index.html`)), false);
+  }
+  assert.equal(editorWorkerAllowed(new URL("http://localhost:8081/worker.js"), new URL("http://localhost:8080/")), false);
+});
 
 /** The controller only uses list/read; the fake omits FileClient's private state. */
 function fakeFileClient(client: FakeFileClient): FileClient {

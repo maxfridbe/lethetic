@@ -102,6 +102,8 @@ try {
   session = String(attached["sessionId"]);
   await rpc("Page.enable"); await rpc("Runtime.enable");
   await rpc("Page.setLifecycleEventsEnabled", {enabled: true});
+  // Match the packaged Tauri WebView's hardening, including every lazy Monaco import.
+  await rpc("Page.addScriptToEvaluateOnNewDocument", {source: "Object.freeze(Object.prototype);"});
   // Hold the actual WASM download to verify that elapsed time alone never hides the popup.
   const startupGate = await rpc("Page.addScriptToEvaluateOnNewDocument", {source: `
     {const original=globalThis.fetch;const gate=new Promise(resolve=>globalThis.releaseStartupWasm=resolve);
@@ -253,6 +255,15 @@ try {
   await until("document.querySelector('#files-monaco')?.dataset.editorReady==='true'");
   await until("document.querySelector('#files-monaco .view-lines')?.textContent.includes('private')");
   check(await evaluate("!!document.querySelector('#files-monaco .line-numbers') && !document.querySelector('.files-native-text')"), "Monaco is not the default code preview");
+  check(await evaluate(`(async () => {
+    const api=await import('./web/lib/monaco/vs/editor/editor.api.js');
+    const model=api.editor.getModels()[0];
+    const thread=globalThis.MonacoEnvironment.getWorker('workerMain.js','editorWorkerService');
+    let replies=0; thread.addEventListener('message',()=>replies++);
+    const worker=api.editor.createWebWorker({worker:thread});
+    try { await worker.withSyncedResources([model.uri]); return replies>0 && Object.isFrozen(Object.prototype); }
+    finally { worker.dispose(); }
+  })()`), "Monaco module worker failed with native prototype protection on a local HTTP origin");
   await evaluate("document.querySelector('[data-file-action=text-mode]').click()");
   check(await evaluate("(()=>{const text=document.querySelector('.files-native-text');text.focus();text.setSelectionRange(0,text.value.length);return text.selectionEnd>10 && text.value.includes(\"print('private snippet')\")})()"), "native multiline text selection failed");
   await evaluate("document.querySelector('[data-preview-expand]').click()");
@@ -415,7 +426,29 @@ try {
   await rpc("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   check(await evaluate("document.documentElement.scrollWidth <= innerWidth"), "mobile layout overflows");
   await evaluate("document.querySelector('#files-toggle').click()");
-  check(await evaluate("document.querySelector('.files-pane').getBoundingClientRect().bottom<=document.querySelector('#chat-scroll').getBoundingClientRect().top+1 && document.documentElement.scrollWidth<=innerWidth"), "left dock did not fall back to top on mobile");
+  check(await evaluate("(()=>{const files=document.querySelector('.files-pane').getBoundingClientRect(), list=document.querySelector('.files-browser').getBoundingClientRect(), editor=document.querySelector('.files-preview').getBoundingClientRect(), chat=document.querySelector('#chat-scroll').getBoundingClientRect();return files.right<=chat.left+1 && list.bottom<=editor.top+1 && editor.height>50 && chat.width>100 && document.documentElement.scrollWidth<=innerWidth})()"), "mobile left dock did not keep files above preview beside chat");
+  const mobileWidth = Number(await evaluate("document.querySelector('.files-pane').getBoundingClientRect().width"));
+  const mobileGrip = await evaluate("(()=>{const r=document.querySelector('.files-outer-splitter').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()") as {x:number;y:number};
+  await rpc('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[mobileGrip]});
+  await rpc('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:mobileGrip.x+35,y:mobileGrip.y}]});
+  await rpc('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  check(Number(await evaluate("document.querySelector('.files-pane').getBoundingClientRect().width"))>mobileWidth+20,"mobile left dock did not resize by touch");
+  await until("!!document.querySelector('.files-entry[title=reports]')");
+  await evaluate("document.querySelector('.files-entry[title=reports]').click()");
+  await until("!!document.querySelector('.files-entry[title=\"reports/analysis.py\"]')");
+  await evaluate("document.querySelector('.files-entry[title=\"reports/analysis.py\"]').click()");
+  await until("document.querySelector('#files-monaco .view-lines')?.textContent.includes('private')");
+  check(await evaluate("document.querySelector('#files-monaco').getBoundingClientRect().height>60"), "mobile left dock hid the Monaco preview under its controls");
+  const mobileFiles = await rpc("Page.captureScreenshot", { format: "png" });
+  await writeFile(config.screenshot.replace('.png','-mobile-left.png'), Buffer.from(String(mobileFiles['data']), 'base64'));
+  for (const width of [320, 600, 844, 390]) {
+    await rpc("Emulation.setDeviceMetricsOverride", { width, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+    check(await evaluate("document.documentElement.scrollWidth<=innerWidth && document.querySelector('.files-pane').getBoundingClientRect().right<=document.querySelector('#chat-scroll').getBoundingClientRect().left+1 && document.querySelector('#files-monaco').getBoundingClientRect().height>60"), `left dock or Monaco overflowed at ${width}px`);
+  }
+  await evaluate("document.querySelector('[data-files-dock=top]').click()");
+  check(await evaluate("document.querySelector('.files-pane').getBoundingClientRect().bottom<=document.querySelector('#chat-scroll').getBoundingClientRect().top+1"), "mobile top dock toggle did not restore Files above chat");
+  await evaluate("document.querySelector('[data-files-dock=left]').click()");
   await evaluate("document.querySelector('#files-toggle').click()");
   check(await evaluate("(()=>{const bar=document.querySelector('.browser-usage-summary');return bar.clientHeight>40 && bar.clientHeight<=parseFloat(getComputedStyle(bar).lineHeight)*3+8})()"), "pinned stats did not wrap within three lines");
   await rpc("Emulation.setSafeAreaInsetsOverride", {insets:{top:24,bottom:34,left:0,right:0}});

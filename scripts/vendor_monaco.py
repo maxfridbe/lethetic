@@ -42,6 +42,14 @@ CSS_URL = re.compile(r"url\(\s*(?:(['\"])(.*?)\1|([^)'\"]*?))\s*\)", re.DOTALL)
 CSS_AT_IMPORT = re.compile(r"@import\s+(['\"])([^'\"]+)\1\s*;")
 EXTERNAL_DIFF = "vs/editor/common/diff/externalLinesDiffComputer.js"
 WORKER_SERVICE = "vs/editor/standalone/browser/services/standaloneWebWorkerService.js"
+# Tauri freezes Object.prototype. Assignment cannot shadow an inherited,
+# non-writable toString, but defining an own property preserves upstream behavior.
+OWN_TOSTRING = {
+    "vs/base/common/severity.js": ("Severity", "toString"),
+    "vs/base/common/keyCodes.js": ("KeyCodeUtils", "toString"),
+    "vs/platform/markers/common/markers.js": ("MarkerSeverity", "toString"),
+    "vs/platform/instantiation/common/instantiation.js": ("id", "() => serviceId"),
+}
 
 
 def verifier():
@@ -138,6 +146,13 @@ def prepare(archive: bytes) -> dict[str, bytes]:
             original = upstream(path)
             source = original.decode("utf-8")
             changes = []
+            if path in OWN_TOSTRING:
+                owner, value = OWN_TOSTRING[path]
+                old = f"{owner}.toString = {value};"
+                if source.count(old) != 1:
+                    raise ValueError(f"own toString definition changed upstream: {path}")
+                source = source.replace(old, f'Object.defineProperty({owner}, "toString", {{ value: {value}, writable: true, enumerable: true, configurable: true }});', 1)
+                changes.append("define own toString under Tauri frozen Object.prototype")
             if path == EXTERNAL_DIFF:
                 old = "externalModulePromise = import(/* webpackIgnore: true */ /* @vite-ignore */ `${url}`);"
                 if source.count(old) != 1:

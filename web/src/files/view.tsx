@@ -43,7 +43,7 @@ export interface FilePaneExtensions {
 function splitter(outer = false): VNode {
   const context = (target: HTMLElement) => {
     const pane = target.closest<HTMLElement>(".files-pane")!;
-    const left = pane.dataset["dock"] === "left" && matchMedia("(min-width: 900px)").matches;
+    const left = pane.dataset["dock"] === "left";
     const host = outer ? pane.parentElement! : target.parentElement!;
     const vertical = outer ? !left : left;
     const pixels = outer && vertical;
@@ -191,7 +191,7 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
       <span attrs={{ class: "files-dock-controls" }}>
         <button attrs={{ type: "button", "data-files-dock": state.dock === "top" ? "left" : "top",
           "aria-label": state.dock === "top" ? "Dock Files left (currently top)" : "Dock Files top (currently left)",
-          title: state.dock === "top" ? "Dock Files left. Narrow screens use the top layout." : "Dock Files above the conversation" }}
+          title: state.dock === "top" ? "Dock Files left" : "Dock Files above the conversation" }}
           on={{ click: () => actions.setDock(state.dock === "top" ? "left" : "top") }}>{uiIcon(state.dock === "top" ? "columns" : "list")}</button>
       </span>
       {!state.open || state.tab !== "changes" ? null : <div attrs={{ class: "files-actions" }}>

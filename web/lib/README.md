@@ -23,7 +23,7 @@ The expected archive hashes are in `vendor-manifest.json`. Extract only `package
 
 ## Monaco (direct, no Node acquisition or bundling)
 
-Monaco Editor 0.56.0 is vendored as browser-native ESM, not an AMD loader or a Node-generated bundle. Its exact HTTPS archive SHA-256 and upstream SHA-512 integrity are pinned in `scripts/vendor_monaco.py` and this manifest. The Python-standard-library preparation follows the editor/basic-language/find/worker graph, moves side-effect CSS imports into `monaco/monaco.css`, extracts inline image assets, disables optional external diff-module loading, and requires an explicit module-worker hook instead of a worker fallback. `monaco/provenance.json` records changed upstream source hashes and the preparation rules. The MIT license is included.
+Monaco Editor 0.56.0 is vendored as browser-native ESM, not an AMD loader or a Node-generated bundle. Its exact HTTPS archive SHA-256 and upstream SHA-512 integrity are pinned in `scripts/vendor_monaco.py` and this manifest. The Python-standard-library preparation follows the editor/basic-language/find/worker graph, moves side-effect CSS imports into `monaco/monaco.css`, extracts inline image assets, disables optional external diff-module loading, and requires an explicit module-worker hook instead of a worker fallback. The preparation also defines four own `toString` properties explicitly so Monaco works with Tauri’s frozen `Object.prototype`. `monaco/provenance.json` records changed upstream source hashes and the preparation rules. The MIT license is included.
 
 Explicit acquisition, from the repository root:
 

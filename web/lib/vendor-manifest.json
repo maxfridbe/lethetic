@@ -263,8 +263,8 @@
         },
         {
           "path": "monaco/provenance.json",
-          "sha256": "4a31d9724b5123ecd8e1de8b6ec6540e5270c5e461d74ee53ec23c7bf7f4410e",
-          "size_bytes": 18092
+          "sha256": "d9851c79e46e26c1262df50a91e96537bab365efdf9cdaa55e5647d70aed1eaa",
+          "size_bytes": 19098
         },
         {
           "path": "monaco/vs/amdX.js",
@@ -968,8 +968,8 @@
         },
         {
           "path": "monaco/vs/base/common/keyCodes.js",
-          "sha256": "5cfe17c52e57cbdf18558acd837345542fef3784eec9d95660013b5e1c04fc0b",
-          "size_bytes": 31607
+          "sha256": "1473ce61bff7f60c3e2f95a593dea01c49b01ab3c4c5f32299f7ca8d96998a01",
+          "size_bytes": 31697
         },
         {
           "path": "monaco/vs/base/common/keybindingLabels.js",
@@ -1238,8 +1238,8 @@
         },
         {
           "path": "monaco/vs/base/common/severity.js",
-          "sha256": "7528fa646ba1da83a5a703b132258eb986c58bcc2e3a96c2bab74bccbe33732a",
-          "size_bytes": 1819
+          "sha256": "22d8d4b1c2f6ed68585ff5e515e3f17bab5186f29fc160d0873c6fcb3a05d068",
+          "size_bytes": 1909
         },
         {
           "path": "monaco/vs/base/common/stopwatch.js",
@@ -4333,8 +4333,8 @@
         },
         {
           "path": "monaco/vs/platform/instantiation/common/instantiation.js",
-          "sha256": "8c5d992903d59b5eb4dc8c3a8baf7bb98499c563aced75d199b43af7fb4e6869",
-          "size_bytes": 1668
+          "sha256": "99f4048a01e715159bcbe6f70601fb731a9b50feaa1b679a8dc6a7aae98f7981",
+          "size_bytes": 1758
         },
         {
           "path": "monaco/vs/platform/instantiation/common/instantiationService.js",
@@ -4423,8 +4423,8 @@
         },
         {
           "path": "monaco/vs/platform/markers/common/markers.js",
-          "sha256": "79191e80c7888a9e843af28da38983a92d4292145c5e6c28be950462619061d9",
-          "size_bytes": 5149
+          "sha256": "7f7cad04c1ada814edb2891905088b87690350cdeea503d835e0ef57ffef17df",
+          "size_bytes": 5239
         },
         {
           "path": "monaco/vs/platform/notification/common/notification.js",

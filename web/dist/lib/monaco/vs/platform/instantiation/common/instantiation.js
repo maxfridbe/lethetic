@@ -36,7 +36,7 @@ function createDecorator(serviceId) {
         }
         storeServiceDependency(id, target, index);
     };
-    id.toString = () => serviceId;
+    Object.defineProperty(id, "toString", { value: () => serviceId, writable: true, enumerable: true, configurable: true });
     _util.serviceIds.set(serviceId, id);
     return id;
 }
