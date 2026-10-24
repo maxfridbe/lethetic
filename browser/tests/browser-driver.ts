@@ -420,7 +420,7 @@ try {
   check(await evaluate("(()=>{const bar=document.querySelector('.browser-usage-summary');return bar.clientHeight>40 && bar.clientHeight<=parseFloat(getComputedStyle(bar).lineHeight)*3+8})()"), "pinned stats did not wrap within three lines");
   await rpc("Emulation.setSafeAreaInsetsOverride", {insets:{top:24,bottom:34,left:0,right:0}});
   const safeControls = await evaluate(`(async () => {
-    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
     const controls=[...document.querySelectorAll('.session-header button,.browser-status>summary')];
     const visible=controls.filter(button=>button.getBoundingClientRect().height>0);
     return visible.length>0 && visible.every(button=>{
