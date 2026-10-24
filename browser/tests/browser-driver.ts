@@ -111,10 +111,10 @@ try {
   await until("!!document.querySelector('#startup-splash:modal')");
   check(await evaluate("document.querySelector('#startup-splash').getAttribute('aria-busy')==='true'"), "startup did not announce loading");
   check(await evaluate("(()=>{const splash=document.querySelector('#startup-splash');splash.click();return splash.open && !splash.dispatchEvent(new Event('cancel',{cancelable:true}))})()"), "loading splash dismissed before readiness");
-  // Turso must load before saved sessions can be hydrated; show a loading header meanwhile.
-  await until("!!document.querySelector('.session-header')");
+  // Session hydration waits for WASM; all startup status belongs in the existing splash.
+  await until("document.querySelector('#splash-progress')?.textContent==='Loading saved sessions…'");
   check(await evaluate("(()=>{const r=document.querySelector('#startup-splash').getBoundingClientRect();return Math.abs(r.width-innerWidth*.7)<2 && Math.abs(r.height-innerHeight*.7)<2})()"), "splash must occupy 70% of the viewport dimensions");
-  check(await evaluate("!document.querySelector('#startup-splash button') && !!document.querySelector('.session-header')"), "loading splash has a continue button or background UI is missing");
+  check(await evaluate("!document.querySelector('#startup-splash button') && document.querySelector('#browser-root').childElementCount===0"), "startup added a continue button or a duplicate loading screen behind the splash");
   const splashImage = await rpc("Page.captureScreenshot", { format: "png" });
   await writeFile(config.screenshot.replace('.png','-splash.png'), Buffer.from(String(splashImage['data']), 'base64'));
   await rpc("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
