@@ -1,3 +1,4 @@
+import { executionTimeout } from "./lifecycle.js";
 import { emptyWorkspace, parseWorkspace } from "./workspace.js";
 import type { Workspace } from "./workspace.js";
 export type { Workspace } from "./workspace.js";
@@ -79,7 +80,7 @@ export function createPythonTool(options: {
     const id = ++sequence;
     return new Promise<Reply>((resolve, reject) => {
       const cleanup = (): void => {
-        clearTimeout(timer);
+        cancelDeadline();
         signal.removeEventListener("abort", abort);
         activeWorker.removeEventListener("message", message);
         activeWorker.removeEventListener("error", error);
@@ -118,7 +119,7 @@ export function createPythonTool(options: {
         cleanup();
         resolve({ output: data.output, response: data.response, warning });
       };
-      const timer = setTimeout(() => fail(new Error("Python timed out; session reset.")), (siteRequest ? 20_000 : timeoutMs));
+      const cancelDeadline = executionTimeout(() => fail(new Error("Python timed out; session reset.")), (siteRequest ? 20_000 : timeoutMs));
       pending = fail;
       signal.addEventListener("abort", abort, { once: true });
       activeWorker.addEventListener("message", message);

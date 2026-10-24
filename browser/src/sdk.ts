@@ -1,3 +1,5 @@
+import { beginNativeTurn } from "./native-host.js";
+import { executionTimeout, keepAwakeDuringWork } from "./lifecycle.js";
 import { TraceCapture, redactProviderText } from "./provider-trace.js";
 import type { ProviderTrace } from "./provider-trace.js";
 import { DEFAULT_TURN_LIMITS, parseTurnLimits, LOOP_MODES, parseLoopMode } from "./turn-limits.js";
@@ -182,12 +184,13 @@ export class LetheticRuntime {
       loopMode = LOOP_MODES.find(mode => mode[0] === parseLoopMode(this.#options.loopDetection ?? "combined"))![2]; }
     catch (error) { signal?.removeEventListener("abort", cancel); throw error; }
     const { timeoutMs, maxRounds, providerRetries } = limits;
-    const timer = timeoutMs === 0 ? null : setTimeout(() => controller.abort(new Error(
+    const cancelDeadline = executionTimeout(() => controller.abort(new Error(
       `Turn timed out after ${Math.round(timeoutMs / 1000)} seconds. Change Ctrl+P → Turn limits for longer work.`)), timeoutMs);
     let responsePending = false;
     const turnId = crypto.randomUUID();
     const secrets = [this.#options.connection.apiKey ?? "", ...(this.#options.traceSecrets ?? [])];
     this.#active = controller;
+    const endNativeTurn = beginNativeTurn();
     try {
       controller.signal.throwIfAborted();
       this.#wasm.set_limits(limits.contextTokens, limits.maxOutputTokens);
@@ -217,6 +220,7 @@ export class LetheticRuntime {
           this.#trace = new TraceCapture({ turnId, round, attempt: attempt + 1, provider: connection.provider, model: connection.model },
             body, [connection.apiKey ?? "", ...(this.#options.traceSecrets ?? [])]);
           let retryAfter: number | null = null;
+          const releaseWakeLock = keepAwakeDuringWork();
           try {
             let thinking = "", checked = 0;
             const response = await abortable((this.#options.fetch ?? globalThis.fetch)(connection.endpoint, {
@@ -247,6 +251,7 @@ export class LetheticRuntime {
             if (thinking) checkLoop(thinking);
             break;
           } catch (error) {
+            releaseWakeLock();
             this.#finishTrace(controller.signal.aborted ? "cancelled" : "error", controller.signal.aborted ? controller.signal.reason : error);
             controller.signal.throwIfAborted();
             const message = redactProviderText(error instanceof Error ? error.message : String(error), secrets);
@@ -255,7 +260,7 @@ export class LetheticRuntime {
             const delayMs = retryAfter ?? module.retry_delay_ms(attempt + 1);
             this.#emit({ type: "retry", attempt: attempt + 1, delayMs, error: message });
             await delay(delayMs, controller.signal);
-          }
+          } finally { releaseWakeLock(); }
         }
         controller.signal.throwIfAborted();
         this.#emit({ type: "response", usage: readUsage(connection.provider, JSON.parse(responseText)),
@@ -298,7 +303,8 @@ export class LetheticRuntime {
       }
       throw new Error(message);
     } finally {
-      if (timer !== null) clearTimeout(timer);
+      cancelDeadline();
+      endNativeTurn();
       signal?.removeEventListener("abort", cancel);
       this.#active = null;
       if (this.#disposed) this.#wasm.free();

@@ -55,6 +55,7 @@ native engine; browser-only mode runs the harness and code workers in your brows
 | Mode | Use it for | Guide |
 | --- | --- | --- |
 | Browser-only | Chat and work with session files without installing the native application | [Use the browser workspace](docs/how-to/browser.md) |
+| Native web UI | Use the shared WASM UI on Windows, macOS, Linux or Android, with virtual or selected real folders | [Build and use the native app](docs/how-to/native-web-ui.md) |
 | Native terminal / headless | Work with a local project and native tools, interactively or from scripts | [Run the native harness](docs/how-to/native.md) |
 | Remote control (`--rc`) | Use the browser UI to control the native engine and its tools | [Control a native session](docs/how-to/remote-control.md) |
 | Python-only | Execute Python in Pyodide or a selected native isolation profile | [Work in Python](docs/how-to/python.md) |

@@ -195,11 +195,13 @@ try {
   await evaluate("document.querySelector('[data-field=name]').value='Browser test';document.querySelector('[data-field=endpoint]').value=location.origin+'/v1/chat/completions';document.querySelector('[data-field=connection-form]').requestSubmit()");
 
   await evaluate(`globalThis.processingFetch=fetch;
-    globalThis.fetch=async (...args)=>{if(String(args[0]).endsWith('/v1/chat/completions'))await new Promise(resolve=>{globalThis.releaseProcessing=resolve}); return globalThis.processingFetch(...args)};
+    globalThis.processingStarted=false;
+    const processingGate=new Promise(resolve=>{globalThis.releaseProcessing=resolve});
+    globalThis.fetch=async (...args)=>{if(String(args[0]).endsWith('/v1/chat/completions')){globalThis.processingStarted=true;await processingGate} return globalThis.processingFetch(...args)};
     document.querySelector('dialog[open]').close();
     const prompt=document.getElementById('composer-input'); prompt.value='hello';
     prompt.dispatchEvent(new Event('input',{bubbles:true})); document.querySelector('form.composer').requestSubmit()`);
-  await until("typeof globalThis.releaseProcessing==='function' && !!document.querySelector('.activity-label.is-processing')");
+  await until("globalThis.processingStarted && !!document.querySelector('.activity-label.is-processing')");
   check(await evaluate("(()=>{const spinner=getComputedStyle(document.querySelector('.activity-spinner')),label=getComputedStyle(document.querySelector('.activity-label'));return parseFloat(spinner.fontSize)===2*parseFloat(label.fontSize) && label.animationName==='processing-shimmer' && label.backgroundImage.includes('gradient')})()"), "processing indicator size or gradient missing");
   const processingImage=await rpc("Page.captureScreenshot",{format:"png"});
   await writeFile(config.screenshot.replace('.png','-processing.png'),Buffer.from(String(processingImage['data']),'base64'));

@@ -1,3 +1,4 @@
+import { executionTimeout } from "./lifecycle.js";
 import type { DotnetRelay } from "./network-route.js";
 import { emptyWorkspace, parseWorkspace } from "./workspace.js";
 import type { Workspace } from "./workspace.js";
@@ -79,7 +80,7 @@ export function createDotnetTool(options: {
     const cancel = (): void => terminate();
     signal.addEventListener("abort", abort, { once: true });
     controller.signal.addEventListener("abort", cancel, { once: true });
-    const timer = requestTimeout > 0 ? setTimeout(() => controller.abort(new Error(".NET timed out; completed session files are kept.")), requestTimeout) : null;
+    const cancelDeadline = executionTimeout(() => controller.abort(new Error(".NET timed out; completed session files are kept.")), requestTimeout);
     try {
       runtime ??= await (options.loadRuntime ?? loadRuntime)({ signal: controller.signal, networkAccess: options.networkAccess ?? false,
         nugetAccess: options.nugetAccess ?? false, siteAccess: options.siteAccess ?? false, ...(options.relay ? { relay: options.relay } : {}) });
@@ -99,7 +100,7 @@ export function createDotnetTool(options: {
       controller.signal.throwIfAborted();
       return { result, warning };
     } catch (error) { terminate(); throw error; }
-    finally { if (timer !== null) clearTimeout(timer); signal.removeEventListener("abort", abort); controller.signal.removeEventListener("abort", cancel); operation = null; }
+    finally { cancelDeadline(); signal.removeEventListener("abort", abort); controller.signal.removeEventListener("abort", cancel); operation = null; }
   }
   return {
     ...DOTNET_TOOL_DEFINITION,

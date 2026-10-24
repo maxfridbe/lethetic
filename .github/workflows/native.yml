@@ -1,0 +1,102 @@
+name: Native Web UI
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    tags: ['v*', 'browser-v*']
+    paths: ['native/**', 'browser/**', 'web/**', 'lethetic-wasm/**', 'src/engine/**', 'src/storage/**', 'scripts/prepare_native.py', 'build-browser.sh', '.github/workflows/native.yml', 'Cargo.lock']
+  pull_request:
+    paths: ['native/**', 'browser/**', 'scripts/prepare_native.py', '.github/workflows/native.yml']
+permissions:
+  contents: read
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: Swatinem/rust-cache@v2
+      - run: npm install --global typescript@7.0.2
+      - run: cargo install wasm-bindgen-cli --version 0.2.128 --locked
+      - run: ./build-browser.sh
+      - run: python3 scripts/prepare_native.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-frontend
+          path: native/dist
+          include-hidden-files: true
+  desktop:
+    needs: frontend
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: native
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-frontend
+          path: native/dist
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - run: cargo install tauri-cli --version 2.12.4 --locked
+      - run: cargo test -p lethetic-directory --locked
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo tauri build --bundles ${{ runner.os == 'Windows' && 'nsis' || runner.os == 'macOS' && 'app,dmg' || 'deb,appimage' }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lethetic-${{ runner.os }}
+          path: |
+            native/target/release/bundle/**/*.deb
+            native/target/release/bundle/**/*.AppImage
+            native/target/release/bundle/**/*.exe
+            native/target/release/bundle/**/*.dmg
+  android:
+    needs: frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: native
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-frontend
+          path: native/dist
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;29.0.14206865'
+      - run: echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - run: cargo install tauri-cli --version 2.12.4 --locked
+      - run: cargo tauri android init --ci
+      # Debug APK is installable without publishing a signing key. Release/store
+      # builds require the owner's signing configuration; see docs/how-to/native-web-ui.md.
+      - run: cargo tauri android build --debug --target aarch64 --apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lethetic-Android
+          path: native/src-tauri/gen/android/app/build/outputs/apk/**/*.apk

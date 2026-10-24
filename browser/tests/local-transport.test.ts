@@ -225,3 +225,23 @@ await test("turn limits and shared loop controls persist per session without rep
   transport.openSession(id);assert.deepEqual(transport.turnLimits,limits);assert.equal(transport.loopDetection,"off");
   transport.dispose();
 });
+
+await test("an in-flight checkpoint retains transcript and completed context without replaying the pending prompt", async () => {
+  const values = new Map<string,string>();
+  const storage = {getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value);}} as Storage;
+  const connection = {name:"Recovery",provider:"openai" as const,endpoint:"https://example.com/v1/chat/completions",model:"test"};
+  const events = {socketOpened(){},authenticationEpochChanged(){},transportStatus(){},protocolFault(){},serverMessage(){},commandResponse(){}};
+  const transport = new LocalTransport(events,{connections:[connection],storage}); transport.start();
+  const id=transport.state.session.session_id;
+  transport.send({type:"send_prompt",session_id:id,prompt:"pending work"},0);
+  await Promise.resolve();
+  const saved=new SessionStore(storage).list().find(item=>item.id===id)!;
+  assert.deepEqual(saved.messages,[]);
+  assert.deepEqual(saved.inputs,["pending work"]);
+  assert.ok(saved.blocks.some(item=>item.title==="Recovery checkpoint"));
+  transport.dispose();
+  await Promise.resolve();
+  const resumed = new LocalTransport(events,{connections:[connection],storage});resumed.start();
+  assert.equal(resumed.busy,false);
+  assert.ok(resumed.state.blocks.blocks.some(item=>item.title==="Recovery checkpoint"));resumed.dispose();
+});

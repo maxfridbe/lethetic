@@ -14,6 +14,10 @@ export class BrowserFiles {
     if (this.#binding) return this.#binding.read();
     return parseWorkspace({ ...emptyWorkspace(), files: this.list().map((file) => ({ path: file.path, data: encodeBytes(new TextEncoder().encode(file.content!)) })) });
   }
+  replaceWorkspace(workspace: Workspace): void {
+    if (!this.#binding) throw new Error("Session workspace unavailable");
+    this.#binding.write(parseWorkspace(workspace));
+  }
   get(path: string): WorkspaceFile | undefined { return this.snapshotWorkspace().files.find((file) => file.path === path); }
   constructor(readonly storage?: Pick<Storage, "getItem" | "setItem">) {}
   list(): LocalFile[] {

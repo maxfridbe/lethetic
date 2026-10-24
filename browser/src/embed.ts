@@ -1,3 +1,5 @@
+import { NativeDirectory, nativeAvailable, resetNativeWork } from "./native-host.js";
+import { lifecycleDiagnostics } from "./lifecycle.js";
 import { browserCommandVisible } from "./local-state.js";
 import { FILE_BYTES } from "./workspace.js";
 import { BrowserSessionStorage } from "./session-storage.js";
@@ -53,10 +55,14 @@ export interface EmbedOptions {
  * The shared UI uses document-level keyboard and focus handling: mount one per document.
  */
 export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { initialize(onProgress: (message: string) => void): Promise<void>; activate(): void; destroy(): void } {
+  resetNativeWork();
+  if (nativeAvailable()) globalThis.addEventListener("pagehide", resetNativeWork);
   let connections = options.connections?.map(validateConnection) ??
     (options.storage ? loadConnections(options.storage) : []);
   if (options.credentialStorage) connections = restoreConnectionKeys(options.credentialStorage, connections);
   const files = new BrowserFiles(options.storage);
+  const directory = new NativeDirectory();
+  let choosingDirectory = false;
   const pinnedStats = new PinnedStats(options.storage);
   let editor: ReturnType<typeof createFileEditor> | null = null;
   const preview = createFilePreview({ plainText: () => plainText, onPlainText: value => { plainText = value; transport?.publish(); } });
@@ -115,7 +121,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
             const current = id === transport!.state.session.session_id;
             const bundle = await sessionDebugBundle(session, {
               browser: navigator.userAgent, language: navigator.language, viewport: { width: innerWidth, height: innerHeight },
-              current, busy: current && transport!.busy,
+              current, busy: current && transport!.busy, lifecycle: lifecycleDiagnostics(),
               ...(current ? { status: transport!.state.status, activity: transport!.state.activity, debugger: transport!.state.debugger } : {}),
             }, [...transport!.relaySecrets, ...transport!.options.connections.flatMap(connection => connection.apiKey ? [connection.apiKey] : [])]);
             downloadSessionBundle(bundle, id); exportStatus = "Debug bundle downloaded. Connection keys are excluded.";
@@ -137,7 +143,26 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
         if (!file || !canRenderFile(file) || sourceViews.has(file.path)) return false;
         preview.openFile(file, fileTools.sortFiles().filter(canPreviewFile), true); return true;
       },
-      actions: state => h("span.browser-file-actions", [upload.render(state.directory), fileTools.render()]),
+      actions: state => h("span.browser-file-actions", [upload.render(state.directory), fileTools.render(),
+        nativeAvailable() ? h("button", { attrs: { type: "button", title: directory.status }, props: { disabled: !!transport?.busy || choosingDirectory }, on: { click: () => {
+          if (transport?.busy || choosingDirectory) return;
+          choosingDirectory = true;
+          void (async () => {
+            try {
+              if (directory.name) await directory.revoke();
+              else {
+                // Import into the current session explicitly; switching never happens during a turn.
+                if (!confirm("Open a real folder? Its files will replace this session's virtual files. Changes will be saved to that folder. Hidden files and links are excluded. Disk files are never deleted.")) return;
+                const session = transport?.state.session.session_id;
+                const workspace = await directory.choose();
+                if (transport?.busy || session !== transport?.state.session.session_id) { await directory.revoke(); throw new Error("Session changed while selecting a directory; choose it again when idle."); }
+                if (workspace) files.replaceWorkspace(workspace);
+              }
+              fileStatus = directory.status;
+            } catch (error) { fileStatus = String(error); }
+            finally { choosingDirectory = false; transport?.publish(); }
+          })();
+        } } }, [uiIcon("folder"), directory.name ? `Folder: ${directory.name} · Disconnect` : "Virtual · Open folder"]) : null]),
       contentActions: (state) => h("span.browser-file-actions", [
         state.selectedPath && /\.(cs|csproj|py)$/i.test(state.selectedPath) ? h("button", {
           attrs: { type: "button", "data-file-action": "run", title: /\.py$/i.test(state.selectedPath) ? "Run this file in this session's Python worker" : "Compile and run this file in this session's .NET worker" },
@@ -183,8 +208,13 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   let initialSession = "latest";
   if (options.sessionRouting) { try { initialSession = sessionRoute(location.hash); } catch (error) { routeError = String(error); initialSession = "new"; } }
   transport = new LocalTransport(application, { ...options, connections, initialSession, files,
-    onFilesChanged: paths => application.refreshFiles(paths),
+    onFilesChanged: paths => {
+      application.refreshFiles(paths);
+      if (directory.name) void directory.sync(files.snapshotWorkspace()).then(() => { fileStatus = directory.status; transport?.publish(); })
+        .catch(error => { fileStatus = `Folder save failed: ${String(error)}`; transport?.publish(); });
+    },
     onSessionChanged: (id) => {
+      void directory.revoke().catch(error => { fileStatus = String(error); transport?.publish(); });
       application.resetFiles(); sourceViews.clear(); preview.clear(); sites?.clear(); if (editor?.dialog.open) editor.dialog.close(); fileStatus = "";
       if (!options.sessionRouting) return;
       const hash = `#/sessions/${id}`;
@@ -227,5 +257,5 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   if (options.sessionRouting) globalThis.addEventListener("hashchange", navigate);
   const activate = (): void => { if (!connections.length) settings?.open(); else document.getElementById("composer-input")?.focus(); };
   if (!options.startInBackground) activate();
-  return { initialize: onProgress => transport!.initialize(onProgress), activate, destroy(): void { unsubscribeStorage?.(); globalThis.removeEventListener("beforeunload", protectUnsaved); upload.destroy(); globalThis.removeEventListener("hashchange", navigate); transport?.dispose(); application.dispose(); settings?.destroy(); limits?.destroy(); sites?.destroy(); editor?.destroy(); preview.destroy(); root.replaceChildren(); } };
+  return { initialize: onProgress => transport!.initialize(onProgress), activate, destroy(): void { globalThis.removeEventListener("pagehide", resetNativeWork); resetNativeWork(); void directory.revoke().catch(() => {}); unsubscribeStorage?.(); globalThis.removeEventListener("beforeunload", protectUnsaved); upload.destroy(); globalThis.removeEventListener("hashchange", navigate); transport?.dispose(); application.dispose(); settings?.destroy(); limits?.destroy(); sites?.destroy(); editor?.destroy(); preview.destroy(); root.replaceChildren(); } };
 }

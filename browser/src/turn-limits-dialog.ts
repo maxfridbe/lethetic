@@ -7,7 +7,7 @@ import type { LocalTransport } from "./local-transport.js";
 export function createTurnLimitsDialog(transport: LocalTransport) {
   const dialog = createDialog("Turn limits", `<form data-field="limits-form">
     <label>Turn timeout (minutes)<input data-field="timeout" type="number" min="0" max="1440" step="1" required></label>
-    <p>Includes model thinking, retries and tool execution. Use 0 for no turn timeout; Stop remains available. Python and .NET workers keep their separate execution limits.</p>
+    <p>Counts responsive foreground time for model thinking, retries and tool execution. Hidden time and suspension gaps do not count. Use 0 for no turn timeout; Stop remains available. Python and .NET workers keep their separate execution limits.</p>
     <label>Maximum model rounds per turn<input data-field="rounds" type="number" min="1" max="1000" step="1" required></label>
     <label>Retries per model request<input data-field="retries" type="number" min="0" max="10" step="1" required></label>
     <p>Retries cover temporary connection failures, rate limits, server errors and interrupted streams. Completed tools are not replayed.</p>

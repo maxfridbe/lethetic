@@ -92,6 +92,9 @@ export class LocalTransport implements ApplicationTransport {
   }
   set persistenceStatus(value: string) { this.#persistenceStatus = value; }
 
+  #pageCheckpoint = (): void => {
+    if (!this.#closed && this.busy) this.#saveSession(false, true);
+  };
   constructor(readonly events: BrowserTransportEvents, readonly options: LocalOptions) {
     this.mode = options.mode ?? (options.python ? "python" : "general");
     this.networkAccess = options.networkAccess ?? false;
@@ -105,6 +108,11 @@ export class LocalTransport implements ApplicationTransport {
     this.#system = options.systemPrompt ?? DEFAULT_PROMPT;
     this.#sessions = new SessionStore(options.storage);
     this.#traces = new ProviderTraceLog(this.#sessions.byteLimit / 4);
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", this.#pageCheckpoint);
+      document.addEventListener("freeze", this.#pageCheckpoint);
+      globalThis.addEventListener("pagehide", this.#pageCheckpoint);
+    }
     if (options.files) {
       // Retain the old global record; import a copy only for pre-workspace sessions.
       try { this.#legacyWorkspace = options.files.snapshotWorkspace(); } catch { /* Leave damaged legacy data untouched. */ }
@@ -451,6 +459,11 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
   }
   closePermanently(): void { this.dispose(); }
   dispose(): void {
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", this.#pageCheckpoint);
+      document.removeEventListener("freeze", this.#pageCheckpoint);
+      globalThis.removeEventListener("pagehide", this.#pageCheckpoint);
+    }
     if (this.#ticker !== null) clearInterval(this.#ticker);
     if (this.#streamPublish !== null) clearTimeout(this.#streamPublish);
     this.#closed = true; this.modelLimits.dispose(); this.#operation?.abort(); this.#runtime?.dispose(); this.#python?.reset(); this.#dotnet?.reset();
@@ -591,6 +604,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
   }
 
   async #run(prompt: string, signal: AbortSignal): Promise<void> {
+    this.#saveSession(false, true);
     try {
       await this.modelLimits.ready(this.connection, signal);
       signal.throwIfAborted();
@@ -692,15 +706,16 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
       blocks: this.state.blocks.blocks, metrics: this.metrics.snapshot(), workspace: this.#workspace, providerTrace: this.#traces.snapshot() } : saved);
   }
 
-  #saveSession(mustSave = false): void {
-    if (this.busy) return;
+  #saveSession(mustSave = false, checkpoint = false): void {
+    if (this.busy && !checkpoint) return;
     try {
+      if (this.busy && this.#runtime?.activeTrace) this.#traces.add(this.#runtime.activeTrace);
       const connection = this.connection;
-      this.#savedMessages = this.#runtime?.history() ?? this.#savedMessages;
+      if (!this.busy) this.#savedMessages = this.#runtime?.history() ?? this.#savedMessages;
       const label = this.#history[0]?.slice(0, 100) || "New chat";
       this.state.session.fallback_label = label;
       this.#sessions.save({ id: this.state.session.session_id, name: this.state.session.display_name, label,
-        updatedAt: new Date().toISOString(), blocks: this.state.blocks.blocks, messages: this.#savedMessages,
+        updatedAt: new Date().toISOString(), blocks: this.busy ? [...this.state.blocks.blocks, { ...block("text", "Work was in progress at this checkpoint. Review the saved files before continuing; tool effects may already exist. The incomplete turn is not replayed automatically.", "Recovery checkpoint"), success: false }] : this.state.blocks.blocks, messages: this.#savedMessages,
         inputs: this.#history, system: this.#system, python: this.pythonEnabled, mode: this.mode, networkAccess: this.networkAccess, nugetAccess: this.nugetAccess, siteAccess: this.siteAccess, dotnetRelayEndpoint: this.#relayEndpoint, workspace: this.#workspace,
         providerTrace: this.#traces.snapshot(), metrics: this.metrics.snapshot(), turnLimits: this.turnLimits, loopDetection: this.loopDetection,
         theme: this.state.themes.find((theme) => theme.selected)?.theme_id ?? "dracula",
@@ -733,7 +748,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
     try {
       const saved = this.#sessions.list().find((session) => session.id === this.state.session.session_id);
       if (!saved) throw new Error("No saved session for this workspace.");
-      this.#sessions.save({ ...saved, workspace: this.#workspace, updatedAt: new Date().toISOString() });
+      this.#saveSession(true, true);
     } catch (error) {
       this.persistenceStatus = `Workspace not saved: ${error instanceof Error ? error.message : String(error)}`;
       throw error;
@@ -742,6 +757,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
 
   #event(event: RuntimeEvent): void {
     this.metrics.event(event);
+    if (event.type === "request" || event.type === "tool_end") this.#saveSession(false, true);
     switch (event.type) {
       case "request":
         this.#responseStart = this.state.blocks.blocks.length; this.#streamBlocks.clear();

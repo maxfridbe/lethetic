@@ -1,3 +1,4 @@
+import { executionTimeout } from "./lifecycle.js";
 import { createCompactionPlan, createRuntime } from "./sdk.js";
 import type { RuntimeOptions, WasmCompaction } from "./sdk.js";
 import { DEFAULT_TURN_LIMITS, parseTurnLimits } from "./turn-limits.js";
@@ -11,7 +12,7 @@ export async function summarizeContext(options: RuntimeOptions, messages: readon
   const controller = new AbortController();
   const abort = (): void => controller.abort(signal.reason);
   signal.addEventListener("abort", abort, {once: true}); if (signal.aborted) abort();
-  const timer = limits.timeoutMs === 0 ? null : setTimeout(() => controller.abort(new Error("Compaction timed out. Original context kept.")), limits.timeoutMs);
+  const cancelDeadline = executionTimeout(() => controller.abort(new Error("Compaction timed out. Original context kept.")), limits.timeoutMs);
   let plan: WasmCompaction | undefined;
   try {
     controller.signal.throwIfAborted();
@@ -32,6 +33,6 @@ export async function summarizeContext(options: RuntimeOptions, messages: readon
     controller.signal.throwIfAborted();
     return plan.result()!;
   } finally {
-    plan?.free(); if (timer !== null) clearTimeout(timer); signal.removeEventListener("abort", abort);
+    plan?.free(); cancelDeadline(); signal.removeEventListener("abort", abort);
   }
 }

@@ -1,0 +1,6 @@
+{
+  "identifier": "main",
+  "description": "Only the bundled main UI may request workspace grants and keep-awake. No shell, HTTP or unrestricted filesystem commands.",
+  "windows": ["main"],
+  "permissions": ["lethetic-host:allow-choose-directory", "lethetic-host:allow-sync-directory", "lethetic-host:allow-revoke-directory", "lethetic-host:allow-set-working"]
+}

@@ -1049,3 +1049,19 @@ and a 30-second idle timeout. Python responses remain buffered. The .NET SDK hos
 can set `siteResponseLimitBytes` up to 512 MiB; Lethetic uses the 64 MiB default.
 The legacy `requestSite` API and HTML/media preview preparation still collect
 complete responses. Workspace, model-context, and package-cache limits are separate.
+
+
+### Background execution and native packaging
+
+The [Tauri native host](docs/how-to/native-web-ui.md) packages this same WASM UI for
+Windows, macOS, Linux and Android. Virtual folders are the default; a selected
+real folder is synchronized through a revocable capability without exposing host
+process execution. Native keep-awake is scoped to model responses only, never
+idle or tool execution. OS termination remains possible.
+
+Turn/Python/.NET deadlines count responsive foreground time: hidden time and
+scheduler gaps longer than five seconds do not consume the budget. While a model
+response is pending, visible browser documents request a best-effort screen wake
+lock. Debug bundles include page lifecycle events, and in-flight checkpoints keep
+transcript/file effects with the last complete model history. Reopened interrupted
+work is marked for review; no automatic tool replay is performed.

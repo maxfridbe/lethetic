@@ -225,3 +225,20 @@ await test("restoring actual WASM history continues context without reexecuting 
   assert.equal(await restored.send("continue"), "continued");
   assert.equal(executions, 1); restored.dispose();
 });
+
+await test("native keep-awake covers provider responses, never tool execution or idle", async () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const changes: boolean[] = [];
+  const host = { top: null as unknown, __LETHETIC_HOST_TOKEN__: "test-token", __TAURI__: { core: { invoke: async (_command: string, args: Record<string, unknown>) => { changes.push(args.working as boolean); } } } };
+  host.top = host; Object.defineProperty(globalThis, "window", { configurable: true, value: host });
+  let requests = 0;
+  const runtime = await createRuntime({connection, wasm, fetch: async () => ++requests === 1 ? call("probe") : answer("done"), tools: [{name:"probe",description:"Check lock scope",parameters:{type:"object",properties:{}},execute:async () => {
+    await new Promise(resolve=>setTimeout(resolve,0));
+    assert.equal(changes.at(-1),false,"the lock must release before tool execution"); return "ok";
+  }}]});
+  try {
+    assert.equal(await runtime.send("probe"),"done");
+    await new Promise(resolve=>setTimeout(resolve,0));
+    assert.deepEqual(changes,[false,true,false,true,false,false]);
+  } finally { runtime.dispose(); if(previous)Object.defineProperty(globalThis,"window",previous);else Reflect.deleteProperty(globalThis,"window"); }
+});
