@@ -68,6 +68,24 @@ class AndroidReleaseTests(unittest.TestCase):
                 expected = hashlib.sha256(file.read_bytes()).hexdigest() + "  " + file.name + "\n"
                 self.assertEqual(file.with_name(file.name + ".sha256").read_text(), expected)
 
+    def test_desktop_publishes_without_android(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.installers(root, "app-debug.apk")
+            files = package_native_release.package(root, root / "out", "desktop")
+            self.assertEqual({p.suffix for p in files}, {".exe", ".dmg", ".deb", ".AppImage"})
+            with self.assertRaisesRegex(ValueError, "release-signed"):
+                package_native_release.package(root, root / "android-out", "android")
+
+    def test_android_publishes_without_desktop(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            apk = root / "lethetic-Android/com.TechHurts.Lethetic_v26.1024.01.apk"
+            apk.parent.mkdir()
+            apk.write_bytes(b"fixture")
+            files = package_native_release.package(root, root / "out", "android")
+            self.assertEqual([p.name for p in files], [apk.name])
+
     def test_signing_failure_never_stages_an_apk_and_cleans_keystore(self):
         values = dict.fromkeys(android_release.SIGNING_VARIABLES, "test")
         values.update(ANDROID_HOME="/sdk", ANDROID_KEYSTORE_BASE64=base64.b64encode(b"key").decode())

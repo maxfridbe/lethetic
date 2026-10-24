@@ -121,13 +121,17 @@ The **Native Web UI** GitHub workflow builds Windows NSIS, macOS DMG, Linux
 DEB/AppImage and an Android release APK. Branch/PR builds produce an explicitly
 **unsigned** Android Actions artifact for build verification; it is not installable
 or published as a release download. Tag builds (`vyy.mmdd.##`) require the
-release signing secrets below. Missing or invalid signing credentials fail the
-Android job; there is no debug-key fallback. Android's app version and download
+release signing secrets below to publish Android. Missing secrets produce a visible
+workflow warning and an unsigned Actions artifact; APK publication is skipped.
+Invalid credentials fail signing. There is no debug-key fallback, and desktop,
+CLI, and web/WASM downloads publish independently. Android's app version and download
 filename are generated from the central `VERSION` file. See [release versioning](../releases.md).
 
-Tags attach all five installers and their SHA-256 checksums to the same
+Tags attach the desktop installers and their SHA-256 checksums to the same
 [GitHub release](https://github.com/maxfridbe/lethetic/releases/latest) as the browser
-ZIP. Look under **Assets** on that release; an Actions artifact is an intermediate
+ZIP. The signed Android installer is added independently when signing is configured.
+After adding signing secrets, rerun this workflow against the same release tag to
+attach the APK without changing versions. Look under **Assets** on that release; an Actions artifact is an intermediate
 build download. Manually running the workflow against a release tag also signs
 and publishes; running it against a branch produces unsigned Android output.
 

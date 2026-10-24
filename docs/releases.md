@@ -26,7 +26,10 @@ For version `26.1024.01`, the release assets are:
 Each download has a `.sha256` file. Workflows attach their assets to the same
 release as each finishes. Android requires the persistent
 [release signing secrets](how-to/native-web-ui.md#android-release-signing-setup);
-unsigned or debug APKs cannot be published by the release job. The APK filename
+unsigned or debug APKs cannot be published by the release job. Missing Android
+secrets skip APK publication with a workflow warning; they do not block the
+CLI, web/WASM, or desktop downloads. After configuring the secrets, rerun the
+Native Web UI workflow on the same tag to add its signed APK. The APK filename
 does not change the installed application's identifier.
 
 ## Prepare a release

@@ -77,6 +77,8 @@ jobs:
   android:
     needs: frontend
     runs-on: ubuntu-latest
+    outputs:
+      signed: ${{ steps.package.outputs.signed }}
     defaults:
       run:
         working-directory: native
@@ -108,26 +110,34 @@ jobs:
       - name: Build optimized Android release APK
         run: cargo tauri android build --target aarch64 --apk
       - name: Verify and sign tagged APK
+        id: package
         env:
           ANDROID_KEYSTORE_BASE64: ${{ startsWith(github.ref, 'refs/tags/') && secrets.ANDROID_KEYSTORE_BASE64 || '' }}
           ANDROID_KEYSTORE_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/') && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
           ANDROID_KEY_ALIAS: ${{ startsWith(github.ref, 'refs/tags/') && secrets.ANDROID_KEY_ALIAS || '' }}
           ANDROID_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/') && secrets.ANDROID_KEY_PASSWORD || '' }}
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+          signed=false
+          if [[ "$GITHUB_REF" == refs/tags/* && -n "$ANDROID_KEYSTORE_BASE64" && -n "$ANDROID_KEYSTORE_PASSWORD" && -n "$ANDROID_KEY_ALIAS" && -n "$ANDROID_KEY_PASSWORD" ]]; then
             python3 ../scripts/android_release.py --sign
+            signed=true
           else
             python3 ../scripts/android_release.py
+            if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+              echo "::warning::Android APK not published: configure ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD, then rerun this workflow on the release tag."
+              echo "Android publication skipped: release signing secrets are incomplete. Other platform downloads publish independently." >> "$GITHUB_STEP_SUMMARY"
+            fi
           fi
+          echo "signed=$signed" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ startsWith(github.ref, 'refs/tags/') && 'lethetic-Android' || 'lethetic-Android-unsigned' }}
+          name: ${{ steps.package.outputs.signed == 'true' && 'lethetic-Android' || 'lethetic-Android-unsigned' }}
           if-no-files-found: error
           path: native/android-release/*.apk
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [desktop, android]
+    needs: desktop
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -139,7 +149,7 @@ jobs:
           path: native-artifacts
       - run: python3 scripts/release_version.py --check
       - name: Validate installers and generate checksums
-        run: python3 scripts/package_native_release.py native-artifacts native-release
+        run: python3 scripts/package_native_release.py native-artifacts native-release --group desktop
       - name: Publish native installers to the shared release
         uses: softprops/action-gh-release@v2
         with:
@@ -148,6 +158,30 @@ jobs:
           name: Lethetic ${{ github.ref_name }}
           append_body: true
           body: |
-            Native Web UI downloads: Windows `.exe`, macOS `.dmg`, Linux `.deb` / `.AppImage`, and Android ARM64 `.apk`. Each installer includes a SHA-256 checksum.
+            Native Web UI downloads: Windows `.exe`, macOS `.dmg`, and Linux `.deb` / `.AppImage`. Each installer includes a SHA-256 checksum.
 
-            The Android APK is an optimized, non-debuggable build signed with the project's release key. Desktop installers are not signed/notarized with publisher certificates. See [the native app guide](https://github.com/maxfridbe/lethetic/blob/${{ github.ref_name }}/docs/how-to/native-web-ui.md).
+            Desktop installers are not signed/notarized with publisher certificates. Android is published separately only after release signing is configured; if no APK is listed, see [Android signing setup](https://github.com/maxfridbe/lethetic/blob/${{ github.ref_name }}/docs/how-to/native-web-ui.md#android-release-signing-setup).
+
+  release-android:
+    if: startsWith(github.ref, 'refs/tags/v') && needs.android.outputs.signed == 'true'
+    needs: android
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: lethetic-Android
+          path: native-artifacts/lethetic-Android
+      - run: python3 scripts/release_version.py --check
+      - name: Package verified Android installer
+        run: python3 scripts/package_native_release.py native-artifacts android-release --group android
+      - uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: true
+          files: android-release/*
+          name: Lethetic ${{ github.ref_name }}
+          append_body: true
+          body: |
+            Android ARM64: the APK is an optimized, non-debuggable build signed with the project's persistent release key. Its SHA-256 checksum is included.

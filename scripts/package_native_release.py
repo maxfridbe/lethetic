@@ -17,11 +17,17 @@ INSTALLERS = {
 }
 
 
-def package(source: Path, destination: Path) -> list[Path]:
+def package(source: Path, destination: Path, group: str = "all") -> list[Path]:
+    if group not in ("all", "desktop", "android"):
+        raise ValueError("Unknown installer group")
     version = current()
     platforms = {"lethetic-Windows": "windows-x86_64", "lethetic-macOS": "macos-arm64", "lethetic-Linux": "linux-x86_64", "lethetic-Android": "android"}
     selected: list[tuple[Path, str]] = []
     for artifact, extensions in INSTALLERS.items():
+        if group == "desktop" and artifact == "lethetic-Android":
+            continue
+        if group == "android" and artifact != "lethetic-Android":
+            continue
         for extension in extensions:
             files = sorted((source / artifact).rglob(f"*{extension}"))
             if len(files) != 1 or not files[0].is_file() or files[0].stat().st_size == 0:
@@ -50,6 +56,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
     parser.add_argument("destination", type=Path)
+    parser.add_argument("--group", choices=("all", "desktop", "android"), default="all")
     args = parser.parse_args()
-    for installer in package(args.source, args.destination):
+    for installer in package(args.source, args.destination, args.group):
         print(installer.name)
