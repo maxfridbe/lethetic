@@ -1,3 +1,4 @@
+import { downloadBlob } from "../download.js";
 import { exclusionLabel, fileFailure } from "./protocol.js";
 const DOCK_KEY = "lethetic.files-dock.v1";
 function initialState(diffLayout = "side-by-side", dock = "top") {
@@ -17,7 +18,6 @@ export class FilesController {
     #status = null;
     #diff = null;
     #epoch = 0;
-    #urls = new Map();
     #preferences = null;
     constructor(changed, notify, preferences) {
         this.changed = changed;
@@ -56,11 +56,6 @@ export class FilesController {
         this.#epoch += 1;
         this.#abort();
         this.#state = initialState(this.#state.diffLayout, this.#state.dock);
-        for (const [url, timer] of this.#urls) {
-            globalThis.clearTimeout(timer);
-            URL.revokeObjectURL(url);
-        }
-        this.#urls.clear();
     }
     suspend() {
         this.#abort();
@@ -275,30 +270,19 @@ export class FilesController {
             const result = await client.download(path, archive, request.signal);
             if (this.#download !== request || request.signal.aborted)
                 return;
-            const url = URL.createObjectURL(result.blob);
-            const anchor = globalThis.document.createElement("a");
-            anchor.href = url;
-            anchor.download = result.filename;
-            anchor.rel = "noopener";
-            anchor.hidden = true;
-            globalThis.document.body.append(anchor);
-            try {
-                anchor.click();
+            const saved = await downloadBlob(result.blob, result.filename, request.signal);
+            if (this.#download !== request || request.signal.aborted)
+                return;
+            if (!saved) {
+                this.notify("Download cancelled.");
+                return;
             }
-            finally {
-                anchor.remove();
-            }
-            const timer = globalThis.setTimeout(() => {
-                URL.revokeObjectURL(url);
-                this.#urls.delete(url);
-            }, 60_000);
-            this.#urls.set(url, timer);
             const exclusions = result.exclusions === null ? null : exclusionLabel(result.exclusions);
             this.notify(exclusions === null ? "Download ready." : `Download ready. ${exclusions}`);
         }
         catch (error) {
             if (this.#download === request && !request.signal.aborted)
-                this.notify(fileFailure(error));
+                this.notify(`Download failed: ${error instanceof Error ? error.message : String(error).slice(0, 500)}`);
         }
         finally {
             if (this.#download === request) {

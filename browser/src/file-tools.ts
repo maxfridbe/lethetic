@@ -1,3 +1,4 @@
+import { downloadBlob } from "../../web/src/download.js";
 import { h } from "../../web/lib/snabbdom/build/index.js";
 import { uiIcon } from "../../web/src/icons.js";
 import type { FileListEntry } from "../../web/src/generated/contracts.js";
@@ -30,11 +31,10 @@ export function createFileTools(files: BrowserFiles, changed: () => void) {
         by = (event.target as HTMLSelectElement).value as FileSort; descending = by !== "name"; changed();
       } } }, [h("option", { attrs: { value: "name" } }, "Name"), h("option", { attrs: { value: "date" } }, "Date"), h("option", { attrs: { value: "size" } }, "Size")])]),
       h("button", { attrs: { type: "button", title: "Reverse sort order", "aria-label": descending ? "Descending; reverse sort order" : "Ascending; reverse sort order" }, on: { click: () => { descending = !descending; changed(); } } }, [uiIcon(descending ? "expand" : "collapse"), descending ? "Descending" : "Ascending"]),
-      h("button", { attrs: { type: "button", "data-file-action": "download-all", title: "Download every session file and folder as ZIP" }, on: { click: () => {
+      h("button", { attrs: { type: "button", "data-file-action": "download-all", title: "Download every session file and folder as ZIP" }, on: { click: async () => {
         try {
-          const url = URL.createObjectURL(new Blob([workspaceZip(files.snapshotWorkspace())], { type: "application/zip" }));
-          const link = document.createElement("a"); link.href = url; link.download = "session-files.zip"; link.click();
-          setTimeout(() => URL.revokeObjectURL(url), 1000); error = "";
+          const saved = await downloadBlob(new Blob([workspaceZip(files.snapshotWorkspace())], { type: "application/zip" }), "session-files.zip");
+          error = saved ? "Download ready." : "Download cancelled.";
         } catch (cause) { error = String(cause); } changed();
       } } }, [uiIcon("download"), "Download all (.zip)"]),
       h("span", { attrs: { role: "status" } }, error),

@@ -64,6 +64,7 @@ jobs:
       - run: cargo install tauri-cli --version 2.12.4 --locked
       - run: cargo test -p lethetic-directory --locked
       - run: cargo test -p lethetic-network --locked
+      - run: cargo test -p tauri-plugin-lethetic-host --lib --locked
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo tauri build --bundles ${{ runner.os == 'Windows' && 'nsis' || runner.os == 'macOS' && 'app,dmg' || 'deb,appimage' }}
       - uses: actions/upload-artifact@v4
@@ -112,7 +113,7 @@ jobs:
         run: cp -R src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
       - name: Build optimized Android release APK
         run: cargo tauri android build --target aarch64 --apk
-      - name: Android system bars, keyboard and cutout regression tests
+      - name: Android downloads, system bars, keyboard and cutout regression tests
         run: ./src-tauri/gen/android/gradlew -p src-tauri/gen/android :tauri-plugin-lethetic-host:testDebugUnitTest
       - uses: actions/upload-artifact@v4
         if: always()

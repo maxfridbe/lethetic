@@ -1,3 +1,4 @@
+import { testNativeFileDownloads, testNativeSessionDownloads } from "./native-download-browser.js";
 import { testSessionStorage } from "./session-storage-browser.js";
 import { testDotnetBrowser } from "./dotnet-browser.js";
 import { testPythonNetwork } from "./python-network-browser.js";
@@ -289,7 +290,9 @@ try {
   await until("!!globalThis.downloadTextPromise");
   check(await evaluate("globalThis.downloadTextPromise") === "print('private snippet')", "download changed file contents");
   check(await evaluate("globalThis.downloadName") === "analysis.py", "download filename changed");
-  await evaluate("HTMLAnchorElement.prototype.click=globalThis.originalAnchorClick; URL.createObjectURL=globalThis.originalObjectURL; document.querySelector('[data-file-action=preview]').click()");
+  await evaluate("HTMLAnchorElement.prototype.click=globalThis.originalAnchorClick; URL.createObjectURL=globalThis.originalObjectURL");
+  await testNativeFileDownloads(evaluate, until);
+  await evaluate("document.querySelector('[data-file-action=preview]').click()");
   await until("!!document.querySelector('.browser-preview[open]')");
   check(await evaluate("document.querySelector('.browser-preview[open] h2').textContent === 'reports/analysis.py'"), "preview title omitted filename");
   await evaluate("document.querySelector('[data-field=preview-expand]').click()");
@@ -530,6 +533,7 @@ try {
   await writeFile(config.screenshot.replace('.png','-session.db'),Buffer.from(String(databaseImage),'base64'));
 
   await evaluate("URL.createObjectURL=globalThis.exportObjectURL; HTMLAnchorElement.prototype.click=globalThis.exportAnchorClick");
+  await testNativeSessionDownloads(evaluate, until);
   await evaluate("document.querySelector('.sessions-panel .primary-button').click()");
   await until("!document.querySelector('.sessions-panel')");
   const newHash = await evaluate("location.hash");

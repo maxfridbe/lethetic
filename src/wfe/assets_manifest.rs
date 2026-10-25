@@ -926,6 +926,7 @@ tracked_assets!(
     "src/bootstrap.js",
     "src/brand.js",
     "src/chat-follow.js",
+    "src/download.js",
     "src/files/client.js",
     "src/files/editor.js",
     "src/files/git.js",

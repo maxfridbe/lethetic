@@ -1,6 +1,6 @@
 {
   "identifier": "main",
-  "description": "Only the bundled main UI may grant workspace access, runtime HTTP networking and keep-awake. No shell or unrestricted filesystem commands.",
+  "description": "Only the bundled main UI may grant workspace access, save downloads with an OS picker, enable runtime HTTP networking and keep-awake. No shell or unrestricted filesystem commands.",
   "windows": [
     "main"
   ],
@@ -10,6 +10,10 @@
     "lethetic-host:allow-revoke-directory",
     "lethetic-host:allow-set-working",
     "lethetic-host:allow-grant-network",
-    "lethetic-host:allow-revoke-network"
+    "lethetic-host:allow-revoke-network",
+    "lethetic-host:allow-begin-download",
+    "lethetic-host:allow-write-download",
+    "lethetic-host:allow-finish-download",
+    "lethetic-host:allow-cancel-download"
   ]
 }

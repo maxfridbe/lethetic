@@ -1,3 +1,4 @@
+import { downloadBlob } from "../../web/src/download.js";
 import { TRACE_LIMITS } from "./provider-trace.js";
 import type { SavedSession } from "./sessions.js";
 import { decodeBytes, emptyWorkspace, parseWorkspace } from "./workspace.js";
@@ -59,8 +60,6 @@ export async function sessionDebugBundle(session: SavedSession, diagnostics: unk
   const compressed = new Blob(parts).stream().pipeThrough(new CompressionStream("gzip"));
   return new Blob([await new Response(compressed).arrayBuffer()], { type: "application/gzip" });
 }
-export function downloadSessionBundle(bundle: Blob, id: string): void {
-  const url = URL.createObjectURL(bundle), link = document.createElement("a");
-  link.href = url; link.download = `lethetic-session-${id}.tar.gz`; link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+export function downloadSessionBundle(bundle: Blob, id: string): Promise<boolean> {
+  return downloadBlob(bundle, `lethetic-session-${id}.tar.gz`);
 }

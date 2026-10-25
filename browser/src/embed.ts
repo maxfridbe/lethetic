@@ -1,3 +1,4 @@
+import { downloadBlob } from "../../web/src/download.js";
 import { NativeDirectory, nativeAvailable, resetNativeWork } from "./native-host.js";
 import { lifecycleDiagnostics } from "./lifecycle.js";
 import { browserCommandVisible } from "./local-state.js";
@@ -83,7 +84,9 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
   const snippetActions = (snippet: { code: string; language: string }) => h("div.browser-code-actions", [
     h("button", { attrs: { type: "button", "data-browser-action": "save-code" }, on: { click: () => editor?.open(snippetName(snippet), snippet.code) } }, [uiIcon("save"), "Save to Session"]),
     h("button", { attrs: { type: "button", "data-browser-action": "preview" }, on: { click: () => preview.open(snippet.code, snippet.language, snippetName(snippet)) } }, [uiIcon("preview"), "Preview"]),
-    h("button", { attrs: { type: "button", "data-browser-action": "download" }, on: { click: () => downloadCode(snippet.code, snippetName(snippet)) } }, [uiIcon("download"), "Download"]),
+    h("button", { attrs: { type: "button", "data-browser-action": "download" }, on: { click: () => { void downloadCode(snippet.code, snippetName(snippet)).then(saved => {
+      fileStatus = saved ? "Download ready." : "Download cancelled."; transport?.publish();
+    }).catch(error => { fileStatus = `Download failed: ${String(error)}`; transport?.publish(); }); } } }, [uiIcon("download"), "Download"]),
     h("button", { attrs: { type: "button", "data-browser-action": "copy" }, on: { click: (event: Event) => {
       const button = event.currentTarget as HTMLButtonElement;
       void copyCode(snippet.code).then(() => { button.title = "Contents copied"; })
@@ -101,15 +104,15 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
     sessionsNotice: () => [transport?.persistenceStatus, exportStatus].filter(Boolean).join(" "),
     sessionActions: (id) => h("span.browser-code-actions", [options.storage instanceof BrowserSessionStorage ? h("button", {
       attrs: { type: "button", "data-session-database": id, title: "Download this session and its files as a SQLite database" },
-      on: { click: () => {
+      props: { disabled: exporting }, on: { click: async () => {
+        if (exporting) return;
+        exporting = true; exportStatus = "Preparing session database…"; transport?.publish();
         try {
           const bytes = (options.storage as BrowserSessionStorage).exportDatabase(id);
-          const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], {type: "application/vnd.sqlite3"}));
-          const link = document.createElement("a"); link.href = url; link.download = `lethetic-session-${id}.db`; link.click();
-          setTimeout(() => URL.revokeObjectURL(url), 1000);
-          exportStatus = "Session database downloaded. Connection keys are excluded.";
+          const saved = await downloadBlob(new Blob([new Uint8Array(bytes)], {type: "application/vnd.sqlite3"}), `lethetic-session-${id}.db`);
+          exportStatus = saved ? "Session database saved. Connection keys are excluded." : "Export cancelled.";
         } catch (error) { exportStatus = `Export failed: ${String(error)}`; }
-        transport?.publish();
+        finally { exporting = false; transport?.publish(); }
       } }
     }, [uiIcon("download"), "Database (.db)"]) : null, h("button", { attrs: { type: "button", "data-session-export": id, title: "Download this session, its files and debug information as .tar.gz" },
       props: { disabled: exporting }, on: { click: () => {
@@ -124,7 +127,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
               current, busy: current && transport!.busy, lifecycle: lifecycleDiagnostics(),
               ...(current ? { status: transport!.state.status, activity: transport!.state.activity, debugger: transport!.state.debugger } : {}),
             }, [...transport!.relaySecrets, ...transport!.options.connections.flatMap(connection => connection.apiKey ? [connection.apiKey] : [])]);
-            downloadSessionBundle(bundle, id); exportStatus = "Debug bundle downloaded. Connection keys are excluded.";
+            const saved = await downloadSessionBundle(bundle, id); exportStatus = saved ? "Debug bundle saved. Connection keys are excluded." : "Export cancelled.";
           } catch (error) { exportStatus = `Export failed: ${String(error)}`; }
           finally { exporting = false; transport?.publish(); }
         })();

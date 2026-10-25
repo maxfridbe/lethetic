@@ -1,3 +1,5 @@
+mod download;
+mod download_buffer;
 use lethetic_directory::{Grant, Workspace};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -8,6 +10,7 @@ use tauri_plugin_dialog::DialogExt;
 
 struct Host {
     token: String,
+    downloads: Mutex<download_buffer::Downloads>,
     directory: Mutex<Option<Grant>>,
     network: Mutex<NetworkGrants>,
     #[cfg(not(target_os = "android"))]
@@ -185,6 +188,10 @@ async fn set_working(
 pub fn init(token: String) -> tauri::plugin::TauriPlugin<tauri::Wry> {
     let builder = tauri::plugin::Builder::new("lethetic-host")
         .invoke_handler(tauri::generate_handler![
+            download::begin_download,
+            download::write_download,
+            download::finish_download,
+            download::cancel_download,
             choose_directory,
             sync_directory,
             revoke_directory,
@@ -198,6 +205,7 @@ pub fn init(token: String) -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 _api.register_android_plugin("io.github.maxfridbe.lethetic.host", "HostPlugin")?;
             app.manage(Host {
                 token,
+                downloads: Mutex::default(),
                 directory: Mutex::new(None),
                 network: Mutex::new(NetworkGrants::default()),
                 #[cfg(not(target_os = "android"))]
@@ -217,6 +225,7 @@ mod tests {
     fn iframe_without_top_level_token_cannot_use_host() {
         let host = Host {
             token: "per-launch-secret".into(),
+            downloads: Mutex::default(),
             directory: Mutex::new(None),
             network: Mutex::new(NetworkGrants::default()),
             awake: Mutex::new(None),

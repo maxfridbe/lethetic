@@ -1,5 +1,9 @@
 fn main() {
     tauri_plugin::Builder::new(&[
+        "begin_download",
+        "write_download",
+        "finish_download",
+        "cancel_download",
         "choose_directory",
         "sync_directory",
         "revoke_directory",

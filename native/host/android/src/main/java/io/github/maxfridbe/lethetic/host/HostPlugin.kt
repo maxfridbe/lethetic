@@ -17,6 +17,7 @@ import app.tauri.plugin.Plugin
 import java.util.concurrent.Executors
 
 @InvokeArg class WorkArgs { var working: Boolean = false; var active: Boolean = false }
+@InvokeArg class SaveArgs { var path: String = ""; var name: String = ""; var mime: String = "application/octet-stream" }
 @TauriPlugin
 class HostPlugin(private val activity: Activity) : Plugin(activity) {
     private val io = Executors.newSingleThreadExecutor()
@@ -31,6 +32,23 @@ class HostPlugin(private val activity: Activity) : Plugin(activity) {
     }
     private fun task(invoke: Invoke, work: () -> JSObject) {
         io.execute { try { invoke.resolve(work()) } catch (error: Exception) { invoke.reject(error.message ?: "Workspace operation failed") } }
+    }
+    @Command fun saveDownload(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(SaveArgs::class.java)
+            SaveDocument.source(activity.cacheDir, args.path)
+            startActivityForResult(invoke, SaveDocument.intent(args.name, args.mime), "downloadResult")
+        } catch (error: Exception) { invoke.reject(error.message ?: "Save dialog unavailable") }
+    }
+    @ActivityCallback fun downloadResult(invoke: Invoke, result: ActivityResult) {
+        task(invoke) {
+            val args = invoke.parseArgs(SaveArgs::class.java)
+            val source = SaveDocument.source(activity.cacheDir, args.path)
+            val saved = SaveDocument.complete(result.resultCode, result.data?.data, source) { uri ->
+                activity.contentResolver.openOutputStream(uri, "wt")
+            }
+            JSObject().apply { put("saved", saved) }
+        }
     }
     @Command fun chooseDirectory(invoke: Invoke) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)

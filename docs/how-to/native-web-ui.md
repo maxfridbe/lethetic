@@ -17,6 +17,20 @@ tablets and desktops. In left mode, the file list sits above the preview beside
 the conversation; drag the divider to resize it. Monaco syntax highlighting and
 its worker are bundled locally and do not need Network access or a CDN.
 
+## Save downloads
+
+**Download File**, snippet **Download**, **Download all (.zip)**, and the session
+**Database (.db)** / **Export debug (.tar.gz)** buttons open the operating system's
+Save dialog in the app. On Android, choose Downloads or another document provider
+and confirm Save. Cancelling leaves the session unchanged. Errors appear in the
+Files or Sessions status instead of reporting a successful download.
+
+Saving one file does not grant a workspace folder or enable Network access.
+Binary data is staged in 256 KiB chunks and copied to the selected destination;
+outputs up to 512 MiB are supported by the native save bridge. Existing workspace
+and preview limits still apply. Staging files are removed on success, cancellation
+or transfer failure. Browser-only mode continues to use normal browser downloads.
+
 ## Choose your workspace
 
 The default is **Virtual directory**. Session files live in the application's
@@ -49,7 +63,7 @@ the selected directory. Runtimes still see a virtual filesystem, not host paths.
 
 The main application is trusted. Sandboxed previews and code workers do not get
 its per-launch native capability token. Tauri permissions are limited to folder
-grants, workspace synchronization, revocable runtime HTTP access and response keep-awake. No remote
+grants, workspace synchronization, user-selected download destinations, revocable runtime HTTP access and response keep-awake. No remote
 origin has an IPC grant. This is the browser runtime's isolation model with a
 narrow directory bridge, not Podman/container isolation or a defense against a
 compromised operating system/document provider.

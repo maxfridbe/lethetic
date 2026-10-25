@@ -295,6 +295,30 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the begin_download command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-begin-download",
+          "markdownDescription": "Enables the begin_download command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the begin_download command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-begin-download",
+          "markdownDescription": "Denies the begin_download command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the cancel_download command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-cancel-download",
+          "markdownDescription": "Enables the cancel_download command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the cancel_download command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-cancel-download",
+          "markdownDescription": "Denies the cancel_download command without any pre-configured scope."
+        },
+        {
           "description": "Enables the choose_directory command without any pre-configured scope.",
           "type": "string",
           "const": "allow-choose-directory",
@@ -305,6 +329,18 @@
           "type": "string",
           "const": "deny-choose-directory",
           "markdownDescription": "Denies the choose_directory command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the finish_download command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-finish-download",
+          "markdownDescription": "Enables the finish_download command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the finish_download command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-finish-download",
+          "markdownDescription": "Denies the finish_download command without any pre-configured scope."
         },
         {
           "description": "Enables the grant_network command without any pre-configured scope.",
@@ -365,6 +401,18 @@
           "type": "string",
           "const": "deny-sync-directory",
           "markdownDescription": "Denies the sync_directory command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the write_download command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-write-download",
+          "markdownDescription": "Enables the write_download command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the write_download command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-write-download",
+          "markdownDescription": "Denies the write_download command without any pre-configured scope."
         }
       ]
     }

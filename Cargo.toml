@@ -13,7 +13,7 @@ strip = "symbols"
 
 [package]
 name = "lethetic"
-version = "26.1024.5"
+version = "26.1025.1"
 edition = "2024"
 
 [features]

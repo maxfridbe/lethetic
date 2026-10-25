@@ -1,3 +1,4 @@
+import { downloadBlob } from "../../web/src/download.js";
 import { MonacoFileEditor } from "../../web/src/files/editor.js";
 import type { FilesReadResponse } from "../../web/src/generated/contracts.js";
 import { buttonIconHtml } from "../../web/src/icons.js";
@@ -12,11 +13,8 @@ export function snippetName(snippet: CodeSnippet): string {
   const extension = extensions[snippet.language] ?? (/^[a-z0-9]{1,8}$/u.test(snippet.language) ? snippet.language : "txt");
   return `snippet.${extension}`;
 }
-export function downloadCode(code: string, name: string): void {
-  const url = URL.createObjectURL(new Blob([code], { type: "text/plain;charset=utf-8" }));
-  const link = document.createElement("a"); link.href = url;
-  link.download = name.replace(/[\\/\u0000-\u001f]/gu, "_") || "code.txt";
-  link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+export function downloadCode(code: string, name: string): Promise<boolean> {
+  return downloadBlob(new Blob([code], { type: "text/plain;charset=utf-8" }), name);
 }
 export async function copyCode(code: string): Promise<void> {
   if (!navigator.clipboard?.writeText) throw new Error("Clipboard is unavailable. Download the file or select and copy its text.");
