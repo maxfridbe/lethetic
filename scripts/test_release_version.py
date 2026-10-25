@@ -81,12 +81,14 @@ class ReleaseVersionTests(unittest.TestCase):
             (stage / "browser/src").mkdir(parents=True)
             (stage / "browser/src/sdk.js").write_text("export const example = 1;\n")
             (stage / "integration.md").write_text("Example guide")
+            (stage / "index.html").write_text('<span id="splash-version" aria-label="App version">v{{LETHETIC_VERSION}}</span>')
             with patch.object(package_browser, "ROOT", root), patch.object(package_browser, "current", return_value=version):
                 package_browser.package(stage)
             self.assertEqual(json.loads((stage / "manifest.json").read_text())["version"], version.text)
             self.assertEqual(json.loads((stage / "package.json").read_text())["version"], version.semver)
             with zipfile.ZipFile(root / "target" / version.asset("web-wasm", ".zip")) as archive:
                 self.assertEqual(archive.read("VERSION").decode().strip(), version.text)
+                self.assertIn(">v" + version.text + "</span>", archive.read("index.html").decode())
             (root / "target/release").mkdir()
             for binary in ("lethetic", "lethetic-runtime"):
                 (root / "target/release" / binary).write_bytes(b"fixture")

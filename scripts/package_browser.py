@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import re
 from pathlib import Path
 import sys
 import zipfile
@@ -23,6 +24,13 @@ def package(stage: Path) -> None:
         if declaration.exists():
             (stage / "src" / declaration.name).write_text(f'export * from "../browser/src/{module.name}";\n')
     version = current()
+    # Stamp the startup HTML so the installed version is visible before JS/WASM loads.
+    index = stage / "index.html"
+    source, count = re.subn(r'(<span id="splash-version"[^>]*>)[^<]*(</span>)',
+                            lambda match: match[1] + "v" + version.text + match[2], index.read_text())
+    if count != 1:
+        raise ValueError("Expected one splash version label in index.html")
+    index.write_text(source)
     (stage / "VERSION").write_text(version.text + "\n")
     (stage / "package.json").write_text(json.dumps({
         "name": "@lethetic/browser", "version": version.semver, "letheticVersion": version.text, "type": "module",

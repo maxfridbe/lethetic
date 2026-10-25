@@ -1,5 +1,6 @@
 /* Startup artwork is local so it paints before the application modules load. */
 #startup-splash { position: fixed; inset: 0; margin: auto; padding: 0; width: 70vw; height: 70dvh; max-width: none; max-height: none; border: 1px solid #334155; border-radius: 20px; box-shadow: 0 24px 90px #0009; display: grid; grid-template-rows: minmax(0,1fr) auto; place-items: center; overflow: hidden; box-sizing: border-box; background-color: #04060a; color: #f1f5f9; font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; user-select: none; background-size: 48px 48px; background-image: linear-gradient(to right, #00f2fe06 1px, transparent 1px), linear-gradient(to bottom, #00f2fe06 1px, transparent 1px); }
+#splash-version { position: absolute; top: 16px; right: 16px; z-index: 2; color: #94a3b8; font: 500 clamp(11px, 1.5vw, 14px)/1.2 ui-monospace, monospace; white-space: nowrap; }
 #startup-splash:not([open]) { display: none; }
 #startup-splash:focus { outline: none; }
 #startup-splash::backdrop { background: #0002; }
