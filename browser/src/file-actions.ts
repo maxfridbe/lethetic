@@ -26,6 +26,7 @@ export function previewDocument(code: string, language: string, name: string): s
   if (code.length > 24 * 1024 * 1024) throw new Error("Preview is limited to 24 MiB of encoded content.");
   const extension = name.split(".").at(-1)?.toLowerCase() ?? "";
   const kind = language.toLowerCase();
+  const standaloneSvg = [kind, extension].includes("svg") && ![kind, extension].some(value => ["md", "markdown"].includes(value));
   let html: string;
   if ([kind, extension].some((value) => ["md", "markdown"].includes(value))) html = parse(code, { async: false });
   else if ([kind, extension].some((value) => ["html", "htm", "svg"].includes(value))) html = code;
@@ -47,7 +48,7 @@ export function previewDocument(code: string, language: string, name: string): s
   // Sandboxed documents cannot inherit the host's theme variables. Resolve the
   // colors in the host and use low-specificity defaults so authored styles win.
   const theme = getComputedStyle(document.documentElement);
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; media-src data:; form-action 'none'; base-uri 'none'"><style>:where(body){color:${theme.color};background:${theme.backgroundColor}}body{font:16px system-ui;padding:20px;overflow-wrap:anywhere}pre{white-space:pre-wrap}img,svg,audio,video{max-width:100%}audio,video{display:block;margin:auto}video{max-height:85vh}table{border-collapse:collapse}td,th{border:1px solid #aaa;padding:6px}</style></head><body>${template.innerHTML}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; media-src data:; form-action 'none'; base-uri 'none'"><style>:where(body){color:${theme.color};background:${theme.backgroundColor}}body{font:16px system-ui;padding:20px;overflow-wrap:anywhere}pre{white-space:pre-wrap}img,svg,audio,video{max-width:100%}audio,video{display:block;margin:auto}video{max-height:85vh}.preview-svg{margin:0;padding:12px}.preview-svg>svg{display:block;width:100%;height:auto;max-height:calc(100vh - 24px);margin:auto}table{border-collapse:collapse}td,th{border:1px solid #aaa;padding:6px}</style></head><body${standaloneSvg ? ' class="preview-svg"' : ""}>${template.innerHTML}</body></html>`;
 }
 
 function imageType(path: string): string | undefined {

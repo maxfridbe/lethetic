@@ -305,6 +305,10 @@ call. **Source / Rendered** and **Plain text / Monaco** remain available. Python
 uses `/home/pyodide/tasks.md` and .NET uses `/home/dotnetdide/tasks.md`; these are
 the same relative session file when switching modes. This is model guidance,
 not an automatic task recorder; chat without file-writing tools cannot save it.
+**Themes → Interface scale** adjusts text and controls from 75–200% and saves the choice on this device. Main-interface touch gestures scroll without pinch zoom; preview iframes keep their own gesture handling. When a keyboard reduces the browser or native WebView height, the composer stays in the usable area and the status bar temporarily hides, then returns when the keyboard closes.
+
+Standalone SVG previews fit the pane's width and height, including expanded views, without changing the saved file. CSS animations, gradients and filters remain visible; scripts and external resources remain blocked.
+
 Rendered file previews default to the active theme's background and text colors;
 documents can override these defaults with their own styles.
 The .NET instructions include a self-debugging recipe: after running code or

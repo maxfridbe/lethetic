@@ -165,3 +165,10 @@ dialog.browser-preview.is-full-preview {
 .preview-content { position: relative; min-height: 0; min-width: 0; }
 .preview-content > iframe, .preview-monaco, .preview-plain-text { position: absolute; inset: 0; width: 100%; height: 100%; box-sizing: border-box; }
 .preview-plain-text { margin: 0; padding: .65rem; border: 0; resize: none; font: 14px/1.5 monospace; tab-size: 4; white-space: pre; overflow: auto; user-select: text; -webkit-user-select: text; touch-action: auto; }
+
+/* Reserve typing space on phones and unfolded devices when Android resizes the whole WebView. */
+.is-keyboard-open .browser-status { display: none; }
+.is-keyboard-open .composer-help { display: none; }
+.is-keyboard-open .composer { padding-block: .35rem; }
+.is-keyboard-open .composer textarea { field-sizing: fixed; min-height: 48px; max-height: min(120px, 30vh); font-size: max(16px, calc(16px * var(--ui-scale, 1))); }
+.is-keyboard-open .files-pane.is-open:not([data-dock="left"]) { min-height: 80px; max-height: min(25vh, 160px); }

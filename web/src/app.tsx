@@ -1,3 +1,4 @@
+import { restoreUiScale } from "./ui-scale.js";
 import type { LocalPaletteCommand, PaletteCommand } from "./app/state.js";
 import {
   attributesModule,
@@ -217,6 +218,7 @@ export class SpaApplication implements BrowserTransportEvents {
     codeActions?: (code: string, language: string | null) => VNode | null;
     externalDialogOpen?: () => boolean;
   } = {}) {
+    restoreUiScale();
     this.#tree = root;
     this.#chatFollow = new ChatFollowController(
       CHAT_FOLLOW_SCHEDULER,

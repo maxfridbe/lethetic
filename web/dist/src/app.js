@@ -1,3 +1,4 @@
+import { restoreUiScale } from "./ui-scale.js";
 import { attributesModule, classModule, eventListenersModule, init, propsModule, styleModule, } from "../lib/snabbdom/build/index.js";
 import { ChatFollowController, hasNewChatOutput } from "./chat-follow.js";
 import { captureChatAnchor, restoreChatAnchor, } from "./app/chat-anchor.js";
@@ -95,6 +96,7 @@ export class SpaApplication {
     };
     constructor(root, extensions = {}) {
         this.extensions = extensions;
+        restoreUiScale();
         this.#tree = root;
         this.#chatFollow = new ChatFollowController(CHAT_FOLLOW_SCHEDULER, () => this.#resumeChatFollowing());
         if (typeof globalThis.matchMedia === "function") {

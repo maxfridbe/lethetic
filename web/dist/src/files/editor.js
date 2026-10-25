@@ -1,3 +1,4 @@
+import { uiScale } from "../ui-scale.js";
 let assets = null;
 let editorSequence = 0;
 /** Bundled Tauri origins and loopback development servers are local, not a CDN. */
@@ -85,7 +86,7 @@ export class MonacoFileEditor {
                 automaticLayout: false, ariaLabel: "Read-only file preview",
                 minimap: { enabled: false }, links: false, contextmenu: false,
                 folding: true, glyphMargin: false, lineNumbers: "on", wordWrap: "off",
-                scrollBeyondLastLine: false, fontSize: 13, fontFamily: "monospace",
+                scrollBeyondLastLine: false, fontSize: 13 * uiScale() / 100, fontFamily: "monospace",
                 quickSuggestions: false, suggestOnTriggerCharacters: false,
                 parameterHints: { enabled: false }, wordBasedSuggestions: "off",
                 occurrencesHighlight: "off", selectionHighlight: false,
@@ -96,6 +97,7 @@ export class MonacoFileEditor {
                 padding: { top: 8, bottom: 8 },
             });
             this.#observer = new ResizeObserver(() => {
+                this.#editor?.updateOptions({ fontSize: 13 * uiScale() / 100 });
                 this.#editor?.layout();
                 this.resized();
             });
@@ -180,14 +182,17 @@ export class MonacoDiffViewer {
                 ignoreTrimWhitespace: false, renderIndicators: true, renderOverviewRuler: true,
                 minimap: { enabled: false }, links: false, contextmenu: false,
                 glyphMargin: false, lineNumbers: "on", wordWrap: "off",
-                scrollBeyondLastLine: false, fontSize: 13, fontFamily: "monospace",
+                scrollBeyondLastLine: false, fontSize: 13 * uiScale() / 100, fontFamily: "monospace",
                 quickSuggestions: false, occurrencesHighlight: "off", selectionHighlight: false,
                 codeLens: false, stickyScroll: { enabled: false }, renderValidationDecorations: "off",
                 unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: false },
                 padding: { top: 8, bottom: 8 },
                 ariaLabel: "Read-only git diff",
             });
-            this.#observer = new ResizeObserver(() => this.#editor?.layout());
+            this.#observer = new ResizeObserver(() => {
+                this.#editor?.updateOptions({ fontSize: 13 * uiScale() / 100 });
+                this.#editor?.layout();
+            });
             this.#observer.observe(host);
             this.#apply();
             this.#editor.layout();

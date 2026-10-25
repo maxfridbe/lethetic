@@ -945,5 +945,6 @@ tracked_assets!(
     "src/safety.js",
     "src/skills-protocol.js",
     "src/transport.js",
+    "src/ui-scale.js",
     "styles.css",
 );

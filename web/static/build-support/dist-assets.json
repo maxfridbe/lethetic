@@ -34,7 +34,8 @@
     "src/reducer-fixtures.js",
     "src/safety.js",
     "src/skills-protocol.js",
-    "src/transport.js"
+    "src/transport.js",
+    "src/ui-scale.js"
   ],
   "static_assets": [
     "files.css",

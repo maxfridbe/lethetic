@@ -1,3 +1,4 @@
+import { testSvgPreview } from "./svg-preview-browser.js";
 import { testNativeFileDownloads, testNativeSessionDownloads } from "./native-download-browser.js";
 import { testSessionStorage } from "./session-storage-browser.js";
 import { testDotnetBrowser } from "./dotnet-browser.js";
@@ -231,6 +232,19 @@ try {
   await until("!!document.querySelector('#palette-command-themes')");
   await evaluate("document.querySelector('#palette-command-themes').click()");
   await until("!!document.querySelector('.theme-choice')");
+  check(await evaluate(`(() => {
+    const select=document.querySelector('select[data-ui-scale]');
+    const before=parseFloat(getComputedStyle(document.body).fontSize);
+    select.value='125';select.dispatchEvent(new Event('change',{bubbles:true}));
+    return Math.abs(parseFloat(getComputedStyle(document.body).fontSize)/before-1.25)<.01 && visualViewport.scale===1;
+  })()`), "Interface scale did not resize text independently of page zoom");
+  check(await evaluate(`(async()=>{
+    const {setUiScale,restoreUiScale,uiScale}=await import('./web/src/ui-scale.js');
+    setUiScale(100,false);restoreUiScale();const restored=uiScale()===125;
+    const select=document.querySelector('select[data-ui-scale]');select.value='100';select.dispatchEvent(new Event('change',{bubbles:true}));
+    return restored && uiScale()===100;
+  })()`), "Interface scale did not persist or reset");
+
   await evaluate("document.querySelector('.theme-choice:not(.is-selected)').click()");
   await evaluate("[...document.querySelectorAll('.theme-choice')].find(button=>button.textContent.includes('Dracula')).click()");
   await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
@@ -336,10 +350,10 @@ try {
   check(await evaluate("document.querySelector('.browser-preview[open] [data-field=preview-frame]').hidden && !globalThis.hacked"), "HTML source did not use safe Monaco preview");
   await evaluate("document.querySelector('.browser-preview[open] [data-field=preview-source]').click()");
   check(await evaluate("!document.querySelector('.browser-preview[open] [data-field=preview-frame]').hidden"), "Rendered view did not restore");
-  const previewInput = async (expression: string, full = true): Promise<unknown> => {
+  const previewInput = async (expression: string, full = true, selectorOverride?: string): Promise<unknown> => {
     const interactive = await evaluate("!!document.querySelector('.browser-sites[open] iframe')");
-    if (!interactive) await until(`document.querySelector('.browser-preview[open] [data-field=preview-frame]').dataset.navigationReady==='${String(full)}'`);
-    const selector = interactive ? '.browser-sites[open] iframe' : '.browser-preview[open] iframe';
+    if (!interactive && !selectorOverride) await until(`document.querySelector('.browser-preview[open] [data-field=preview-frame]').dataset.navigationReady==='${String(full)}'`);
+    const selector = selectorOverride ?? (interactive ? '.browser-sites[open] iframe' : '.browser-preview[open] iframe');
     const handle=await rpc('Runtime.evaluate',{expression:`document.querySelector(${JSON.stringify(selector)})`});
     const node=await rpc('DOM.describeNode',{objectId:(handle['result'] as {objectId:string}).objectId});
     const frameId=(node['node'] as {frameId:string}).frameId;
@@ -376,6 +390,7 @@ try {
 
   await evaluate("document.querySelector('dialog[open]').close(); globalThis.confirm=()=>true; document.querySelector('[data-file-action=delete]').click()");
   await until("!document.querySelector('.files-entry[title=\"reports/preview.html\"]')");
+  await testSvgPreview(evaluate, previewInput);
   await evaluate("document.querySelector('#files-toggle').click()");
   await evaluate("document.querySelector('.browser-status').open=true; document.querySelectorAll('[data-stat-pin][aria-pressed=false]').forEach(button=>button.click()); document.querySelector('.browser-status').open=false");
   check(await evaluate("document.querySelectorAll('[data-pinned-stat]').length===document.querySelectorAll('[data-stat-pin]').length && document.querySelectorAll('[data-pinned-stat]').length>=30"), "stats did not pin");
@@ -428,6 +443,9 @@ try {
   await writeFile(config.screenshot, Buffer.from(String(image["data"]), "base64"));
   await rpc("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   check(await evaluate("document.documentElement.scrollWidth <= innerWidth"), "mobile layout overflows");
+  await rpc("Input.synthesizePinchGesture", { x: 190, y: 300, scaleFactor: 1.5, relativeSpeed: 800, gestureSourceType: "touch" });
+  check(await evaluate("visualViewport.scale===1"), "Pinching the main interface zoomed the page");
+
   await evaluate("document.querySelector('#files-toggle').click()");
   check(await evaluate("(()=>{const files=document.querySelector('.files-pane').getBoundingClientRect(), list=document.querySelector('.files-browser').getBoundingClientRect(), editor=document.querySelector('.files-preview').getBoundingClientRect(), chat=document.querySelector('#chat-scroll').getBoundingClientRect();return files.right<=chat.left+1 && list.bottom<=editor.top+1 && editor.height>50 && chat.width>100 && document.documentElement.scrollWidth<=innerWidth})()"), "mobile left dock did not keep files above preview beside chat");
   const mobileWidth = Number(await evaluate("document.querySelector('.files-pane').getBoundingClientRect().width"));
@@ -487,6 +505,20 @@ try {
   })()`);
   check((viewportResult as {visible:boolean;restored:boolean}).visible && (viewportResult as {restored:boolean}).restored,
     "keyboard viewport obscures prompt or Send, or fails to restore: " + JSON.stringify(viewportResult));
+  // Android adjustResize shrinks innerHeight AND visualViewport, including on unfolded phones.
+  await rpc("Emulation.setDeviceMetricsOverride", { width: 805, height: 916, deviceScaleFactor: 1, mobile: true });
+  await evaluate("document.querySelector('#composer-input').focus();window.dispatchEvent(new Event('resize'))");
+  await rpc("Emulation.setDeviceMetricsOverride", { width: 805, height: 380, deviceScaleFactor: 1, mobile: true });
+  await until("document.getElementById('browser-root').classList.contains('is-keyboard-open')");
+  check(await evaluate(`(() => {
+    const prompt=document.querySelector('#composer-input').getBoundingClientRect(),send=document.querySelector('.composer button').getBoundingClientRect();
+    return prompt.top>=0 && prompt.bottom<=innerHeight && send.bottom<=innerHeight && send.top>=0 && getComputedStyle(document.querySelector('.browser-status')).display==='none';
+  })()`), "Native keyboard resize did not make room for composer and Send");
+  await rpc("Emulation.setDeviceMetricsOverride", { width: 805, height: 916, deviceScaleFactor: 1, mobile: true });
+  await until("!document.getElementById('browser-root').classList.contains('is-keyboard-open')");
+  check(await evaluate("getComputedStyle(document.querySelector('.browser-status')).display!=='none'"), "Status bar did not return after keyboard dismissal");
+  await evaluate("document.querySelector('#composer-input').blur()");
+  await rpc("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   const mobileImage = await rpc("Page.captureScreenshot", { format: "png" });
   await writeFile(config.screenshot.replace('.png','-mobile.png'), Buffer.from(String(mobileImage['data']), 'base64'));
   await rpc("Emulation.clearDeviceMetricsOverride");

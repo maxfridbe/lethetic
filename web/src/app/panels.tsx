@@ -1,3 +1,4 @@
+import { UI_SCALES, setUiScale, uiScale } from "../ui-scale.js";
 import { jsx as h } from "../../lib/snabbdom/build/index.js";
 import type { VNode } from "../../lib/snabbdom/build/index.js";
 import { ICON_GLYPHS } from "../generated/contracts.js";
@@ -161,6 +162,14 @@ function themesPanel(
   snapshot: WebAppSnapshot,
 ): VNode {
   return (
+    <div>
+    <label attrs={{ class: "ui-scale-setting" }}>Interface scale
+      <select attrs={{ "data-ui-scale": "", "aria-label": "Interface scale" }} props={{ value: String(uiScale()) }}
+        on={{ change: (event: Event) => setUiScale(Number((event.target as HTMLSelectElement).value)) }}>
+        {UI_SCALES.map(scale => <option attrs={{ value: String(scale) }}>{scale}%{scale === 100 ? " (default)" : ""}</option>)}
+      </select>
+    </label>
+    <p attrs={{ class: "empty-state" }}>Resizes text and controls without zooming or panning the page. Saved on this device.</p>
     <ul attrs={{ class: "choice-list theme-list" }}>
       {orderedThemes(snapshot).map((theme, index) => (
         <li key={theme.theme_id}>
@@ -212,6 +221,7 @@ function themesPanel(
         </li>
       ))}
     </ul>
+    </div>
   );
 }
 

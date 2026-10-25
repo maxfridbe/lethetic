@@ -1,3 +1,4 @@
+import { UI_SCALES, setUiScale, uiScale } from "../ui-scale.js";
 import { jsx as h } from "../../lib/snabbdom/build/index.js";
 import { ICON_GLYPHS } from "../generated/contracts.js";
 import { uiIcon } from "../icons.js";
@@ -79,32 +80,40 @@ function hotkeysPanel(_context, snapshot) {
         h("dd", null, shortcut.label))))));
 }
 function themesPanel(context, snapshot) {
-    return (h("ul", { attrs: { class: "choice-list theme-list" } }, orderedThemes(snapshot).map((theme, index) => (h("li", { key: theme.theme_id },
-        h("button", { attrs: {
-                type: "button",
-                class: `choice-row theme-choice${theme.selected ? " is-selected" : ""}`,
-                "aria-pressed": theme.selected ? "true" : "false",
-                "data-autofocus": index === 0 ? "true" : "false",
-            }, props: { disabled: !context.state.live }, on: {
-                click: () => context.actions.send({
-                    type: "select_theme",
-                    theme_id: theme.theme_id,
-                }),
-            } },
-            h("span", { attrs: { class: "theme-swatch", "aria-hidden": "true" } },
-                h("span", { style: {
-                        backgroundColor: safeThemeColor(theme.colors.terminal_bg, "terminal_bg"),
-                    } }),
-                h("span", { style: {
-                        backgroundColor: safeThemeColor(theme.colors.input_fg, "input_fg"),
-                    } }),
-                h("span", { style: {
-                        backgroundColor: safeThemeColor(theme.colors.highlight_fg, "highlight_fg"),
-                    } })),
-            h("strong", null,
-                uiIcon("theme"),
-                theme.name),
-            h("span", null, theme.selected ? "Current" : "Select")))))));
+    return (h("div", null,
+        h("label", { attrs: { class: "ui-scale-setting" } },
+            "Interface scale",
+            h("select", { attrs: { "data-ui-scale": "", "aria-label": "Interface scale" }, props: { value: String(uiScale()) }, on: { change: (event) => setUiScale(Number(event.target.value)) } }, UI_SCALES.map(scale => h("option", { attrs: { value: String(scale) } },
+                scale,
+                "%",
+                scale === 100 ? " (default)" : "")))),
+        h("p", { attrs: { class: "empty-state" } }, "Resizes text and controls without zooming or panning the page. Saved on this device."),
+        h("ul", { attrs: { class: "choice-list theme-list" } }, orderedThemes(snapshot).map((theme, index) => (h("li", { key: theme.theme_id },
+            h("button", { attrs: {
+                    type: "button",
+                    class: `choice-row theme-choice${theme.selected ? " is-selected" : ""}`,
+                    "aria-pressed": theme.selected ? "true" : "false",
+                    "data-autofocus": index === 0 ? "true" : "false",
+                }, props: { disabled: !context.state.live }, on: {
+                    click: () => context.actions.send({
+                        type: "select_theme",
+                        theme_id: theme.theme_id,
+                    }),
+                } },
+                h("span", { attrs: { class: "theme-swatch", "aria-hidden": "true" } },
+                    h("span", { style: {
+                            backgroundColor: safeThemeColor(theme.colors.terminal_bg, "terminal_bg"),
+                        } }),
+                    h("span", { style: {
+                            backgroundColor: safeThemeColor(theme.colors.input_fg, "input_fg"),
+                        } }),
+                    h("span", { style: {
+                            backgroundColor: safeThemeColor(theme.colors.highlight_fg, "highlight_fg"),
+                        } })),
+                h("strong", null,
+                    uiIcon("theme"),
+                    theme.name),
+                h("span", null, theme.selected ? "Current" : "Select"))))))));
 }
 function historyPanel(context, snapshot) {
     const data = panelData(snapshot, "input_history");

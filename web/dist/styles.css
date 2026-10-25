@@ -30,6 +30,7 @@
   --shadow: rgb(0 0 0 / 0.42);
   font-family: "JetBrains Mono Nerd Font", ui-monospace, monospace;
   font-synthesis: none;
+  font-size: calc(100% * var(--ui-scale, 1));
   color: var(--theme-output-fg);
   background: var(--theme-terminal-bg);
 }
@@ -56,7 +57,7 @@ body {
   overflow: hidden;
   color: var(--theme-output-fg);
   background: var(--theme-terminal-bg);
-  font: 400 14px/1.5 "JetBrains Mono Nerd Font", ui-monospace, monospace;
+  font: 400 calc(14px * var(--ui-scale, 1))/1.5 "JetBrains Mono Nerd Font", ui-monospace, monospace;
   text-rendering: optimizeLegibility;
 }
 
@@ -1807,3 +1808,8 @@ progress {
 .python-tool-code { white-space: pre; tab-size: 4; overflow: auto; font: 0.85rem/1.5 monospace; padding: .75rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; user-select: text; }
 .python-view-controls { display: inline-flex; gap: .3rem; }
 .python-view-controls button[aria-pressed="true"] { color: var(--theme-highlight-fg); border-color: var(--theme-highlight-fg); }
+
+/* Pan/scroll the main interface without browser pinch zoom. Iframe previews own their gestures. */
+.app-shell, .overlay-panel { touch-action: pan-x pan-y; }
+.ui-scale-setting { display: flex; align-items: center; gap: 1rem; padding: .75rem; }
+.ui-scale-setting select { font: inherit; color: var(--theme-output-fg); background: var(--surface); padding: .35rem; }
