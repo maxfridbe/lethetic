@@ -68,3 +68,17 @@ await test("bad tab credentials remain editable on reload but are rejected befor
   saveConnectionKeys(storage, [{...connection, apiKey: "corrected-token"}]);
   assert.equal(validateConnection(restoreConnectionKeys(storage, loadConnections(storage))[0]!).apiKey, "corrected-token");
 });
+
+await test("known hosted chat requires a key without preventing metadata restore or local anonymous endpoints", async () => {
+  const {requireChatCredential, authenticationFailure} = await import('../src/connection.js');
+  for (const origin of ['https://openrouter.ai', 'https://api.openai.com', 'https://api.anthropic.com']) {
+    const saved = validateConnection({...connection,endpoint:origin+'/v1/chat/completions'});
+    assert.throws(()=>requireChatCredential(saved), /API key missing.*Save & use/);
+    requireChatCredential({...saved,apiKey:'test-key'});
+  }
+  requireChatCredential(connection);
+  requireChatCredential({...connection,endpoint:'http://localhost:1234/v1/chat/completions'});
+  assert.match(authenticationFailure(connection), /No API key was sent/);
+  assert.match(authenticationFailure({...connection,apiKey:'private-test-key'}), /An API key was sent/);
+  assert.doesNotMatch(authenticationFailure({...connection,apiKey:'private-test-key'}), /private-test-key/);
+});

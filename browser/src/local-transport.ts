@@ -683,7 +683,10 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
       if (session.connection) {
         const matches = (item: Connection): boolean => item.endpoint === session.connection?.endpoint &&
           item.model === session.connection?.model && item.provider === session.connection?.provider;
-        let index = this.options.connections.findIndex(item => item.name === session.connection?.name && matches(item));
+        // A saved connection is editable: older chats must follow its current model/key.
+        // Never carry a key across a changed endpoint/protocol; prefer the named account to model matches.
+        let index = this.options.connections.findIndex(item => item.name === session.connection?.name &&
+          item.endpoint === session.connection?.endpoint && item.provider === session.connection?.provider);
         if (index < 0) {
           const candidates = this.options.connections.map((item, index) => ({item,index})).filter(({item}) => matches(item));
           if (candidates.length === 1) index = candidates[0]!.index;

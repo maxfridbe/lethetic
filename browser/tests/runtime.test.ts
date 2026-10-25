@@ -242,3 +242,19 @@ await test("native keep-awake covers provider responses, never tool execution or
     assert.deepEqual(changes,[false,true,false,true,false,false]);
   } finally { runtime.dispose(); if(previous)Object.defineProperty(globalThis,"window",previous);else Reflect.deleteProperty(globalThis,"window"); }
 });
+
+await test("missing hosted credentials fail before fetch; rejected credentials explain what was sent", async () => {
+  const missing = await createRuntime({connection:{...connection,endpoint:'https://openrouter.ai/api/v1/chat/completions',apiKey:undefined},wasm,
+    fetch:async()=>{throw Error('Missing credential reached network');}});
+  await assert.rejects(missing.send('hello'), /API key missing.*Save & use/);
+  assert.equal(missing.history().length,0);missing.dispose();
+  const traces: import('../src/provider-trace.js').ProviderTrace[]=[];
+  const rejected = await createRuntime({connection,wasm,onTrace:trace=>traces.push(trace),fetch:async(_url,init)=>{
+    assert.equal(new Headers(init?.headers).get('Authorization'),'Bearer test-secret');
+    return Response.json({error:{message:'No cookie auth credentials found',code:401}},{status:401});
+  }});
+  await assert.rejects(rejected.send('hello'), /Authentication rejected.*An API key was sent.*No cookie auth credentials found/);
+  assert.match(traces[0]!.error!, /An API key was sent/);
+  assert.doesNotMatch(JSON.stringify(traces), /test-secret/);
+  assert.equal(rejected.history().length,0);rejected.dispose();
+});

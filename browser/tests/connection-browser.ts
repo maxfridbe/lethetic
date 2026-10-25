@@ -100,3 +100,49 @@ export async function testConnectionLimits(evaluate: (source: string) => Promise
     }finally{editor?.destroy();transport.dispose();globalThis.fetch=original;}
   })()`);
 }
+
+/** App restart/autofill must recover the existing chat, without an anonymous provider request. */
+export async function testMissingConnectionKey(evaluate: (source: string) => Promise<unknown>): Promise<void> {
+  await evaluate(`(async()=>{
+    const {LocalTransport}=await import('./src/local-transport.js');
+    const {createConnectionsDialog}=await import('./src/connections-dialog.js');
+    const check=(ok,message)=>{if(!ok)throw Error(message)};
+    const wait=async f=>{for(let i=0;i<400;i++){if(f())return;await new Promise(r=>setTimeout(r,20));}throw Error('Autofill recovery timed out')};
+    const records=new Map(),keys=new Map();
+    const store=m=>({getItem:k=>m.get(k)??null,setItem:(k,v)=>m.set(k,v)});
+    const storage=store(records),credentials=store(keys);
+    const connection={name:'Restart test',provider:'openai',endpoint:'https://openrouter.ai/api/v1/chat/completions',model:'vendor/model'};
+    const original=fetch;let requests=0;
+    globalThis.fetch=async(url,init)=>{
+      // Background model-capacity discovery may read OpenRouter's public catalog without a key.
+      if(String(url).endsWith('/models'))return Response.json({data:[]});
+      requests++;
+      check(new Headers(init?.headers).get('Authorization')==='Bearer restored-test-key','Anonymous or stale credential sent');
+      return Response.json({choices:[{finish_reason:'stop',message:{role:'assistant',content:'Connected'}}]});
+    };
+    const events={socketOpened(){},authenticationEpochChanged(){},transportStatus(){},protocolFault(){},commandResponse(){},serverMessage(){}};
+    const transport=new LocalTransport(events,{connections:[connection],storage,credentialStorage:credentials});
+    let editor;
+    try {
+      transport.start();const id=transport.state.session.session_id;
+      editor=createConnectionsDialog(transport,storage,credentials);editor.open();
+      const field=n=>editor.dialog.querySelector('[data-field="'+n+'"]');
+      await wait(()=>field('status').textContent.includes('API key missing'));
+      check(requests===0,'Opening connections sent anonymous test');
+      check(field('active-summary').textContent.includes('No saved key'),'Missing saved key hidden');
+      // A password manager may not dispatch input/change.
+      field('key').value='restored-test-key';
+      await wait(()=>!field('save').disabled && field('key-state').textContent.includes('not saved for chat'));
+      field('test').click();await wait(()=>field('status').textContent.includes('draft only'));
+      check(transport.connection.apiKey===undefined,'Testing silently saved credential');
+      field('use').click();await wait(()=>field('status').textContent.includes('valid response'));
+      check(transport.connection.apiKey==='restored-test-key','Save & use did not update active credential');
+      check(field('active-summary').textContent.includes('Saved key present'),'Saved credential status incorrect');
+      check(transport.state.session.session_id===id,'Credential recovery replaced chat');
+      check(!JSON.stringify([...records]).includes('restored-test-key'),'Credential leaked to session store');
+      check(JSON.stringify([...keys]).includes('restored-test-key'),'Credential not retained for reload');
+      editor.dialog.close();await new Promise(r=>setTimeout(r,30));editor.open();await wait(()=>field('status').textContent.includes('valid response'));
+      check(field('key').value==='restored-test-key','Reopening connections lost key');
+    } finally {editor?.destroy();transport.dispose();globalThis.fetch=original;}
+  })()`);
+}

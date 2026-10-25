@@ -3,7 +3,7 @@ import { testSessionStorage } from "./session-storage-browser.js";
 import { testDotnetBrowser } from "./dotnet-browser.js";
 import { testPythonNetwork } from "./python-network-browser.js";
 import { testPythonSites } from "./python-sites-browser.js";
-import { testConnectionCredentials, testConnectionLimits } from "./connection-browser.js";
+import { testConnectionCredentials, testConnectionLimits, testMissingConnectionKey } from "./connection-browser.js";
 import { testStreamingControls } from "./streaming-browser.js";
 import { testConnectionThinking } from "./thinking-browser.js";
 import { spawn } from "node:child_process";
@@ -165,7 +165,7 @@ try {
   check(await evaluate("!JSON.stringify(localStorage).includes('secret-never-persisted')"), "key persisted");
   await evaluate("document.querySelector('[data-field=test]').click()");
   await until("document.querySelector('dialog[open] [data-field=status]').textContent.includes('valid response')");
-  check(await evaluate("!!document.querySelector('[data-field=active-summary] .is-valid') && document.querySelector('[data-field=active-summary]').textContent.includes('Key present')"), "active connection or key presence is unclear");
+  check(await evaluate("!!document.querySelector('[data-field=active-summary] .is-valid') && document.querySelector('[data-field=active-summary]').textContent.includes('Saved key present')"), "active connection or key presence is unclear");
   const connectionSession = await evaluate("location.hash");
   await testConnectionCredentials(evaluate);
   await evaluate("document.querySelector('[data-field=duplicate]').click()");
@@ -838,6 +838,7 @@ try {
   await testConnectionThinking(evaluate);
   await testStreamingControls(evaluate);
   await testConnectionLimits(evaluate);
+  await testMissingConnectionKey(evaluate);
   process.stdout.write("Thinking preferences, transcript, tool continuation and reload passed.\n");
   if (config.pyodide) {
     await evaluate(`(async () => {

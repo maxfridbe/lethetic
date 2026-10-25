@@ -1,7 +1,7 @@
 import { connectionLimits, connectionLimitsHtml } from "./connection-limits.js";
 import { nativeAvailable } from "./native-host.js";
 import { buttonIconHtml } from "../../web/src/icons.js";
-import { validateConnection, normalizeApiKey, saveConnections, saveConnectionKeys } from "./connection.js";
+import { validateConnection, requireChatCredential, normalizeApiKey, saveConnections, saveConnectionKeys } from "./connection.js";
 import { fetchModels } from "./models.js";
 import type { AvailableModel } from "./models.js";
 import { createRuntime } from "./sdk.js";
@@ -78,7 +78,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     </div>
     ${nativeAvailable() ? '<p class="browser-note">When Network access is enabled, Python and .NET use the app’s HTTP client automatically. No proxy setup or destination CORS required. Mode and permission changes keep chat and files; code variables restart.</p>' : ""}
     </fieldset>
-    <p class="connection-hint">${credentialStorage ? "Keys stay in this tab and survive refresh." : "Keys stay in memory."} Switching connections keeps this session’s history, files, and code variables.</p>
+    <p class="connection-hint">${credentialStorage ? "Default key storage survives refresh, but closing the tab or restarting the app can clear it. Re-enter the key and Save & use to resume the same session." : "Keys stay in memory."} Switching connections keeps this session’s history, files, and code variables.</p>
     <p data-field="status" role="status"></p>`);
   dialog.classList.add("browser-connections");
   const select = (name: string): HTMLSelectElement => field<HTMLSelectElement>(dialog, name);
@@ -92,6 +92,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
   let modelOperation: AbortController | null = null;
   let models: AvailableModel[] = [];
   let destroyed = false;
+  let autofillTimer: ReturnType<typeof setInterval> | null = null;
   const modelList = field<HTMLSelectElement>(dialog, "model-list");
   const draft = (): Connection => ({ name: input("name").value.trim(), endpoint: input("endpoint").value.trim(),
     model: input("model").value.trim(), provider: select("provider").value as Connection["provider"], apiKey: input("key").value,
@@ -106,7 +107,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
   };
   const healthBadge = (connection: Connection): HTMLElement => {
     let check = health.get(identity(connection));
-    try { normalizeApiKey(connection.apiKey); } catch (error) { check = {state: "invalid", message: errorMessage(error)}; }
+    try { requireChatCredential(connection); } catch (error) { check = {state: "invalid", message: errorMessage(error)}; }
     const badge = node("span", "", `connection-health is-${check?.state ?? "untested"}`);
     badge.innerHTML = buttonIconHtml("connection");
     badge.append(document.createTextNode(check?.state === "valid" ? "Connected" : check?.state === "invalid" ? "Connection failed" : check?.state === "testing" ? "Testing…" : "Not tested"));
@@ -118,7 +119,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     summary.replaceChildren(node("small", "ACTIVE FOR THIS SESSION"));
     if (active) {
       summary.append(node("strong", active.name), healthBadge(active), node("span", active.model, "connection-active-model"),
-        node("span", active.apiKey ? "Key present" : "No key provided", "connection-key-badge"),
+        node("span", active.apiKey?.trim() ? "Saved key present" : "No saved key", "connection-key-badge"),
         node("span", `Thinking: ${active.thinking === "enabled" ? "On" : active.thinking === "disabled" ? "Off" : "Model default"}`));
     } else summary.append(node("strong", "No active connection"), node("span", "Add a connection to start chatting."));
   };
@@ -130,7 +131,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
       const card = node("article", "", `connection-card${active ? " is-active" : ""}${editing ? " is-editing" : ""}`);
       card.dataset.connectionIndex = String(index);
       card.append(node("strong", connection.name), node("span", connection.model, "connection-card-model"), healthBadge(connection),
-        node("small", connection.apiKey ? "Key present" : "No key provided"));
+        node("small", connection.apiKey?.trim() ? "Saved key present" : "No saved key"));
       const actions = node("div", "", "connection-card-actions");
       for (const [action, label, icon] of [["use", active ? "Active" : "Use connection", active ? "check" : "connection"], ["edit", editing ? "Editing" : "Edit", "edit"]] as const) {
         const control = document.createElement("button"); control.type = "button"; control.dataset.connectionAction = action;
@@ -158,7 +159,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     try { normalizeApiKey(current.apiKey); } catch (error) { keyError = errorMessage(error); }
     input("key").setCustomValidity(keyError); input("key").setAttribute("aria-invalid", String(!!keyError));
     const keyChanged = (transport.options.connections[selected]?.apiKey?.trim() ?? "") !== (current.apiKey?.trim() ?? "");
-    field(dialog, "key-state").textContent = keyError || (current.apiKey?.trim() ? (keyChanged ? "Key entered · not yet saved" : "Key present") : "No key provided · optional for endpoints without authentication");
+    field(dialog, "key-state").textContent = keyError || (current.apiKey?.trim() ? (keyChanged ? "Key entered · not saved for chat. Choose Save & use connection." : "Saved key present") : "No key provided · optional for endpoints without authentication");
     button("save").disabled = !changed || !valid || transport.busy;
     button("use").disabled = !valid || transport.busy || (active && !changed);
     button("use").innerHTML = buttonIconHtml(active && !changed ? "check" : "connection") + (active && !changed ? "Active connection" : changed ? "Save & use connection" : "Use this connection");
@@ -343,13 +344,14 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     void (async () => {
       let runtime: LetheticRuntime | null = null;
       try {
+        requireChatCredential(connection);
         await limitsEditor.discover(connection, controller.signal);
         controller.signal.throwIfAborted();
         runtime = await createRuntime({ connection, ...limitsEditor.testLimits(), timeoutMs: 30_000 });
         controller.signal.throwIfAborted();
         await runtime.send("Reply with the single word Connected.", controller.signal);
         if (operation !== controller || destroyed) return;
-        health.set(key, {state:"valid",message:"The model returned a valid response."}); status("Connected. The model returned a valid response.");
+        health.set(key, {state:"valid",message:"The model returned a valid response."}); status(`Connected. The model returned a valid response.${dirty() ? " This tests your draft only; Save & use connection to apply it to chat." : ""}`);
       } catch (error) {
         if (operation === controller && !destroyed) { health.set(key, {state:"invalid",message:errorMessage(error)}); status(`Connection failed: ${errorMessage(error)}`); }
       } finally {
@@ -362,10 +364,29 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
   button("test").addEventListener("click", () => {
     try { checkConnection(validateConnection(draft())); } catch (error) { status(errorMessage(error)); updateEditor(); }
   });
-  dialog.addEventListener("close", () => { cancelTest(); cancelModels(); input("key").type = "password"; });
+  const stopAutofillWatch = (): void => {
+    if (autofillTimer !== null) clearInterval(autofillTimer);
+    autofillTimer = null;
+  };
+  // Some password managers change .value without input/change events. Keep Save & use
+  // available and invalidate tests against the previous draft; never save secrets implicitly.
+  const watchAutofill = (): void => {
+    stopAutofillWatch();
+    const fingerprint = () => JSON.stringify(draft());
+    let previous = fingerprint();
+    autofillTimer = setInterval(() => {
+      const next = fingerprint();
+      if (next === previous) return;
+      previous = next;
+      if (operationKey !== null && operationKey !== identity(draft())) cancelTest();
+      updateEditor(); renderCards();
+    }, 250);
+  };
+  dialog.addEventListener("close", () => { stopAutofillWatch(); cancelTest(); cancelModels(); input("key").type = "password"; });
   return { dialog, open(): void {
     selected = transport.connection ? transport.selected : -1; fill(); status("");
     if (!dialog.open) dialog.showModal();
+    watchAutofill();
     if (transport.connection) checkConnection(transport.connection);
-  }, destroy(): void { destroyed = true; cancelTest(); cancelModels(); health.clear(); dialog.remove(); } };
+  }, destroy(): void { destroyed = true; stopAutofillWatch(); cancelTest(); cancelModels(); health.clear(); dialog.remove(); } };
 }

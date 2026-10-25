@@ -27,6 +27,22 @@ export function normalizeApiKey(value: string | undefined): string | undefined {
   return key;
 }
 
+/** Metadata may be restored without credentials; authenticated chat must not proceed silently. */
+export function requireChatCredential(connection: Connection): void {
+  const key = normalizeApiKey(connection.apiKey);
+  const url = new URL(connection.endpoint);
+  if (!key && ["https://openrouter.ai", "https://api.openai.com", "https://api.anthropic.com"].includes(url.origin)) {
+    throw new Error("API key missing for this saved connection. Open Connections, enter the provider key, then Save & use connection. Closing the tab or restarting the app can clear stored keys.");
+  }
+}
+
+/** Explain what was sent without exposing any part of the credential. */
+export function authenticationFailure(connection: Connection): string {
+  return normalizeApiKey(connection.apiKey)
+    ? "Authentication rejected (HTTP 401). An API key was sent, but the provider did not accept it. Check the key for this endpoint in Connections."
+    : "Authentication required (HTTP 401). No API key was sent. Enter the provider key in Connections and choose Save & use connection.";
+}
+
 /** Chat, connection tests and model discovery must use the same credential rules. */
 export function modelAuthHeaders(connection: Pick<Connection, "provider" | "apiKey">): Record<string, string> {
   const key = normalizeApiKey(connection.apiKey);

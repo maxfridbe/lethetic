@@ -96,8 +96,8 @@ An invalid key saved by an older version remains visible for correction in
 Connections; replacing it and saving keeps the existing chat and files.
 
 Connection names, protocols, endpoint URLs, model IDs, and thinking preferences are saved in localStorage.
-The hosted app keeps API keys in tab-scoped sessionStorage so refresh retains them.
-Keys are excluded from saved chats and device-local connection metadata. Chats are saved locally.
+The hosted app and native WebView keep API keys in tab-scoped sessionStorage so refresh retains them. Closing the tab or restarting the app can clear this store; re-enter the key in Connections and choose **Save & use connection** to resume the same chat. A password-manager-filled field is a draft until saved. **Test connection** tests that draft without saving it.
+Keys are excluded from saved chats and device-local connection metadata. Chats are saved locally. Older chats follow the current model and key of their named saved connection, provided its endpoint and protocol still match. HTTP 401 errors distinguish a missing key from a key that was supplied but rejected; debug reports retain that explanation without recording credentials.
 Changing connections, updating a key, or toggling Python keeps the current session,
 history, and files. Use **New session** to start a separate chat. Clearing context resets the current conversation and Python runtime. Editing connection fields takes effect when you save them.
 

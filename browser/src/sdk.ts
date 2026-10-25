@@ -6,7 +6,7 @@ import { DEFAULT_TURN_LIMITS, parseTurnLimits, LOOP_MODES, parseLoopMode } from 
 import { abortable, delay } from "./async.js";
 import { readModelResponse, captureErrorResponse } from "./stream.js";
 import type { WasmStream, StreamDelta } from "./stream.js";
-import { validateConnection, modelAuthHeaders } from "./connection.js";
+import { validateConnection, modelAuthHeaders, requireChatCredential, authenticationFailure } from "./connection.js";
 import { readUsage } from "./usage.js";
 import type { ProviderUsage } from "./usage.js";
 export type { ProviderUsage } from "./usage.js";
@@ -193,6 +193,7 @@ export class LetheticRuntime {
     const endNativeTurn = beginNativeTurn();
     try {
       controller.signal.throwIfAborted();
+      requireChatCredential(this.#options.connection);
       this.#wasm.set_limits(limits.contextTokens, limits.maxOutputTokens);
       this.#wasm.begin(prompt);
       const connection = this.#options.connection;
@@ -238,7 +239,7 @@ export class LetheticRuntime {
               }
               const errorBody = await captureErrorResponse(response, controller.signal, this.#trace).catch(() => "");
               const detail = module.provider_error_message(errorBody);
-              throw new Error(`Model request failed (HTTP ${response.status}). ${detail ?? "Check your endpoint, model, and key."}`);
+              throw new Error(`${response.status === 401 ? authenticationFailure(connection) : `Model request failed (HTTP ${response.status}).`} ${detail ?? "Check your endpoint, model, and key."}`);
             }
             responseText = await readModelResponse(response, controller.signal,
               () => new module.BrowserStream(connection.provider), event => {

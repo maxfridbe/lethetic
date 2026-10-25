@@ -245,3 +245,30 @@ await test("an in-flight checkpoint retains transcript and completed context wit
   assert.equal(resumed.busy,false);
   assert.ok(resumed.state.blocks.blocks.some(item=>item.title==="Recovery checkpoint"));resumed.dispose();
 });
+
+await test("older sessions follow an edited named connection without creating keyless duplicates", () => {
+  const values = new Map<string,string>();
+  const storage = {getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value);}} as Storage;
+  const old = {name:'Account',provider:'openai' as const,endpoint:'https://example.com/v1/chat/completions',model:'old'};
+  const id = crypto.randomUUID();
+  const save = () => new SessionStore(storage).save({id,name:'Older chat',label:'Keep history',updatedAt:new Date().toISOString(),
+    blocks:[],messages:[{role:'user',content:'remember me'}],inputs:['remember me'],system:'help',python:false,theme:'dracula',connection:old});
+  const events = {socketOpened(){},authenticationEpochChanged(){},transportStatus(){},protocolFault(){},serverMessage(){},commandResponse(){}};
+  const current = {...old,model:'new',apiKey:'current-test-key'};
+  save();
+  const transport = new LocalTransport(events,{storage,connections:[{...old,name:'Other account',apiKey:'wrong-key'},current]});
+  transport.start();
+  assert.equal(transport.connection?.apiKey,'current-test-key');
+  assert.equal(transport.connection?.model,'new');
+  assert.equal(transport.options.connections.length,2);
+  assert.equal(transport.state.session.session_id,id);
+  assert.equal(transport.sessionForExport(id).messages.length,1);
+  assert.ok(!JSON.stringify([...values]).includes('current-test-key'));
+  transport.dispose();
+  for(const changed of [{...current,endpoint:'https://different.example/v1/chat/completions'}, {...current,provider:'anthropic' as const}]) {
+    save();
+    const isolated=new LocalTransport(events,{storage,connections:[changed]});isolated.start();
+    assert.equal(isolated.connection?.apiKey,undefined,'Credential crossed endpoint/protocol');
+    assert.equal(isolated.state.session.session_id,id);isolated.dispose();
+  }
+});
