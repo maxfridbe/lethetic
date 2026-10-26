@@ -36,6 +36,7 @@
     "src/personas/controller.js",
     "src/personas/effects.js",
     "src/personas/events.js",
+    "src/personas/meeseeks-art.js",
     "src/personas/schema.js",
     "src/personas/store.js",
     "src/protocol.js",
