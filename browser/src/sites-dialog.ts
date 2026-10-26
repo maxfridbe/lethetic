@@ -41,9 +41,13 @@ export function createSitesDialog(transport: LocalTransport): { open(): void; re
   let forwarding = false, forwardedSession = "", forwardedPort = 0, forwardedNetwork = false, forwardGeneration = 0;
   field(dialog,"site-native").hidden = !nativeAvailable();
   const stopForwarding = async (): Promise<void> => { forwardGeneration++; await native.stop(); forwardedSession = ""; forwardedPort = 0; forwarding = false; };
+  const ready = (event: MessageEvent): void => {
+    if (!frame.hidden && event.source === frame.contentWindow && event.data?.type === "dotnetdide-wire-ready" && event.data.token === new URL(frame.src).hash.slice(1)) frame.dataset["wireReady"] = "true";
+  };
+  globalThis.addEventListener("message", ready);
   let queue: Promise<unknown> = Promise.resolve();
   function clear(): void {
-    generation++; preview?.destroy(); preview = null; frame.removeAttribute("src"); frame.hidden = true;
+    delete frame.dataset["wireReady"]; generation++; preview?.destroy(); preview = null; frame.removeAttribute("src"); frame.hidden = true;
     activeSession = ""; activePort = 0; opening = false;
   }
   function refresh(): void {
@@ -57,7 +61,7 @@ export function createSitesDialog(transport: LocalTransport): { open(): void; re
     if (native.route) field(dialog,"site-forward-status").textContent = `Virtual :${forwardedPort} → http://127.0.0.1:${native.route.port} · this device only. Use Open browser to authorize a browser tab.`;
     const language = transport.pythonEnabled ? "Python" : "C#";
     field(dialog, "site-network").textContent = transport.networkAccess
-      ? `${language} Network access: enabled · ${nativeAvailable() ? "native HTTP; no proxy or destination CORS needed" : transport.dotnetRelay ? "HTTP relay" : "direct requests; destination must allow CORS"}. Preview JavaScript can fetch this site's ${language} routes.`
+      ? `${language} Network access: enabled · ${transport.networkMode === "tor" ? "Tor only via Arti; page scripts use local routes" : nativeAvailable() ? "native HTTP; no proxy or destination CORS needed" : transport.dotnetRelay ? "HTTP relay" : "direct requests; destination must allow CORS"}. Preview JavaScript can fetch this site's ${language} routes.`
       : `${language} Network access: disabled. External API calls are blocked. Enable Network access in Connections → Runtime & security, then run the site file again.`;
     const sites = transport.sites;
     if (activeSession && (activeSession !== transport.state.session.session_id || !transport.siteAccess || !sites.some(site => site.port === activePort))) clear();
@@ -127,7 +131,7 @@ export function createSitesDialog(transport: LocalTransport): { open(): void; re
     const sessionId = forwardedSession;
     refresh();status("Starting a real local HTTP port…");
     try {
-      await native.start(port, forwardedNetwork, forwardedPort, request => {
+      await native.start(port, forwardedNetwork && transport.networkMode !== "tor", forwardedPort, request => {
         const next = queue.catch(() => {}).then(() => {
           if (mine !== forwardGeneration) throw new Error("Forwarding stopped.");
           return transport.requestSite(request, sessionId);
@@ -145,6 +149,6 @@ export function createSitesDialog(transport: LocalTransport): { open(): void; re
   return {
     open(): void { if (!dialog.open) dialog.showModal(); refresh(); if (select.value && !preview) void openPreview(); },
     refresh, clear(): void {clear();void stopForwarding().catch(()=>{});},
-    destroy(): void { clear();void stopForwarding().catch(()=>{});dialog.remove(); },
+    destroy(): void { globalThis.removeEventListener("message", ready); clear();void stopForwarding().catch(()=>{});dialog.remove(); },
   };
 }

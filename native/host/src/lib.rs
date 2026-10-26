@@ -34,6 +34,8 @@ fn authorize(host: &Host, token: &str) -> Result<(), String> {
 }
 #[tauri::command]
 async fn grant_network(
+    app: tauri::AppHandle,
+    mode: lethetic_network::NetworkMode,
     state: State<'_, Host>,
     token: String,
 ) -> Result<lethetic_network::Route, String> {
@@ -43,7 +45,13 @@ async fn grant_network(
         .lock()
         .map_err(|error| error.to_string())?
         .epoch;
-    let grant = lethetic_network::Grant::open().await?;
+    let directory = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("tor");
+    let grant = lethetic_network::Grant::open_mode(mode, Some(&directory)).await?;
+    grant.ready().await?;
     let mut grants = state.network.lock().map_err(|error| error.to_string())?;
     if grants.epoch != epoch {
         return Err("Network grants were reset during initialization".into());

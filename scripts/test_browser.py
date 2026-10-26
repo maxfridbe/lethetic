@@ -158,7 +158,7 @@ def main():
             with sqlite3.connect(f"file:{ROOT / 'target/browser-preview-session.db'}?mode=ro", uri=True) as database:
                 assert database.execute("PRAGMA integrity_check").fetchone() == ("ok",)
                 assert database.execute("PRAGMA foreign_key_check").fetchall() == []
-                assert database.execute("PRAGMA user_version").fetchone() == (3,)
+                assert database.execute("PRAGMA user_version").fetchone() == (4,)
                 assert database.execute("SELECT content FROM files WHERE path=?", ("reports/analysis.py",)).fetchone() == (b"print('private snippet')",)
                 assert database.execute("SELECT COUNT(*) FROM sessions").fetchone() == (1,)
                 assert database.execute("SELECT COUNT(*) FROM messages").fetchone()[0] > 0

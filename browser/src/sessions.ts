@@ -1,3 +1,4 @@
+import { parseNetworkMode, type NativeNetworkMode } from "./network-route.js";
 import { parseProviderTraces } from "./provider-trace.js";
 import type { ProviderTraceSnapshot } from "./provider-trace.js";
 import { parseTurnLimits, parseLoopMode } from "./turn-limits.js";
@@ -23,7 +24,7 @@ export interface SavedSession {
   id: string; name: string | null; label: string; updatedAt: string;
   blocks: RenderBlockView[]; messages: unknown[]; inputs: string[];
   system: string; connection: Omit<Connection, "apiKey"> | null; python: boolean; theme: string;
-  mode?: AgentMode; networkAccess?: boolean; nugetAccess?: boolean; siteAccess?: boolean; dotnetRelayEndpoint?: string | null;
+  mode?: AgentMode; networkMode?: NativeNetworkMode; networkAccess?: boolean; nugetAccess?: boolean; siteAccess?: boolean; dotnetRelayEndpoint?: string | null;
   metrics?: MetricsSnapshot;
   workspace?: Workspace;
   providerTrace?: ProviderTraceSnapshot;
@@ -93,6 +94,7 @@ function parseSession(value: unknown): SavedSession {
     ...(item.loopDetection !== undefined ? {loopDetection: parseLoopMode(item.loopDetection)} : {}),
     ...(item.turnLimits !== undefined ? {turnLimits: parseTurnLimits(item.turnLimits)} : {}),
     ...(item.mode !== undefined ? { mode: item.mode } : {}),
+    ...(item.networkMode !== undefined ? {networkMode: parseNetworkMode(item.networkMode)} : {}),
     ...(item.networkAccess !== undefined ? { networkAccess: item.networkAccess } : {}),
     ...(item.siteAccess !== undefined ? { siteAccess: item.siteAccess } : {}),
     ...(item.nugetAccess !== undefined ? { nugetAccess: item.nugetAccess } : {}), theme: item.theme, connection,

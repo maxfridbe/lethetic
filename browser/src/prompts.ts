@@ -1,3 +1,4 @@
+import type { NativeNetworkMode } from "./network-route.js";
 import { nativeAvailable } from "./native-host.js";
 import { DOTNET_TOOL_DEFINITION } from "./dotnet.js";
 import type { AgentMode } from "./sessions.js";
@@ -172,15 +173,17 @@ Example (C# source, suitable for a saved program):
 ${DOTNET_SITE_EXAMPLE}
 \`\`\``;
 
-export function injectedInstructions(mode: AgentMode | boolean, networkAccess = false, relay = false, nugetAccess = false, siteAccess = false): string {
-  const route = nativeAvailable()
+export function injectedInstructions(mode: AgentMode | boolean, networkAccess = false, relay = false, nugetAccess = false, siteAccess = false, networkMode: NativeNetworkMode = "direct"): string {
+  const route = networkMode === "tor"
+    ? "Tor-only HTTP through the native app's embedded Arti Rust client. No direct fallback or local DNS resolution; use public hostnames or v3 .onion addresses, not IP literals or local/LAN hosts. The first request may wait for Tor bootstrap; failures/timeouts must be reported without changing route. Requires the native app: in a normal browser this permission blocks HTTP. Use normal HttpClient or async pyfetch. Direct NuGet downloads are disabled in this mode. Bundled runtime assets and model-provider traffic have separate routes and are not made anonymous by this permission. Site pages cannot make direct external browser requests; call a local Python/.NET handler instead."
+    : nativeAvailable()
     ? "native app HTTP client, configured automatically when Network access is enabled; no SOCKS/proxy setup or destination CORS required. Use normal HttpClient or await pyodide.http.pyfetch. HTTP(S) GET/HEAD/OPTIONS/POST/PUT/PATCH/DELETE, explicit target authorization headers and binary bodies are supported; no browser cookies, redirects or sockets; 8 MiB request/response limit"
     : relay ? "host-configured HTTP relay; no direct fallback, browser cookies or redirects; bounded 8 MiB bodies" : "direct browser fetch; destination must permit CORS";
   return [BROWSER_INSTRUCTIONS, ...(mode === true || mode === "python" ? [PYTHON_INSTRUCTIONS, PYTHON_SITE_INSTRUCTIONS, `Network access: ${networkAccess ? "enabled; Python outbound HTTP is authorized" : "disabled; use session files and local computation. Enable it in Connections → Runtime & security for external APIs or additional packages"}. HTTP route: ${route}.`, `Interactive sites: ${siteAccess ? "enabled; Python virtual ports and isolated previews are authorized" : "disabled; the user can enable it in Connections → Runtime & security"}.`] : []),
     ...(mode === "dotnet-wasm" ? [DOTNET_INSTRUCTIONS, DOTNET_SITE_INSTRUCTIONS, `Interactive sites: ${siteAccess ? "enabled; virtual ports and isolated previews are authorized" : "disabled; the user can enable it in Connections → Runtime & security"}.`, `HTTP route: ${route}.`, `NuGet package access: ${nugetAccess ? "enabled; direct NuGet.org managed-package downloads are authorized" : "disabled; bundled media libraries still work. The user can enable it in Connections → Runtime & security"}.`, `Network access: ${networkAccess ? "enabled; browser HTTP requests are authorized" : "disabled for general HTTP; use session files and local computation. NuGet downloads have a separate permission. The user can enable it in Connections → Runtime & security"}.`] : [])].join("\n\n");
 }
-export function effectiveSystemPrompt(editable: string, mode: AgentMode | boolean, networkAccess = false, relay = false, nugetAccess = false, siteAccess = false): string {
-  return [editable, injectedInstructions(mode, networkAccess, relay, nugetAccess, siteAccess)].filter(Boolean).join("\n\n");
+export function effectiveSystemPrompt(editable: string, mode: AgentMode | boolean, networkAccess = false, relay = false, nugetAccess = false, siteAccess = false, networkMode: NativeNetworkMode = "direct"): string {
+  return [editable, injectedInstructions(mode, networkAccess, relay, nugetAccess, siteAccess, networkMode)].filter(Boolean).join("\n\n");
 }
 export function toolDefinitions(mode: AgentMode | boolean, tools: readonly Tool[] = []): Pick<Tool, "name" | "description" | "parameters">[] {
   return [...tools, ...(mode === true || mode === "python" ? [PYTHON_TOOL_DEFINITION] : mode === "dotnet-wasm" ? [DOTNET_TOOL_DEFINITION] : [])]

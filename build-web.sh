@@ -18,6 +18,7 @@ readonly BROWSER_TESTS=(
     approval-flow
     app-layout-status
     chat-follow
+    thinking-lines
     json-rendering
     markdown-rendering
     files-pane

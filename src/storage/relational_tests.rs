@@ -214,7 +214,7 @@ fn v1_blob_database_migrates_and_invalid_source_is_not_silently_accepted() {
     );
     assert_eq!(
         migrated.query("PRAGMA user_version", &[]).unwrap()[0][0].as_int(),
-        Some(3)
+        Some(4)
     );
     assert!(ContentDatabase::memory(&legacy_image(b"not json")).is_err());
 }
@@ -260,7 +260,7 @@ fn provider_traces_are_normalized_and_v2_upgrade_preserves_conversations() {
     assert_eq!(read_json(&upgraded, "", "session_state.json"), state);
     assert_eq!(
         upgraded.query("PRAGMA user_version", &[]).unwrap()[0][0].as_int(),
-        Some(3)
+        Some(4)
     );
     state["providerTrace"] = json!({"version":1,"omittedRequests":2,"requests":[{
         "id":"attempt-1","turnId":"turn-1","round":2,"attempt":1,"provider":"openai","model":"test",
@@ -301,4 +301,42 @@ fn provider_traces_are_normalized_and_v2_upgrade_preserves_conversations() {
     );
     upgraded.query("DELETE FROM records", &[]).unwrap();
     assert_eq!(count(&upgraded, "provider_traces"), 0);
+}
+
+#[test]
+fn v3_adds_queryable_network_mode_and_preserves_session() {
+    let db = ContentDatabase::memory(&[]).unwrap();
+    // Recreate only the empty sessions table with its actual v3 columns.
+    db.connection
+        .execute("PRAGMA foreign_keys=OFF; DROP TABLE sessions")
+        .unwrap();
+    let schema = include_str!("schema.sql");
+    let start = schema.find("CREATE TABLE sessions (").unwrap();
+    let end = start + schema[start..].find(");").unwrap() + 2;
+    db.connection
+        .execute(schema[start..end].replace("    network_mode TEXT,\n", ""))
+        .unwrap();
+    db.connection
+        .execute("PRAGMA user_version=3; PRAGMA foreign_keys=ON")
+        .unwrap();
+    let migrated = ContentDatabase::memory(&db.export().unwrap()).unwrap();
+    let state = serde_json::json!({"id":"tor-session","name":null,"label":"Tor","updatedAt":"now","system":"retain","python":true,"theme":"dark","mode":"python","networkAccess":true,"networkMode":"tor","blocks":[],"messages":[],"inputs":[],"connection":null});
+    migrated
+        .put(
+            "browser/sessions",
+            "tor-session",
+            &serde_json::to_vec(&state).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        read_json(&migrated, "browser/sessions", "tor-session"),
+        state
+    );
+    assert_eq!(
+        migrated
+            .query("SELECT network_mode FROM sessions", &[])
+            .unwrap()[0][0]
+            .to_text(),
+        Some("tor")
+    );
 }

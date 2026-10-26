@@ -202,3 +202,10 @@ await test("Python sends the fixed permission and relay for execution and site r
   worker.answer("",emptyWorkspace(),{response:{status:200,headers:{},body:""}});await request;
   tool.reset();
 });
+
+await test("a saved Tor-only Python permission cannot become direct HTTP in a browser", async()=>{
+  const worker=new FakeWorker();
+  const tool=createPythonTool({networkAccess:true,networkMode:"tor",workerFactory:()=>worker as unknown as Worker});
+  await assert.rejects(tool.execute({code:"must not execute"},new AbortController().signal),/direct networking is blocked/);
+  assert.equal(worker.requests.length,0);assert.equal(worker.terminated,true);
+});

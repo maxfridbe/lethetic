@@ -14,6 +14,9 @@ export async function testStreamingControls(evaluate: (source: string) => Promis
     const options={storage,connections:[{name:'Stream test',provider:'openai',endpoint:location.origin+'/stream-test',model:'test'}]};
     try {
       view=mountLethetic(root,options);
+      assert(!root.querySelector('.model-summary'),'Model remains in the header');
+      assert(root.querySelector('[data-pinned-stat="model"]')?.textContent==='Model: test','Model not pinned below');
+      assert(root.querySelector('.connection-summary')?.textContent.includes('Browser · WASM · General · Network off · Virtual directory'),'Header capabilities missing');
       root.querySelector('[aria-label="Open command palette"]').click();
       root.querySelector('[id="palette-command-local:turn-limits"]').click();
       const dialog=document.querySelector('dialog[open]');assert(dialog,'Turn limits not opened');
@@ -25,10 +28,13 @@ export async function testStreamingControls(evaluate: (source: string) => Promis
       const input=root.querySelector('#composer-input');input.value='stream';input.dispatchEvent(new Event('input',{bubbles:true}));root.querySelector('form.composer').requestSubmit();
       await wait(()=>!!controller);
       emit(chunk({reasoning:'Visible thought'}));await wait(()=>root.textContent.includes('Visible thought'));
+      const thinking=root.querySelector('.thinking-line');assert(thinking?.textContent.includes('Reticulating splines'),'Thinking catchphrase missing');
+      assert(getComputedStyle(thinking.parentElement).backgroundImage.includes('linear-gradient'),'Thinking line lost the animated gradient');
       emit(chunk({content:'Partial '}));await wait(()=>root.textContent.includes('Partial'));
       assert(!root.querySelector('.activity-idle'),'Turn finished before terminal marker');
       emit(chunk({content:'answer'},'stop'));emit({choices:[],usage:{prompt_tokens:20,completion_tokens:6}});emit('[DONE]');
       await wait(()=>!!root.querySelector('.activity-idle'));
+      assert(!root.querySelector('.thinking-line'),'Idle status kept a thinking catchphrase');
       assert(root.querySelectorAll('.block-thought').length===1,'Duplicate thinking blocks');
       const saved=JSON.parse(records.get('lethetic.sessions.v1')).sessions.find(session=>session.id===id);
       assert(saved.providerTrace.requests[0].outcome==='complete','Completed trace not saved');

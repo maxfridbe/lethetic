@@ -1,6 +1,19 @@
 //! Revocable loopback HTTP capabilities for the app's WASM runtimes.
 //! Outbound requests and explicitly forwarded virtual sites use separate grants.
 pub mod sites;
+mod tor;
+
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NetworkMode {
+    #[default]
+    Direct,
+    Tor,
+}
+enum Backend {
+    Direct(reqwest::Client),
+    Tor(tor::TorHttp),
+}
 use axum::{
     Json, Router,
     body::Bytes,
@@ -24,6 +37,7 @@ pub struct Route {
 pub struct Grant {
     pub route: Route,
     cancel: CancellationToken,
+    client: Arc<Backend>,
 }
 impl Drop for Grant {
     fn drop(&mut self) {
@@ -34,7 +48,7 @@ impl Drop for Grant {
 struct Network {
     token: String,
     cancel: CancellationToken,
-    client: reqwest::Client,
+    client: Arc<Backend>,
     slots: Semaphore,
 }
 #[derive(Deserialize)]
@@ -55,7 +69,25 @@ struct Reply {
 }
 
 impl Grant {
+    /// Prepare Tor before execution so short-lived site handlers reuse a ready client.
+    pub async fn ready(&self) -> Result<(), String> {
+        if let Backend::Tor(tor) = self.client.as_ref() {
+            tokio::select! {
+                () = self.cancel.cancelled() => return Err("Network permission revoked".into()),
+                result = tokio::time::timeout(Duration::from_secs(60), tor.bootstrap()) => {
+                    result.map_err(|_| "Tor bootstrap timed out; no direct fallback".to_string())?.map_err(|e| e.1)?;
+                }
+            }
+        }
+        Ok(())
+    }
     pub async fn open() -> Result<Self, String> {
+        Self::open_mode(NetworkMode::Direct, None).await
+    }
+    pub async fn open_mode(
+        mode: NetworkMode,
+        tor_directory: Option<&std::path::Path>,
+    ) -> Result<Self, String> {
         let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
             .await
             .map_err(|e| e.to_string())?;
@@ -65,17 +97,27 @@ impl Grant {
         );
         let token = uuid::Uuid::new_v4().to_string();
         let cancel = CancellationToken::new();
-        let client = reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .connect_timeout(Duration::from_secs(15))
-            .timeout(Duration::from_secs(60))
-            .build()
-            .map_err(|e| e.to_string())?;
+        let client = match mode {
+            NetworkMode::Direct => {
+                let direct = reqwest::Client::builder()
+                    .no_proxy()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .connect_timeout(Duration::from_secs(15))
+                    .timeout(Duration::from_secs(60))
+                    .build()
+                    .map_err(|e| e.to_string())?;
+                Backend::Direct(direct)
+            }
+            NetworkMode::Tor => Backend::Tor(
+                tor::TorHttp::new(tor_directory.ok_or("Tor storage directory is unavailable")?)
+                    .await?,
+            ),
+        };
+        let client = Arc::new(client);
         let state = Arc::new(Network {
             token: token.clone(),
             cancel: cancel.clone(),
-            client,
+            client: client.clone(),
             slots: Semaphore::new(8),
         });
         let app = Router::new()
@@ -91,6 +133,7 @@ impl Grant {
         Ok(Self {
             route: Route { endpoint, token },
             cancel,
+            client,
         })
     }
 }
@@ -133,7 +176,7 @@ async fn relay(State(state): State<Arc<Network>>, headers: HeaderMap, body: Byte
     };
     let result = tokio::select! {
         () = state.cancel.cancelled() => Err((StatusCode::FORBIDDEN, "Network permission revoked".into())),
-        result = forward(&state.client, &body) => result,
+        result = tokio::time::timeout(Duration::from_secs(60), forward(&state.client, &body)) => result.unwrap_or_else(|_| Err(upstream("Network request timed out; Tor-only requests never fall back to direct HTTP"))),
     };
     cors(match result {
         Ok(reply) => Json(reply).into_response(),
@@ -147,7 +190,7 @@ fn bad(error: impl std::fmt::Display) -> Failure {
 fn upstream(error: impl std::fmt::Display) -> Failure {
     (StatusCode::BAD_GATEWAY, error.to_string())
 }
-async fn forward(client: &reqwest::Client, body: &[u8]) -> Result<Reply, Failure> {
+async fn forward(client: &Backend, body: &[u8]) -> Result<Reply, Failure> {
     let Json(request) = Json::<Request>::from_bytes(body).map_err(bad)?;
     let url = reqwest::Url::parse(&request.url).map_err(bad)?;
     if !matches!(url.scheme(), "http" | "https")
@@ -176,7 +219,7 @@ async fn forward(client: &reqwest::Client, body: &[u8]) -> Result<Reply, Failure
         return Err(bad("Headers exceed 32 KiB"));
     }
     let method = Method::from_bytes(request.method.as_bytes()).map_err(bad)?;
-    let mut outgoing = client.request(method, url);
+    let mut outgoing = reqwest::Request::new(method, url);
     for (key, value) in request.headers {
         if matches!(
             key.to_ascii_lowercase().as_str(),
@@ -191,7 +234,7 @@ async fn forward(client: &reqwest::Client, body: &[u8]) -> Result<Reply, Failure
         ) {
             continue;
         }
-        outgoing = outgoing.header(
+        outgoing.headers_mut().insert(
             reqwest::header::HeaderName::from_bytes(key.as_bytes()).map_err(bad)?,
             reqwest::header::HeaderValue::from_str(&value).map_err(bad)?,
         );
@@ -204,9 +247,12 @@ async fn forward(client: &reqwest::Client, body: &[u8]) -> Result<Reply, Failure
         if bytes.len() > MAX_BYTES {
             return Err(bad("Request exceeds 8 MiB"));
         }
-        outgoing = outgoing.body(bytes);
+        *outgoing.body_mut() = Some(reqwest::Body::from(bytes));
     }
-    let mut response = outgoing.send().await.map_err(upstream)?;
+    let mut response = match client {
+        Backend::Tor(tor) => return tor.send(outgoing).await,
+        Backend::Direct(direct) => direct.execute(outgoing).await.map_err(upstream)?,
+    };
     if response
         .content_length()
         .is_some_and(|size| size > MAX_BYTES as u64)

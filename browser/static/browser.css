@@ -1,6 +1,6 @@
 #browser-root { position: fixed; top: 0; left: 0; width: 100%; height: 100dvh; }
 .app-shell { width: 100%; height: 100%; }
-.session-header { grid-template-columns: auto auto minmax(8rem, 1fr) minmax(6rem, auto) auto; }
+.session-header { grid-template-columns: auto minmax(0, auto) minmax(8rem, 1fr) auto; }
 .browser-header-actions, .browser-code-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
 .browser-header-actions { margin-left: auto; }
 .browser-code-actions { margin: 0; padding: .2rem .4rem; gap: .3rem; border-top: 1px solid var(--border); }
@@ -39,7 +39,8 @@ dialog.browser-dialog::backdrop { background: rgb(0 0 0 / .65); backdrop-filter:
 
 @media (max-width: 780px), (pointer: coarse) {
   .session-header { grid-template-columns: auto minmax(0, 1fr) auto; gap: .4rem; padding: max(.45rem, env(safe-area-inset-top)) max(.45rem, env(safe-area-inset-right)) .45rem max(.45rem, env(safe-area-inset-left)); }
-  .connection-summary, .model-summary { display: none; }
+  .connection-summary { display: inline-flex; grid-column: 1 / -1; grid-row: 2; font-size: .7rem; }
+  .connection-summary > span:last-child { white-space: normal; overflow-wrap: anywhere; }
   .browser-header-actions { grid-column: auto; margin: 0; flex-wrap: nowrap; gap: .35rem; }
   .browser-header-actions button { padding: .2rem .35rem; min-height: 30px; font-size: .8rem; }
   .session-summary { min-width: 0; }

@@ -1,3 +1,5 @@
+import { parseNetworkMode, type NativeNetworkMode } from "./network-route.js";
+import { nativeAvailable } from "./native-host.js";
 import { ProviderTraceLog } from "./provider-trace.js";
 import { BrowserSessionStorage } from "./session-storage.js";
 import { ModelLimitState, effectiveLimits } from "./model-limits.js";
@@ -31,6 +33,7 @@ export interface LocalOptions {
   connections: Connection[];
   python?: boolean;
   mode?: AgentMode;
+  networkMode?: NativeNetworkMode;
   networkAccess?: boolean; nugetAccess?: boolean; siteAccess?: boolean;
   dotnetRelay?: DotnetRelay | null;
   credentialStorage?: Storage;
@@ -60,6 +63,7 @@ export class LocalTransport implements ApplicationTransport {
   lastSendFailure: string | null = null;
   selected = 0;
   mode: AgentMode;
+  networkMode: NativeNetworkMode;
   networkAccess: boolean;
   nugetAccess: boolean;
   siteAccess: boolean;
@@ -97,8 +101,9 @@ export class LocalTransport implements ApplicationTransport {
   };
   constructor(readonly events: BrowserTransportEvents, readonly options: LocalOptions) {
     this.mode = options.mode ?? (options.python ? "python" : "general");
+    this.networkMode = parseNetworkMode(options.networkMode);
     this.networkAccess = options.networkAccess ?? false;
-    this.nugetAccess = options.nugetAccess ?? false;
+    this.nugetAccess = this.networkMode !== "tor" && (options.nugetAccess ?? false);
     this.siteAccess = options.siteAccess ?? false;
     this.#relayKeys = new RelayKeys(options.credentialStorage);
     if (options.dotnetRelay) {
@@ -121,7 +126,7 @@ export class LocalTransport implements ApplicationTransport {
   }
 
   get promptDetails(): { instructions: string; tools: string } {
-    return { instructions: injectedInstructions(this.mode, this.networkAccess, !!this.#relayEndpoint, this.nugetAccess, this.siteAccess),
+    return { instructions: injectedInstructions(this.mode, this.networkAccess, !!this.#relayEndpoint, this.nugetAccess, this.siteAccess, this.networkMode),
       tools: JSON.stringify(toolDefinitions(this.mode, this.options.tools), null, 2) };
   }
 
@@ -152,7 +157,7 @@ export class LocalTransport implements ApplicationTransport {
     this.state.status.provider_label = connection?.name ?? "Configure a connection";
     this.state.status.provider_transport = connection?.provider === "anthropic" ? "claude_code_proxy" : "open_ai_chat_completions";
     this.state.status.python.profile = this.pythonEnabled ? "python_only" : "general";
-    this.state.status.tool_use = this.pythonEnabled ? `Pyodide · ${this.networkAccess ? this.#relayEndpoint ? "HTTP relay" : "direct network" : "network off"}` : this.mode === "dotnet-wasm" ? `.NET 11 · WASM · ${this.networkAccess ? this.#relayEndpoint ? "HTTP relay" : "direct network" : "network off"}` : "Browser tools";
+    this.state.status.tool_use = this.pythonEnabled ? `Pyodide · ${this.networkAccess ? this.networkMode === "tor" ? "Tor only" : this.#relayEndpoint ? "HTTP relay" : "direct network" : "network off"}` : this.mode === "dotnet-wasm" ? `.NET 11 · WASM · ${this.networkAccess ? this.networkMode === "tor" ? "Tor only" : this.#relayEndpoint ? "HTTP relay" : "direct network" : "network off"}` : "Browser tools";
     this.state.status.context_limit_tokens = String(this.effectiveTurnLimits.contextTokens);
     this.state.status.context_tokens = String(this.metrics.context.tokens);
     this.state.status.context_source = this.metrics.context.source;
@@ -253,21 +258,28 @@ export class LocalTransport implements ApplicationTransport {
     this.#saveSession(); this.publish();
   }
 
-  setNetworkAccess(enabled: boolean): void {
+  setNetworkMode(mode: "off" | NativeNetworkMode): void {
+    this.setNetworkAccess(mode !== "off", mode === "off" ? this.networkMode : parseNetworkMode(mode));
+  }
+  setNetworkAccess(enabled: boolean, mode: NativeNetworkMode = this.networkMode): void {
     this.#requireIdle();
     if (typeof enabled !== "boolean") throw new Error("Network access must be a boolean.");
-    if (enabled === this.networkAccess) return;
+    mode = parseNetworkMode(mode);
+    if (enabled && mode === "tor" && !nativeAvailable()) throw new Error("Tor-only access requires the native app.");
+    if (enabled === this.networkAccess && mode === this.networkMode) return;
     this.#saveSession(true);
     this.#runtime?.dispose(); this.#runtime = null;
     this.#dotnet?.reset(); this.#dotnet = null;
     this.#python?.reset(); this.#python = null;
-    this.networkAccess = enabled;
+    this.networkAccess = enabled; this.networkMode = mode;
+    if (mode === "tor") this.nugetAccess = false;
     this.#saveSession(); this.publish();
   }
 
   setNugetAccess(enabled: boolean): void {
     this.#requireIdle();
     if (typeof enabled !== "boolean") throw new Error("NuGet package access must be a boolean.");
+    if (enabled && this.networkMode === "tor") throw new Error("Direct NuGet downloads are disabled in Tor-only mode.");
     if (enabled === this.nugetAccess) return;
     this.#saveSession(true);
     this.#runtime?.dispose(); this.#runtime = null;
@@ -311,12 +323,12 @@ export class LocalTransport implements ApplicationTransport {
   }
 
   #pythonTool(): PythonTool {
-    return this.#python ??= createPythonTool({ indexURL: this.options.pyodideIndexURL, siteAccess: this.siteAccess, networkAccess: this.networkAccess, relay: this.dotnetRelay,
+    return this.#python ??= createPythonTool({ indexURL: this.options.pyodideIndexURL, siteAccess: this.siteAccess, networkMode: this.networkMode, networkAccess: this.networkAccess, relay: this.dotnetRelay,
       workspace: this.#workspace, onWorkspace: workspace => this.#checkpointWorkspace(workspace) });
   }
 
   #dotnetTool(): DotnetTool {
-    return this.#dotnet ??= createDotnetTool({ networkAccess: this.networkAccess, nugetAccess: this.nugetAccess,
+    return this.#dotnet ??= createDotnetTool({ networkMode: this.networkMode, networkAccess: this.networkAccess, nugetAccess: this.nugetAccess,
       siteAccess: this.siteAccess, relay: this.dotnetRelay, workspace: this.#workspace,
       onWorkspace: workspace => this.#checkpointWorkspace(workspace) });
   }
@@ -403,6 +415,9 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
     this.#requireIdle();
     const endpoint = value ? relayEndpoint(value.endpoint) : null;
     const token = value ? relayToken(value.token) : "";
+    // Applying a browser route is an explicit user choice to leave Tor-only mode.
+    // Merely opening a saved Tor session in a browser never changes its policy.
+    if (!nativeAvailable() && this.networkMode === "tor") this.setNetworkAccess(this.networkAccess, "direct");
     if (endpoint === this.#relayEndpoint && (!endpoint || token === this.#relayKeys.get(endpoint))) return;
     this.#saveSession(true);
     if (endpoint) this.#relayKeys.set(endpoint, token);
@@ -623,7 +638,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
           tools.push(this.#dotnetTool());
         }
         const runtime = await createRuntime({ connection, onTrace: trace => this.#traces.add(trace),
-          traceSecrets: [...this.options.connections.map(item => item.apiKey ?? ""), ...this.relaySecrets], ...limits, loopDetection: this.loopDetection, tools, systemPrompt: effectiveSystemPrompt(this.#system, this.mode, this.networkAccess, !!this.#relayEndpoint, this.nugetAccess, this.siteAccess), onEvent: (event) => this.#event(event) });
+          traceSecrets: [...this.options.connections.map(item => item.apiKey ?? ""), ...this.relaySecrets], ...limits, loopDetection: this.loopDetection, tools, systemPrompt: effectiveSystemPrompt(this.#system, this.mode, this.networkAccess, !!this.#relayEndpoint, this.nugetAccess, this.siteAccess, this.networkMode), onEvent: (event) => this.#event(event) });
         if (this.#closed) { runtime.dispose(); return; }
         try { runtime.restore(this.#savedMessages); } catch (error) { runtime.dispose(); throw error; }
         this.#runtime = runtime;
@@ -651,8 +666,9 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
     this.loopDetection = "combined";
     this.turnLimits = {...DEFAULT_TURN_LIMITS};
     this.reset(); this.#history = []; this.#workspace = emptyWorkspace();
+    this.networkMode = parseNetworkMode(this.options.networkMode);
     this.networkAccess = this.options.networkAccess ?? false;
-    this.nugetAccess = this.options.nugetAccess ?? false;
+    this.nugetAccess = this.networkMode !== "tor" && (this.options.nugetAccess ?? false);
     this.siteAccess = this.options.siteAccess ?? false;
     this.#relayEndpoint = this.options.dotnetRelay ? relayEndpoint(this.options.dotnetRelay.endpoint) : null;
     this.state.session = { session_id: crypto.randomUUID(), display_name: null, fallback_label: "New chat" };
@@ -674,8 +690,9 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
       this.loopDetection = session.loopDetection ?? "combined";
       this.turnLimits = {...(session.turnLimits ?? DEFAULT_TURN_LIMITS)};
       this.#system = session.system; this.mode = session.mode ?? (session.python ? "python" : "general");
+      this.networkMode = parseNetworkMode(session.networkMode);
       this.networkAccess = session.networkAccess ?? false;
-      this.nugetAccess = session.nugetAccess ?? false;
+      this.nugetAccess = this.networkMode !== "tor" && (session.nugetAccess ?? false);
       this.siteAccess = session.siteAccess ?? false;
       this.#relayEndpoint = session.dotnetRelayEndpoint ?? null;
       if (session.metrics) this.metrics.restore(session.metrics);
@@ -719,7 +736,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
       this.state.session.fallback_label = label;
       this.#sessions.save({ id: this.state.session.session_id, name: this.state.session.display_name, label,
         updatedAt: new Date().toISOString(), blocks: this.busy ? [...this.state.blocks.blocks, { ...block("text", "Work was in progress at this checkpoint. Review the saved files before continuing; tool effects may already exist. The incomplete turn is not replayed automatically.", "Recovery checkpoint"), success: false }] : this.state.blocks.blocks, messages: this.#savedMessages,
-        inputs: this.#history, system: this.#system, python: this.pythonEnabled, mode: this.mode, networkAccess: this.networkAccess, nugetAccess: this.nugetAccess, siteAccess: this.siteAccess, dotnetRelayEndpoint: this.#relayEndpoint, workspace: this.#workspace,
+        inputs: this.#history, system: this.#system, python: this.pythonEnabled, mode: this.mode, networkMode: this.networkMode, networkAccess: this.networkAccess, nugetAccess: this.nugetAccess, siteAccess: this.siteAccess, dotnetRelayEndpoint: this.#relayEndpoint, workspace: this.#workspace,
         providerTrace: this.#traces.snapshot(), metrics: this.metrics.snapshot(), turnLimits: this.turnLimits, loopDetection: this.loopDetection,
         theme: this.state.themes.find((theme) => theme.selected)?.theme_id ?? "dracula",
         connection: connection ? connectionMetadata(connection) : null });

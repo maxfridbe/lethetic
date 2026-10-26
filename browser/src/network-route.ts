@@ -1,3 +1,9 @@
+export type NativeNetworkMode = "direct" | "tor";
+export function parseNetworkMode(value: unknown): NativeNetworkMode {
+  if (value === undefined || value === "direct") return "direct";
+  if (value === "tor") return "tor";
+  throw new Error("Invalid network mode.");
+}
 /** An HTTP relay for Python and .NET code. This never changes the model connection. */
 export interface DotnetRelay { endpoint: string; token?: string }
 export function relayEndpoint(value: unknown): string {

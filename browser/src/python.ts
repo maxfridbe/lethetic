@@ -1,10 +1,11 @@
+import type { NativeNetworkMode } from "./network-route.js";
 import { executionTimeout } from "./lifecycle.js";
 import { NativeNetwork } from "./native-network.js";
 import { nativeAvailable } from "./native-host.js";
 import { emptyWorkspace, parseWorkspace } from "./workspace.js";
 import type { Workspace } from "./workspace.js";
 export type { Workspace } from "./workspace.js";
-import { relayEndpoint, relayToken } from "./network-route.js";
+import { parseNetworkMode, relayEndpoint, relayToken } from "./network-route.js";
 import type { DotnetRelay } from "./network-route.js";
 import type { Tool } from "./sdk.js";
 import type { WireRequest, WireResponse, WireSite } from "./dotnet.js";
@@ -39,6 +40,7 @@ export interface PythonTool extends Tool {
  */
 export function createPythonTool(options: {
   siteAccess?: boolean;
+  networkMode?: NativeNetworkMode;
   networkAccess?: boolean;
   relay?: DotnetRelay | null;
   indexURL?: string;
@@ -50,6 +52,7 @@ export function createPythonTool(options: {
   if (options.siteAccess !== undefined && typeof options.siteAccess !== "boolean") throw new Error("Interactive sites permission must be a boolean.");
   if (options.networkAccess !== undefined && typeof options.networkAccess !== "boolean") throw new Error("Network access must be a boolean.");
   const networkAccess = options.networkAccess ?? false;
+  const networkMode = parseNetworkMode(options.networkMode);
   const relay = options.relay ? { endpoint: relayEndpoint(options.relay.endpoint), token: relayToken(options.relay.token) } : null;
   const indexURL = new URL(options.indexURL ?? PYODIDE_INDEX_URL);
   if (!indexURL.pathname.endsWith("/")) throw new Error("Pyodide indexURL must end in /.");
@@ -97,8 +100,8 @@ export function createPythonTool(options: {
           if (worker !== activeWorker || signal.aborted) return;
           activeWorker.postMessage({ id, protocol: 1, code, indexURL: indexURL.href, workspace: checkpoint, siteAccess: options.siteAccess ?? false, networkAccess, relay: route, ...(siteRequest ? { siteRequest } : {}) });
         };
-        if (!nativeAvailable()) { try { post(relay); } catch { fail(new Error("Could not start Python execution.")); } }
-        else void nativeNetwork.route(networkAccess, relay, signal).then(post)
+        if (!nativeAvailable() && networkMode !== "tor") { try { post(relay); } catch { fail(new Error("Could not start Python execution.")); } }
+        else void nativeNetwork.route(networkAccess, relay, signal, networkMode).then(post)
           .catch(error => { if (worker === activeWorker) fail(error instanceof Error ? error : new Error(String(error))); });
       };
       const message = (event: MessageEvent<unknown>): void => {

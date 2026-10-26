@@ -19,7 +19,7 @@ import { loadConnections, restoreConnectionKeys, validateConnection } from "./co
 import { LocalTransport } from "./local-transport.js";
 import { createConnectionsDialog } from "./connections-dialog.js";
 import { codeSnippets } from "./code-snippets.js";
-import { renderBrowserStatus } from "./status-view.js";
+import { browserHeaderStatus, renderBrowserStatus } from "./status-view.js";
 import { canPreviewFile, canRenderFile, workspacePreview, copyCode, createFilePreview, downloadCode, snippetName } from "./file-actions.js";
 import { sessionRoute } from "./sessions.js";
 import { BrowserFiles } from "./files.js";
@@ -38,6 +38,7 @@ export interface EmbedOptions {
   python?: boolean;
   mode?: import("./sessions.js").AgentMode;
   /** Python and .NET code network access; default false. Model connections are unaffected. */
+  networkMode?: import("./network-route.js").NativeNetworkMode;
   networkAccess?: boolean;
   /** Direct NuGet.org managed package downloads and cache reuse; default false. */
   nugetAccess?: boolean;
@@ -98,6 +99,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
     paletteCommands: () => [{ id: "local:turn-limits", label: "Turn limits", description: "Timeout, maximum model/tool rounds and transient retries for this session", icon: "command", behavior: "open_panel", accelerator: null, enabled: true, disabled_reason: null, run: () => limits?.open() }, { id: "local:compact-session", label: "Compact session context", description: "Summarize model context; keep this session, transcript, files and runtime state", icon: "command", behavior: "execute", accelerator: null,
       enabled: transport?.canCompact ?? false, disabled_reason: transport?.busy ? "Finish or stop the running turn first" : "Send a message with a configured connection first",
       run: () => { void transport?.compact().catch(error => { if (transport) { transport.persistenceStatus = `Compaction: ${String(error)}`; transport.publish(); } }); } }],
+    headerStatus: () => browserHeaderStatus(transport, directory.name),
     status: () => renderBrowserStatus(transport, pinnedStats, () => transport?.publish()),
     promptPlaceholder: "Message your model…",
     systemPromptDetails: () => transport?.promptDetails ?? null,

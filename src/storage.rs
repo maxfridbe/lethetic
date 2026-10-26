@@ -16,7 +16,7 @@ pub use turso_core::{Clock as DatabaseClock, MonotonicInstant, WallClockInstant}
 pub mod native;
 
 pub const DATABASE_NAME: &str = "lethetic.db";
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 const MAX_DATABASE_BYTES: usize = 512 * 1024 * 1024;
 
 pub struct ContentDatabase {
@@ -72,20 +72,35 @@ impl ContentDatabase {
         }
         if (0..SCHEMA_VERSION).contains(&version) {
             store.transaction(|| {
-                store
-                    .connection
-                    .execute(if version == 2 {
-                        include_str!("storage/provider-traces.sql")
-                    } else {
-                        include_str!("storage/schema.sql")
-                    })
-                    .map_err(message)?;
+                if version < 2 {
+                    store
+                        .connection
+                        .execute(include_str!("storage/schema.sql"))
+                        .map_err(message)?;
+                } else {
+                    if version == 2 {
+                        store
+                            .connection
+                            .execute(include_str!("storage/provider-traces.sql"))
+                            .map_err(message)?;
+                    }
+                    if !store
+                        .query("PRAGMA table_info(sessions)", &[])?
+                        .iter()
+                        .any(|row| row.get(1).and_then(Value::to_text) == Some("network_mode"))
+                    {
+                        store
+                            .connection
+                            .execute("ALTER TABLE sessions ADD COLUMN network_mode TEXT")
+                            .map_err(message)?;
+                    }
+                }
                 if version == 1 {
                     store.migrate_v1()?;
                 }
                 store
                     .connection
-                    .execute("PRAGMA user_version=3")
+                    .execute("PRAGMA user_version=4")
                     .map_err(message)
             })?;
         } else if version != SCHEMA_VERSION {
@@ -117,6 +132,7 @@ impl ContentDatabase {
             && ![
                 1_u32.to_be_bytes(),
                 2_u32.to_be_bytes(),
+                3_u32.to_be_bytes(),
                 (SCHEMA_VERSION as u32).to_be_bytes(),
             ]
             .contains(&bytes[60..64].try_into().map_err(message)?)

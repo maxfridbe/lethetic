@@ -1102,3 +1102,13 @@ loopback HTTP port and open the device browser. See the [native site testing
 guide](docs/how-to/native-web-ui.md#test-a-site-in-the-device-browser) for controls,
 permissions, lifecycle and transfer limits. The runtime and filesystem remain
 WASM-isolated; browser-only installations continue using the iframe preview.
+
+### Native Tor-only runtime permission
+
+The executable offers Off, Direct network and Tor only (embedded Rust Arti) in
+Connections → Runtime & security. SDK hosts can set `networkAccess: true,
+networkMode: "tor"`. The route covers Python pyfetch, C# HttpClient and their site
+handlers, with no direct fallback. Tor-only sessions loaded in a normal browser
+block runtime HTTP. Direct NuGet downloads are disabled; model-provider traffic
+and bundled runtime assets retain their own routes. See the [native network guide](docs/how-to/native-web-ui.md#network-access-without-proxy-setup)
+for storage, supported destinations and boundaries.

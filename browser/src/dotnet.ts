@@ -1,3 +1,4 @@
+import type { NativeNetworkMode } from "./network-route.js";
 import { executionTimeout } from "./lifecycle.js";
 import { NativeNetwork } from "./native-network.js";
 import type { DotnetRelay } from "./network-route.js";
@@ -63,6 +64,7 @@ const loadRuntime: DotnetLoader = async options => {
 };
 
 export function createDotnetTool(options: {
+  networkMode?: NativeNetworkMode;
   networkAccess?: boolean; nugetAccess?: boolean; siteAccess?: boolean; relay?: DotnetRelay | null; workspace?: Workspace; timeoutMs?: number;
   onWorkspace?: (workspace: Workspace) => void; loadRuntime?: DotnetLoader;
 } = {}): DotnetTool {
@@ -84,9 +86,9 @@ export function createDotnetTool(options: {
     controller.signal.addEventListener("abort", cancel, { once: true });
     const cancelDeadline = executionTimeout(() => controller.abort(new Error(".NET timed out; completed session files are kept.")), requestTimeout);
     try {
-      const relay = await nativeNetwork.route(options.networkAccess ?? false, options.relay ?? null, controller.signal);
+      const relay = await nativeNetwork.route(options.networkAccess ?? false, options.relay ?? null, controller.signal, options.networkMode);
       runtime ??= await (options.loadRuntime ?? loadRuntime)({ signal: controller.signal, networkAccess: options.networkAccess ?? false,
-        nugetAccess: options.nugetAccess ?? false, siteAccess: options.siteAccess ?? false, ...(relay ? { relay } : {}) });
+        nugetAccess: options.networkMode === "tor" ? false : options.nugetAccess ?? false, siteAccess: options.siteAccess ?? false, ...(relay ? { relay } : {}) });
       controller.signal.throwIfAborted();
       const current = JSON.stringify(checkpoint);
       if (installed !== current) { await runtime.importWorkspace(checkpoint); installed = current; }

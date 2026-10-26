@@ -7,7 +7,7 @@ test("pins survive reload, including an intentionally empty bar", () => {
   const storage = { getItem: () => value, setItem: (_key: string, next: string) => { value = next; } };
   const pins = new PinnedStats(storage);
   pins.toggle("python");
-  assert.deepEqual(new PinnedStats(storage).ids, ["context", "input", "output", "elapsed", "python"]);
+  assert.deepEqual(new PinnedStats(storage).ids, ["model", "context", "input", "output", "elapsed", "python"]);
   for (const id of [...pins.ids]) pins.toggle(id);
   assert.deepEqual(new PinnedStats(storage).ids, []);
   value = '["python","unknown","python"]';
@@ -15,7 +15,7 @@ test("pins survive reload, including an intentionally empty bar", () => {
   value = '["input","output","elapsed"]';
   assert.deepEqual(new PinnedStats(storage).ids, ["input", "output", "elapsed"]);
   value = 'broken';
-  assert.deepEqual(new PinnedStats(storage).ids, ["context", "input", "output", "elapsed"]);
+  assert.deepEqual(new PinnedStats(storage).ids, ["model", "context", "input", "output", "elapsed"]);
 });
 
 test("storage failures keep pins usable in memory", () => {
@@ -28,6 +28,16 @@ test("storage failures keep pins usable in memory", () => {
 test("old default pins gain context once; unpinning it remains respected", () => {
   const values=new Map([["lethetic.pinned-stats.v1", '["input","output","elapsed"]']]);
   const storage={getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value)}};
-  const pins=new PinnedStats(storage); assert.deepEqual(pins.ids,["context","input","output","elapsed"]);
-  pins.toggle("context"); assert.deepEqual(new PinnedStats(storage).ids,["input","output","elapsed"]);
+  const pins=new PinnedStats(storage); assert.deepEqual(pins.ids,["model","context","input","output","elapsed"]);
+  pins.toggle("context"); assert.deepEqual(new PinnedStats(storage).ids,["model","input","output","elapsed"]);
+});
+
+
+test("existing pins gain the model once without resetting preferences", () => {
+  const values = new Map([["lethetic.pinned-stats.v2", '["python","context"]']]);
+  const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
+  const pins = new PinnedStats(storage);
+  assert.deepEqual(pins.ids, ["model", "python", "context"]);
+  pins.toggle("model");
+  assert.deepEqual(new PinnedStats(storage).ids, ["python", "context"]);
 });

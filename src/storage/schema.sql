@@ -1,4 +1,4 @@
--- Lethetic relational schema v3. Shared by native and WASM hosts.
+-- Lethetic relational schema v4. Shared by native and WASM hosts.
 -- records is only an import/export identity catalog, never a session payload.
 CREATE TABLE records (
     id INTEGER PRIMARY KEY,
@@ -21,6 +21,7 @@ CREATE TABLE sessions (
     mode TEXT,
     python INTEGER,
     network_access INTEGER,
+    network_mode TEXT,
     nuget_access INTEGER,
     site_access INTEGER,
     relay_endpoint TEXT,

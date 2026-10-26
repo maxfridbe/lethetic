@@ -1,3 +1,4 @@
+import { testNativeTorControls } from "./native-tor-browser.js";
 import { testVirtualChat } from "./virtual-chat-browser.js";
 import { testSvgPreview } from "./svg-preview-browser.js";
 import { testNativeFileDownloads, testNativeSessionDownloads } from "./native-download-browser.js";
@@ -354,6 +355,10 @@ try {
   const previewInput = async (expression: string, full = true, selectorOverride?: string): Promise<unknown> => {
     const interactive = await evaluate("!!document.querySelector('.browser-sites[open] iframe')");
     if (!interactive && !selectorOverride) await until(`document.querySelector('.browser-preview[open] [data-field=preview-frame]').dataset.navigationReady==='${String(full)}'`);
+    // src is assigned before the host replaces its document. Wait for the new
+    // interactive document's handshake before acquiring a CDP execution context.
+    // Never retry an interaction after dispatch: forms may have side effects.
+    if (interactive && !selectorOverride) await until("document.querySelector('.browser-sites[open] iframe')?.dataset.wireReady==='true'");
     const selector = selectorOverride ?? (interactive ? '.browser-sites[open] iframe' : '.browser-preview[open] iframe');
     const handle=await rpc('Runtime.evaluate',{expression:`document.querySelector(${JSON.stringify(selector)})`});
     const node=await rpc('DOM.describeNode',{objectId:(handle['result'] as {objectId:string}).objectId});
@@ -485,6 +490,7 @@ try {
     });
   })()`);
   check(safeControls, "mobile system bars obscure header/status controls or intercept their hit targets");
+  check(await evaluate("document.querySelector('.connection-summary').getBoundingClientRect().height>0"), "mobile header hides runtime/directory status");
   await rpc("Emulation.setSafeAreaInsetsOverride", {insets:{top:0,bottom:0,left:0,right:0}});
   const viewportResult = await evaluate(`(async () => {
     const {fitViewport}=await import('./src/viewport.js');
@@ -531,7 +537,7 @@ try {
   await waitForStartup();
   await until("!globalThis.beforeSessionReload && !!document.querySelector('[data-field=name]')");
   await until("!!document.querySelector('[data-field=name]')");
-  check(await evaluate("document.querySelectorAll('[data-pinned-stat]').length===document.querySelectorAll('[data-stat-pin]').length && document.querySelectorAll('[data-pinned-stat]').length>=30"), "pins did not survive reload: " + JSON.stringify(await evaluate("({pins:localStorage.getItem('lethetic.pinned-stats.v2'),pinned:document.querySelectorAll('[data-pinned-stat]').length,available:document.querySelectorAll('[data-stat-pin]').length,status:document.querySelector('.browser-persistence')?.textContent})")));
+  check(await evaluate("document.querySelectorAll('[data-pinned-stat]').length===document.querySelectorAll('[data-stat-pin]').length && document.querySelectorAll('[data-pinned-stat]').length>=30"), "pins did not survive reload: " + JSON.stringify(await evaluate("({pins:localStorage.getItem('lethetic.pinned-stats.v3'),pinned:document.querySelectorAll('[data-pinned-stat]').length,available:document.querySelectorAll('[data-stat-pin]').length,status:document.querySelector('.browser-persistence')?.textContent})")));
   check(await evaluate("document.querySelector('.files-pane').dataset.dock==='left'"), "Files dock did not survive reload");
   await evaluate("document.querySelector('[data-browser-action=connections]').click()");
   check(await evaluate("document.querySelector('[data-field=name]').value==='Browser test' && document.querySelector('[data-field=key]').value==='secret-never-persisted'"), "reload did not preserve connection metadata and tab key");
@@ -871,6 +877,7 @@ try {
   await testConnectionThinking(evaluate);
   await testStreamingControls(evaluate);
   await testVirtualChat(evaluate);
+  await testNativeTorControls(evaluate);
   await testConnectionLimits(evaluate);
   await testMissingConnectionKey(evaluate);
   process.stdout.write("Thinking preferences, transcript, tool continuation and reload passed.\n");

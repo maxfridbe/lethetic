@@ -1,3 +1,4 @@
+import { ThinkingLines } from "./app/thinking-lines.js";
 import { ChatVirtualizer, type ChatWindow } from "./app/chat-virtual.js";
 import { restoreUiScale } from "./ui-scale.js";
 import type { LocalPaletteCommand, PaletteCommand } from "./app/state.js";
@@ -183,6 +184,8 @@ export class SpaApplication implements BrowserTransportEvents {
   #confirmableEditorVersion: number | null = null;
   #confirmationRequestId: string | null = null;
   #approvalConfirmation: ApprovalConfirmation | null = null;
+  readonly #thinkingLines = new ThinkingLines(() => this.#render());
+  #thinkingLine: string | null = null;
   #disposed = false;
   #chatStart = 0;
   #chatWindow: ChatWindow = {start: 0, end: 0, top: 0, bottom: 0};
@@ -210,6 +213,7 @@ export class SpaApplication implements BrowserTransportEvents {
     paletteCommands?: () => readonly LocalPaletteCommand[];
     paletteCommandVisible?: (command: PaletteCommand) => boolean;
     headerActions?: () => VNode | null;
+    headerStatus?: () => string;
     paletteIcon?: () => VNode;
     status?: () => VNode;
     promptPlaceholder?: string;
@@ -263,6 +267,7 @@ export class SpaApplication implements BrowserTransportEvents {
   /** Release listeners and resources when an embedding host unmounts the UI. */
   dispose(): void {
     this.#disposed = true;
+    this.#thinkingLines.dispose();
     globalThis.removeEventListener("keydown", this.#onGlobalKeyDown);
     globalThis.removeEventListener("pagehide", this.#onPageHide);
     this.#debuggerMedia?.removeEventListener("change", this.#onDebuggerMediaChange);
@@ -1048,6 +1053,11 @@ export class SpaApplication implements BrowserTransportEvents {
   #render(): void {
     if (this.#disposed) return;
     const snapshot = this.#remote.view;
+    this.#thinkingLine = this.#thinkingLines.current(
+      this.#remote.phase === "live" && snapshot?.activity.kind === "processing"
+        ? snapshot.activity.cancel_id ?? snapshot.session.session_id : null,
+      globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    );
     this.#chatFollow.setTurnActive(
       this.#remote.phase === "live" &&
       (snapshot?.activity.kind === "processing" || snapshot?.activity.kind === "executing_tool"),
@@ -1207,6 +1217,7 @@ export class SpaApplication implements BrowserTransportEvents {
         snapshot,
         originalPythonBlocks: this.#originalPythonBlocks,
         headerActions: this.extensions.headerActions?.() ?? null,
+        headerStatus: this.extensions.headerStatus?.() ?? null,
         paletteIcon: this.extensions.paletteIcon?.() ?? null,
         customStatus: this.extensions.status?.() ?? null,
         promptPlaceholder: this.extensions.promptPlaceholder ?? null,
@@ -1222,6 +1233,7 @@ export class SpaApplication implements BrowserTransportEvents {
         draft: this.#draft,
         chatStart: this.#chatStart,
         chatWindow: this.#chatWindow,
+        thinkingLine: this.#thinkingLine,
         toast: this.#toast,
         filesPane: this.#filesEnabled ? renderFilesPane(this.#files.state, live, {
           toggle: () => this.#files.toggle(),

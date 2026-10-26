@@ -105,7 +105,7 @@ export async function testSessionStorage(evaluate: (expression: string) => Promi
     check(new SessionStore(split).list().length===2,'Aggregate migration lost a session');
     for(const id of [original.id,second.id]){const db=new Database(split.exportDatabase(id));check(JSON.parse(db.names('browser/sessions')).join(',')===id,'Aggregate database was not split');db.free()}split.close();
     // Both older schemas upgrade transactionally in IndexedDB.
-    for (const schemaVersion of [1,2]) {
+    for (const schemaVersion of [1,2,3]) {
     const v1=new Database(new Uint8Array());
     if(schemaVersion===1) {
     v1.query('PRAGMA foreign_keys=OFF','[]');
@@ -119,7 +119,7 @@ export async function testSessionStorage(evaluate: (expression: string) => Promi
     } else {
       v1.put('browser/sessions',original.id,new TextEncoder().encode(JSON.stringify({...original,workspace:{...original.workspace,files:[{path:'old.bin',modifiedAt:123}]}})));
       v1.put('browser/files/'+original.id,'old.bin',new Uint8Array([0,255]));
-      v1.query('DROP TABLE provider_traces','[]');v1.query('PRAGMA user_version=2','[]');
+      if(schemaVersion===2)v1.query('DROP TABLE provider_traces','[]');v1.query('PRAGMA user_version='+schemaVersion,'[]');
     }
     const v1image=v1.export();v1.free();
     const v1name=name+'-v'+schemaVersion,v1db=await new Promise((resolve,reject)=>{const r=indexedDB.open(v1name,1);r.onupgradeneeded=()=>r.result.createObjectStore('sessions');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
@@ -127,7 +127,7 @@ export async function testSessionStorage(evaluate: (expression: string) => Promi
     const normalized=await openBrowserStorage(memory(),v1name);
     check(new SessionStore(normalized).list()[0].workspace.files[0].data==='AP8=','Relational migration changed file bytes');normalized.close();
     const persisted=await new Promise((resolve,reject)=>{const tx=v1db.transaction('sessions'),r=tx.objectStore('sessions').get('session:'+original.id);tx.oncomplete=()=>resolve(r.result.database);tx.onabort=()=>reject(tx.error)});v1db.close();
-    check(new DataView(persisted.buffer,persisted.byteOffset,persisted.byteLength).getUint32(60)===3,'Relational migration was not persisted');
+    check(new DataView(persisted.buffer,persisted.byteOffset,persisted.byteLength).getUint32(60)===4,'Relational migration was not persisted');
     const relational=new Database(persisted);
     check(JSON.parse(relational.query('SELECT session_id,system_prompt FROM sessions','[]')).rows[0][1]==='keep','Session columns missing after migration');
     check(JSON.parse(relational.query('SELECT path,size_bytes FROM session_files','[]')).rows[0][1]===2,'Normalized file query failed');relational.free();

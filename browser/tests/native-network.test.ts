@@ -43,3 +43,23 @@ await test("a grant arriving after runtime reset is revoked instead of being use
     await Promise.resolve();assert.deepEqual(revoked,["late-grant"]);
   } finally {if(prior)Object.defineProperty(globalThis,"window",prior);else Reflect.deleteProperty(globalThis,"window");}
 });
+
+await test("Tor-only grants are explicit, cannot use browser HTTP, and do not fall back after native failure", async () => {
+  const prior=Object.getOwnPropertyDescriptor(globalThis,"window");
+  const calls:{command:string;args:Record<string,unknown>}[]=[];
+  let fail=false;
+  const host={top:null as unknown,__LETHETIC_HOST_TOKEN__:"main",__TAURI__:{core:{invoke:async(command:string,args:Record<string,unknown>)=>{
+    calls.push({command,args});
+    if(command.endsWith("grant_network")) {if(fail)throw Error("Tor unavailable");return {endpoint:"http://127.0.0.1:1234/relay",token:"tor-cap"};}
+    return undefined;
+  }}}};host.top=host;Object.defineProperty(globalThis,"window",{configurable:true,value:host});
+  const network=new NativeNetwork(), signal=new AbortController().signal;
+  try {
+    await network.route(true,null,signal,"tor");assert.equal(calls[0]?.args.mode,"tor");
+    network.reset();await Promise.resolve();fail=true;
+    await assert.rejects(()=>network.route(true,null,signal,"tor"),/Tor unavailable/);
+    assert.ok(calls.filter(call=>call.command.endsWith("grant_network")).every(call=>call.args.mode==="tor"));
+    host.top={};
+    await assert.rejects(()=>network.route(true,{endpoint:"https://fallback.example/"},signal,"tor"),/direct networking is blocked/);
+  } finally {network.reset();await Promise.resolve();if(prior)Object.defineProperty(globalThis,"window",prior);else Reflect.deleteProperty(globalThis,"window");}
+});

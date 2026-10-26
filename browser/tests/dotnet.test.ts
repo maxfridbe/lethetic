@@ -141,3 +141,10 @@ await test("interactive requests enforce permission, serialize work, and checkpo
   const denied=createDotnetTool({loadRuntime:async()=>{throw Error("must not load");}});
   await assert.rejects(denied.requestSite({port:8080,method:"GET",path:"/"},signal()), /disabled/);
 });
+
+await test("Tor-only .NET refuses to load a direct-network runtime in a normal browser", async()=>{
+  let loaded=false;
+  const tool=createDotnetTool({networkAccess:true,networkMode:"tor",nugetAccess:true,loadRuntime:async()=>{loaded=true;throw Error("must not load");}});
+  await assert.rejects(Promise.resolve(tool.execute({code:"must not execute"},new AbortController().signal)),/direct networking is blocked/);
+  assert.equal(loaded,false);
+});

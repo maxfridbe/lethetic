@@ -63,7 +63,7 @@ function renderHeader(context: ChatViewContext): VNode {
             "aria-hidden": "true",
           }}
         ></span>
-        <span>{transportStatus.label}</span>
+        <span attrs={{ title: context.state.headerStatus ?? transportStatus.label }}>{context.state.headerStatus ?? transportStatus.label}</span>
       </div>
       <div attrs={{ class: "session-summary" }}>
         <span attrs={{ class: "eyebrow" }}>Session</span>
@@ -94,10 +94,6 @@ function renderHeader(context: ChatViewContext): VNode {
             {uiIcon("edit")}
           </button>
         </div>
-      </div>
-      <div attrs={{ class: "model-summary" }}>
-        <span attrs={{ class: "eyebrow" }}>Model</span>
-        <span>{snapshot?.status.model_label ?? "—"}</span>
       </div>
       {context.state.headerActions ?? null}
     </header>
@@ -342,7 +338,7 @@ function renderActivity(context: ChatViewContext): VNode {
       <div attrs={{ class: "activity-summary" }}>
         <strong>
           {spinnerKind === null ? null : activitySpinner(spinnerKind)}
-          <span attrs={{ class: `activity-label${spinnerKind === "regular" ? " is-processing" : ""}` }}>{activityLabel(snapshot.activity.kind)}</span>
+          <span attrs={{ class: `activity-label${spinnerKind === "regular" ? " is-processing" : ""}` }}>{activityLabel(snapshot.activity.kind)}{context.state.thinkingLine ? <span attrs={{class: "thinking-line", "aria-hidden": "true"}}> · {context.state.thinkingLine}</span> : null}</span>
         </strong>
         {snapshot.activity.progress_percent === null ? null : (
           <progress

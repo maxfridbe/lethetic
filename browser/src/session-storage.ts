@@ -206,7 +206,7 @@ export async function openBrowserStorage(preferences: Storage, databaseName = "l
     }
     const storage = new BrowserSessionStorage(preferences, db, record, Database, sessions);
     const schemaUpgrade = images.some(image => image.database.byteLength >= 100 &&
-      new DataView(image.database.buffer, image.database.byteOffset, image.database.byteLength).getUint32(60) < 3);
+      new DataView(image.database.buffer, image.database.byteOffset, image.database.byteLength).getUint32(60) < 4);
     if (record && (record.ids === undefined || schemaUpgrade)) {
       // Split the previous aggregate record in one transaction. Its source is
       // replaced only when every individual database has committed.

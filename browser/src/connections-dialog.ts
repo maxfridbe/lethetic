@@ -56,8 +56,9 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     ${connectionLimitsHtml}
     <fieldset class="browser-runtime"><legend>Runtime &amp; security · current session</legend>
     <label>Code runtime <select data-field="mode"><option value="general">Chat</option><option value="python">Python · Pyodide</option><option value="dotnet-wasm">.NET 11 · WASM</option></select></label>
-    <label><input data-field="network" type="checkbox"> Network access (Python and .NET code)</label>
+    <label${nativeAvailable() ? " hidden" : ""}><input data-field="network" type="checkbox"> Network access (Python and .NET code)</label>
     <p class="browser-note">Required for Python pyfetch and C# HttpClient calls to external APIs, including site routes and additional Python package downloads. Bundled runtime packages still load with it off. Changing this setting stops running sites; run the site file again afterward. Session files and chat are kept.</p>
+    ${nativeAvailable() ? '<label>Code network access<select data-field="native-network-mode"><option value="off">Off</option><option value="direct">Direct network</option><option value="tor">Tor only · embedded Arti</option></select></label><p class="browser-note">Tor only routes Python/.NET HTTP through Tor with no direct fallback or local DNS. First use may take time to connect. Local/IP addresses and direct NuGet downloads are blocked. Model connections and bundled runtime assets keep their own routes; this is not Tor Browser.</p>' : ""}
     <label><input data-field="sites" type="checkbox"> Interactive sites (Python or ASP.NET virtual ports and isolated preview)</label>
     <label><input data-field="nuget" type="checkbox"> NuGet package access (direct downloads from NuGet.org)</label>
     <a href="${new URL("../../runtimes/dotnetdide/llm.md", import.meta.url).href}" target="_blank" rel="noopener">.NET usage guide</a>
@@ -76,7 +77,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     <p data-field="route-state" role="status" class="browser-note"></p>
     <p class="browser-note">Mode, permission and route changes keep this chat and its files; code variables restart. Direct HTTP needs destination CORS.</p>
     </div>
-    ${nativeAvailable() ? '<p class="browser-note">When Network access is enabled, Python and .NET use the app’s HTTP client automatically. No proxy setup or destination CORS required. Mode and permission changes keep chat and files; code variables restart.</p>' : ""}
+    ${nativeAvailable() ? '<p class="browser-note">Direct network uses the app’s HTTP client; Tor only uses its embedded Rust Tor client. No proxy setup or destination CORS required. Mode and permission changes keep chat and files; code variables restart.</p>' : ""}
     </fieldset>
     <p class="connection-hint">${credentialStorage ? "Default key storage survives refresh, but closing the tab or restarting the app can clear it. Re-enter the key and Save & use to resume the same session." : "Keys stay in memory."} Switching connections keeps this session’s history, files, and code variables.</p>
     <p data-field="status" role="status"></p>`);
@@ -173,11 +174,15 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     input("sites").checked = transport.siteAccess;
     input("sites").disabled = transport.busy || transport.mode === "general";
     input("nuget").checked = transport.nugetAccess;
-    input("nuget").disabled = transport.busy || transport.mode !== "dotnet-wasm";
+    input("nuget").disabled = transport.busy || transport.mode !== "dotnet-wasm" || transport.networkMode === "tor";
+    if (nativeAvailable()) {
+      select("native-network-mode").value = transport.networkAccess ? transport.networkMode : "off";
+      select("native-network-mode").disabled = transport.busy || transport.mode === "general";
+    }
     input("network").checked = transport.networkAccess;
     input("network").disabled = transport.busy || transport.mode === "general";
     field(dialog, "permissions").textContent = transport.mode !== "general"
-      ? `Session files: read/write enabled · Network: ${transport.networkAccess ? "enabled" : "disabled"} · Sites: ${transport.siteAccess ? "enabled" : "disabled"}${transport.pythonEnabled ? "" : ` · NuGet: ${transport.nugetAccess ? "enabled (NuGet.org)" : "disabled"}`} · HTTP route: ${nativeAvailable() ? "native app · automatic" : transport.dotnetRelay ? transport.dotnetRelay.endpoint + (transport.dotnetRelay.token ? " · token present" : " · token required") : "direct (browser CORS)"}`
+      ? `Session files: read/write enabled · Network: ${transport.networkAccess ? "enabled" : "disabled"} · Sites: ${transport.siteAccess ? "enabled" : "disabled"}${transport.pythonEnabled ? "" : ` · NuGet: ${transport.nugetAccess ? "enabled (NuGet.org)" : "disabled"}`} · HTTP route: ${transport.networkMode === "tor" ? nativeAvailable() ? "Tor only · embedded Arti" : "Tor unavailable · HTTP blocked" : nativeAvailable() ? "native app · direct" : transport.dotnetRelay ? transport.dotnetRelay.endpoint + (transport.dotnetRelay.token ? " · token present" : " · token required") : "direct (browser CORS)"}`
       : "Code execution is off.";
   };
   const routeEditor = (): void => {
@@ -300,6 +305,11 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
       } catch (error) { if (modelOperation === controller && !destroyed) status(`${errorMessage(error)} Check endpoint access and CORS; manual model entry is available.`); }
       finally { clearTimeout(timer); if (modelOperation === controller) { modelOperation = null; updateEditor(); } }
     })();
+  });
+  if (nativeAvailable()) select("native-network-mode").addEventListener("change", () => {
+    try { transport.setNetworkMode(select("native-network-mode").value as "off" | "direct" | "tor"); status("Network policy saved. Run your site file again; chat and files are kept."); }
+    catch (error) { status(errorMessage(error)); }
+    updateEditor();
   });
   select("network-route").addEventListener("change", routeEditor);
   input("relay-endpoint").addEventListener("input", () => {

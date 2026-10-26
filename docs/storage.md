@@ -196,7 +196,7 @@ into the app's active session or IndexedDB. Exported database import is not yet 
 feature. BLOB query cells are returned as byte arrays.
 
 Version-1 `content_records` databases migrate in a single transaction: parse and
-insert all domain rows, remove the old table, then set `user_version=3`. A failure
+insert all domain rows, remove the old table, then set `user_version=4`. A failure
 rolls back the migration. Browser upgrades replace the IndexedDB images only after
 the new databases are complete. Legacy files likewise remain until their import
 commits; `python.ipynb` stays a normal notebook.
@@ -248,3 +248,8 @@ of parsing success. Pending traces exported during a turn are snapshots.
 Completed attempts persist with the session at the end of the turn; closing a
 tab mid-turn can lose the current turn's diagnostics. Existing reports cannot
 recover response data discarded before this capture was introduced.
+
+Schema v4 adds `sessions.network_mode` (`direct` or `tor`) alongside the network
+permission. Existing v2/v3 databases migrate transactionally; an absent mode
+retains direct networking. Tor-only sessions never silently acquire direct HTTP
+when reopened in a browser without the native Tor client.

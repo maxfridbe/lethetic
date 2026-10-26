@@ -13,6 +13,7 @@
     "src/app/panels.js",
     "src/app/state.js",
     "src/app/status.js",
+    "src/app/thinking-lines.js",
     "src/background-protocol.js",
     "src/bootstrap.js",
     "src/brand.js",

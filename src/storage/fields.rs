@@ -30,6 +30,7 @@ pub(super) const BROWSER_SESSION: &[&str] = &[
     "mode=mode:s",
     "python=python:b",
     "network_access=networkAccess:b",
+    "network_mode=networkMode:s",
     "nuget_access=nugetAccess:b",
     "site_access=siteAccess:b",
     "relay_endpoint=dotnetRelayEndpoint:s",

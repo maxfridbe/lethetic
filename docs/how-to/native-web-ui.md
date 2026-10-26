@@ -17,6 +17,11 @@ tablets and desktops. In left mode, the file list sits above the preview beside
 the conversation; drag the divider to resize it. Monaco syntax highlighting and
 its worker are bundled locally and do not need Network access or a CDN.
 
+The top status line shows the runtime (**PY** or **.NET**), virtual or granted
+directory, and code network policy (**TOR only** when selected). It describes
+the session permission, not Tor circuit readiness or model-provider routing.
+The model name is pinned in the bottom stats bar; existing stat selections remain.
+
 ## Save downloads
 
 **Download File**, snippet **Download**, **Download all (.zip)**, and the session
@@ -70,20 +75,48 @@ compromised operating system/document provider.
 
 ## Network access without proxy setup
 
-In the executable, enable **Network access** in Connections → Runtime & security.
+In Connections → Runtime & security, choose **Code network access**:
+
+- **Off** blocks runtime HTTP.
+- **Direct network** uses the native HTTP client without proxy setup or destination CORS.
+- **Tor only · embedded Arti** sends runtime HTTP through the Tor Project's Rust
+  [Arti client](https://docs.rs/arti-client/0.47.0/arti_client/), bundled into the
+  executable. It needs no Tor daemon, SOCKS configuration or host installation.
+
 Python `await pyodide.http.pyfetch(...)`, C# `HttpClient`, and their site handlers
-then use the app's native HTTP client automatically. No SOCKS proxy, external relay,
-token entry, or destination CORS configuration is needed. The browser distribution
-retains its direct/relay selector; those controls are hidden in the executable.
-Saved browser relay settings are ignored by native runtimes and remain available
-when the session is opened in a browser.
+use the selected route. Tor-only mode passes destination names to Tor instead of
+resolving them locally, validates HTTPS certificates, and never retries through
+direct HTTP. Public hostnames and v3 `.onion` addresses are supported; IP literals,
+localhost and local-network names are blocked. Tor bootstrap happens before code
+execution, with a 60-second deadline. A failed connection reports an error; retry
+or explicitly change the policy. Arti caches network state in the application's
+private data directory. State survives app restarts; active grants do not.
+
+The choice is saved per session in `sessions.network_mode`. Changing it resets
+code variables and running sites while retaining chat and files. Opening a Tor-only
+session in a normal browser blocks runtime HTTP because Arti is unavailable;
+it does not silently downgrade the permission. The browser distribution retains
+its direct/relay selector. Saved browser relay credentials are ignored by native
+runtimes and remain available when the session is opened in a browser.
+
+Tor-only mode disables **direct NuGet downloads**. Bundled libraries still work;
+additional Python downloads use the runtime's HTTP relay. Forwarded site pages
+cannot fetch external URLs directly in Tor-only mode: page JavaScript should call
+a local Python/.NET route, which then uses Tor. Use relative site URLs.
+
+This setting governs cooperative runtime HTTP, not every connection from the app
+or OS. Model-provider requests and exact bundled runtime/package asset downloads
+keep their separate routes. Worker JavaScript interop is not a hostile-code
+sandbox. Opening a site in another browser does not turn that browser into Tor
+Browser. Bridges/pluggable transports and application-wide VPN routing are not
+part of this option.
 
 The app supplies a temporary, authenticated loopback HTTP route to each enabled
-runtime. Disabling Network access, stopping/resetting the runtime, switching
+runtime. Disabling or changing network access, stopping/resetting the runtime, switching
 sessions or closing the app revokes it and cancels pending requests. Reloading the
 main page revokes prior grants. The main UI's native capability is never passed
-to code workers or previews. Native HTTP can reach public and local-network
-services; it does not grant filesystem or shell access.
+to code workers or previews. Direct native HTTP can reach public and local-network
+services; Tor-only access blocks local targets and has no direct fallback; it does not grant filesystem or shell access.
 
 GET, HEAD, OPTIONS, POST, PUT, PATCH and DELETE support explicit API authorization
 headers and binary bodies up to 8 MiB in each direction. Requests time out after

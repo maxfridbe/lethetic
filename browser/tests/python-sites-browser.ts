@@ -86,6 +86,7 @@ export async function testPythonSites(
     document.querySelector('[data-field=site-stop]').click();
     await pythonSiteWait(()=>document.querySelector('[data-browser-action=sites]').textContent.includes('(0)'));
     document.querySelector('dialog[open]').close();
+    await pythonSiteWait(()=>!document.querySelector('[data-file-action=run]')?.disabled);
     document.querySelector('[data-file-action=run]').click();
     await pythonSiteWait(()=>document.querySelector('[data-browser-action=sites]').textContent.includes('(1)'));
     await pythonSiteWait(()=>!!document.querySelector('.activity-idle'));
@@ -99,6 +100,7 @@ export async function testPythonSites(
     if(!pythonSiteSaved().workspace.files.some(file=>file.path==='pyapp/note.txt'))throw Error('Network revocation lost files');
     network.checked=true;network.dispatchEvent(new Event('change'));
     document.querySelector('dialog[open]').close();
+    await pythonSiteWait(()=>!document.querySelector('[data-file-action=run]')?.disabled);
     document.querySelector('[data-file-action=run]').click();
     await pythonSiteWait(()=>document.querySelector('[data-browser-action=sites]').textContent.includes('(1)'));
     await pythonSiteWait(()=>!!document.querySelector('.activity-idle'));
@@ -110,6 +112,7 @@ export async function testPythonSites(
     document.querySelector('[data-field=apply-route]').click();
     if(pythonSiteSaved().id!==id || pythonSiteSaved().dotnetRelayEndpoint!==location.origin+'/python-relay' || !document.querySelector('[data-browser-action=sites]').textContent.includes('(0)'))throw Error('Python route change did not persist and stop sites');
     document.querySelector('dialog[open]').close();
+    await pythonSiteWait(()=>!document.querySelector('[data-file-action=run]')?.disabled);
     document.querySelector('[data-file-action=run]').click();
     await pythonSiteWait(()=>document.querySelector('[data-browser-action=sites]').textContent.includes('(1)'));
     await pythonSiteWait(()=>!!document.querySelector('.activity-idle'));

@@ -7,11 +7,20 @@ import type { LocalTransport } from "./local-transport.js";
 import { PinnedStats } from "./pinned-stats.js";
 import type { StatId } from "./pinned-stats.js";
 
+/** Session capabilities, separate from provider connectivity or Tor circuit readiness. */
+export function browserHeaderStatus(transport: LocalTransport | null, directory: string | null): string {
+  const native = nativeAvailable();
+  const runtime = transport?.mode === "dotnet-wasm" ? ".NET" : transport?.pythonEnabled ? "PY" : "General";
+  const network = !transport?.networkAccess ? "Network off" : transport.networkMode === "tor"
+    ? native ? "TOR only" : "TOR unavailable" : "Network";
+  return [native ? "App" : "Browser", "WASM", runtime, network, directory ? `Directory: ${directory}` : "Virtual directory"].join(" · ");
+}
+
 export function renderBrowserStatus(transport: LocalTransport | null, pins = new PinnedStats(), refresh: () => void = () => {}): VNode {
   const metrics = transport?.metrics, turn = metrics?.turn;
   const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)}s`;
   const started = (turn?.requests ?? 0) > 0;
-  const network = !transport?.networkAccess ? "network off" : nativeAvailable() ? "native HTTP" : transport.dotnetRelay ? transport.dotnetRelay.token ? "HTTP relay" : "relay token needed" : "direct network";
+  const network = !transport?.networkAccess ? "network off" : transport.networkMode === "tor" ? nativeAvailable() ? "Tor only" : "Tor unavailable · blocked" : nativeAvailable() ? "native HTTP" : transport.dotnetRelay ? transport.dotnetRelay.token ? "HTTP relay" : "relay token needed" : "direct network";
   const limits = transport?.effectiveTurnLimits, model = transport?.modelLimits.value;
   const tokens = (value: number | null | undefined): string => value == null ? "Not reported" : value.toLocaleString();
   const source = metrics?.context.source === "server_usage" ? "last provider input" : "CLI estimate";
