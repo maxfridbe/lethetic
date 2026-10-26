@@ -44,7 +44,7 @@ export async function testStreamingControls(evaluate: (source: string) => Promis
       const failed=JSON.parse(records.get('lethetic.sessions.v1')).sessions.find(session=>session.id===id);
       assert(failed.providerTrace.requests.length===2 && failed.providerTrace.requests[1].outcome==='error','Failed trace missing');
       assert(failed.providerTrace.requests[1].responseHead.includes('bad-json'),'Malformed original payload missing');
-      assert(JSON.stringify(failed.messages)===JSON.stringify(saved.messages),'Failure changed committed history');
+      assert(failed.messages.length===saved.messages.length+1 && JSON.stringify(failed.messages.slice(0,-1))===JSON.stringify(saved.messages) && failed.messages.at(-1).role==='user' && failed.messages.at(-1).content==='bad args','Failure lost the prompt or retained incomplete output');
       view.destroy();view=mountLethetic(root,options);
       const reopened=JSON.parse(records.get('lethetic.sessions.v1')).sessions.find(session=>session.id===id);
       assert(JSON.stringify(reopened.providerTrace)===JSON.stringify(failed.providerTrace),'Reload lost provider traces');
@@ -58,7 +58,18 @@ export async function testStreamingControls(evaluate: (source: string) => Promis
       assert(root.textContent.includes('8,192 tokens') && root.textContent.includes('Ctrl+P → Turn limits'),'Missing effective budget and recovery instructions');
       const limited=JSON.parse(records.get('lethetic.sessions.v1')).sessions.find(session=>session.id===id);
       assert(limited.providerTrace.requests.at(-1).error.includes('max_output_tokens'),'Provider reason missing from trace');
-      assert(JSON.stringify(limited.messages)===JSON.stringify(saved.messages),'Truncated response committed to history');
+      assert(limited.messages.length===failed.messages.length+1 && JSON.stringify(limited.messages.slice(0,-1))===JSON.stringify(failed.messages) && limited.messages.at(-1).role==='user' && limited.messages.at(-1).content==='large SVG','Output limit lost the prompt or retained incomplete output');
+      assert(root.textContent.includes('your prompt is retained'),'Missing prompt-retention explanation');
+      view.destroy();view=mountLethetic(root,options);
+      controller=null;
+      const continueInput=root.querySelector('#composer-input');continueInput.value='continue';continueInput.dispatchEvent(new Event('input',{bubbles:true}));root.querySelector('form.composer').requestSubmit();
+      await wait(()=>!!controller);
+      emit(chunk({content:'Resuming the SVG'},'stop'));emit('[DONE]');
+      await wait(()=>!!root.querySelector('.activity-idle'));
+      const continued=JSON.parse(records.get('lethetic.sessions.v1')).sessions.find(session=>session.id===id);
+      const request=JSON.parse(continued.providerTrace.requests.at(-1).requestBody);
+      assert(JSON.stringify(request.messages.filter(message=>message.role==='user').map(message=>message.content))===JSON.stringify(['stream','bad args','large SVG','continue']),'Continue request lost retained instructions after reload');
+      assert(!request.messages.some(message=>message.tool_calls),'Incomplete tool calls reached the next request');
       root.querySelector('[aria-label="Open command palette"]').click();root.querySelector('#palette-command-loop-detection').click();
       await wait(()=>root.textContent.includes('Combined'));
     } finally {view?.destroy();window.fetch=originalFetch;root.remove();}
