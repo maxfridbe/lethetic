@@ -193,9 +193,9 @@ export class LetheticRuntime {
     const endNativeTurn = beginNativeTurn();
     try {
       controller.signal.throwIfAborted();
-      requireChatCredential(this.#options.connection);
       this.#wasm.set_limits(limits.contextTokens, limits.maxOutputTokens);
       this.#wasm.begin(prompt);
+      requireChatCredential(this.#options.connection);
       const connection = this.#options.connection;
       for (let round = 1; round <= maxRounds; round++) {
         controller.signal.throwIfAborted();

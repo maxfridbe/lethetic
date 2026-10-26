@@ -41,7 +41,7 @@ struct Turn {
 
 /// Stateful, transactional model conversation exported to JavaScript.
 /// Call `begin`, then alternate `request`, `accept`, and `tool_result`.
-/// `rollback` discards an incomplete turn after a network error or cancellation.
+/// `rollback` retains the user's prompt while discarding incomplete model output.
 pub struct Conversation {
     system: String,
     tools: Vec<Tool>,
@@ -211,10 +211,11 @@ impl Conversation {
         Ok(())
     }
 
-    /// Discard an unfinished turn. This does not undo host tool side effects.
+    /// Discard unfinished model/tool messages but retain the user's instruction
+    /// so the next turn can resume it. This does not undo host tool side effects.
     pub fn rollback(&mut self) {
         if let Some(checkpoint) = self.checkpoint.take() {
-            self.messages.truncate(checkpoint);
+            self.messages.truncate(checkpoint + 1);
         }
         self.pending.clear();
         self.awaiting_response = false;
@@ -231,8 +232,8 @@ impl Conversation {
         Value::Array(self.messages.clone()).to_string()
     }
 
-    /// Restore complete turns without executing tools or accepting system messages.
-    /// Invalid or incomplete histories leave the current conversation unchanged.
+    /// Restore completed turns and unanswered user prompts without executing tools
+    /// or accepting system messages. Incomplete tool exchanges remain invalid.
     pub fn restore(&mut self, history: &str) -> Result<(), String> {
         if self.checkpoint.is_some() {
             return Err("stop the active turn before restoring history".into());
@@ -247,6 +248,7 @@ impl Conversation {
         for message in messages {
             match message["role"].as_str() {
                 Some("user") => {
+                    candidate.finish_unanswered_prompt();
                     candidate.begin(message["content"].as_str().ok_or("invalid user message")?)?
                 }
                 Some("assistant") => {
@@ -283,11 +285,23 @@ impl Conversation {
                 _ => return Err("unsupported saved message role".into()),
             }
         }
+        candidate.finish_unanswered_prompt();
         if candidate.checkpoint.is_some() {
             return Err("saved conversation contains an incomplete turn".into());
         }
         self.messages = candidate.messages;
         Ok(())
+    }
+
+    // A failed turn can leave just its user prompt. It is safe to restore this
+    // as idle history, but never silently accept a partial tool exchange.
+    fn finish_unanswered_prompt(&mut self) {
+        if self
+            .checkpoint
+            .is_some_and(|start| self.messages.len() == start + 1)
+        {
+            self.checkpoint = None;
+        }
     }
 }
 

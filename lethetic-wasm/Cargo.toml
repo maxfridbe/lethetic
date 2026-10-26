@@ -1,6 +1,6 @@
 [package]
 name = "lethetic-wasm"
-version = "26.1025.4"
+version = "26.1026.1"
 edition = "2024"
 description = "Portable Lethetic conversation and tool orchestration runtime"
 

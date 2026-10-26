@@ -55,7 +55,7 @@ await test("incomplete tool streams never authorize tools or commit history", as
   const runtime=await createRuntime({connection,wasm,providerRetries:0,tools:[{name:"lookup",description:"lookup",parameters:{type:"object"},execute:()=>{executions++;return "bad";}}],
     fetch:async()=>sse(frame(chunk({tool_calls:[{index:0,id:"one",type:"function",function:{name:"lookup",arguments:"{}"}}]},"tool_calls"))+
       frame({choices:[],usage:{prompt_tokens:1,completion_tokens:1}}))});
-  try {await assert.rejects(runtime.send("go"),/terminal marker/);assert.equal(executions,0);assert.deepEqual(runtime.history(),[]);}finally{runtime.dispose();}
+  try {await assert.rejects(runtime.send("go"),/terminal marker/);assert.equal(executions,0);assert.deepEqual(runtime.history(),[{role:"user",content:"go"}]);}finally{runtime.dispose();}
 });
 
 await test("Anthropic uses the CLI parser for thinking signatures, text and usage", async () => {
@@ -95,7 +95,7 @@ await test("Stop cancels an unlimited live stream and discards partial history",
     start(controller){controller.enqueue(encoder.encode(frame(chunk({content:"partial"}))));},cancel(){cancelled=true;},
   }),{headers})});
   try {const sending=runtime.send("go");await wait(()=>events.some(event=>event.type==="assistant_delta"));runtime.cancel();
-    await assert.rejects(sending,/stopped/);assert.equal(cancelled,true);assert.deepEqual(runtime.history(),[]);
+    await assert.rejects(sending,/stopped/);assert.equal(cancelled,true);assert.deepEqual(runtime.history(),[{role:"user",content:"go"}]);
     assert.ok(events.some(event=>event.type==="response_reset"));
   }finally{runtime.dispose();}
 });
@@ -106,7 +106,7 @@ await test("malformed streamed tool arguments are captured before parsing and su
   const runtime=await createRuntime({connection:{...connection,apiKey:"trace-secret"},wasm,providerRetries:0,onTrace:trace=>traces.push(trace),
     tools:[{name:"lookup",description:"lookup",parameters:{type:"object"},execute:()=>{executions++;return "unused";}}],fetch:async()=>sse(payload)});
   try {await assert.rejects(runtime.send("inspect trace-secret"),/invalid.*arguments/i);
-    assert.equal(executions,0);assert.deepEqual(runtime.history(),[]);assert.equal(traces.length,1);
+    assert.equal(executions,0);assert.deepEqual(runtime.history(),[{role:"user",content:"inspect trace-secret"}]);assert.equal(traces.length,1);
     const trace=traces[0]!;assert.equal(trace.outcome,"error");assert.equal(trace.httpStatus,200);
     assert.match(trace.responseHead+trace.responseTail,/broken \[REDACTED\]/);
     assert.ok(!JSON.stringify(traces).includes("trace-secret"));assert.equal(runtime.activeTrace,null);
@@ -123,7 +123,7 @@ await test("nonstream validation failure and successful retry attempts retain di
     assert.equal(traces[0]!.responseHead,"busy");assert.equal(traces[0]!.responseComplete,true);
     assert.equal(traces[0]!.turnId,traces[1]!.turnId);assert.notEqual(traces[0]!.id,traces[1]!.id);
     assert.equal(traces[1]!.responseComplete,true);assert.match(traces[1]!.responseHead,/broken-json/);
-    assert.deepEqual(runtime.history(),[]);
+    assert.deepEqual(runtime.history(),[{role:"user",content:"go"}]);
   }finally{runtime.dispose();}
 });
 await test("active exports and cancellations retain partial provider output",async()=>{
@@ -133,7 +133,7 @@ await test("active exports and cancellations retain partial provider output",asy
   }),{headers})});
   try {const sending=runtime.send("go");await wait(()=>!!runtime.activeTrace?.receivedBytes);
     assert.match(runtime.activeTrace!.responseHead,/partial diagnostic/);runtime.cancel();await assert.rejects(sending,/stopped/);
-    assert.equal(traces[0]!.outcome,"cancelled");assert.equal(traces[0]!.responseComplete,false);assert.deepEqual(runtime.history(),[]);
+    assert.equal(traces[0]!.outcome,"cancelled");assert.equal(traces[0]!.responseComplete,false);assert.deepEqual(runtime.history(),[{role:"user",content:"go"}]);
   }finally{runtime.dispose();}
 });
 await test("oversized HTTP error bodies have bounded head/tail and explicit incomplete capture",async()=>{
@@ -165,7 +165,7 @@ await test("OpenRouter native output limit is explained with configured budget a
       frame({choices:[{delta:{},finish_reason:'tool_calls',native_finish_reason:'max_output_tokens'}],usage:{prompt_tokens:5387,completion_tokens:4142}})+frame('[DONE]'));
   }});
   try {await assert.rejects(runtime.send('create SVG'),error=>{assert.match(String(error),/output token limit/);assert.match(String(error),/4,096/);assert.match(String(error),/Ctrl\+P → Turn limits/);assert.match(String(error),/max_output_tokens/);return true;});
-    assert.equal(executions,0);assert.equal(requests,1);assert.deepEqual(runtime.history(),[]);
+    assert.equal(executions,0);assert.equal(requests,1);assert.deepEqual(runtime.history(),[{role:"user",content:"create SVG"}]);
     assert.equal(traces[0]!.responseComplete,true);assert.match(traces[0]!.error!,/max_output_tokens/);
   }finally{runtime.dispose();}
 });
@@ -177,7 +177,7 @@ await test("HTTP and SSE provider messages are useful, bounded and redact creden
       return streamed?sse(frame(error)):Response.json(error,{status:402});
     }});
     try {await assert.rejects(runtime.send('hi'),error=>{assert.match(String(error),/HTTP 402/);assert.match(String(error),/Insufficient credits for \[REDACTED\]/);assert.ok(!String(error).includes('diagnostic-secret'));assert.ok(!String(error).includes('private-metadata'));return true;});
-      assert.equal(requests,1);assert.deepEqual(runtime.history(),[]);assert.ok(!JSON.stringify(traces).includes('diagnostic-secret'));
+      assert.equal(requests,1);assert.deepEqual(runtime.history(),[{role:"user",content:"hi"}]);assert.ok(!JSON.stringify(traces).includes('diagnostic-secret'));
     }finally{runtime.dispose();}
   }
 });

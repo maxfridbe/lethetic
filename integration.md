@@ -1057,6 +1057,13 @@ The legacy `requestSite` API and HTML/media preview preparation still collect
 complete responses. Workspace, model-context, and package-cache limits are separate.
 
 
+Failed or cancelled browser/native-web-UI turns retain the user prompt in model
+history, including after saving and reopening the session. Incomplete assistant
+and tool messages are discarded, so “continue” still includes the original goal
+without replaying an incomplete tool call. Tool side effects may remain. This also
+applies to authentication failures and output-token limits. It cannot recover
+prompts already removed by older versions; resend those prompts once.
+
 ### Background execution and native packaging
 
 The [Tauri native host](docs/how-to/native-web-ui.md) packages this same WASM UI for

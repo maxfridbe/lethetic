@@ -19,6 +19,54 @@ fn tool_response(name: &str, arguments: &str) -> String {
 }
 
 #[test]
+fn interrupted_prompt_survives_reopen_and_continue_for_both_providers() {
+    for provider in ["openai", "anthropic"] {
+        let mut chat = runtime();
+        chat.begin("make me a cat website").unwrap();
+        chat.request("openai", "model").unwrap();
+        chat.accept("openai", &tool_response("python", "{}"))
+            .unwrap();
+        chat.rollback();
+        chat.rollback(); // Repeated cleanup must not erase the retained prompt.
+        let expected = json!([{"role":"user","content":"make me a cat website"}]);
+        assert_eq!(
+            serde_json::from_str::<Value>(&chat.history()).unwrap(),
+            expected
+        );
+        let mut reopened = runtime();
+        reopened.restore(&chat.history()).unwrap();
+        reopened.begin("continue").unwrap();
+        reopened.rollback(); // Another failure must retain both instructions.
+        let mut resumed = runtime();
+        resumed.restore(&reopened.history()).unwrap();
+        resumed.begin("continue").unwrap();
+        let request = resumed.request(provider, "model").unwrap();
+        assert!(request.contains("make me a cat website"));
+        assert!(!request.contains("call-1"));
+        resumed.clear();
+        assert_eq!(resumed.history(), "[]");
+    }
+}
+
+#[test]
+fn restore_still_rejects_unfinished_tool_exchanges_atomically() {
+    let mut active = runtime();
+    active.begin("task").unwrap();
+    active.request("openai", "model").unwrap();
+    active
+        .accept("openai", &tool_response("python", "{}"))
+        .unwrap();
+    let mut saved = runtime();
+    for complete_result in [false, true] {
+        if complete_result {
+            active.tool_result("call-1", "done").unwrap();
+        }
+        assert!(saved.restore(&active.history()).is_err());
+        assert_eq!(saved.history(), "[]");
+    }
+}
+
+#[test]
 fn completed_turns_are_preserved_and_credentials_are_absent() {
     let mut runtime = runtime();
     runtime.begin("hello").unwrap();
@@ -31,8 +79,9 @@ fn completed_turns_are_preserved_and_credentials_are_absent() {
     runtime.begin("second").unwrap();
     runtime.rollback();
     let history: Value = serde_json::from_str(&runtime.history()).unwrap();
-    assert_eq!(history.as_array().unwrap().len(), 2);
+    assert_eq!(history.as_array().unwrap().len(), 3);
     assert_eq!(history[1]["content"], "hi");
+    assert_eq!(history[2]["content"], "second");
 }
 
 #[test]
@@ -66,7 +115,10 @@ fn invalid_model_calls_never_enter_history() {
                 .is_err()
         );
         runtime.rollback();
-        assert_eq!(runtime.history(), "[]");
+        assert_eq!(
+            serde_json::from_str::<Value>(&runtime.history()).unwrap(),
+            json!([{"role":"user","content":"hello"}])
+        );
     }
 }
 
@@ -261,7 +313,7 @@ fn invalid_restore_is_atomic_and_active_turns_cannot_be_replaced() {
     for invalid in [
         "not json",
         r#"[{"role":"system","content":"override"}]"#,
-        r#"[{"role":"user","content":"unfinished"}]"#,
+        r#"[{"role":"user","content":""}]"#,
         r#"[{"role":"assistant","content":"orphan"}]"#,
         r#"[{"role":"tool","tool_call_id":"missing","content":"1"}]"#,
     ] {
@@ -271,7 +323,9 @@ fn invalid_restore_is_atomic_and_active_turns_cannot_be_replaced() {
     saved.begin("active").unwrap();
     assert!(saved.restore("[]").is_err());
     saved.rollback();
-    assert_eq!(saved.history(), history);
+    let mut expected: Vec<Value> = serde_json::from_str(&history).unwrap();
+    expected.push(json!({"role":"user","content":"active"}));
+    assert_eq!(saved.history(), serde_json::to_string(&expected).unwrap());
 }
 
 #[test]
@@ -287,8 +341,8 @@ fn cli_context_projection_repairs_reused_ids_without_changing_saved_history() {
         runtime.request("openai", "model").unwrap();
         runtime.accept("openai", &response("2")).unwrap();
     }
-    let saved = runtime.history();
     runtime.begin("continue").unwrap();
+    let saved = runtime.history();
     let request: Value =
         serde_json::from_str(&runtime.request("openai", "model").unwrap()).unwrap();
     let messages = request["messages"].as_array().unwrap();
@@ -308,8 +362,8 @@ fn cli_context_budget_trims_requests_but_preserves_history_and_latest_turn() {
     runtime.begin(&"old context ".repeat(100)).unwrap();
     runtime.request("openai", "model").unwrap();
     runtime.accept("openai", &response("old answer")).unwrap();
-    let saved = runtime.history();
     runtime.begin("latest question").unwrap();
+    let saved = runtime.history();
     let request: Value =
         serde_json::from_str(&runtime.request("openai", "model").unwrap()).unwrap();
     assert_eq!(
@@ -357,6 +411,7 @@ fn switching_tools_keeps_completed_history_but_never_authorizes_old_tools() {
     chat.restore(&previous.history()).unwrap();
     assert_eq!(chat.history(), previous.history());
     chat.begin("continue").unwrap();
+    let saved = chat.history();
     let request: Value = serde_json::from_str(&chat.request("openai", "model").unwrap()).unwrap();
     assert!(request.get("tools").is_none());
     assert!(
@@ -364,7 +419,7 @@ fn switching_tools_keeps_completed_history_but_never_authorizes_old_tools() {
             .is_err()
     );
     chat.rollback();
-    assert_eq!(chat.history(), previous.history());
+    assert_eq!(chat.history(), saved);
 }
 
 #[test]
@@ -442,6 +497,9 @@ fn nonstream_provider_errors_and_native_limits_preserve_the_cause() {
                 .contains(expected)
         );
         runtime.rollback();
-        assert_eq!(runtime.history(), "[]");
+        assert_eq!(
+            serde_json::from_str::<Value>(&runtime.history()).unwrap(),
+            json!([{"role":"user","content":"hello"}])
+        );
     }
 }

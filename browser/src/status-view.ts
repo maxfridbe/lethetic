@@ -17,7 +17,7 @@ export function renderBrowserStatus(transport: LocalTransport | null, pins = new
   const source = metrics?.context.source === "server_usage" ? "last provider input" : "CLI estimate";
   const entries: { id: StatId; label: string; value: string; brief?: string }[] = [
     { id: "context", label: "Context used / input budget", value: `${tokens(metrics?.context.tokens ?? 0)} / ${tokens(limits?.contextTokens)} (${source})`, brief: `Context: ${tokens(metrics?.context.tokens ?? 0)} / ${tokens(limits?.contextTokens)}` },
-    { id: "requestUsage", label: "Latest request input / output", value: `${tokens(metrics?.latestUsage?.input)} / ${tokens(metrics?.latestUsage?.output)}` },
+    { id: "requestUsage", label: "Last reported request input / output", value: `${tokens(metrics?.latestUsage?.input)} / ${tokens(metrics?.latestUsage?.output)}` },
     { id: "contextMax", label: "Model context maximum", value: tokens(model?.context) },
     { id: "inputBudget", label: "Input budget (effective / configured)", value: `${tokens(limits?.contextTokens)} / ${tokens(transport?.turnLimits.contextTokens)}` },
     { id: "outputBudget", label: "Output budget / model maximum", value: `${tokens(limits?.maxOutputTokens)} / ${tokens(model?.output)}` },
@@ -43,7 +43,7 @@ export function renderBrowserStatus(transport: LocalTransport | null, pins = new
     { id: "session", label: "Session tokens", value: metrics?.session.label("total") ?? "Not reported" },
     { id: "requests", label: "Requests (turn / session)", value: `${turn?.requests ?? 0} / ${metrics?.session.requests ?? 0}` },
     { id: "elapsed", label: "Turn elapsed", value: started ? seconds(metrics?.elapsed ?? 0) : "—", brief: started ? seconds(metrics?.elapsed ?? 0) : "Elapsed: —" },
-    { id: "modelTime", label: "Model responses", value: started ? seconds(metrics?.modelMs ?? 0) : "—" },
+    { id: "modelTime", label: "Completed model response time", value: started ? seconds(metrics?.modelMs ?? 0) : "—" },
     { id: "toolTime", label: "Tool execution", value: started ? seconds(metrics?.toolMs ?? 0) : "—" },
     { id: "python", label: "Code runtime", value: transport?.mode === "dotnet-wasm" ? `.NET 11 WASM · ${network}` : transport?.pythonEnabled ? `Pyodide · ${network}` : "Off" },
   ];

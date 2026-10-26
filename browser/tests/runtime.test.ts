@@ -15,6 +15,37 @@ const call = (name: string, arguments_ = "{}"): Response => Response.json({ choi
     { id: "one", type: "function", function: { name, arguments: arguments_ } },
   ] } }] });
 
+await test("failed cats prompt survives save/reopen and reaches the next continue request", async () => {
+  for (const failure of ["unauthorized", "output-limit", "missing-key"]) {
+    const failedConnection: Connection = failure === "missing-key"
+      ? {...connection, endpoint: "https://openrouter.ai/api/v1/chat/completions", apiKey: undefined}
+      : connection;
+    const failed = await createRuntime({connection: failedConnection, wasm, providerRetries: 0, fetch: async () => {
+      if (failure === "missing-key") throw new Error("Missing credential reached network");
+      return failure === "unauthorized" ? new Response("Unauthorized", {status: 401})
+        : Response.json({choices: [{finish_reason: "length", message: {role: "assistant", content: "partial"}}]});
+    }});
+    let history: unknown[];
+    try {
+      await assert.rejects(failed.send("make me a cat website"), /HTTP 401|output token limit|API key missing/);
+      history = failed.history();
+      assert.deepEqual(history, [{role: "user", content: "make me a cat website"}]);
+    } finally { failed.dispose(); }
+    const reopened = await createRuntime({connection, wasm, fetch: async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      assert.deepEqual(body.messages.filter((m: {role: string}) => m.role === "user"), [
+        {role: "user", content: "make me a cat website"}, {role: "user", content: "continue"},
+      ]);
+      assert.ok(!JSON.stringify(body.messages).includes("partial"));
+      return answer("Building the cat website");
+    }});
+    try {
+      reopened.restore(history);
+      assert.equal(await reopened.send("continue"), "Building the cat website");
+    } finally { reopened.dispose(); }
+  }
+});
+
 await test("thinking preference reaches model requests and returned reasoning has its own event", async () => {
   for (const thinking of [undefined, "enabled", "disabled"] as const) {
     const events: import("../src/sdk.js").RuntimeEvent[] = [];
@@ -137,7 +168,7 @@ await test("provider errors roll back the failed turn and allow recovery", async
   const runtime = await createRuntime({ connection, wasm, fetch: async () =>
     fail ? new Response("private server diagnostics", { status: 401 }) : answer("ok") });
   await assert.rejects(runtime.send("fail"), /HTTP 401/);
-  assert.equal(runtime.history().length, 0);
+  assert.equal(runtime.history().length, 1);
   fail = false;
   assert.equal(await runtime.send("retry"), "ok");
   runtime.dispose();
@@ -146,7 +177,7 @@ await test("provider errors roll back the failed turn and allow recovery", async
 await test("unregistered tools and oversized responses cannot execute", async () => {
   const runtime = await createRuntime({ connection, wasm, fetch: async () => call("shell") });
   await assert.rejects(runtime.send("go"), /unregistered/);
-  assert.equal(runtime.history().length, 0);
+  assert.equal(runtime.history().length, 1);
   runtime.dispose();
   const oversized = await createRuntime({ connection, wasm, fetch: async () =>
     new Response("x".repeat(4 * 1024 * 1024 + 1)) });
@@ -165,7 +196,7 @@ await test("cancellation stops a pending tool and rejects concurrent sends", asy
   await assert.rejects(runtime.send("again"), /already running/);
   runtime.cancel();
   await assert.rejects(sending, /stopped/);
-  assert.equal(runtime.history().length, 0);
+  assert.equal(runtime.history().length, 1);
   runtime.dispose();
 });
 
@@ -174,7 +205,7 @@ await test("round limits prevent runaway tool loops", async () => {
     description: "loop", parameters: { type: "object" }, execute: () => "again" }],
     fetch: async () => call("loop") });
   await assert.rejects(runtime.send("go"), /round limit/);
-  assert.equal(runtime.history().length, 0);
+  assert.equal(runtime.history().length, 1);
   runtime.dispose();
 });
 
@@ -201,7 +232,7 @@ await test("pre-aborted requests and timeout do not leave a partial conversation
     }) });
   await assert.rejects(runtime.send("go", controller.signal));
   await assert.rejects(runtime.send("go"), /timed out/);
-  assert.equal(runtime.history().length, 0);
+  assert.equal(runtime.history().length, 1);
   runtime.dispose();
 });
 
@@ -247,7 +278,7 @@ await test("missing hosted credentials fail before fetch; rejected credentials e
   const missing = await createRuntime({connection:{...connection,endpoint:'https://openrouter.ai/api/v1/chat/completions',apiKey:undefined},wasm,
     fetch:async()=>{throw Error('Missing credential reached network');}});
   await assert.rejects(missing.send('hello'), /API key missing.*Save & use/);
-  assert.equal(missing.history().length,0);missing.dispose();
+  assert.deepEqual(missing.history(),[{role:"user",content:"hello"}]);missing.dispose();
   const traces: import('../src/provider-trace.js').ProviderTrace[]=[];
   const rejected = await createRuntime({connection,wasm,onTrace:trace=>traces.push(trace),fetch:async(_url,init)=>{
     assert.equal(new Headers(init?.headers).get('Authorization'),'Bearer test-secret');
@@ -256,5 +287,5 @@ await test("missing hosted credentials fail before fetch; rejected credentials e
   await assert.rejects(rejected.send('hello'), /Authentication rejected.*An API key was sent.*No cookie auth credentials found/);
   assert.match(traces[0]!.error!, /An API key was sent/);
   assert.doesNotMatch(JSON.stringify(traces), /test-secret/);
-  assert.equal(rejected.history().length,0);rejected.dispose();
+  assert.deepEqual(rejected.history(),[{role:"user",content:"hello"}]);rejected.dispose();
 });
