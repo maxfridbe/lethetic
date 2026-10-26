@@ -13,10 +13,10 @@ let wakeQueue = Promise.resolve();
 let networkReset = Promise.resolve();
 export { invoke as invokeNative };
 export function nativeNetworkReady(): Promise<void> { return networkReset; }
-let turns = 0, responses = 0;
+let turns = 0, responses = 0, hostedSites = 0;
 function updateNativeWork(): Promise<void> {
   if (!nativeAvailable()) return Promise.resolve();
-  const working = responses > 0, active = turns > 0 || working;
+  const working = responses > 0, active = turns > 0 || hostedSites > 0 || working;
   const next = wakeQueue.then(() => invoke<void>("set_working", { working, active }));
   wakeQueue = next.catch(() => {}); return next;
 }
@@ -31,12 +31,18 @@ export function beginNativeTurn(): () => void {
   let ended = false;
   return () => { if (!ended) { ended = true; turns = Math.max(0, turns - 1); void updateNativeWork().catch(() => {}); } };
 }
+/** Keep the WebView available for explicit site hosting without a CPU wake lock. */
+export async function beginNativeSite(): Promise<() => void> {
+  hostedSites++; try { await updateNativeWork(); } catch (error) { hostedSites--; throw error; }
+  let ended = false;
+  return () => { if (!ended) { ended = true; hostedSites = Math.max(0, hostedSites - 1); void updateNativeWork().catch(() => {}); } };
+}
 /** A reload must not inherit the old document's native sleep inhibitor. */
 export function resetNativeWork(): void {
-  turns = 0; responses = 0; void updateNativeWork().catch(() => {});
+  turns = 0; responses = 0; hostedSites = 0; void updateNativeWork().catch(() => {});
   if (nativeAvailable()) {
     void invoke<void>("cancel_download", { id: null }).catch(() => {});
-    networkReset = invoke<void>("revoke_network", { grant: null });
+    networkReset = Promise.all([invoke<void>("revoke_network", { grant: null }), invoke<void>("stop_forwarded_sites", { id: null })]).then(() => {});
     void networkReset.catch(() => {});
   }
 }

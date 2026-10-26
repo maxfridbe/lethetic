@@ -20,6 +20,11 @@ jobs:
         with:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install TypeScript for the embedded UI
+        run: npm install --global typescript@7.0.2
       - uses: Swatinem/rust-cache@v2
       - name: Central version and packaging checks
         run: |
@@ -32,6 +37,10 @@ jobs:
         run: |
           cargo clippy --workspace --all-targets --locked -- -D warnings
           cargo clippy -p lethetic-wasm --target wasm32-unknown-unknown --locked -- -D warnings
+      - name: Validate generated web assets and contracts
+        run: |
+          python3 scripts/test_build_web_assets.py
+          ./build-web.sh --check
       - name: Native and WASM unit tests, local integration tests
         run: python3 scripts/ci_run.py python3 scripts/test_rust.py
       - name: Build isolated C# runtime (no host SDK)

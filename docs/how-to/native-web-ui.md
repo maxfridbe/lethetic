@@ -63,7 +63,7 @@ the selected directory. Runtimes still see a virtual filesystem, not host paths.
 
 The main application is trusted. Sandboxed previews and code workers do not get
 its per-launch native capability token. Tauri permissions are limited to folder
-grants, workspace synchronization, user-selected download destinations, revocable runtime HTTP access and response keep-awake. No remote
+grants, workspace synchronization, user-selected download destinations, revocable runtime HTTP access, explicit loopback site forwarding and response keep-awake. No remote
 origin has an IPC grant. This is the browser runtime's isolation model with a
 narrow directory bridge, not Podman/container isolation or a defense against a
 compromised operating system/document provider.
@@ -90,6 +90,41 @@ headers and binary bodies up to 8 MiB in each direction. Requests time out after
 60 seconds. Browser cookies and automatic redirects are not forwarded; raw sockets
 and WebSocket proxying are not provided. NuGet and bundled runtime package downloads
 keep their existing separate permissions/routes. Model connections are unchanged.
+
+## Test a site in the device browser
+
+1. Enable **Interactive sites**, then run your Python or C# site from Files.
+2. Open **Sites**, select its virtual port, and find **Open in the device browser**.
+3. Leave **Real port** at `0` to choose an available port, or enter `1024–65535`.
+4. Press **Forward & open browser**. The device browser opens a real
+   `http://127.0.0.1:<port>/` site backed by the running session.
+
+Relative API requests, scripts, ES modules, styles, images and forms use ordinary
+HTTP. Use relative URLs: the runtime still identifies its own virtual port, and
+its existing header/cookie restrictions still apply. Python/.NET handlers and
+files remain inside their WASM runtime. This is a
+loopback HTTP bridge, not a host Python/.NET server or a LAN/public listener.
+Outbound runtime requests still require **Network access**; external requests from
+page JavaScript also follow the browser's CORS rules. Without Network access,
+the page's content policy permits local resources only.
+
+Use **Open browser** again to authorize another tab/browser, and **Stop forwarding**
+to close the real port while leaving the virtual site running. The launch URL
+exchanges a temporary capability for an HttpOnly cookie before loading user content.
+Closing the Sites dialog keeps forwarding active. Stopping the virtual site,
+changing sessions/runtime/permissions, reloading or closing Lethetic revokes it.
+
+Requests are serialized through the runtime, with 16 MiB request and 64 MiB
+buffered response limits and a 60-second bridge deadline; shorter runtime deadlines
+still apply. A busy runtime can return 503. WebSocket upgrades, TLS and server-sent
+streaming are not supported by this bridge. External browser console logs stay in
+that browser's developer tools; they are not captured by the iframe debugger.
+
+Keep Lethetic running. On Android, explicit forwarding maintains the foreground
+notification and WebView availability, but **does not acquire a CPU wake lock**.
+The service has the same 30-minute lease ceiling as background turns; device sleep
+or process termination can interrupt hosting. Browser-only builds cannot bind a
+real TCP port and keep the existing sandboxed Sites preview.
 
 ## Background responses
 

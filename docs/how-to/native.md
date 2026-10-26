@@ -11,7 +11,10 @@ does not install or launch the model server.
 1. Create `config.yml` in your project or `~/.config/lethetic/config.yml` using the
    [configuration example](../native-reference.md#example-configyml). Set your
    endpoint, model, and connection kind. Keep credentials out of version control.
-2. From the Lethetic repository, build the application:
+2. For source builds, install Rust, Python 3, Node.js 22+, and TypeScript 7.0.2
+   (`npm install --global typescript@7.0.2`). Cargo automatically builds and embeds
+   the remote UI from TypeScript; no generated assets need to be checked in.
+   From the Lethetic repository, build the application:
 
    ```bash
    cargo build --release --bin lethetic

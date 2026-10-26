@@ -259,7 +259,7 @@ Validate contracts, sources, vendored hashes, imports, compiler version, and che
 ./build-web.sh --check
 ```
 
-Both modes also compile the strict TypeScript tests in `web/tests` (Node `node:test`, no packages; ambient Node declarations in `web/tests/node-env.d.ts`) into a temporary directory outside `web/dist` and run them against the staged build. The script is working-directory independent, requires global TypeScript exactly 7.0.2, rejects a project-local compiler, and runs Rust contract generation with Cargo locked and offline. Normal Cargo builds embed the checked-in `web/dist`; they do not run npm, download browser assets, or silently regenerate the SPA.
+Both modes also compile the strict TypeScript tests in `web/tests` (Node `node:test`, no packages; ambient Node declarations in `web/tests/node-env.d.ts`) into a temporary directory outside `web/dist` and run them against the staged build. The script is working-directory independent, requires global TypeScript exactly 7.0.2, rejects a project-local compiler, and runs Rust contract generation with Cargo locked and offline. Native Cargo builds automatically compile the TypeScript and copy validated static/vendor assets into Cargo’s `OUT_DIR`, then embed that distribution and its generated allowlist. Changes to sources, styles, vendored files, or build scripts trigger regeneration. `web/dist` is an ignored local preview output; `--check` builds and validates in a temporary directory and works without it. No generated distribution or Rust asset allowlist is checked in. The reviewed TypeScript protocol bindings remain checked in and are verified against the Rust contracts. Cargo does not install npm packages or download assets: install Python 3, Node.js 22+, and global TypeScript 7.0.2 before a native source build. Portable `--no-default-features`/WASM builds skip this native embedding step.
 
 Vendored components:
 
@@ -322,3 +322,12 @@ Remote presentation keeps at most the latest 200 blocks and applies per-block, a
 - **Service logging stops after its launcher/pipe closes:** service mode survives SIGHUP, and BrokenPipe/EIO permanently disables only its sparse console output. The browser actor and authentication epoch remain active.
 
 Stop Lethetic before rotating or replacing explicit TLS/token files, changing DNS/NSS answers, or changing the authentication mode. Keep credentials and generated state permissions under operator control; never make them model-writable. The listener set is pinned for one process while browsers resolve the hostname independently, so an address change can make reconnects fail until Lethetic restarts; it never triggers a silent rebind. Invalid or near-expiry generated exact-target material is replaced with a fresh manifest-bound identity, so verify any newly printed fingerprint. Explicit credential problems fail closed; there is no generated-credential fallback for an explicit profile. Tokenless mode is never selected implicitly—only the exact invocation flag enables it.
+
+### Long transcript rendering
+
+The shared UI mounts at most 60 transcript blocks around the viewport, with
+measured-height spacers for the rest. Scrolling loads older blocks without
+removing their session history. Height changes and resizing preserve the visible
+anchor. Manual scrolling keeps the existing follow policy: new output can resume
+following after ten seconds only when the chat is neither hovered nor focused,
+or immediately when you manually return to the bottom.

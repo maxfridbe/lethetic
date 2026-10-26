@@ -88,11 +88,10 @@ if [[ "$mode" == "check" ]]; then
     "$tsc_bin" --project "$TSCONFIG" --outDir "$check_stage" --pretty false
     python3 "$VERIFY" copy-assets "$check_stage"
     run_browser_tests "$check_stage"
-    python3 "$VERIFY" compare-dist "$check_stage"
-    python3 "$ROOT/scripts/generate_web_asset_manifest.py"
+    python3 "$VERIFY" check-dist "$check_stage"
     rm -rf -- "$check_stage"
     trap - EXIT
-    printf 'web build check passed (tsc %s; web/dist matches sources)\n' "$REQUIRED_TSC_VERSION"
+    printf 'web build check passed (tsc %s; sources and temporary distribution validated)\n' "$REQUIRED_TSC_VERSION"
     exit 0
 fi
 
@@ -139,9 +138,4 @@ if [[ -n "$previous" ]]; then
     rm -rf -- "$previous"
     previous=""
 fi
-# Keep every manifested resource an explicit compiler dependency.
-python3 "$ROOT/scripts/generate_web_asset_manifest.py" --write
-# Asset mtimes are normalized for deterministic output, so explicitly invalidate
-# Cargo's mtime-based include_dir/include_bytes dependency check after a rebuild.
-touch -- "$ROOT/src/wfe/assets.rs"
 printf 'built deterministic web distribution at %s\n' "$DIST"

@@ -1,5 +1,6 @@
 mod download;
 mod download_buffer;
+mod sites;
 use lethetic_directory::{Grant, Workspace};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -13,6 +14,7 @@ struct Host {
     downloads: Mutex<download_buffer::Downloads>,
     directory: Mutex<Option<Grant>>,
     network: Mutex<NetworkGrants>,
+    sites: Mutex<sites::Sites>,
     #[cfg(not(target_os = "android"))]
     awake: Mutex<Option<keepawake::KeepAwake>>,
     #[cfg(target_os = "android")]
@@ -188,6 +190,11 @@ async fn set_working(
 pub fn init(token: String) -> tauri::plugin::TauriPlugin<tauri::Wry> {
     let builder = tauri::plugin::Builder::new("lethetic-host")
         .invoke_handler(tauri::generate_handler![
+            sites::forward_site,
+            sites::stop_forwarded_sites,
+            sites::next_site_request,
+            sites::reply_site_request,
+            sites::open_site_browser,
             download::begin_download,
             download::write_download,
             download::finish_download,
@@ -208,6 +215,7 @@ pub fn init(token: String) -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 downloads: Mutex::default(),
                 directory: Mutex::new(None),
                 network: Mutex::new(NetworkGrants::default()),
+                sites: Mutex::default(),
                 #[cfg(not(target_os = "android"))]
                 awake: Mutex::new(None),
                 #[cfg(target_os = "android")]
@@ -228,6 +236,7 @@ mod tests {
             downloads: Mutex::default(),
             directory: Mutex::new(None),
             network: Mutex::new(NetworkGrants::default()),
+            sites: Mutex::default(),
             awake: Mutex::new(None),
         };
         assert!(authorize(&host, "").is_err());

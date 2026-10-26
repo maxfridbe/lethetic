@@ -17,6 +17,7 @@ import app.tauri.plugin.Plugin
 import java.util.concurrent.Executors
 
 @InvokeArg class WorkArgs { var working: Boolean = false; var active: Boolean = false }
+@InvokeArg class SiteArgs { var url: String = "" }
 @InvokeArg class SaveArgs { var path: String = ""; var name: String = ""; var mime: String = "application/octet-stream" }
 @TauriPlugin
 class HostPlugin(private val activity: Activity) : Plugin(activity) {
@@ -49,6 +50,16 @@ class HostPlugin(private val activity: Activity) : Plugin(activity) {
             }
             JSObject().apply { put("saved", saved) }
         }
+    }
+    @Command fun openSiteBrowser(invoke: Invoke) {
+        try {
+            val uri = android.net.Uri.parse(invoke.parseArgs(SiteArgs::class.java).url)
+            require(uri.scheme == "http" && uri.host == "127.0.0.1" && uri.port in 1024..65535) { "Expected a local forwarded site" }
+            activity.runOnUiThread {
+                try { activity.startActivity(Intent(Intent.ACTION_VIEW, uri)); invoke.resolve() }
+                catch (error: Exception) { invoke.reject(error.message ?: "No browser available") }
+            }
+        } catch (error: Exception) { invoke.reject(error.message ?: "Invalid forwarded site") }
     }
     @Command fun chooseDirectory(invoke: Invoke) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
@@ -86,8 +97,8 @@ class HostPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.resolve()
         } catch (error: Exception) { waiting = false; activity.stopService(Intent(activity, ResponseService::class.java)); serviceRunning = false; invoke.reject(error.message ?: "Keep-awake unavailable") }
     }
-    // Tauri pauses its WebView with the Activity. Resume this WebView while a response
-    // is pending, without changing global WebView timers or granting native code tools.
+    // Tauri pauses its WebView with the Activity. Resume while a turn or explicitly hosted site
+    // is active, without changing global timers or granting native code tools.
     override fun onPause(activity: AppCompatActivity) { if (waiting) webView?.post { if (waiting) webView?.onResume() } }
     override fun onDestroy(activity: AppCompatActivity) {
         waiting = false; activity.stopService(Intent(activity, ResponseService::class.java))

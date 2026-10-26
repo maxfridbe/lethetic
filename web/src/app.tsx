@@ -1,3 +1,4 @@
+import { ChatVirtualizer, type ChatWindow } from "./app/chat-virtual.js";
 import { restoreUiScale } from "./ui-scale.js";
 import type { LocalPaletteCommand, PaletteCommand } from "./app/state.js";
 import {
@@ -65,7 +66,6 @@ import {
   approvalConfirmationKey,
   approvalHasHiddenContent,
   chatScrollMetrics,
-  chatWindowStartForScroll,
   commandForId,
   confirmationMatches as retainedConfirmationMatches,
   confirmedCommand,
@@ -183,7 +183,10 @@ export class SpaApplication implements BrowserTransportEvents {
   #confirmableEditorVersion: number | null = null;
   #confirmationRequestId: string | null = null;
   #approvalConfirmation: ApprovalConfirmation | null = null;
+  #disposed = false;
   #chatStart = 0;
+  #chatWindow: ChatWindow = {start: 0, end: 0, top: 0, bottom: 0};
+  readonly #chatVirtual = new ChatVirtualizer(() => this.#render());
   readonly #chatFollow: ChatFollowController;
   #debuggerMedia: MediaQueryList | null = null;
   #debuggerWide = true;
@@ -259,11 +262,13 @@ export class SpaApplication implements BrowserTransportEvents {
 
   /** Release listeners and resources when an embedding host unmounts the UI. */
   dispose(): void {
+    this.#disposed = true;
     globalThis.removeEventListener("keydown", this.#onGlobalKeyDown);
     globalThis.removeEventListener("pagehide", this.#onPageHide);
     this.#debuggerMedia?.removeEventListener("change", this.#onDebuggerMediaChange);
     this.#onPageHide();
     this.#chatFollow.dispose();
+    this.#chatVirtual.dispose();
     this.#clearSnapshotWait();
     if (this.#toastTimer !== null) globalThis.clearTimeout(this.#toastTimer);
     if (this.#revisionLagTimer !== null) globalThis.clearTimeout(this.#revisionLagTimer);
@@ -286,6 +291,7 @@ export class SpaApplication implements BrowserTransportEvents {
     this.#debuggerDismissalNeedsReconcile = false;
     this.#debuggerDismissalRequestId = null;
     this.#chatFollow.reset();
+    this.#chatVirtual.reset();
     this.#chatStart = 0;
     const abandonedIds = new Set(abandoned.map((request) => request.id));
     for (const requestId of abandonedIds) {
@@ -636,6 +642,7 @@ export class SpaApplication implements BrowserTransportEvents {
       previous.session.session_id !== current.session.session_id;
     if (sessionChanged) {
       this.#chatFollow.reset();
+      this.#chatVirtual.reset();
       this.#chatStart = Math.max(
         0,
         current.blocks.blocks.length - CHAT_WINDOW_SIZE,
@@ -1039,6 +1046,7 @@ export class SpaApplication implements BrowserTransportEvents {
   }
 
   #render(): void {
+    if (this.#disposed) return;
     const snapshot = this.#remote.view;
     this.#chatFollow.setTurnActive(
       this.#remote.phase === "live" &&
@@ -1050,7 +1058,7 @@ export class SpaApplication implements BrowserTransportEvents {
       chatBeforePatch instanceof HTMLElement
         ? captureChatAnchor(chatBeforePatch)
         : null;
-    this.#prepareChatWindow(snapshot);
+    this.#prepareChatWindow(snapshot, anchor, chatBeforePatch instanceof HTMLElement ? chatBeforePatch : null);
     this.#tree = this.#patch(this.#tree, this.#view());
     const fileHost = this.#filesEnabled && this.#files.state.open
       ? globalThis.document.getElementById("files-monaco") : null;
@@ -1078,15 +1086,18 @@ export class SpaApplication implements BrowserTransportEvents {
     }
     this.#chatFollow.setFocusWithin(chat instanceof HTMLElement && chat.contains(globalThis.document.activeElement));
     this.#synchronizeChatPosition(snapshot, anchor);
+    this.#chatVirtual.afterRender(chat instanceof HTMLElement ? chat : null);
   }
 
-  #prepareChatWindow(snapshot: WebAppSnapshot | null): void {
-    if (snapshot !== null && this.#chatFollow.mode === "following") {
-      this.#chatStart = Math.max(
-        0,
-        snapshot.blocks.blocks.length - CHAT_WINDOW_SIZE,
-      );
-    }
+  #prepareChatWindow(snapshot: WebAppSnapshot | null, anchor: ChatAnchor | null, chat: HTMLElement | null): void {
+    if (!snapshot) return;
+    const prefix = snapshot.blocks.omitted_before - (snapshot.blocks.truncated ? 1 : 0);
+    this.#chatVirtual.rows.sync(snapshot.blocks.blocks.length, prefix);
+    if (chat) this.#chatVirtual.measure(chat);
+    const ordinal = anchor?.key.startsWith("block-") ? Number(anchor.key.slice(6)) : NaN;
+    this.#chatWindow = this.#chatVirtual.rows.range(chat?.scrollTop ?? 0, chat?.clientHeight || 800,
+      this.#chatFollow.mode === "following", Number.isFinite(ordinal) ? ordinal - prefix : undefined);
+    this.#chatStart = this.#chatWindow.start;
   }
 
   #synchronizeOverlayFocus(panelKey: string | null): void {
@@ -1149,6 +1160,7 @@ export class SpaApplication implements BrowserTransportEvents {
     scrollTop: number | null,
     anchor: ChatAnchor | null,
   ): number | null {
+    if (this.#disposed) return null;
     const chat = globalThis.document.getElementById("chat-scroll");
     if (!(chat instanceof HTMLElement)) {
       return null;
@@ -1209,6 +1221,7 @@ export class SpaApplication implements BrowserTransportEvents {
         debuggerDrawerDismissed: this.#narrowDebuggerDismissed,
         draft: this.#draft,
         chatStart: this.#chatStart,
+        chatWindow: this.#chatWindow,
         toast: this.#toast,
         filesPane: this.#filesEnabled ? renderFilesPane(this.#files.state, live, {
           toggle: () => this.#files.toggle(),
@@ -1613,15 +1626,7 @@ export class SpaApplication implements BrowserTransportEvents {
     }
     const metrics = chatScrollMetrics(target);
     this.#chatFollow.observeScroll(metrics);
-    const next = chatWindowStartForScroll(
-      snapshot.blocks.blocks.length,
-      metrics.scrollTop,
-      this.#chatFollow.mode === "following",
-    );
-    if (next !== this.#chatStart) {
-      this.#chatStart = next;
-      this.#render();
-    }
+    this.#chatVirtual.requestRender();
   };
 
   #keyboardContext(): KeyboardContext {

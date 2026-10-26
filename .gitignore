@@ -1,4 +1,6 @@
 /target
+/web/dist/
+/web/.dist.*/
 .lethetic/
 temp_run_manual/
 ignore/

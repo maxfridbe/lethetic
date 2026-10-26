@@ -729,3 +729,24 @@ test("skills panel data is exact and catalog links stay in Anthropic's repositor
   assert.ok(isSkillChoiceView(skill));
   assert.equal(isSkillChoiceView({ ...skill, enabled: "yes" }), false);
 });
+
+await test("virtual chat windows follow measured row heights and remain bounded", async () => {
+  const {MeasuredChatWindow} = await import("../src/app/chat-virtual.js");
+  const rows = new MeasuredChatWindow();
+  rows.sync(10000,0);
+  for (let index=0;index<20;index++) rows.measure(index,1000);
+  const middle=rows.range(10050,700,false);
+  assert.ok(middle.start<=10 && middle.end>10);
+  assert.ok(middle.end-middle.start<=60);
+  assert.equal(middle.top,6000);
+  const bottom=rows.range(0,700,true);
+  assert.equal(bottom.end,10000);assert.equal(bottom.bottom,0);
+  assert.ok(bottom.end-bottom.start<=60);
+  rows.sync(9990,10);
+  const shifted=rows.range(0,700,false);
+  assert.equal(shifted.end,5); // First surviving row is still 1000px tall.
+  const anchored=rows.range(1000000,700,false,3);
+  assert.ok(anchored.start<=3 && anchored.end>3);
+  rows.reset();rows.sync(0,0);
+  assert.deepEqual(rows.range(0,700,true),{start:0,end:0,top:0,bottom:0});
+});

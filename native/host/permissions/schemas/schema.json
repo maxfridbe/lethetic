@@ -343,6 +343,18 @@
           "markdownDescription": "Denies the finish_download command without any pre-configured scope."
         },
         {
+          "description": "Enables the forward_site command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-forward-site",
+          "markdownDescription": "Enables the forward_site command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the forward_site command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-forward-site",
+          "markdownDescription": "Denies the forward_site command without any pre-configured scope."
+        },
+        {
           "description": "Enables the grant_network command without any pre-configured scope.",
           "type": "string",
           "const": "allow-grant-network",
@@ -353,6 +365,42 @@
           "type": "string",
           "const": "deny-grant-network",
           "markdownDescription": "Denies the grant_network command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the next_site_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-next-site-request",
+          "markdownDescription": "Enables the next_site_request command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the next_site_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-next-site-request",
+          "markdownDescription": "Denies the next_site_request command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_site_browser command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-site-browser",
+          "markdownDescription": "Enables the open_site_browser command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_site_browser command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-site-browser",
+          "markdownDescription": "Denies the open_site_browser command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the reply_site_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-reply-site-request",
+          "markdownDescription": "Enables the reply_site_request command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the reply_site_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-reply-site-request",
+          "markdownDescription": "Denies the reply_site_request command without any pre-configured scope."
         },
         {
           "description": "Enables the revoke_directory command without any pre-configured scope.",
@@ -389,6 +437,18 @@
           "type": "string",
           "const": "deny-set-working",
           "markdownDescription": "Denies the set_working command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the stop_forwarded_sites command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-stop-forwarded-sites",
+          "markdownDescription": "Enables the stop_forwarded_sites command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stop_forwarded_sites command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-stop-forwarded-sites",
+          "markdownDescription": "Denies the stop_forwarded_sites command without any pre-configured scope."
         },
         {
           "description": "Enables the sync_directory command without any pre-configured scope.",

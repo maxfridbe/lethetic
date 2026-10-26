@@ -1,5 +1,6 @@
-//! A revocable, loopback-only HTTP capability for the app's WASM runtimes.
-//! No external proxy, browser cookies, redirects, filesystem or shell access is involved.
+//! Revocable loopback HTTP capabilities for the app's WASM runtimes.
+//! Outbound requests and explicitly forwarded virtual sites use separate grants.
+pub mod sites;
 use axum::{
     Json, Router,
     body::Bytes,

@@ -2,25 +2,10 @@
 
 use include_dir::{Dir, include_dir};
 
-static WEB_DIST: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/web/dist");
-
-// `include_dir!` does not reliably invalidate an incremental Cargo build when
-// only a file inside the directory changes. The anonymous `include_bytes!`
-// constants make every allowlisted asset an explicit compiler dependency while
-// `WEB_DIST` remains the single runtime copy. `build-web.sh` also touches this
-// module after installing normalized-mtime assets so Cargo reevaluates them.
-macro_rules! tracked_assets {
-    ($($path:literal),+ $(,)?) => {
-        const ALLOWED_ASSETS: &[&str] = &[$($path),+];
-        $(const _: &[u8] = include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/web/dist/",
-            $path
-        ));)+
-    };
-}
-
-include!("assets_manifest.rs");
+// build.rs tracks the TypeScript, static resources, and vendored dependencies.
+// Cargo regenerates both the distribution and allowlist before compiling us.
+static WEB_DIST: Dir<'static> = include_dir!("$OUT_DIR/web-dist");
+include!(concat!(env!("OUT_DIR"), "/web-assets.rs"));
 
 pub struct EmbeddedAsset {
     pub bytes: &'static [u8],

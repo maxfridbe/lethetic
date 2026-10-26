@@ -1,3 +1,4 @@
+import type { ChatWindow } from "./chat-virtual.js";
 import type { VNode } from "../../lib/snabbdom/build/index.js";
 import type {
   ApprovalDecision,
@@ -61,6 +62,7 @@ export interface ChatViewState {
   readonly debuggerDrawerDismissed: boolean;
   readonly draft: string;
   readonly chatStart: number;
+  readonly chatWindow?: ChatWindow;
   readonly toast: string | null;
   readonly filesPane: VNode | null;
   readonly overlay: VNode | null;

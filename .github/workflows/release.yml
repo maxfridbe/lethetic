@@ -14,6 +14,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install TypeScript for the embedded UI
+        run: npm install --global typescript@7.0.2
       - uses: Swatinem/rust-cache@v2
       - name: Validate central release version
         run: |

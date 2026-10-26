@@ -5,6 +5,7 @@
     "src/app/background-tasks.js",
     "src/app/chat-anchor.js",
     "src/app/chat-view.js",
+    "src/app/chat-virtual.js",
     "src/app/debugger.js",
     "src/app/helpers.js",
     "src/app/history-recall.js",

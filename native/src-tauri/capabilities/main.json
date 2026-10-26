@@ -14,6 +14,11 @@
     "lethetic-host:allow-begin-download",
     "lethetic-host:allow-write-download",
     "lethetic-host:allow-finish-download",
-    "lethetic-host:allow-cancel-download"
+    "lethetic-host:allow-cancel-download",
+    "lethetic-host:allow-forward-site",
+    "lethetic-host:allow-stop-forwarded-sites",
+    "lethetic-host:allow-next-site-request",
+    "lethetic-host:allow-reply-site-request",
+    "lethetic-host:allow-open-site-browser"
   ]
 }

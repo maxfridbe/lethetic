@@ -32,8 +32,8 @@ import { isMarkdownBlockKind } from "../markdown.js";
 import type { RemoteState } from "../protocol.js";
 import { assertNever, isSafeCssColor } from "../safety.js";
 
-export const CHAT_WINDOW_SIZE = 180;
-export const CHAT_OVERSCAN = 24;
+export const CHAT_WINDOW_SIZE = 60;
+export const CHAT_OVERSCAN = 4;
 export const CHAT_ROW_ESTIMATE = 112;
 export const MAX_DRAFT_LENGTH = 1_000_000;
 export const MAX_PROMPT_BYTES = 128 * 1024;
@@ -745,23 +745,6 @@ export function confirmedCommand(
     default:
       return assertNever(command, "confirmation payload");
   }
-}
-
-export function chatWindowStartForScroll(
-  count: number,
-  scrollTop: number,
-  following: boolean,
-): number {
-  if (following) {
-    return Math.max(0, count - CHAT_WINDOW_SIZE);
-  }
-  return Math.max(
-    0,
-    Math.min(
-      Math.floor(scrollTop / CHAT_ROW_ESTIMATE) - CHAT_OVERSCAN,
-      Math.max(0, count - CHAT_WINDOW_SIZE),
-    ),
-  );
 }
 
 export function rebaseChatWindowStart(

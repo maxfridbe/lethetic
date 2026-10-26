@@ -646,7 +646,7 @@ def check_vendor() -> set[str]:
     for relative, (expected_hash, expected_size) in records.items():
         path = LIB / relative
         metadata = path.stat()
-        if stat.S_IMODE(metadata.st_mode) != 0o644:
+        if os.name != "nt" and stat.S_IMODE(metadata.st_mode) != 0o644:
             fail(f"vendored file must have mode 0644: web/lib/{relative}")
         if metadata.st_size != expected_size:
             fail(f"vendored size mismatch: web/lib/{relative}")
@@ -1233,32 +1233,6 @@ def check_dist(destination: Path, *, normalize: bool = True) -> None:
     os.utime(destination, (epoch, epoch), follow_symlinks=False)
 
 
-def compare_dist(candidate: Path) -> None:
-    check_dist(candidate)
-    check_dist(WEB / "dist", normalize=False)
-    candidate_files, _ = walk_regular(candidate)
-    dist_files, _ = walk_regular(WEB / "dist")
-    if candidate_files != dist_files:
-        fail(
-            "checked-in web/dist has drifted "
-            f"(missing={sorted(candidate_files - dist_files)}, "
-            f"extra={sorted(dist_files - candidate_files)})"
-        )
-    changed: list[str] = []
-    bad_modes: list[str] = []
-    for relative in sorted(candidate_files):
-        expected = candidate / relative
-        actual = WEB / "dist" / relative
-        if expected.read_bytes() != actual.read_bytes():
-            changed.append(relative)
-        if stat.S_IMODE(actual.stat().st_mode) != 0o644:
-            bad_modes.append(relative)
-    if changed:
-        fail(f"checked-in web/dist content has drifted: {changed}")
-    if bad_modes:
-        fail(f"checked-in web/dist files must have mode 0644: {bad_modes}")
-
-
 def _expect_self_check_failure(
     description: str, expected_message: str, action: Callable[[], None]
 ) -> None:
@@ -1457,8 +1431,6 @@ def main() -> int:
     copy.add_argument("destination", type=Path)
     dist = subparsers.add_parser("check-dist")
     dist.add_argument("destination", type=Path)
-    compare = subparsers.add_parser("compare-dist")
-    compare.add_argument("candidate", type=Path)
     subparsers.add_parser("self-check")
     arguments = parser.parse_args()
     if arguments.command == "check":
@@ -1467,8 +1439,6 @@ def main() -> int:
         copy_assets(arguments.destination.absolute())
     elif arguments.command == "check-dist":
         check_dist(arguments.destination.absolute())
-    elif arguments.command == "compare-dist":
-        compare_dist(arguments.candidate.absolute())
     else:
         run_self_check()
     return 0

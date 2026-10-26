@@ -191,6 +191,7 @@ export async function testDotnetBrowser(evaluate: (expression: string) => Promis
     await create('wireapp/Program.cs',source);
     if(!document.querySelector('[data-file-action=run] .ui-icon'))throw Error('C# Run icon missing');
     await create('wireapp/Site.csproj','<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net11.0</TargetFramework></PropertyGroup></Project>');
+    await wait(()=>{const run=document.querySelector('[data-file-action=run]');return run && !run.disabled;});
     document.querySelector('[data-file-action=run]').click();
     await wait(()=>document.querySelector('[data-browser-action=sites]')?.textContent.includes('(1)'));
     await wait(()=>!!document.querySelector('.activity-idle'));
@@ -230,6 +231,7 @@ export async function testDotnetBrowser(evaluate: (expression: string) => Promis
     // The single-file button also compiles; the old virtual port has been released.
     document.querySelector('.files-entry[title="wireapp/Program.cs"]').click();
     await wait(()=>document.querySelector('.files-path')?.textContent.includes('Program.cs'));
+    await wait(()=>{const run=document.querySelector('[data-file-action=run]');return run && !run.disabled;});
     document.querySelector('[data-file-action=run]').click();
     await wait(()=>document.querySelector('[data-browser-action=sites]')?.textContent.includes('(1)'));
     await wait(()=>!!document.querySelector('.activity-idle'));

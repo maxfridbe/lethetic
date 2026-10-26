@@ -1,5 +1,10 @@
 fn main() {
     tauri_plugin::Builder::new(&[
+        "forward_site",
+        "stop_forwarded_sites",
+        "next_site_request",
+        "reply_site_request",
+        "open_site_browser",
         "begin_download",
         "write_download",
         "finish_download",

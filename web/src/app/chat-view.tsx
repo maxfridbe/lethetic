@@ -155,6 +155,7 @@ function renderBlock(
         attrs={{
           class: "chat-divider",
           role: "separator",
+          "data-chat-index": String(index),
           ...(anchor === null ? {} : { "data-chat-anchor": anchor }),
         }}
       >
@@ -196,7 +197,8 @@ function renderBlock(
           block.success === false ? " is-failure" : ""
         }`,
         "aria-label": blockLabel(block),
-        ...(anchor === null ? {} : { "data-chat-anchor": anchor }),
+        "data-chat-index": String(index),
+          ...(anchor === null ? {} : { "data-chat-anchor": anchor }),
       }}
     >
       <header attrs={{ class: "block-header" }}>
@@ -238,7 +240,7 @@ function renderBlock(
 }
 
 function renderChat(context: ChatViewContext): VNode {
-  const { snapshot, chatStart } = context.state;
+  const { snapshot, chatStart, chatWindow } = context.state;
   if (snapshot === null) {
     return (
       <main
@@ -253,8 +255,8 @@ function renderChat(context: ChatViewContext): VNode {
     );
   }
   const blocks = snapshot.blocks.blocks;
-  const end = Math.min(blocks.length, chatStart + CHAT_WINDOW_SIZE);
-  const start = Math.max(
+  const end = chatWindow?.end ?? Math.min(blocks.length, chatStart + CHAT_WINDOW_SIZE);
+  const start = chatWindow?.start ?? Math.max(
     0,
     Math.min(chatStart, Math.max(0, blocks.length - 1)),
   );
@@ -289,7 +291,7 @@ function renderChat(context: ChatViewContext): VNode {
       {start > 0 ? (
         <div
           attrs={{ class: "virtual-spacer", "aria-hidden": "true" }}
-          style={{ height: `${start * CHAT_ROW_ESTIMATE}px` }}
+          style={{ height: `${chatWindow?.top ?? start * CHAT_ROW_ESTIMATE}px` }}
         ></div>
       ) : null}
       <div attrs={{ class: "chat-window" }}>
@@ -310,7 +312,7 @@ function renderChat(context: ChatViewContext): VNode {
       {end < blocks.length ? (
         <div
           attrs={{ class: "virtual-spacer", "aria-hidden": "true" }}
-          style={{ height: `${(blocks.length - end) * CHAT_ROW_ESTIMATE}px` }}
+          style={{ height: `${chatWindow?.bottom ?? (blocks.length - end) * CHAT_ROW_ESTIMATE}px` }}
         ></div>
       ) : null}
       {snapshot.blocks.truncated ? (

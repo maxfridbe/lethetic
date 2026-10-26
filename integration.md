@@ -582,8 +582,9 @@ isolated from the runtime. Responses and assembled request bodies are capped at
 
 The SDK supports injected `fetch` and `wasm` bytes for controlled hosts and Node.
 It exports TypeScript declarations. Import the ESM entry files directly; no npm
-installation or bundler is required. The native web-controller assets in `web/dist`
-are a separate build and are not required by this package.
+installation or bundler is required. Cargo separately generates and embeds the native web-controller assets in its
+build-output directory. `web/dist` is an ignored optional preview build, not a
+checked-in dependency of this package.
 
 ## Python mode with Pyodide
 
@@ -1093,3 +1094,11 @@ response is pending, visible browser documents request a best-effort screen wake
 lock. Debug bundles include page lifecycle events, and in-flight checkpoints keep
 transcript/file effects with the last complete model history. Reopened interrupted
 work is marked for review; no automatic tool replay is performed.
+
+### Native device browser testing
+
+The native app can forward a selected virtual site to an authenticated real
+loopback HTTP port and open the device browser. See the [native site testing
+guide](docs/how-to/native-web-ui.md#test-a-site-in-the-device-browser) for controls,
+permissions, lifecycle and transfer limits. The runtime and filesystem remain
+WASM-isolated; browser-only installations continue using the iframe preview.

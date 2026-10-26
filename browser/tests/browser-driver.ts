@@ -1,3 +1,4 @@
+import { testVirtualChat } from "./virtual-chat-browser.js";
 import { testSvgPreview } from "./svg-preview-browser.js";
 import { testNativeFileDownloads, testNativeSessionDownloads } from "./native-download-browser.js";
 import { testSessionStorage } from "./session-storage-browser.js";
@@ -869,6 +870,7 @@ try {
   await evaluate("globalThis.dotnetTestView.destroy()");
   await testConnectionThinking(evaluate);
   await testStreamingControls(evaluate);
+  await testVirtualChat(evaluate);
   await testConnectionLimits(evaluate);
   await testMissingConnectionKey(evaluate);
   process.stdout.write("Thinking preferences, transcript, tool continuation and reload passed.\n");

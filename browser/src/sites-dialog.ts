@@ -1,3 +1,4 @@
+import { NativeSites } from "./native-sites.js";
 import { nativeAvailable } from "./native-host.js";
 import { buttonIconHtml } from "../../web/src/icons.js";
 import { createDialog, errorMessage, field } from "./dialog.js";
@@ -20,6 +21,12 @@ export function createSitesDialog(transport: LocalTransport): { open(): void; re
       <button type="button" data-field="site-reload">${buttonIconHtml("refresh")}Reload</button>
       <button type="button" data-field="site-stop">${buttonIconHtml("stop")}Stop site</button>
     </div>
+    <fieldset class="browser-runtime" data-field="site-native" hidden>
+      <legend>Open in the device browser</legend>
+      <label>Real port (0 chooses an available port)<input data-field="site-real-port" type="number" min="0" max="65535" value="0"></label>
+      <div class="panel-toolbar"><button type="button" data-field="site-forward">${buttonIconHtml("site")}Forward &amp; open browser</button><button type="button" data-field="site-browser">${buttonIconHtml("preview")}Open browser</button><button type="button" data-field="site-unforward">${buttonIconHtml("stop")}Stop forwarding</button></div>
+      <p data-field="site-forward-status">Available only on this device (127.0.0.1). HTTP routes and assets use the running session. Keep Lethetic running; stopping the runtime or changing sessions closes the port.</p>
+    </fieldset>
     <p data-field="site-status" role="status"></p>
     <iframe hidden data-field="site-frame" title="Interactive session site" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer"></iframe>
     <details class="browser-note"><summary>Preview support</summary><p>Classic JavaScript, CSS, images and fetch to Python or C# routes work here. For external APIs, use pyodide.http.pyfetch in an async Python handler, or HttpClient in a C# route with Network access enabled. Direct external requests from preview JavaScript, ES modules and WebSockets are unavailable. Files created by requests appear in Files.</p></details>`);
@@ -30,13 +37,24 @@ export function createSitesDialog(transport: LocalTransport): { open(): void; re
   const status = (message: string): void => { field(dialog, "site-status").textContent = message; };
   const button = (name: string): HTMLButtonElement => field(dialog, `site-${name}`);
   let preview: Preview | null = null, activeSession = "", activePort = 0, opening = false, generation = 0;
+  const native = new NativeSites(message => status(message));
+  let forwarding = false, forwardedSession = "", forwardedPort = 0, forwardedNetwork = false, forwardGeneration = 0;
+  field(dialog,"site-native").hidden = !nativeAvailable();
+  const stopForwarding = async (): Promise<void> => { forwardGeneration++; await native.stop(); forwardedSession = ""; forwardedPort = 0; forwarding = false; };
   let queue: Promise<unknown> = Promise.resolve();
   function clear(): void {
     generation++; preview?.destroy(); preview = null; frame.removeAttribute("src"); frame.hidden = true;
     activeSession = ""; activePort = 0; opening = false;
   }
   function refresh(): void {
+    if (forwardedSession && (forwardedSession !== transport.state.session.session_id || !transport.siteAccess || transport.networkAccess !== forwardedNetwork || !transport.sites.some(site => site.port === forwardedPort))) {
+      forwardedSession = ""; void stopForwarding().catch(error => status(errorMessage(error)));
+    }
     if (!dialog.open) return;
+    button("forward").disabled = forwarding || transport.busy || !transport.sites.length || !transport.siteAccess;
+    button("browser").disabled = !native.route;
+    button("unforward").disabled = !native.route && !forwarding;
+    if (native.route) field(dialog,"site-forward-status").textContent = `Virtual :${forwardedPort} → http://127.0.0.1:${native.route.port} · this device only. Use Open browser to authorize a browser tab.`;
     const language = transport.pythonEnabled ? "Python" : "C#";
     field(dialog, "site-network").textContent = transport.networkAccess
       ? `${language} Network access: enabled · ${nativeAvailable() ? "native HTTP; no proxy or destination CORS needed" : transport.dotnetRelay ? "HTTP relay" : "direct requests; destination must allow CORS"}. Preview JavaScript can fetch this site's ${language} routes.`
@@ -100,10 +118,33 @@ export function createSitesDialog(transport: LocalTransport): { open(): void; re
     void transport.stopSite(port).then(() => status(`Stopped virtual port ${port}`))
       .catch(error => status(errorMessage(error))).finally(refresh);
   };
+  button("forward").onclick = () => { void (async () => {
+    const port = Number(field<HTMLInputElement>(dialog,"site-real-port").value);
+    if (!Number.isInteger(port) || port < 0 || port > 65535 || (port > 0 && port < 1024)) {status("Use port 0 or 1024–65535.");return;}
+    if (forwarding || transport.busy || !transport.siteAccess || !select.value) return;
+    const mine = ++forwardGeneration;
+    forwarding = true; forwardedSession = transport.state.session.session_id; forwardedPort = Number(select.value); forwardedNetwork = transport.networkAccess;
+    const sessionId = forwardedSession;
+    refresh();status("Starting a real local HTTP port…");
+    try {
+      await native.start(port, forwardedNetwork, forwardedPort, request => {
+        const next = queue.catch(() => {}).then(() => {
+          if (mine !== forwardGeneration) throw new Error("Forwarding stopped.");
+          return transport.requestSite(request, sessionId);
+        });
+        queue = next; return next;
+      });
+      if (mine !== forwardGeneration || sessionId !== transport.state.session.session_id) return;
+      await native.openBrowser();status("Site opened in the device browser.");
+    } catch (error) {status(errorMessage(error));}
+    finally {if (mine === forwardGeneration) {forwarding = false;refresh();}}
+  })().catch(error=>status(errorMessage(error))); };
+  button("browser").onclick = () => {void native.openBrowser().catch(error=>status(errorMessage(error)));};
+  button("unforward").onclick = () => {void stopForwarding().then(()=>{field(dialog,"site-forward-status").textContent="Forwarding stopped.";refresh();}).catch(error=>status(errorMessage(error)));};
   dialog.addEventListener("close", clear);
   return {
     open(): void { if (!dialog.open) dialog.showModal(); refresh(); if (select.value && !preview) void openPreview(); },
-    refresh, clear,
-    destroy(): void { clear(); dialog.remove(); },
+    refresh, clear(): void {clear();void stopForwarding().catch(()=>{});},
+    destroy(): void { clear();void stopForwarding().catch(()=>{});dialog.remove(); },
   };
 }
