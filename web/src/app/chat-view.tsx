@@ -402,6 +402,7 @@ function renderComposer(context: ChatViewContext): VNode {
         },
       }}
     >
+      {context.state.personaAvatar ?? null}
       <label attrs={{ for: "composer-input", class: "sr-only" }}>Prompt</label>
       <textarea
         attrs={{

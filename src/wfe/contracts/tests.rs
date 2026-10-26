@@ -13,6 +13,7 @@ fn request(command: WebCommand) -> ICommandRequest {
 #[test]
 fn request_shape_is_flat_and_rejects_unknown_fields() {
     let value = serde_json::to_value(request(WebCommand::SendPrompt {
+        persona: None,
         session_id: SESSION_ID.to_string(),
         prompt: "hello".to_string(),
     }))
@@ -165,6 +166,7 @@ fn affirmative_tool_decisions_require_an_exact_hidden_content_acknowledgment_fie
 #[test]
 fn request_validation_includes_the_encoded_message_envelope() {
     let escaped_prompt = request(WebCommand::SendPrompt {
+        persona: None,
         session_id: SESSION_ID.to_string(),
         prompt: "\"".repeat(MAX_PROMPT_BYTES),
     });
@@ -194,6 +196,7 @@ fn every_command_variant_has_a_stable_flat_type() {
             command_id: CommandId::Hotkeys,
         },
         WebCommand::SendPrompt {
+            persona: None,
             session_id: SESSION_ID.to_string(),
             prompt: "hello".to_string(),
         },
@@ -419,4 +422,36 @@ fn generated_request_is_a_discriminated_flattened_union() {
     assert!(declarations.contains("\"type\": \"approve_tool_once\""));
     assert!(declarations.contains("\"type\": \"dismiss_overlay\""));
     assert!(declarations.contains("export type CommandId = \"hotkeys\""));
+}
+
+#[test]
+fn persona_section_is_optional_bounded_and_can_be_explicitly_disabled() {
+    for persona in [
+        None,
+        Some(String::new()),
+        Some("Narration only: dry wit".into()),
+    ] {
+        let command = request(WebCommand::SendPrompt {
+            session_id: SESSION_ID.into(),
+            prompt: "hello".into(),
+            persona,
+        });
+        command.validate().unwrap();
+        let encoded = serde_json::to_string(&command).unwrap();
+        assert_eq!(
+            serde_json::from_str::<ICommandRequest>(&encoded).unwrap(),
+            command
+        );
+    }
+    for persona in ["x".repeat(8193), "<!-- lethetic-persona:start -->".into()] {
+        assert!(
+            request(WebCommand::SendPrompt {
+                session_id: SESSION_ID.into(),
+                prompt: "hello".into(),
+                persona: Some(persona)
+            })
+            .validate()
+            .is_err()
+        );
+    }
 }

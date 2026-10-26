@@ -391,6 +391,23 @@ impl SystemPromptManager {
     }
 }
 
+/// The web client's optional narration is a separate, replaceable system section.
+/// Empty removes it; the caller preserves the base prompt for clients omitting it.
+pub fn with_persona_section(base: &str, section: &str) -> String {
+    const START: &str = "\n\n<!-- lethetic-persona:start -->\n";
+    const END: &str = "\n<!-- lethetic-persona:end -->";
+    let base = if base.ends_with(END) {
+        base.rfind(START).map_or(base, |start| &base[..start])
+    } else {
+        base
+    };
+    if section.is_empty() {
+        base.to_owned()
+    } else {
+        format!("{base}{START}{section}{END}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -424,5 +441,20 @@ mod tests {
                 "{invalid:?}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod persona_tests {
+    use super::with_persona_section;
+    #[test]
+    fn changing_or_disabling_narration_preserves_the_base_prompt_exactly() {
+        let base = "Keep my instructions, JSON formats, and trailing spaces.  ";
+        let first = with_persona_section(base, "Sassy");
+        let next = with_persona_section(&first, "HAL");
+        assert!(!next.contains("Sassy"));
+        assert_eq!(next.matches("<!-- lethetic-persona:start -->").count(), 1);
+        assert_eq!(with_persona_section(&next, ""), base);
+        assert_eq!(with_persona_section(base, ""), base);
     }
 }

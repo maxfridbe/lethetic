@@ -1,3 +1,4 @@
+import { withPersonaSection } from "../../web/src/personas/schema.js";
 import { parseNetworkMode, type NativeNetworkMode } from "./network-route.js";
 import { nativeAvailable } from "./native-host.js";
 import { ProviderTraceLog } from "./provider-trace.js";
@@ -494,6 +495,11 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
         this.#requireIdle();
         if (!this.connection) throw new Error("Open Connections and save a model endpoint first.");
         if (!command.prompt.trim()) throw new Error("Enter a prompt.");
+        if (command.persona !== undefined) {
+          if (new TextEncoder().encode(command.persona).length > 8192 || command.persona.includes("<!-- lethetic-persona:")) throw new Error("Invalid persona narration section.");
+          const system = withPersonaSection(this.#system, command.persona);
+          if (system !== this.#system) { this.#saveSession(true); this.#runtime?.dispose(); this.#runtime = null; this.#system = system; }
+        }
         this.#operation = new AbortController();
         this.metrics.begin();
         this.#ticker = setInterval(() => this.publish(), 1000);

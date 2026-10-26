@@ -1,3 +1,4 @@
+import { testPersonas } from "./personas-browser.js";
 import { testNativeTorControls } from "./native-tor-browser.js";
 import { testVirtualChat } from "./virtual-chat-browser.js";
 import { testSvgPreview } from "./svg-preview-browser.js";
@@ -671,11 +672,13 @@ try {
     const view=mountLethetic(container,{compact:true,python:true,systemPrompt:'Test editable prompt',pyodideIndexURL:location.origin+'/pyodide/',
       connections:[{name:'Embed',provider:'openai',endpoint:location.origin+'/v1/chat/completions',model:'test'}]});
     const {injectedInstructions}=await import('./src/prompts.js');
+    const {narrationSection,withPersonaSection}=await import('./web/src/personas/schema.js');
+    const {BUILTIN_PERSONAS}=await import('./web/src/personas/builtins.js');
     const originalFetch=globalThis.fetch; let sentPrompt=false;
     globalThis.fetch=(url,options)=>{
       if(String(url).endsWith('/v1/chat/completions')) {
         const request=JSON.parse(options.body);
-        if(request.messages[0].content!=='Test editable prompt'+String.fromCharCode(10,10)+injectedInstructions(true))throw Error('Displayed Python instructions differ from sent system prompt');
+        if(request.messages[0].content!==withPersonaSection('Test editable prompt',narrationSection(BUILTIN_PERSONAS[0]))+String.fromCharCode(10,10)+injectedInstructions(true))throw Error('Displayed Python instructions differ from sent system prompt');
         if(request.tools[0].function.name!=='python')throw Error('Python definition not sent');
         sentPrompt=true;
       }
@@ -876,6 +879,19 @@ try {
   await evaluate("globalThis.dotnetTestView.destroy()");
   await testConnectionThinking(evaluate);
   await testStreamingControls(evaluate);
+  await testPersonas(evaluate, async () => {
+    await rpc("Emulation.clearDeviceMetricsOverride");
+    await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+    const desktop = await rpc("Page.captureScreenshot", {format: "png"});
+    await writeFile(config.screenshot.replace(".png", "-personas.png"), Buffer.from(String(desktop["data"]), "base64"));
+    await rpc("Emulation.setDeviceMetricsOverride", {width: 390, height: 844, deviceScaleFactor: 1, mobile: true});
+    await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+    check(await evaluate("(()=>{const d=document.querySelector('.persona-dialog');return d.scrollWidth<=d.clientWidth && d.getBoundingClientRect().width<=innerWidth})()"), "Personas overflow mobile viewport");
+    const mobile = await rpc("Page.captureScreenshot", {format: "png"});
+    await writeFile(config.screenshot.replace(".png", "-personas-mobile.png"), Buffer.from(String(mobile["data"]), "base64"));
+    await rpc("Emulation.clearDeviceMetricsOverride");
+  });
+  process.stdout.write("Persona palette, prompt replacement, events, SVG validation, JSON roundtrip and mobile layout passed.\n");
   await testVirtualChat(evaluate);
   await testNativeTorControls(evaluate);
   await testConnectionLimits(evaluate);

@@ -1,3 +1,4 @@
+import { PersonaController } from "./personas/controller.js";
 import { ThinkingLines } from "./app/thinking-lines.js";
 import { ChatVirtualizer, type ChatWindow } from "./app/chat-virtual.js";
 import { restoreUiScale } from "./ui-scale.js";
@@ -184,6 +185,7 @@ export class SpaApplication implements BrowserTransportEvents {
   #confirmableEditorVersion: number | null = null;
   #confirmationRequestId: string | null = null;
   #approvalConfirmation: ApprovalConfirmation | null = null;
+  readonly #personas: PersonaController;
   readonly #thinkingLines = new ThinkingLines(() => this.#render());
   #thinkingLine: string | null = null;
   #disposed = false;
@@ -210,6 +212,7 @@ export class SpaApplication implements BrowserTransportEvents {
   };
 
   constructor(root: Element, readonly extensions: {
+    personaStorage?: Storage;
     paletteCommands?: () => readonly LocalPaletteCommand[];
     paletteCommandVisible?: (command: PaletteCommand) => boolean;
     headerActions?: () => VNode | null;
@@ -227,6 +230,7 @@ export class SpaApplication implements BrowserTransportEvents {
   } = {}) {
     restoreUiScale();
     this.#tree = root;
+    this.#personas = new PersonaController(() => this.#render(), extensions.personaStorage);
     this.#chatFollow = new ChatFollowController(
       CHAT_FOLLOW_SCHEDULER,
       () => this.#resumeChatFollowing(),
@@ -259,6 +263,7 @@ export class SpaApplication implements BrowserTransportEvents {
   resetFiles(): void { this.#files.reset(); }
 
   readonly #onPageHide = (): void => {
+    this.#personas.pause();
     this.#files.reset();
     this.#fileEditor.dispose();
     this.#diffViewer.dispose();
@@ -268,6 +273,7 @@ export class SpaApplication implements BrowserTransportEvents {
   dispose(): void {
     this.#disposed = true;
     this.#thinkingLines.dispose();
+    this.#personas.dispose();
     globalThis.removeEventListener("keydown", this.#onGlobalKeyDown);
     globalThis.removeEventListener("pagehide", this.#onPageHide);
     this.#debuggerMedia?.removeEventListener("change", this.#onDebuggerMediaChange);
@@ -411,6 +417,7 @@ export class SpaApplication implements BrowserTransportEvents {
         }
         break;
       case "error": {
+        if (request.type === "send_prompt") this.#personas.emit("when_error");
         const error = response.result.error;
         if (error.code === "confirmation_required") {
           this.#showToast("Review and confirm the destructive action.");
@@ -941,13 +948,17 @@ export class SpaApplication implements BrowserTransportEvents {
       this.#showToast("Prompt exceeds the 128 KiB UTF-8 limit.");
       return;
     }
+    this.#personas.primeAudio();
     const request = this.#send({
       type: "send_prompt",
       session_id: snapshot.session.session_id,
       prompt,
+      persona: this.#personas.section,
     });
     if (request !== null) {
       this.#promptRequestVersions.set(request.id, this.#draftVersion);
+      this.#personas.emit("when_user_submits_prompt");
+      this.#personas.afterRender();
     }
   }
 
@@ -1053,10 +1064,12 @@ export class SpaApplication implements BrowserTransportEvents {
   #render(): void {
     if (this.#disposed) return;
     const snapshot = this.#remote.view;
+    this.#personas.observe(snapshot, this.#remote.phase === "live");
     this.#thinkingLine = this.#thinkingLines.current(
       this.#remote.phase === "live" && snapshot?.activity.kind === "processing"
         ? snapshot.activity.cancel_id ?? snapshot.session.session_id : null,
       globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches,
+      this.#personas.lines,
     );
     this.#chatFollow.setTurnActive(
       this.#remote.phase === "live" &&
@@ -1070,6 +1083,7 @@ export class SpaApplication implements BrowserTransportEvents {
         : null;
     this.#prepareChatWindow(snapshot, anchor, chatBeforePatch instanceof HTMLElement ? chatBeforePatch : null);
     this.#tree = this.#patch(this.#tree, this.#view());
+    this.#personas.afterRender();
     const fileHost = this.#filesEnabled && this.#files.state.open
       ? globalThis.document.getElementById("files-monaco") : null;
     this.#fileEditor.sync(fileHost instanceof HTMLElement ? fileHost : null, this.#files.state.preview);
@@ -1234,6 +1248,7 @@ export class SpaApplication implements BrowserTransportEvents {
         chatStart: this.#chatStart,
         chatWindow: this.#chatWindow,
         thinkingLine: this.#thinkingLine,
+        personaAvatar: this.#personas.avatar(),
         toast: this.#toast,
         filesPane: this.#filesEnabled ? renderFilesPane(this.#files.state, live, {
           toggle: () => this.#files.toggle(),
@@ -1300,7 +1315,10 @@ export class SpaApplication implements BrowserTransportEvents {
     return {
       state: {
         panel,
-        paletteCommands: this.extensions.paletteCommands?.() ?? [],
+        paletteCommands: [{id: "local:personas", label: "Personas", description: "Narration, thinking quips, animated companions, sounds, and JSON import/export", icon: "command", behavior: "open_panel", accelerator: null, enabled: true, disabled_reason: null, run: () => this.#personas.show()},
+          {id: "local:persona-import", label: "Import persona JSON", description: "Add or update a persona from a JSON file", icon: "command", behavior: "open_panel", accelerator: null, enabled: true, disabled_reason: null, run: () => this.#personas.importDialog()},
+          {id: "local:persona-export", label: "Export persona JSON", description: "Download the selected persona, including its artwork and sounds", icon: "command", behavior: "execute", accelerator: null, enabled: true, disabled_reason: null, run: () => this.#personas.exportCurrent()},
+          ...(this.extensions.paletteCommands?.() ?? [])],
         ...(this.extensions.paletteCommandVisible ? { paletteCommandVisible: this.extensions.paletteCommandVisible } : {}),
         sessionsNotice: this.extensions.sessionsNotice?.() ?? null,
         systemPromptDetails: this.extensions.systemPromptDetails?.() ?? null,
@@ -1645,7 +1663,10 @@ export class SpaApplication implements BrowserTransportEvents {
     return {
       state: {
         snapshot: this.#remote.view,
-        paletteCommands: this.extensions.paletteCommands?.() ?? [],
+        paletteCommands: [{id: "local:personas", label: "Personas", description: "Narration, thinking quips, animated companions, sounds, and JSON import/export", icon: "command", behavior: "open_panel", accelerator: null, enabled: true, disabled_reason: null, run: () => this.#personas.show()},
+          {id: "local:persona-import", label: "Import persona JSON", description: "Add or update a persona from a JSON file", icon: "command", behavior: "open_panel", accelerator: null, enabled: true, disabled_reason: null, run: () => this.#personas.importDialog()},
+          {id: "local:persona-export", label: "Export persona JSON", description: "Download the selected persona, including its artwork and sounds", icon: "command", behavior: "execute", accelerator: null, enabled: true, disabled_reason: null, run: () => this.#personas.exportCurrent()},
+          ...(this.extensions.paletteCommands?.() ?? [])],
         ...(this.extensions.paletteCommandVisible ? { paletteCommandVisible: this.extensions.paletteCommandVisible } : {}),
         palette: this.#palette,
         activePanel: this.#activePanel(),
@@ -1684,7 +1705,7 @@ export class SpaApplication implements BrowserTransportEvents {
   };
 
   readonly #onGlobalKeyDown = (event: KeyboardEvent): void => {
-    if (this.extensions.externalDialogOpen?.()) return;
+    if (this.#personas.open || this.extensions.externalDialogOpen?.()) return;
     if (this.#files.state.fullPreview) {
       if (event.key === "Escape") { event.preventDefault(); this.#files.expandPreview(); }
       if (event.key === "Tab") {

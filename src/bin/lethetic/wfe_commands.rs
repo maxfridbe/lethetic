@@ -136,20 +136,44 @@ pub(crate) fn execute_wfe_command<'a>(
                     }
                 }
             }
-            WebCommand::SendPrompt { prompt, .. } => {
-                let _ = context
-                    .dispatch_app_event(AppEventOutcome::SendPrompt(prompt))
-                    .await;
-                if context.app.is_processing {
-                    Ok(CommandOutcome::PromptAccepted {
-                        session_id: context.app.session_id.clone(),
-                    })
-                } else {
+            WebCommand::SendPrompt {
+                prompt,
+                persona,
+                session_id,
+            } => {
+                if session_id != context.app.session_id || !context.app.is_fully_idle() {
                     Err(wfe_failure(
-                        CommandErrorCode::BackendUnavailable,
-                        "Prompt could not be started safely",
+                        CommandErrorCode::Busy,
+                        "Wait for the current session to become idle before sending a prompt",
                         true,
                     ))
+                } else {
+                    if let Some(section) = persona {
+                        context.app.system_prompt = lethetic::system_prompt::with_persona_section(
+                            &context.app.system_prompt,
+                            &section,
+                        );
+                        let resolved = lethetic::system_prompt::SystemPromptManager::resolve_prompt(
+                            &context.app.system_prompt,
+                            &context.app.current_dir,
+                            &context.app.config,
+                        );
+                        context.app.context_manager.update_system_prompt(resolved);
+                    }
+                    let _ = context
+                        .dispatch_app_event(AppEventOutcome::SendPrompt(prompt))
+                        .await;
+                    if context.app.is_processing {
+                        Ok(CommandOutcome::PromptAccepted {
+                            session_id: context.app.session_id.clone(),
+                        })
+                    } else {
+                        Err(wfe_failure(
+                            CommandErrorCode::BackendUnavailable,
+                            "Prompt could not be started safely",
+                            true,
+                        ))
+                    }
                 }
             }
             WebCommand::Stop {
@@ -888,6 +912,53 @@ mod tests {
     use crate::lifecycle::RuntimeMode;
     use lethetic::config::Config;
     use tokio::sync::mpsc;
+
+    #[tokio::test]
+    async fn persona_cannot_change_a_turn_that_started_after_command_admission() {
+        let mut config = Config::default();
+        let mut app = lethetic::app::App::new(&config);
+        app.show_session_manager = false;
+        app.system_prompt = "Preserve the active turn prompt".into();
+        let (frontend, mut runtime) = WfeRuntime::new(&app, Vec::new()).unwrap();
+        let response = frontend
+            .commands
+            .try_submit(
+                lethetic::wfe::actor::ConnectionId::new("persona-race".into()).unwrap(),
+                lethetic::wfe::contracts::ICommandRequest {
+                    id: "persona-race-request".into(),
+                    expected_revision: 0,
+                    command: WebCommand::SendPrompt {
+                        session_id: app.session_id.clone(),
+                        prompt: "next turn".into(),
+                        persona: Some("Narration only: Skippy".into()),
+                    },
+                },
+            )
+            .unwrap();
+        let envelope = runtime.recv().await.unwrap();
+        let admitted = runtime.admit(&app, envelope).unwrap();
+        app.is_processing = true;
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut context = RuntimeContext::new(&mut app, &mut config, tx, RuntimeMode::Service);
+        let WfeCommandDisposition::Complete { command, result } =
+            execute_wfe_command(admitted, &mut runtime, &mut context).await
+        else {
+            panic!("expected completion");
+        };
+        assert!(matches!(
+            &result,
+            Err(RuntimeFailure {
+                code: CommandErrorCode::Busy,
+                ..
+            })
+        ));
+        assert_eq!(context.app.system_prompt, "Preserve the active turn prompt");
+        runtime.complete(command, result).unwrap();
+        assert!(matches!(
+            response.await.unwrap().result,
+            lethetic::wfe::contracts::CommandResult::Error { .. }
+        ));
+    }
 
     #[tokio::test]
     async fn actor_dispatches_and_publishes_before_acknowledgement() {

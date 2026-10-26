@@ -1,5 +1,8 @@
 # Thinking status lines
 
+These are the default **Lethetic — Sassy** persona’s lines. Use **Ctrl+P → Personas**
+to switch characters, disable quips, or import your own. See [persona.md](../persona.md).
+
 The shared web/native/remote UI rotates these beside **Model is thinking** every
 12 seconds, with the existing theme-colored gradient. They disappear when the
 activity changes. Reduced-motion settings keep a static line and disable the

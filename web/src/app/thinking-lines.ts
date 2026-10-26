@@ -61,8 +61,11 @@ export class ThinkingLines {
   #timer: ReturnType<typeof setTimeout> | null = null;
   #key: string | null = null;
   #index = 0;
+  #lines: readonly string[] = THINKING_LINES;
   constructor(readonly changed: () => void, readonly scheduler: ThinkingScheduler = globalThis) {}
-  current(key: string | null, reducedMotion: boolean): string | null {
+  current(key: string | null, reducedMotion: boolean, lines: readonly string[] = THINKING_LINES): string | null {
+    if (lines !== this.#lines) { this.dispose(); this.#lines = lines; }
+    if (!lines.length) key = null;
     if (key !== this.#key) { this.dispose(); this.#key = key; }
     if (key === null) return null;
     if (reducedMotion && this.#timer !== null) { this.scheduler.clearTimeout(this.#timer); this.#timer = null; }
@@ -70,11 +73,11 @@ export class ThinkingLines {
       this.#timer = this.scheduler.setTimeout(() => {
         this.#timer = null;
         if (this.#key !== key) return;
-        this.#index = (this.#index + 1) % THINKING_LINES.length;
+        this.#index = (this.#index + 1) % this.#lines.length;
         this.changed();
       }, THINKING_LINE_INTERVAL_MS);
     }
-    return THINKING_LINES[this.#index]!;
+    return this.#lines[this.#index] ?? null;
   }
   dispose(): void { if (this.#timer !== null) this.scheduler.clearTimeout(this.#timer); this.#timer = null; this.#key = null; this.#index = 0; }
 }

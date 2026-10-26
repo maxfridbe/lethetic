@@ -19,6 +19,8 @@ readonly BROWSER_TESTS=(
     app-layout-status
     chat-follow
     thinking-lines
+    personas
+    persona-effects
     json-rendering
     markdown-rendering
     files-pane

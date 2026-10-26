@@ -116,6 +116,9 @@ pub enum WebCommand {
     SendPrompt {
         session_id: String,
         prompt: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        persona: Option<String>,
     },
     Stop {
         session_id: String,
@@ -230,7 +233,7 @@ impl WebCommand {
     fn allowed_fields(command_type: &str) -> Option<&'static [&'static str]> {
         Some(match command_type {
             "invoke_command" => &["command_id"],
-            "send_prompt" => &["session_id", "prompt"],
+            "send_prompt" => &["session_id", "prompt", "persona"],
             "stop" => &["session_id", "cancel_id"],
             "approve_tool_once" | "approve_tool_always" => &[
                 "session_id",
@@ -312,8 +315,17 @@ impl WebCommand {
                 Ok(())
             }
             Self::NewSession | Self::DismissOverlay | Self::RequestSnapshot => Ok(()),
-            Self::SendPrompt { session_id, prompt } => {
+            Self::SendPrompt {
+                session_id,
+                prompt,
+                persona,
+            } => {
                 validate_session_id(session_id)?;
+                if let Some(section) = persona
+                    && (section.len() > 8192 || section.contains("<!-- lethetic-persona:"))
+                {
+                    return Err("persona section exceeds 8 KiB or contains reserved markers".into());
+                }
                 validate_nonempty_bounded("prompt", prompt, MAX_PROMPT_BYTES)
             }
             Self::Stop {

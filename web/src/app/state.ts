@@ -64,6 +64,7 @@ export interface ChatViewState {
   readonly draft: string;
   readonly chatStart: number;
   readonly chatWindow?: ChatWindow;
+  readonly personaAvatar?: VNode | null;
   readonly thinkingLine?: string | null;
   readonly toast: string | null;
   readonly filesPane: VNode | null;

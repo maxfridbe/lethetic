@@ -1810,3 +1810,23 @@ progress {
 .app-shell, .overlay-panel { touch-action: pan-x pan-y; }
 .ui-scale-setting { display: flex; align-items: center; gap: 1rem; padding: .75rem; }
 .ui-scale-setting select { font: inherit; color: var(--theme-output-fg); background: var(--surface); padding: .35rem; }
+
+/* Persona companion stays above the composer without intercepting chat input. */
+.composer { position: relative; }
+.persona-companion { position: absolute; right: 12px; bottom: 100%; width: 68px; height: 68px; z-index: 3; pointer-events: none; user-select: none; }
+.persona-companion img { width: 100%; height: 100%; object-fit: contain; transform-origin: bottom center; }
+.persona-dialog { width: min(640px, 94vw); max-height: min(85dvh, var(--browser-visible-height, 85dvh)); overflow: auto; padding: 1rem; color: var(--theme-output-fg); background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.persona-dialog::backdrop { background: rgb(0 0 0 / .6); }
+.persona-dialog-heading, .persona-dialog-actions { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; }
+.persona-dialog h2 { margin: 0; font-size: 1.1rem; }
+.persona-dialog label { display: block; margin: .6rem 0; }
+.persona-dialog input[type="checkbox"] { width: auto; margin-right: .4rem; }
+.persona-dialog select { width: 100%; padding: .4rem; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 5px; }
+.persona-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; }
+.persona-dialog p { font-size: .85rem; }
+.persona-features { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.persona-dialog details { margin-top: .75rem; }
+.persona-dialog [role="status"] { color: var(--theme-warning-fg); }
+@media (max-width: 480px) { .persona-companion { width: 52px; height: 52px; right: 8px; } }
+
+.persona-dialog-preview { float: right; width: 72px; height: 72px; object-fit: contain; pointer-events: none; }

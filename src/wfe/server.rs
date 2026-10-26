@@ -499,12 +499,12 @@ impl ServerState {
             "'self'"
         };
         let content_security_policy = HeaderValue::from_str(&format!(
-            "default-src 'self'; script-src 'self'; style-src {style_source}; font-src 'self'; worker-src 'self'; connect-src 'self' {websocket_origin}; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'"
+            "default-src 'self'; script-src 'self'; style-src {style_source}; font-src 'self'; worker-src 'self'; connect-src 'self' {websocket_origin}; img-src 'self' data:; media-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'"
         ))
         .map_err(|_| "could not construct the fixed WFE content security policy".to_string())?;
         let clipboard_write = if files_enabled { "(self)" } else { "()" };
         let permissions_policy = HeaderValue::from_str(&format!(
-            "accelerometer=(), autoplay=(), camera=(), clipboard-read=(), clipboard-write={clipboard_write}, display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+            "accelerometer=(), autoplay=(self), camera=(), clipboard-read=(), clipboard-write={clipboard_write}, display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
         )).map_err(|_| "could not construct the fixed WFE permissions policy".to_string())?;
         Ok(Self {
             security: Arc::new(security),
