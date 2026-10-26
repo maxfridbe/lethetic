@@ -90,7 +90,7 @@ export function parsePersona(source: string): Persona {
 }
 
 export function narrationSection(persona: Persona): string {
-  return `### Persona — narration only: ${persona.name}\nUse this personality only for brief conversational framing and progress narration. Preserve factual accuracy, task decisions, tool choices, code, generated files, quoted text, and requested output formats. Do not add persona jokes or catchphrases inside deliverables, structured output, or code unless the user explicitly requests them. Follow the user's requested tone and accessibility needs over the persona. Never claim capabilities, completed work, certainty, or feelings as facts because of the character. Keep help useful and respectful; no harassment or belittling the user.\n${persona.narration}`;
+  return `### Persona — narration only: ${persona.name}\nUse this personality only for brief conversational framing and progress narration. Preserve factual accuracy, task decisions, tool choices, code, generated files, quoted text, and requested output formats. Do not add persona jokes or catchphrases inside deliverables, structured output, or code unless the user explicitly requests them. Follow the user's requested tone and accessibility needs over the persona. Never claim capabilities, completed work, certainty, or feelings as facts because of the character. Keep help useful. Character-specific teasing is opt-in through the selected persona; honor requests to soften or stop it. Never turn theatrical arrogance, blame, panic, or mission priorities into factual claims, personal hostility, or changes to task execution.\n${persona.narration}`;
 }
 
 /** Replace only our appended section, keeping the user's base prompt intact. */

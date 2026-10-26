@@ -5,8 +5,12 @@ The palette also has **Import persona JSON** and **Export persona JSON** shortcu
 The same screen is available in browser-only, native app, and remote-control modes.
 
 Choose **Lethetic — Sassy** (the default), **Skippy the Magnificent**, **Mr. Meeseeks**,
-**HAL9000**, or **Space GHOST**. Character presets use original quips and illustrations.
-They do not include book/TV dialogue, actor recordings, or cloned voices.
+**HAL9000**, or **Space GHOST**. Character presets include recognizable catchphrases alongside original quips and illustrations.
+Skippy uses operatic arrogance and playful monkey jokes; HAL uses measured, formal
+speech without contractions or exclamation marks; Meeseeks starts enthusiastic
+and can become comically frantic as a task encounters setbacks. These traits
+apply to narration, not correctness, permissions, or task decisions.
+Audio presets use generated tones, not actor recordings or cloned voices.
 
 The screen lets you switch personas, inspect their quips and system instructions,
 import/export JSON, and independently enable:
