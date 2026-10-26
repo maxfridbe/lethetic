@@ -68,6 +68,6 @@ export function restoreChatAnchor(
           candidate.getBoundingClientRect().top -
             chat.getBoundingClientRect().top,
         );
-  chat.scrollTop = next;
+  if (Math.abs(chat.scrollTop - next) > 0.5) chat.scrollTop = next;
   return chat.scrollTop;
 }

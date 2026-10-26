@@ -58,6 +58,17 @@ export async function testPersonas(evaluate: (source: string) => Promise<unknown
       try {field('export').click();await wait(()=>!!exported);assert(parsePersona(await exported.text()).id==='custom-helper','Export did not roundtrip')} finally {URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click}
       toggle('enabled',true);toggle('avatar',false);assert(!root.querySelector('#persona-avatar'),'Avatar toggle ineffective');toggle('quips',false);toggle('narration',false);assert(field('prompt').textContent.includes('disabled'),'Narration toggle ineffective');
       field('remove').click();assert(field('select').value==='sassy','Deleting custom persona did not restore default');
+      toggle('avatar',true);choose('meeseeks');close();submit();await wait(()=>!!stream);
+      const companion=root.querySelector('#persona-avatar');
+      const pacing=companion.getAnimations().find(a=>a.effect.getTiming().iterations===Infinity);
+      assert(pacing,'Meeseeks did not pace while thinking');
+      assert(pacing.effect.getKeyframes().some(f=>f.transform.includes('-48px')),'Meeseeks has no left/right movement');
+      await new Promise(resolve=>setTimeout(resolve,1100));
+      assert(companion.getAnimations().includes(pacing) && pacing.currentTime>900,'Status updates restarted the pacing animation');
+      finish();await wait(()=>root.querySelector('.activity-idle'));
+      assert(!companion.getAnimations().some(a=>a.effect.getTiming().iterations===Infinity),'Meeseeks kept pacing after completion');
+      open();
+
       toggle('avatar',true);toggle('quips',true);toggle('narration',true);toggle('audio',false);choose('skippy');
       globalThis.personaScreenshotView=view;view=null;
     } finally {view?.destroy();window.fetch=originalFetch;PersonaEffects.prototype.play=originalPlay;PersonaEffects.prototype.unlock=originalUnlock;}

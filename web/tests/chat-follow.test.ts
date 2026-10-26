@@ -227,7 +227,7 @@ test("position restoration and owned scroll events do not extend the hold", () =
   controller.observeScroll(metrics(500));
   controller.noteNewOutput();
   scheduler.advance(6_000);
-  controller.requestPreservedPosition(target => { assert.equal(target, 500); return 480; });
+  controller.preservePosition(target => { assert.equal(target, 500); return 480; });
   scheduler.flushAnimationFrame();
   controller.observeScroll(metrics(480));
   assert.equal(controller.remainingManualHoldMilliseconds, 4_000);
@@ -260,7 +260,7 @@ test("session reset cancels stale timers, frames, output and reading state", () 
   const {scheduler, controller, resumes} = fixture();
   controller.observeScroll(metrics(300));
   controller.noteNewOutput();
-  controller.requestPreservedPosition(() => 300);
+  controller.preservePosition(() => 300);
   controller.reset();
   scheduler.advance(20_000);
   scheduler.flushAnimationFrame();
@@ -304,4 +304,17 @@ test("input probes distinguish user movement from content growth", () => {
   scheduler.flushAnimationFrame();
   assert.equal(controller.mode, "manual");
   assert.equal(controller.manualScrollTop, 600);
+});
+
+test("patch preservation is synchronous and cannot rewind later scroll input", () => {
+  const {scheduler, controller} = fixture();
+  controller.observeScroll(metrics(500));
+  let position = 500, writes = 0;
+  controller.preservePosition(() => { writes++; return position; });
+  assert.equal(writes, 1);
+  position = 488;
+  controller.observeScroll(metrics(position));
+  scheduler.flushAnimationFrame();
+  assert.equal(writes, 1);
+  assert.equal(controller.manualScrollTop, 488);
 });

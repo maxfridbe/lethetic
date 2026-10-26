@@ -15,8 +15,11 @@ export class PersonaController {
   readonly store: PersonaStore;
   readonly effects = new PersonaEffects(message => { if (this.#dialog?.open) this.#field("status").textContent = message; });
   readonly events = new PersonaEvents();
+  readonly previewEffects = new PersonaEffects();
   #dialog: HTMLDialogElement | null = null;
   #pending: Motion | null = null;
+  #repeat = false;
+  #session: string | null = null;
   #disposed = false;
   #generation = 0;
   #unlock = Promise.resolve();
@@ -30,13 +33,29 @@ export class PersonaController {
   emit(event: PersonaEvent): void {
     if (this.#disposed || !this.store.features.enabled) return;
     const persona = this.store.current, generation = this.#generation;
+    this.effects.stopAnimation();
     if (this.store.features.avatar) this.#pending = persona.avatar?.events[event] ?? null;
+    this.#repeat = event === "when_model_thinking" && this.#pending === "pace";
     const sound = this.store.features.audio ? persona.audio?.[event] : undefined;
     if (sound) void this.#unlock.then(() => { if (!this.#disposed && generation === this.#generation && this.store.features.enabled && this.store.features.audio && this.store.current === persona) this.effects.play(sound); });
   }
-  observe(snapshot: WebAppSnapshot | null, live: boolean): void { const event = this.events.observe(snapshot, live); if (event) this.emit(event); }
+  observe(snapshot: WebAppSnapshot | null, live: boolean): void {
+    const session = snapshot?.session.session_id ?? null;
+    if (!live || session !== this.#session || snapshot?.activity.kind !== "processing") {
+      if (this.#repeat) { this.effects.stopAnimation(); this.#pending = null; this.#repeat = false; }
+    }
+    this.#session = session;
+    const event = this.events.observe(snapshot, live);
+    if (event) this.emit(event);
+    // Switching/enabling the companion mid-response should show its current state.
+    if (live && snapshot?.activity.kind === "processing" &&
+      this.store.features.enabled && this.store.features.avatar &&
+      this.store.current.avatar?.events.when_model_thinking === "pace" && !this.#repeat) {
+      this.#pending = "pace"; this.#repeat = true;
+    }
+  }
   afterRender(): void {
-    if (this.#pending) this.effects.animate(document.getElementById("persona-avatar"), this.#pending, matchMedia("(prefers-reduced-motion: reduce)").matches);
+    if (this.#pending) this.effects.animate(document.getElementById("persona-avatar"), this.#pending, matchMedia("(prefers-reduced-motion: reduce)").matches, this.#repeat);
     this.#pending = null;
   }
   avatar(): VNode | null {
@@ -45,15 +64,15 @@ export class PersonaController {
     if (this.#avatarSource !== p.avatar.svg) { this.#avatarSource = p.avatar.svg; this.#avatarUrl = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(p.avatar.svg); }
     return h("div.persona-companion", {attrs: {"aria-hidden": "true", "data-persona": p.id}}, [h("img#persona-avatar", {attrs: {src: this.#avatarUrl, alt: "", draggable: "false"}})]);
   }
-  pause(): void { this.#generation++; this.effects.stop(); this.#pending = null; this.events.reset(); }
-  dispose(): void { this.#disposed = true; this.pause(); this.effects.dispose(); this.#dialog?.remove(); }
+  pause(): void { this.#generation++; this.effects.stop(); this.#pending = null; this.#repeat = false; this.previewEffects.stop(); this.events.reset(); }
+  dispose(): void { this.#disposed = true; this.pause(); this.effects.dispose(); this.previewEffects.dispose(); this.#dialog?.remove(); }
   importDialog(): void { this.show(); this.#field<HTMLInputElement>("file").click(); }
   exportCurrent(): void { this.show(); this.#field("export").click(); }
   show(): void {
     if (!this.#dialog) this.#dialog = this.#createDialog();
     this.#refresh(); if (!this.#dialog.open) this.#dialog.showModal();
   }
-  #apply(): void { this.#generation++; this.effects.stop(); this.#pending = null; this.store.save(); this.#refresh(); this.changed(); }
+  #apply(): void { this.#generation++; this.effects.stop(); this.previewEffects.stop(); this.#pending = null; this.#repeat = false; this.store.save(); this.#refresh(); this.changed(); }
   #field<T extends HTMLElement>(name: string): T { return this.#dialog!.querySelector<T>(`[data-persona-field="${name}"]`)!; }
   #refresh(): void {
     if (!this.#dialog) return;
@@ -89,8 +108,8 @@ export class PersonaController {
       <details><summary>Thinking quips</summary><pre data-persona-field="quips-list"></pre></details>
       <p role="status" data-persona-field="status"></p>`;
     document.body.append(dialog); this.#dialog = dialog;
-    this.#field("close").onclick = () => { this.effects.stop(); dialog.close(); };
-    dialog.addEventListener("close", () => this.effects.stop());
+    this.#field("close").onclick = () => { this.previewEffects.stop(); this.effects.stopSound(); dialog.close(); };
+    dialog.addEventListener("close", () => this.previewEffects.stop());
     this.#field<HTMLSelectElement>("select").onchange = event => { this.store.select((event.target as HTMLSelectElement).value); this.#apply(); };
     for (const key of Object.keys(this.store.features) as (keyof PersonaFeatures)[]) this.#field<HTMLInputElement>(key).onchange = event => {
       this.store.features[key] = (event.target as HTMLInputElement).checked; this.#apply(); if (key === "audio") this.primeAudio();
@@ -102,7 +121,7 @@ export class PersonaController {
     };
     this.#field("preview").onclick = () => {
       const motion = this.store.current.avatar?.events[previewEvent()];
-      if (motion) this.effects.animate(this.#field("preview-image"), motion, matchMedia("(prefers-reduced-motion: reduce)").matches);
+      if (motion) this.previewEffects.animate(this.#field("preview-image"), motion, matchMedia("(prefers-reduced-motion: reduce)").matches);
       else this.#field("status").textContent = "No animation mapped to this event.";
     };
     this.#field("remove").onclick = () => { this.store.remove(); this.#apply(); };

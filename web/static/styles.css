@@ -352,8 +352,7 @@ button .ui-icon {
   border-left: 3px solid var(--theme-output-fg);
   border-radius: 8px;
   background: var(--surface-muted);
-  content-visibility: auto;
-  contain-intrinsic-size: auto 112px;
+  /* Mounted rows need real heights; the virtual window already bounds the DOM. */
 }
 
 .chat-block.block-user {

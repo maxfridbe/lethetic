@@ -1081,6 +1081,7 @@ export class SpaApplication implements BrowserTransportEvents {
       chatBeforePatch instanceof HTMLElement
         ? captureChatAnchor(chatBeforePatch)
         : null;
+    const beforeScrollTop = chatBeforePatch instanceof HTMLElement ? chatBeforePatch.scrollTop : undefined;
     this.#prepareChatWindow(snapshot, anchor, chatBeforePatch instanceof HTMLElement ? chatBeforePatch : null);
     this.#tree = this.#patch(this.#tree, this.#view());
     this.#personas.afterRender();
@@ -1109,7 +1110,7 @@ export class SpaApplication implements BrowserTransportEvents {
       this.#chatFollow.setPointerOver(chat instanceof HTMLElement && chat.matches(":hover"));
     }
     this.#chatFollow.setFocusWithin(chat instanceof HTMLElement && chat.contains(globalThis.document.activeElement));
-    this.#synchronizeChatPosition(snapshot, anchor);
+    this.#synchronizeChatPosition(snapshot, anchor, beforeScrollTop);
     this.#chatVirtual.afterRender(chat instanceof HTMLElement ? chat : null);
   }
 
@@ -1167,6 +1168,7 @@ export class SpaApplication implements BrowserTransportEvents {
   #synchronizeChatPosition(
     snapshot: WebAppSnapshot | null,
     anchor: ChatAnchor | null,
+    beforeScrollTop?: number,
   ): void {
     if (snapshot === null) {
       return;
@@ -1177,7 +1179,10 @@ export class SpaApplication implements BrowserTransportEvents {
       this.#chatFollow.requestBottomPosition(apply);
       return;
     }
-    this.#chatFollow.requestPreservedPosition(apply);
+    const chat = globalThis.document.getElementById("chat-scroll");
+    if (chat instanceof HTMLElement) {
+      this.#chatFollow.preservePosition(() => this.#applyChatPosition(beforeScrollTop ?? chat.scrollTop, anchor));
+    }
   }
 
   #applyChatPosition(
@@ -1191,7 +1196,7 @@ export class SpaApplication implements BrowserTransportEvents {
     }
     const maximum = Math.max(0, chat.scrollHeight - chat.clientHeight);
     if (scrollTop === null) {
-      chat.scrollTop = maximum;
+      if (Math.abs(chat.scrollTop - maximum) > 0.5) chat.scrollTop = maximum;
       return chat.scrollTop;
     }
     return restoreChatAnchor(chat, anchor, scrollTop);
@@ -1656,7 +1661,9 @@ export class SpaApplication implements BrowserTransportEvents {
     }
     const metrics = chatScrollMetrics(target);
     this.#chatFollow.observeScroll(metrics);
-    this.#chatVirtual.requestRender();
+    if (this.#chatVirtual.needsWindow(target, this.#chatWindow, this.#chatFollow.mode === "following")) {
+      this.#chatVirtual.requestRender();
+    }
   };
 
   #keyboardContext(): KeyboardContext {

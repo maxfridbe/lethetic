@@ -23,7 +23,18 @@ export async function testVirtualChat(evaluate: (source: string) => Promise<unkn
       await new Promise(r=>setTimeout(r,250));
       const visible=()=>Array.from(chat.querySelectorAll('[data-chat-anchor]')).find(row=>row.getBoundingClientRect().bottom>chat.getBoundingClientRect().top && row.getBoundingClientRect().top<chat.getBoundingClientRect().bottom);
       const anchor=visible();check(anchor,'Middle of history is blank');
-      const key=anchor.dataset.chatAnchor,offset=anchor.getBoundingClientRect().top-chat.getBoundingClientRect().top;
+      // A native scroll can land after a status render but before its queued RAF.
+      // Preserve every input delta instead of snapping back to the previous frame.
+      for(let step=0;step<8;step++) {
+        const row=visible(),key=row.dataset.chatAnchor,before=row.getBoundingClientRect().top-chat.getBoundingClientRect().top;
+        transport.publish();
+        chat.scrollTop-=12;chat.dispatchEvent(new Event('scroll'));
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        const retained=chat.querySelector('[data-chat-anchor="'+key+'"]');
+        check(retained && Math.abs(retained.getBoundingClientRect().top-chat.getBoundingClientRect().top-before-12)<3,'Status rendering swallowed an upward scroll delta at step '+step+' '+JSON.stringify({key,before,after:retained?.getBoundingClientRect().top-chat.getBoundingClientRect().top,top:chat.scrollTop,rows:[...chat.querySelectorAll('[data-chat-anchor]')].map(row=>row.dataset.chatAnchor)}));
+      }
+      const current=visible();
+      const key=current.dataset.chatAnchor,offset=current.getBoundingClientRect().top-chat.getBoundingClientRect().top;
       transport.state.blocks.blocks.push(block(1000));transport.publish();
       await new Promise(r=>setTimeout(r,250));
       const retained=chat.querySelector('[data-chat-anchor="'+key+'"]');

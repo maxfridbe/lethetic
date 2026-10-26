@@ -1,5 +1,12 @@
 import type { Motion, PersonaSound } from "./schema.js";
 const frames: Record<Motion, Keyframe[]> = {
+  pace: [
+    {transform: "translateX(0) rotate(0)", offset: 0},
+    {transform: "translate(-24px, -6px) rotate(-8deg)", offset: .25},
+    {transform: "translateX(-48px) rotate(0)", offset: .5},
+    {transform: "translate(-24px, -6px) rotate(8deg)", offset: .75},
+    {transform: "translateX(0) rotate(0)", offset: 1},
+  ],
   bounce: [{transform: "translateY(0)"}, {transform: "translateY(-12px)"}, {transform: "translateY(0)"}],
   nod: [{transform: "rotate(0)"}, {transform: "rotate(12deg)"}, {transform: "rotate(0)"}],
   shake: [{transform: "translateX(0)"}, {transform: "translateX(-6px)"}, {transform: "translateX(6px)"}, {transform: "translateX(0)"}],
@@ -21,9 +28,9 @@ export class PersonaEffects {
     try { this.#context ??= new AudioContext(); await this.#context.resume().catch(() => { this.#fail("Audio is blocked by this browser. Use Test sound after enabling it."); }); }
     catch { this.#fail("Audio is unavailable in this browser."); }
   }
-  animate(element: HTMLElement | null, motion: Motion, reduced: boolean): void {
-    this.#animation?.cancel(); this.#animation = null;
-    if (element && !reduced && typeof element.animate === "function") this.#animation = element.animate(frames[motion], {duration: 650, easing: "ease-in-out"});
+  animate(element: HTMLElement | null, motion: Motion, reduced: boolean, repeat = false): void {
+    this.stopAnimation();
+    if (element && !reduced && typeof element.animate === "function") this.#animation = element.animate(frames[motion], {duration: motion === "pace" ? 1800 : 650, easing: "ease-in-out", iterations: repeat ? Infinity : 1});
   }
   play(sound: PersonaSound): void {
     this.stopSound(); this.error = "";
@@ -54,6 +61,7 @@ export class PersonaEffects {
     this.#audio?.pause(); if (this.#audio) { this.#audio.removeAttribute("src"); this.#audio.load(); } this.#audio = null;
     for (const oscillator of this.#oscillators) { try { oscillator.stop(); } catch { /* Already ended. */ } } this.#oscillators = [];
   }
-  stop(): void { this.stopSound(); this.#animation?.cancel(); this.#animation = null; }
+  stopAnimation(): void { this.#animation?.cancel(); this.#animation = null; }
+  stop(): void { this.stopSound(); this.stopAnimation(); }
   dispose(): void { this.stop(); if (this.#context) void this.#context.close().catch(() => {}); this.#context = null; }
 }

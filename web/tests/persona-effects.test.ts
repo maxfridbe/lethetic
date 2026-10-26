@@ -39,3 +39,22 @@ test("persona sound respects gestures, plays in background, and handles clipping
     effects.dispose(); assert.equal(timers.size, 0); assert.equal(closed, 1); assert.ok(stopped >= 1);
   } finally { for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); } }
 });
+
+test("pacing travels both ways, loops only when requested, and respects reduced motion", () => {
+  let cancelled = 0;
+  const calls: {frames: Keyframe[]; timing: KeyframeAnimationOptions}[] = [];
+  const target = {animate: (frames: Keyframe[], timing: KeyframeAnimationOptions) => {
+    calls.push({frames, timing}); return {cancel() { cancelled++; }};
+  }} as unknown as HTMLElement;
+  const effects = new PersonaEffects();
+  effects.animate(target, "pace", false, true);
+  assert.equal(calls[0]!.timing.iterations, Infinity);
+  assert.ok(calls[0]!.frames.some(frame => String(frame["transform"]).includes("-48px")));
+  assert.equal(calls[0]!.frames[0]!["transform"], calls[0]!.frames.at(-1)!["transform"]);
+  effects.animate(target, "pace", false);
+  assert.equal(cancelled, 1);
+  assert.equal(calls[1]!.timing.iterations, 1);
+  effects.animate(target, "pace", true, true);
+  assert.equal(cancelled, 2);
+  assert.equal(calls.length, 2);
+});

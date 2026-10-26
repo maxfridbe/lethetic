@@ -1,6 +1,6 @@
 export const PERSONA_EVENTS = ["when_user_submits_prompt", "when_model_thinking", "when_tool_started", "when_model_done_responding", "when_error", "when_stopped"] as const;
 export type PersonaEvent = typeof PERSONA_EVENTS[number];
-export const MOTIONS = ["bounce", "nod", "shake", "spin", "glow"] as const;
+export const MOTIONS = ["bounce", "nod", "shake", "spin", "glow", "pace"] as const;
 export type Motion = typeof MOTIONS[number];
 export interface PersonaSound { notes?: { frequency: number; durationMs: number }[]; src?: string; volume: number }
 export interface Persona {

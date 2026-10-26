@@ -225,11 +225,13 @@ export class ChatFollowController {
     this.#queueFrame({ type: "position", mode: "following", apply });
   }
 
-  requestPreservedPosition(apply: PositionCallback): void {
-    if (this.#mode !== "manual") {
-      return;
-    }
-    this.#queueFrame({ type: "position", mode: "manual", apply });
+  /** Restore in the patch's frame; a later RAF would overwrite native scrolling. */
+  preservePosition(apply: PositionCallback): void {
+    if (this.#mode !== "manual") return;
+    const actual = apply(this.#manualScrollTop);
+    if (actual === null || !Number.isFinite(actual)) return;
+    this.#ownedScrollTop = Math.max(0, actual);
+    this.#manualScrollTop = this.#ownedScrollTop;
   }
 
   #queueFrame(request: FrameRequest): void {

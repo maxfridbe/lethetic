@@ -73,6 +73,19 @@ export class ChatVirtualizer {
     if (this.#frame !== null) return;
     this.#frame = requestAnimationFrame(() => { this.#frame = null; this.render(); });
   }
+  /** Native scrolling inside the mounted window needs no DOM patch. */
+  needsWindow(chat: HTMLElement, current: ChatWindow, following: boolean): boolean {
+    const viewport = chat.getBoundingClientRect();
+    let first: number | undefined;
+    for (const row of chat.querySelectorAll<HTMLElement>("[data-chat-index]")) {
+      const rectangle = row.getBoundingClientRect();
+      if (rectangle.bottom > viewport.top && rectangle.top < viewport.bottom) {
+        first = Number(row.dataset["chatIndex"]); break;
+      }
+    }
+    const next = this.rows.range(chat.scrollTop, chat.clientHeight, following, first);
+    return next.start !== current.start || next.end !== current.end;
+  }
   measure(chat: HTMLElement): boolean {
     if (this.#width !== chat.clientWidth) {
       this.#width = chat.clientWidth; this.rows.reset();

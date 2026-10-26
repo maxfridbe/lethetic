@@ -115,7 +115,11 @@ Playback failures appear in the Personas screen and never block the model.
 Use a transparent SVG with a `viewBox`, ideally `0 0 100 100`. The host displays it
 as an isolated image, not inline executable markup. Artwork is never a chat input
 hit target. Event animations are supplied by the host: **bounce**, **nod**, **shake**,
-**spin**, or **glow** (650 ms). No animation scripts are imported.
+**spin**, **glow** (650 ms), or **pace** (1.8 seconds). No animation scripts are imported.
+
+The `pace` animation moves the SVG companion left and right. When mapped to
+`when_model_thinking`, it repeats until thinking ends; other events and the
+preview play it once. Reduced-motion preferences disable avatar movement.
 
 Allowed elements: `svg`, `g`, `path`, `circle`, `ellipse`, `rect`, `line`, `polyline`,
 `polygon`, `text`, `tspan`, `defs`, `linearGradient`, `radialGradient`, `stop`,
