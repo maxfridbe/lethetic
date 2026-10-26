@@ -128,3 +128,8 @@ export function restoreConnectionKeys(storage: Pick<Storage, "getItem">, connect
       {...item, apiKey: keys.get(connectionIdentity(item))});
   } catch { return connections; }
 }
+
+export interface ConnectionHealth { state: "testing" | "valid" | "invalid"; message: string }
+/** Ephemeral only: contains credentials. Never put this identity in DOM or storage. */
+export const connectionHealthIdentity = (connection: Connection): string =>
+  JSON.stringify([connection.provider, connection.endpoint, connection.model, connection.apiKey?.trim() ?? "", connection.thinking ?? "default"]);

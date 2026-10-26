@@ -16,7 +16,7 @@ export async function testStreamingControls(evaluate: (source: string) => Promis
       view=mountLethetic(root,options);
       assert(!root.querySelector('.model-summary'),'Model remains in the header');
       assert(root.querySelector('[data-pinned-stat="model"]')?.textContent==='Model: test','Model not pinned below');
-      assert(root.querySelector('.connection-summary')?.textContent.includes('Browser · WASM · General · Network off · Virtual directory'),'Header capabilities missing');
+      assert([...root.querySelectorAll('.header-capability')].map(part=>part.title).join(' · ')==='Browser · WASM · General · Network off · Virtual directory','Header capabilities missing');
       root.querySelector('[aria-label="Open command palette"]').click();
       root.querySelector('[id="palette-command-local:turn-limits"]').click();
       const dialog=document.querySelector('dialog[open]');assert(dialog,'Turn limits not opened');

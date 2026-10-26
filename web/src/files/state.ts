@@ -287,6 +287,17 @@ export class FilesController {
     }
   }
 
+  async copyContents(): Promise<void> {
+    const preview = this.#state.preview, epoch = this.#epoch;
+    if (!preview) return;
+    try {
+      await navigator.clipboard.writeText(preview.content);
+      if (epoch === this.#epoch) this.notify("Contents copied.");
+    } catch {
+      if (epoch === this.#epoch) this.notify("Clipboard unavailable. Select and copy the file text instead.");
+    }
+  }
+
   async copyPath(): Promise<void> {
     const path = this.#state.selectedPath ?? this.#state.directory;
     if (path === "" || !this.#state.open) return;

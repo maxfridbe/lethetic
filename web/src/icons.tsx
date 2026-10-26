@@ -9,6 +9,10 @@ import {
 // UI-only actions do not change the native protocol's icon vocabulary.
 export const BUTTON_ICONS = { ...ICON_GLYPHS, ...UI_ICON_GLYPHS,
   run: "\uf04b", site: "\uf0ac",
+  keyboard: "\uf11c", persona: "\uf118", timer: "\uf017", compact: "\uf066",
+  terminal: "\uf120", python: "\ue73c", dotnet: "\ue70c", chip: "\uf2db",
+  desktop: "\uf108", network: "\uf0e8", lock: "\uf023", tor: "\uf21b",
+  tasks: "\uf0ae", tools: "\uf0ad", book: "\uf02d", server: "\uf233",
   fullscreen: "\uf065", restore: "\uf066", previous: "\uf053", next: "\uf054",
   upload: "\uf093", pin: "\uf08d", copy: "\uf0c5", preview: "\uf06e", folder: "\uf07b", file: "\uf15b",
   refresh: "\uf021", connection: "\uf1e6", history: "\uf1da", code: "\uf121",
@@ -71,4 +75,22 @@ export function fileTypeIcon(path: string): VNode {
   };
   const [glyph, label] = types[extension] ?? [BUTTON_ICONS.file, "File"];
   return <span attrs={{ class: "ui-icon file-type-icon", "aria-hidden": "true", title: label }}>{glyph}</span>;
+}
+
+/** Distinct UI glyphs without widening the remote command protocol. */
+export function commandIcon(id: string, fallback: ButtonIcon): ButtonIcon {
+  const icons: Record<string, ButtonIcon> = {
+    hotkeys: "keyboard", themes: "theme", "input-history": "history",
+    "loop-detection": "refresh", "system-prompt": "edit", "clear-ui": "trash",
+    "clear-context": "trash", "toggle-debugger": "debug", "toggle-todos": "tasks",
+    sessions: "history", "name-session": "edit", "latest-files": "folder",
+    "toggle-background-tasks": "tasks", "background-mode": "processing",
+    "tool-call-mode": "tools", skills: "book", models: "model",
+    "lsp-servers": "server", "agent-mode": "terminal", "agent-general": "terminal",
+    "python-isolated": "python", "python-nonlocal": "python", "python-permissive": "python",
+    "remote-control": "connection", "delete-python-runtime": "trash", quit: "quit",
+    personas: "persona", "persona-import": "upload", "persona-export": "download",
+    "turn-limits": "timer", "compact-session": "compact",
+  };
+  return icons[id.replace(/^local:/u, "")] ?? fallback;
 }

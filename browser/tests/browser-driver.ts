@@ -1,3 +1,4 @@
+import { testUiControls } from "./ui-controls-browser.js";
 import { testPersonas } from "./personas-browser.js";
 import { testNativeTorControls } from "./native-tor-browser.js";
 import { testVirtualChat } from "./virtual-chat-browser.js";
@@ -892,6 +893,7 @@ try {
     await rpc("Emulation.clearDeviceMetricsOverride");
   });
   process.stdout.write("Persona palette, prompt replacement, events, SVG validation, JSON roundtrip and mobile layout passed.\n");
+  await testUiControls(evaluate);
   await testVirtualChat(evaluate);
   await testNativeTorControls(evaluate);
   await testConnectionLimits(evaluate);

@@ -57,7 +57,7 @@ const json = (value: unknown, options: { status?: number; headers?: Record<strin
   new Response(JSON.stringify(value), { ...options, headers: { "Content-Type": "application/json", ...options.headers } });
 const signal = (): AbortSignal => new AbortController().signal;
 const flush = async (): Promise<void> => { for (let i = 0; i < 6; i += 1) await Promise.resolve(); };
-const actions: FilePaneActions = { expandPreview() {}, nextPreview() {}, toggle() {}, setDock() {}, navigate() {}, select() {}, refresh() {}, download() {}, copyPath() {},
+const actions: FilePaneActions = { expandPreview() {}, nextPreview() {}, toggle() {}, setDock() {}, navigate() {}, select() {}, refresh() {}, download() {}, copyPath() {}, copyContents() {},
   showTab() {}, refreshChanges() {}, selectChange() {}, toggleFolder() {}, setDiffLayout() {} };
 
 test("file changes preserve existing rows and only reload the affected selected preview", async () => {
@@ -203,6 +203,8 @@ test("copy path only writes the literal root-relative path on explicit action", 
     assert.deepEqual(copied, []);
     await controller.copyPath();
     assert.deepEqual(copied, ["src/名字.rs"]);
+    await controller.copyContents();
+    assert.deepEqual(copied, ["src/名字.rs", controller.state.preview!.content]);
   } finally {
     if (original) Object.defineProperty(globalThis, "navigator", original); else Reflect.deleteProperty(globalThis, "navigator");
   }

@@ -17,6 +17,7 @@ export interface FilePaneActions {
   readonly refresh: () => void;
   readonly download: (archive: boolean) => void;
   readonly copyPath: () => void;
+  readonly copyContents: () => void;
   readonly showTab: (tab: FilePaneTab) => void;
   readonly refreshChanges: () => void;
   readonly selectChange: (path: string) => void;
@@ -254,6 +255,8 @@ export function renderFilesPane(state: FilePaneState, live: boolean, actions: Fi
         <button attrs={{ type: "button", title: "Download the selected file (up to 32 MiB)" }}
           props={{ disabled: !live || state.selectedPath === null || state.downloadBusy }}
           on={{ click: () => actions.download(false) }}>{uiIcon("download")}Download File</button>
+        <button attrs={{ type: "button", "data-file-action": "copy", title: "Copy file contents" }}
+          props={{ disabled: state.preview === null }} on={{ click: actions.copyContents }}>{uiIcon("copy")}Copy</button>
           {extensions.contentActions?.(state) ?? null}
         </div>
         <div attrs={{ class: "files-editor-area" }}>

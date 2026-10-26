@@ -1,13 +1,12 @@
 import { UI_SCALES, setUiScale, uiScale } from "../ui-scale.js";
 import { jsx as h } from "../../lib/snabbdom/build/index.js";
 import type { VNode } from "../../lib/snabbdom/build/index.js";
-import { ICON_GLYPHS } from "../generated/contracts.js";
 import type {
   PendingApprovalView,
   QuestionPromptView,
   WebAppSnapshot,
 } from "../generated/contracts.js";
-import { uiIcon } from "../icons.js";
+import { uiIcon, commandIcon } from "../icons.js";
 import { jsonPreformattedThunk } from "../json.js";
 import { boundedText } from "../safety.js";
 import {
@@ -67,11 +66,19 @@ function commandPalette(
           placeholder: "Search commands",
           autocomplete: "off",
           "aria-controls": "palette-list",
+          role: "combobox",
+          "aria-expanded": "true",
+          "aria-autocomplete": "list",
+          "aria-activedescendant": commands[selected] ? `palette-command-${commands[selected].id}` : "",
         }}
         props={{ value: palette.query }}
         on={{
           input: (event: InputEvent) =>
             context.actions.setPaletteQuery(inputValue(event)),
+          keydown: (event: KeyboardEvent) => {
+            if (!event.isComposing && !event.defaultPrevented && !event.ctrlKey && !event.altKey && !event.metaKey &&
+              ["ArrowUp", "ArrowDown", "Enter"].includes(event.key)) context.actions.onPaletteKeyDown(event);
+          },
         }}
       />
       <ul
@@ -110,7 +117,7 @@ function commandPalette(
               }}
             >
               <span attrs={{ class: "choice-icon", "aria-hidden": "true" }}>
-                {ICON_GLYPHS[command.icon]}
+                {uiIcon(commandIcon(command.id, command.icon))}
               </span>
               <span attrs={{ class: "choice-main" }}>
                 <strong>{command.label}</strong>

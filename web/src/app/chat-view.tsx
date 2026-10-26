@@ -57,13 +57,10 @@ function renderHeader(context: ChatViewContext): VNode {
         {context.state.paletteIcon ?? letheticLogo()}
       </button>
       <div attrs={{ class: "connection-summary" }}>
-        <span
-          attrs={{
-            class: `connection-dot ${live ? "is-live" : "is-stale"}`,
-            "aria-hidden": "true",
-          }}
-        ></span>
-        <span attrs={{ title: context.state.headerStatus ?? transportStatus.label }}>{context.state.headerStatus ?? transportStatus.label}</span>
+        {context.state.headerStatusContent ?? <span attrs={{ title: context.state.headerStatus ?? transportStatus.label }}>
+          <span attrs={{ class: `connection-plug ${live ? "is-active" : ""}`, "aria-hidden": "true" }}>{uiIcon("connection")}</span>
+          {context.state.headerStatus ?? transportStatus.label}
+        </span>}
       </div>
       <div attrs={{ class: "session-summary" }}>
         <span attrs={{ class: "eyebrow" }}>Session</span>

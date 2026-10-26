@@ -638,6 +638,7 @@ function noopPanelActions(overrides: Partial<PanelActions> = {}): PanelActions {
 
 test("palette autofocus belongs to the noneditable command surface", () => {
   const snapshot = snapshotFixture();
+  const keys: string[] = [];
   const panel = renderPanel({
     state: {
       panel: "command_palette",
@@ -652,14 +653,16 @@ test("palette autofocus belongs to the noneditable command surface", () => {
       approvalConfirmation: null,
       revision: 0,
     },
-    actions: noopPanelActions(),
+    actions: noopPanelActions({ onPaletteKeyDown: event => { keys.push(event.key); } }),
   });
   const search = find(panel, (vnode) => attr(vnode, "id") === "palette-search");
   const surface = find(panel, (vnode) => attr(vnode, "id") === "palette-list");
   assert.ok(search);
   assert.ok(surface);
   assert.equal(attr(search, "data-autofocus"), undefined);
-  assert.equal(listener(search, "keydown"), undefined);
+  const searchKeyDown = listener(search, "keydown") as (event: KeyboardEvent) => void;
+  for (const key of ["x", "Home", "ArrowDown", "ArrowUp", "Enter"]) searchKeyDown({key} as KeyboardEvent);
+  assert.deepEqual(keys, ["ArrowDown", "ArrowUp", "Enter"]);
   assert.equal(attr(surface, "data-autofocus"), "true");
   assert.equal(attr(surface, "tabindex"), "0");
   assert.equal(typeof listener(surface, "keydown"), "function");

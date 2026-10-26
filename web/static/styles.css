@@ -253,19 +253,16 @@ button .ui-icon {
   font-size: 0.78rem;
 }
 
-.connection-dot {
-  width: 9px;
-  height: 9px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--theme-warning-fg);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-warning-fg) 18%, transparent);
+.header-capabilities { display: flex; align-items: center; flex-wrap: wrap; gap: .25rem .65rem; }
+.header-capability { display: inline-flex; align-items: center; gap: .3rem; min-width: 0; overflow-wrap: anywhere; }
+.connection-plug { display: inline-flex; margin-right: .4rem; }
+.connection-plug.is-active,
+[data-connection-state="valid"] > .ui-icon {
+  color: var(--theme-success-fg);
+  filter: drop-shadow(0 0 4px var(--theme-success-fg));
 }
-
-.connection-dot.is-live {
-  background: var(--theme-success-fg);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-success-fg) 18%, transparent);
-}
+[data-connection-state="invalid"] > .ui-icon { color: var(--theme-error-fg); }
+[data-connection-state="testing"] > .ui-icon { color: var(--theme-warning-fg); }
 
 .session-summary {
   display: grid;
@@ -1643,9 +1640,7 @@ progress {
     color: LinkText;
   }
 
-  .connection-dot {
-    forced-color-adjust: none;
-  }
+  .connection-plug.is-active, [data-connection-state="valid"] > .ui-icon { color: LinkText; filter: none; }
 }
 
 /* Fenced code highlighting (web/src/highlight.tsx), coloured by the theme. */

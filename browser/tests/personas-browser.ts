@@ -73,6 +73,7 @@ export async function testPersonas(evaluate: (source: string) => Promise<unknown
       const avatar=root.querySelector('#persona-avatar');await avatar.decode();assert(avatar.naturalWidth>0,'Persona SVG failed to decode');assert(avatar.tagName==='IMG' && getComputedStyle(avatar.parentElement).pointerEvents==='none','Avatar is interactive markup');
       finish();await wait(()=>root.querySelector('.activity-idle'));await wait(()=>played.length>=2);
       assert(JSON.parse(records.get('lethetic.sessions.v1')).sessions[0].id===id,'Persona replaced session');
+      assert(root.querySelector('[data-browser-action=connections]').dataset.connectionState==='valid','Successful chat did not light the connection plug');
       open();choose('hal9000');close();submit();await wait(()=>requests.length===2 && !!stream);
       const next=requests[1].messages.find(m=>m.role==='system').content;
       assert(next.includes('HAL9000') && !next.includes('Skippy the Magnificent'),'Old persona accumulated');

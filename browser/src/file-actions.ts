@@ -3,7 +3,7 @@ import { MonacoFileEditor } from "../../web/src/files/editor.js";
 import type { FilesReadResponse } from "../../web/src/generated/contracts.js";
 import { buttonIconHtml } from "../../web/src/icons.js";
 import { parse } from "../../web/lib/marked/marked.esm.js";
-import { createDialog, field } from "./dialog.js";
+import { createDialog, field, errorMessage } from "./dialog.js";
 import { textFile } from "./workspace.js";
 import type { WorkspaceFile } from "./workspace.js";
 import type { CodeSnippet } from "./code-snippets.js";
@@ -91,6 +91,8 @@ export function createFilePreview(options: { plainText?: () => boolean; onPlainT
     <button type="button" data-field="preview-next">${buttonIconHtml("next")}Next</button>
     <button type="button" data-field="preview-source">${buttonIconHtml("code")}Source</button>
     <button type="button" data-field="preview-text-mode">${buttonIconHtml("file")}Plain text</button>
+    <button type="button" data-field="preview-copy">${buttonIconHtml("copy")}Copy</button>
+    <span data-field="preview-copy-status" role="status"></span>
     <small>Use ← → or swipe on the toolbar to change files. Select text in the viewer to copy it.</small>
     </div><div class="preview-content">
     <iframe data-field="preview-frame" title="File preview" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
@@ -102,6 +104,7 @@ export function createFilePreview(options: { plainText?: () => boolean; onPlainT
   const host = field(dialog, "preview-monaco"), text = field<HTMLTextAreaElement>(dialog, "preview-plain-text");
   const sourceButton = field<HTMLButtonElement>(dialog, "preview-source"), textButton = field<HTMLButtonElement>(dialog, "preview-text-mode");
   let files: readonly WorkspaceFile[] = [], index = 0, token = "";
+  const copyButton = field<HTMLButtonElement>(dialog, "preview-copy");
   let current: FilesReadResponse | null = null, rendered = false, source = false, sourcePreference = false, plain = false;
   const isPlain = (): boolean => options.plainText?.() ?? plain;
   const setPlain = (value: boolean): void => { plain = value; options.onPlainText?.(value); };
@@ -121,10 +124,22 @@ export function createFilePreview(options: { plainText?: () => boolean; onPlainT
   };
   sourceButton.addEventListener("click", () => { source = !source; sourcePreference = source; showMode(); });
   textButton.addEventListener("click", () => { setPlain(!isPlain()); showMode(); });
+  copyButton.addEventListener("click", () => {
+    const selected = current;
+    if (!selected) return;
+    void copyCode(selected.content).then(() => {
+      if (current === selected) field(dialog, "preview-copy-status").textContent = "Copied.";
+    }).catch(error => {
+      if (current === selected) field(dialog, "preview-copy-status").textContent = errorMessage(error);
+    });
+  });
   const expand = field<HTMLButtonElement>(dialog, "preview-expand");
   const previous = field<HTMLButtonElement>(dialog, "preview-previous");
   const next = field<HTMLButtonElement>(dialog, "preview-next");
   const display = (html: string | null, name: string, content: string | null, preferSource = false): void => {
+    copyButton.disabled = content === null;
+    field(dialog, "preview-copy-status").textContent = "";
+    copyButton.title = content === null ? "Binary file: use Download" : "Copy file contents";
     current = content === null ? null : { path: name, content, size: String(new TextEncoder().encode(content).byteLength) };
     sourcePreference = preferSource; rendered = html !== null; source = !rendered || (preferSource && current !== null);
     dialog.querySelector("h2")!.textContent = name;

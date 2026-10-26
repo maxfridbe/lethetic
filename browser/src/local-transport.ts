@@ -7,7 +7,7 @@ import { ModelLimitState, effectiveLimits } from "./model-limits.js";
 import { DEFAULT_TURN_LIMITS, parseTurnLimits, LOOP_MODES, parseLoopMode } from "./turn-limits.js";
 import type { TurnLimits } from "./turn-limits.js";
 import { RelayKeys, relayEndpoint, relayToken } from "./network-route.js";
-import { connectionMetadata } from "./connection.js";
+import { connectionHealthIdentity, type ConnectionHealth, connectionMetadata } from "./connection.js";
 import type { DotnetRelay } from "./network-route.js";
 import { summarizeContext } from "./compaction.js";
 import { WFE_PROTOCOL_SCHEMA_SHA256, WFE_PROTOCOL_VERSION } from "../../web/src/generated/contracts.js";
@@ -53,6 +53,7 @@ export interface LocalOptions {
 export class LocalTransport implements ApplicationTransport {
   readonly state: WebAppSnapshot = initialState();
   readonly metrics = new BrowserMetrics();
+  readonly connectionHealth = new Map<string, ConnectionHealth>();
   readonly modelLimits = new ModelLimitState(() => this.publish());
   #runtimeLimits = "";
   get effectiveTurnLimits(): TurnLimits { return effectiveLimits(this.turnLimits, this.modelLimits.value); }
@@ -482,7 +483,7 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
     }
     if (this.#ticker !== null) clearInterval(this.#ticker);
     if (this.#streamPublish !== null) clearTimeout(this.#streamPublish);
-    this.#closed = true; this.modelLimits.dispose(); this.#operation?.abort(); this.#runtime?.dispose(); this.#python?.reset(); this.#dotnet?.reset();
+    this.#closed = true; this.connectionHealth.clear(); this.modelLimits.dispose(); this.#operation?.abort(); this.#runtime?.dispose(); this.#python?.reset(); this.#dotnet?.reset();
   }
 
   #requireIdle(): void { if (this.busy) throw new Error("Stop the current turn first."); }
@@ -643,7 +644,11 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
         if (this.mode === "dotnet-wasm") {
           tools.push(this.#dotnetTool());
         }
-        const runtime = await createRuntime({ connection, onTrace: trace => this.#traces.add(trace),
+        const runtime = await createRuntime({ connection, onTrace: trace => {
+          this.#traces.add(trace);
+          if (!this.#closed && trace.outcome === "error") this.connectionHealth.set(connectionHealthIdentity(connection),
+            {state: "invalid", message: trace.httpStatus ? `Last model request failed (HTTP ${trace.httpStatus}).` : "Last model request failed. Open Connections to test it."});
+        },
           traceSecrets: [...this.options.connections.map(item => item.apiKey ?? ""), ...this.relaySecrets], ...limits, loopDetection: this.loopDetection, tools, systemPrompt: effectiveSystemPrompt(this.#system, this.mode, this.networkAccess, !!this.#relayEndpoint, this.nugetAccess, this.siteAccess, this.networkMode), onEvent: (event) => this.#event(event) });
         if (this.#closed) { runtime.dispose(); return; }
         try { runtime.restore(this.#savedMessages); } catch (error) { runtime.dispose(); throw error; }
@@ -783,6 +788,13 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
 
   #event(event: RuntimeEvent): void {
     this.metrics.event(event);
+    const connection = this.connection;
+    if (connection && ["assistant_delta", "thinking_delta", "assistant", "thinking", "tool_start"].includes(event.type)) {
+      this.connectionHealth.set(connectionHealthIdentity(connection), {state: "valid", message: "The selected model returned a response."});
+    }
+    if (connection && event.type === "retry") {
+      this.connectionHealth.set(connectionHealthIdentity(connection), {state: "invalid", message: "The last model request failed; retrying."});
+    }
     if (event.type === "request" || event.type === "tool_end") this.#saveSession(false, true);
     switch (event.type) {
       case "request":

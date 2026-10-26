@@ -1,17 +1,13 @@
 import { connectionLimits, connectionLimitsHtml } from "./connection-limits.js";
 import { nativeAvailable } from "./native-host.js";
 import { buttonIconHtml } from "../../web/src/icons.js";
-import { validateConnection, requireChatCredential, normalizeApiKey, saveConnections, saveConnectionKeys } from "./connection.js";
+import { connectionHealthIdentity as identity, validateConnection, requireChatCredential, normalizeApiKey, saveConnections, saveConnectionKeys } from "./connection.js";
 import { fetchModels } from "./models.js";
 import type { AvailableModel } from "./models.js";
 import { createRuntime } from "./sdk.js";
 import type { Connection, LetheticRuntime } from "./sdk.js";
 import type { LocalTransport } from "./local-transport.js";
 import { createDialog, errorMessage, field } from "./dialog.js";
-
-type Health = { state: "testing" | "valid" | "invalid"; message: string };
-// Compare actual request settings, including the key. Never put this identity in the DOM or storage.
-const identity = (connection: Connection): string => JSON.stringify([connection.provider, connection.endpoint, connection.model, connection.apiKey?.trim() ?? "", connection.thinking ?? "default"]);
 
 export function createConnectionsDialog(transport: LocalTransport, storage?: Storage, credentialStorage?: Storage): {
   dialog: HTMLDialogElement; open(): void; destroy(): void;
@@ -86,7 +82,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
   const input = (name: string): HTMLInputElement => field<HTMLInputElement>(dialog, name);
   const button = (name: string): HTMLButtonElement => field<HTMLButtonElement>(dialog, name);
   const status = (text: string): void => { field(dialog, "status").textContent = text; };
-  const health = new Map<string, Health>();
+  const health = transport.connectionHealth;
   let selected = transport.connection ? transport.selected : -1;
   let operation: AbortController | null = null;
   let operationKey: string | null = null;
@@ -208,7 +204,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
   const cancelTest = (): void => {
     operation?.abort(); operation = null;
     if (operationKey && health.get(operationKey)?.state === "testing") health.delete(operationKey);
-    operationKey = null; limitsEditor.reset();
+    operationKey = null; limitsEditor.reset(); transport.publish();
   };
   const fill = (): void => {
     cancelModels(); cancelTest();
@@ -350,7 +346,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     cancelTest();
     const controller = new AbortController(); operation = controller;
     const key = identity(connection); operationKey = key; health.set(key, {state:"testing",message:"Testing the endpoint, model and key."});
-    updateEditor(); renderCards(); status(`Testing ${connection.name}…`);
+    updateEditor(); renderCards(); status(`Testing ${connection.name}…`); transport.publish();
     void (async () => {
       let runtime: LetheticRuntime | null = null;
       try {
@@ -367,7 +363,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
       } finally {
         runtime?.dispose();
         if (operation === controller) { operation = null; operationKey = null; if (health.get(key)?.state === "testing") health.delete(key); }
-        if (!destroyed) { updateEditor(); renderCards(); }
+        if (!destroyed) { updateEditor(); renderCards(); transport.publish(); }
       }
     })();
   };

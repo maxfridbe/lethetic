@@ -19,7 +19,7 @@ import { loadConnections, restoreConnectionKeys, validateConnection } from "./co
 import { LocalTransport } from "./local-transport.js";
 import { createConnectionsDialog } from "./connections-dialog.js";
 import { codeSnippets } from "./code-snippets.js";
-import { browserHeaderStatus, renderBrowserStatus } from "./status-view.js";
+import { browserHeaderStatus, renderBrowserHeaderStatus, connectionIndicator, renderBrowserStatus } from "./status-view.js";
 import { canPreviewFile, canRenderFile, workspacePreview, copyCode, createFilePreview, downloadCode, snippetName } from "./file-actions.js";
 import { sessionRoute } from "./sessions.js";
 import { BrowserFiles } from "./files.js";
@@ -101,6 +101,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
       enabled: transport?.canCompact ?? false, disabled_reason: transport?.busy ? "Finish or stop the running turn first" : "Send a message with a configured connection first",
       run: () => { void transport?.compact().catch(error => { if (transport) { transport.persistenceStatus = `Compaction: ${String(error)}`; transport.publish(); } }); } }],
     headerStatus: () => browserHeaderStatus(transport, directory.name),
+    headerStatusContent: () => renderBrowserHeaderStatus(transport, directory.name),
     status: () => renderBrowserStatus(transport, pinnedStats, () => transport?.publish()),
     promptPlaceholder: "Message your model…",
     systemPromptDetails: () => transport?.promptDetails ?? null,
@@ -189,9 +190,7 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
           try { const file = state.selectedPath ? files.get(state.selectedPath) : undefined; if (file) preview.openFile(file, fileTools.sortFiles().filter(canPreviewFile), false, sourceViews.has(file.path)); }
           catch (error) { fileStatus = String(error); transport?.publish(); }
         } } }, [uiIcon("preview"), "Preview"]),
-        h("button", { attrs: { type: "button", "data-file-action": "copy" }, props: { disabled: !state.preview }, on: { click: () => {
-          if (state.preview) void copyCode(state.preview.content).then(() => { fileStatus = "Contents copied."; transport?.publish(); }).catch((error: unknown) => { fileStatus = String(error); transport?.publish(); });
-        } } }, [uiIcon("copy"), "Copy"]),
+
         h("button", { attrs: { type: "button", "data-file-action": "delete" }, props: { disabled: !state.selectedPath || transport?.busy }, on: { click: () => {
           if (state.selectedPath && confirm(`Delete ${state.selectedPath} from this session?`)) {
             try { files.remove(state.selectedPath); } catch (error) { fileStatus = String(error); transport?.publish(); }
@@ -199,8 +198,8 @@ export function mountLethetic(root: HTMLElement, options: EmbedOptions = {}): { 
         } } }, [uiIcon("trash"), "Delete"]),
         h("span", { attrs: { role: "status" } }, fileStatus),
       ]) },
-    headerActions: () => { sites?.refresh(); return h("div", { attrs: { class: "browser-header-actions" } }, [
-      h("button", { attrs: { type: "button", "data-browser-action": "connections" }, on: { click: () => settings?.open() } }, [uiIcon("connection"), "Connections"]),
+    headerActions: () => { sites?.refresh(); const connection = connectionIndicator(transport); return h("div", { attrs: { class: "browser-header-actions" } }, [
+      h("button", { attrs: { type: "button", "data-browser-action": "connections", "data-connection-state": connection.state, title: connection.title, "aria-label": `Connections — ${connection.title}` }, on: { click: () => settings?.open() } }, [uiIcon("connection"), "Connections"]),
       h("button", { attrs: { type: "button", "data-browser-action": "sessions" }, on: { click: () => transport?.send({ type: "invoke_command", command_id: "sessions" }, 0) } }, [uiIcon("history"), "Sessions"]),
       transport?.mode === "dotnet-wasm" || transport?.pythonEnabled ? h("button", { attrs: { type: "button", "data-browser-action": "sites", title: "Open an interactive session site" }, on: { click: () => sites?.open() } }, [uiIcon("site"), `Sites (${transport.sites.length})`]) : null,
     ]); },

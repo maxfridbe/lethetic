@@ -87,6 +87,7 @@ import type {
 import {
   handleGlobalKeyDown,
   handlePaletteKeyDown,
+  revealPaletteSelection,
 } from "./app/keyboard.js";
 import { renderPanel } from "./app/panels.js";
 import {
@@ -217,6 +218,7 @@ export class SpaApplication implements BrowserTransportEvents {
     paletteCommandVisible?: (command: PaletteCommand) => boolean;
     headerActions?: () => VNode | null;
     headerStatus?: () => string;
+    headerStatusContent?: () => VNode;
     paletteIcon?: () => VNode;
     status?: () => VNode;
     promptPlaceholder?: string;
@@ -1237,6 +1239,7 @@ export class SpaApplication implements BrowserTransportEvents {
         originalPythonBlocks: this.#originalPythonBlocks,
         headerActions: this.extensions.headerActions?.() ?? null,
         headerStatus: this.extensions.headerStatus?.() ?? null,
+        headerStatusContent: this.extensions.headerStatusContent?.() ?? null,
         paletteIcon: this.extensions.paletteIcon?.() ?? null,
         customStatus: this.extensions.status?.() ?? null,
         promptPlaceholder: this.extensions.promptPlaceholder ?? null,
@@ -1268,6 +1271,7 @@ export class SpaApplication implements BrowserTransportEvents {
           refresh: () => { void this.#files.refresh(); },
           download: (archive) => { void this.#files.download(archive); },
           copyPath: () => { void this.#files.copyPath(); },
+          copyContents: () => { void this.#files.copyContents(); },
           showTab: (tab) => this.#files.showTab(tab),
           refreshChanges: () => { void this.#files.refreshChanges(); },
           selectChange: (path) => { void this.#files.selectChange(path); },
@@ -1351,6 +1355,7 @@ export class SpaApplication implements BrowserTransportEvents {
         setPaletteQuery: (query) => {
           this.#palette = { query, selected: 0 };
           this.#render();
+          revealPaletteSelection();
         },
         clampPaletteSelection: (selected) => {
           if (this.#palette !== null) {
@@ -1701,6 +1706,7 @@ export class SpaApplication implements BrowserTransportEvents {
           }
           this.#palette.selected = selected;
           this.#render();
+          revealPaletteSelection();
         },
         invokeCommand: (command) => this.#invokeCommand(command),
       },

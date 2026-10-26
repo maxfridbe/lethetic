@@ -43,7 +43,7 @@ export function handlePaletteKeyDown(
     case "ArrowDown":
       event.preventDefault();
       context.actions.setPaletteSelection(
-        Math.min(commands.length - 1, palette.selected + 1),
+        Math.max(0, Math.min(commands.length - 1, palette.selected + 1)),
       );
       return;
     case "ArrowUp":
@@ -173,4 +173,15 @@ export function handleGlobalKeyDown(
   ) {
     trapOverlayFocus(event);
   }
+}
+
+/** Move only the palette scroller, without moving the page or stealing search focus. */
+export function revealPaletteSelection(): void {
+  const list = document.getElementById("palette-list");
+  const selected = list?.querySelector<HTMLElement>('[aria-selected="true"]');
+  if (!list || !selected) return;
+  const viewport = list.getBoundingClientRect(), row = selected.getBoundingClientRect();
+  const top = viewport.top + list.clientTop, bottom = top + list.clientHeight;
+  if (row.top < top) list.scrollTop -= top - row.top;
+  else if (row.bottom > bottom) list.scrollTop += row.bottom - bottom;
 }

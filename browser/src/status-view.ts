@@ -1,19 +1,41 @@
+import { connectionHealthIdentity, requireChatCredential, validateConnection } from "./connection.js";
 import { fileSize } from "../../web/src/files/size.js";
 import { nativeAvailable } from "./native-host.js";
 import { h } from "../../web/lib/snabbdom/build/index.js";
 import type { VNode } from "../../web/lib/snabbdom/build/index.js";
-import { uiIcon } from "../../web/src/icons.js";
+import { uiIcon, type ButtonIcon } from "../../web/src/icons.js";
 import type { LocalTransport } from "./local-transport.js";
 import { PinnedStats } from "./pinned-stats.js";
 import type { StatId } from "./pinned-stats.js";
 
 /** Session capabilities, separate from provider connectivity or Tor circuit readiness. */
-export function browserHeaderStatus(transport: LocalTransport | null, directory: string | null): string {
+function headerParts(transport: LocalTransport | null, directory: string | null): {icon: ButtonIcon; label: string}[] {
   const native = nativeAvailable();
   const runtime = transport?.mode === "dotnet-wasm" ? ".NET" : transport?.pythonEnabled ? "PY" : "General";
   const network = !transport?.networkAccess ? "Network off" : transport.networkMode === "tor"
     ? native ? "TOR only" : "TOR unavailable" : "Network";
-  return [native ? "App" : "Browser", "WASM", runtime, network, directory ? `Directory: ${directory}` : "Virtual directory"].join(" · ");
+  return [
+    {icon: native ? "desktop" : "site", label: native ? "App" : "Browser"},
+    {icon: "chip", label: "WASM"},
+    {icon: runtime === ".NET" ? "dotnet" : runtime === "PY" ? "python" : "terminal", label: runtime},
+    {icon: !transport?.networkAccess ? "lock" : transport.networkMode === "tor" ? "tor" : "network", label: network},
+    {icon: "folder", label: directory ? `Directory: ${directory}` : "Virtual directory"},
+  ];
+}
+export function browserHeaderStatus(transport: LocalTransport | null, directory: string | null): string {
+  return headerParts(transport, directory).map(part => part.label).join(" · ");
+}
+export function renderBrowserHeaderStatus(transport: LocalTransport | null, directory: string | null): VNode {
+  return h("span.header-capabilities", headerParts(transport, directory).map(({icon, label}) =>
+    h("span.header-capability", {attrs: {title: label}}, [uiIcon(icon), label])));
+}
+export function connectionIndicator(transport: LocalTransport | null): {state: string; title: string} {
+  const connection = transport?.connection;
+  if (!connection) return {state: "none", title: "No model connection selected"};
+  try { validateConnection(connection); requireChatCredential(connection); }
+  catch { return {state: "invalid", title: `${connection.name}: connection settings or API key need attention`}; }
+  const health = transport?.connectionHealth.get(connectionHealthIdentity(connection));
+  return {state: health?.state ?? "untested", title: `${connection.name}: ${health?.message ?? "selected; not yet verified"}`};
 }
 
 export function renderBrowserStatus(transport: LocalTransport | null, pins = new PinnedStats(), refresh: () => void = () => {}): VNode {
