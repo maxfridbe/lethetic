@@ -55,7 +55,7 @@ export interface RuntimeOptions {
   providerRetries?: number;
   /** CLI context input budget, estimated at four bytes per token; default 131072. */
   contextTokens?: number;
-  /** Model output budget, including reasoning; default 16384. */
+  /** Model output budget, including reasoning; default 65536. */
   maxOutputTokens?: number;
   /** CLI loop detection mode; default combined. */
   loopDetection?: string;

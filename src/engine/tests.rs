@@ -49,6 +49,17 @@ fn interrupted_prompt_survives_reopen_and_continue_for_both_providers() {
 }
 
 #[test]
+fn advertised_large_output_budget_reaches_provider_request() {
+    let mut chat = runtime();
+    chat.set_limits(104_858, 943_718).unwrap();
+    chat.begin("make me a cat website").unwrap();
+    let request: Value = serde_json::from_str(&chat.request("openai", "model").unwrap()).unwrap();
+    assert_eq!(request["max_tokens"], 943_718);
+    chat.rollback();
+    assert!(chat.set_limits(104_858, 2_000_001).is_err());
+}
+
+#[test]
 fn restore_still_rejects_unfinished_tool_exchanges_atomically() {
     let mut active = runtime();
     active.begin("task").unwrap();

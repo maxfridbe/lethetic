@@ -13,6 +13,7 @@ dialog.browser-dialog:not([open]) { display: none; }
 dialog.browser-dialog::backdrop { background: rgb(0 0 0 / .65); backdrop-filter: blur(4px); }
 .browser-dialog .overlay-body { overflow: auto; }
 .browser-dialog label { display: block; margin: .75rem 0; }
+.browser-dialog input[type="checkbox"] { width: auto; }
 .browser-dialog select { width: 100%; padding: .6rem; color: var(--theme-output-fg); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
 .browser-connection-form { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
 .browser-connection-form .panel-toolbar, .browser-connection-form label:has([data-field="endpoint"]) { grid-column: 1 / -1; }

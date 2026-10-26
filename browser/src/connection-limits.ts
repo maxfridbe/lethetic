@@ -1,6 +1,6 @@
 import { buttonIconHtml } from "../../web/src/icons.js";
 import { field, errorMessage } from "./dialog.js";
-import { DEFAULT_TURN_LIMITS, parseTurnLimits } from "./turn-limits.js";
+import { DEFAULT_TURN_LIMITS, MAX_OUTPUT_TOKENS, parseTurnLimits } from "./turn-limits.js";
 import { effectiveLimits, fetchModelLimits, isOpenRouter } from "./model-limits.js";
 import type { ModelLimits } from "./model-limits.js";
 import { fetchModels } from "./models.js";
@@ -11,7 +11,9 @@ export const connectionLimitsHtml = `<form data-field="connection-limits-form">
   <fieldset class="browser-runtime"><legend>Context &amp; turn limits · current session</legend>
     <p class="browser-note" data-field="connection-model-limits" role="status">Test the connection to discover model limits.</p>
     <label>Context input budget (tokens)<input data-field="connection-context" type="number" min="256" max="2000000" required></label>
-    <label>Maximum output tokens (including reasoning)<input data-field="connection-output" type="number" min="1" max="131072" required></label>
+    <label><input data-field="connection-auto-output" type="checkbox">Automatic output cap (model maximum)</label>
+    <p class="browser-note">Automatic includes reasoning and reserves the advertised maximum from input capacity. Without model limits it uses 65,536 tokens. Uncheck for a manual cap.</p>
+    <label>Manual output cap (including reasoning)<input data-field="connection-output" type="number" min="1" max="${MAX_OUTPUT_TOKENS}" required></label>
     <label>Turn timeout (minutes, 0 disables)<input data-field="connection-timeout" type="number" min="0" max="1440" required></label>
     <label>Maximum model rounds per turn<input data-field="connection-rounds" type="number" min="1" max="1000" required></label>
     <label>Retries per model request<input data-field="connection-retries" type="number" min="0" max="10" required></label>
@@ -29,6 +31,7 @@ export function connectionLimits(dialog: HTMLDialogElement, transport: LocalTran
   const same = (a: Connection | undefined, b: Connection) => !!a && a.endpoint === b.endpoint && a.provider === b.provider && a.model === b.model && (a.apiKey?.trim() ?? "") === (b.apiKey?.trim() ?? "");
   const fill = (limits = transport.turnLimits): void => {
     input("context").value=String(limits.contextTokens); input("output").value=String(limits.maxOutputTokens);
+    input("auto-output").checked=!!limits.autoOutput;input("output").disabled=!!limits.autoOutput;
     input("timeout").value=String(limits.timeoutMs/60000); input("rounds").value=String(limits.maxRounds); input("retries").value=String(limits.providerRetries);
   };
   const describe = (): void => {
@@ -37,15 +40,16 @@ export function connectionLimits(dialog: HTMLDialogElement, transport: LocalTran
     field(dialog,"connection-effective-limits").textContent=`Active session: context ${limits.contextTokens.toLocaleString()} · output ${limits.maxOutputTokens.toLocaleString()} tokens. ${same(transport.connection,current()) ? "" : "Save and use the edited connection before applying limits."}`;
   };
   const knownModel = () => model ?? (same(transport.connection,current()) ? transport.modelLimits.value : null);
-  const read = () => parseTurnLimits({contextTokens:Number(input("context").value),maxOutputTokens:Number(input("output").value),timeoutMs:Number(input("timeout").value)*60000,maxRounds:Number(input("rounds").value),providerRetries:Number(input("retries").value)});
+  const read = () => parseTurnLimits({contextTokens:Number(input("context").value),autoOutput:input("auto-output").checked,maxOutputTokens:input("auto-output").checked ? DEFAULT_TURN_LIMITS.maxOutputTokens : Number(input("output").value),timeoutMs:Number(input("timeout").value)*60000,maxRounds:Number(input("rounds").value),providerRetries:Number(input("retries").value)});
   const reset = (): void => { generation++; model=null;field(dialog,"connection-model-limits").textContent="Test the connection to discover model limits."; describe(); };
+  input("auto-output").addEventListener("change",()=>{input("output").disabled=input("auto-output").checked;});
   field(dialog,"connection-default-limits").addEventListener("click",()=>{fill(DEFAULT_TURN_LIMITS);status("Defaults filled. Apply limits to save.");});
   field(dialog,"connection-limits-form").addEventListener("submit",event=>{
     event.preventDefault();
     try {
       if (!same(transport.connection,current())) throw Error("Save and use this connection before applying its limits.");
       const configured=read();
-      transport.setTurnLimits(effectiveLimits(configured,knownModel())); fill(); describe();status("Limits saved for this session. History and files are unchanged.");
+      transport.setTurnLimits(configured); fill(); describe();status("Limits saved for this session. History and files are unchanged.");
     }catch(error){status(errorMessage(error));}
   });
   return {
@@ -69,9 +73,9 @@ export function connectionLimits(dialog: HTMLDialogElement, transport: LocalTran
         const provider=found.endpoints.length===1 ? found.endpoints[0] : undefined;
         const providerInfo=provider ? ` Provider ${provider.name}: context ${provider.context?.toLocaleString() ?? "unknown"}, input ${provider.input?.toLocaleString() ?? "unknown"}, output ${provider.output?.toLocaleString() ?? "unknown"}.` : found.endpoints.length>1 ? ` ${found.endpoints.length} provider routes; capacities vary.` : "";
         field(dialog,"connection-model-limits").textContent=`${connection.model} · context maximum: ${found.context?.toLocaleString() ?? "not reported"} · output maximum: ${found.output?.toLocaleString() ?? "not reported"}.${providerInfo}`;
-        const filled=effectiveLimits({...transport.turnLimits,contextTokens:found.context ? 2_000_000 : transport.turnLimits.contextTokens,maxOutputTokens:Number(originalOutput)||DEFAULT_TURN_LIMITS.maxOutputTokens},found);
+        const filled=effectiveLimits({...read(),contextTokens:found.context ? 2_000_000 : transport.turnLimits.contextTokens,maxOutputTokens:Number(originalOutput)||DEFAULT_TURN_LIMITS.maxOutputTokens},found);
         if(input("context").value===originalContext && found.context)input("context").value=String(filled.contextTokens);
-        if(input("output").value===originalOutput)input("output").value=String(Math.min(filled.maxOutputTokens,131072));
+        if(input("output").value===originalOutput)input("output").value=String(Math.min(filled.maxOutputTokens,MAX_OUTPUT_TOKENS));
         status(found.context ? "Model context filled with room reserved for output. Apply limits to save." : "This endpoint did not report context capacity. Enter a supported budget manually.");
       }catch{
         if(!signal.aborted && revision===generation){model=null;field(dialog,"connection-model-limits").textContent="Model limits unavailable. Connection testing continues with entered budgets and any cached model limits.";}

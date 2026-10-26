@@ -1,7 +1,7 @@
 import { effectiveLimits } from "./model-limits.js";
 import { createDialog, field, errorMessage } from "./dialog.js";
 import { buttonIconHtml } from "../../web/src/icons.js";
-import { DEFAULT_TURN_LIMITS } from "./turn-limits.js";
+import { DEFAULT_TURN_LIMITS, MAX_OUTPUT_TOKENS } from "./turn-limits.js";
 import type { LocalTransport } from "./local-transport.js";
 
 export function createTurnLimitsDialog(transport: LocalTransport) {
@@ -14,8 +14,9 @@ export function createTurnLimitsDialog(transport: LocalTransport) {
     <p data-field="model-limits" role="status"></p>
     <div class="panel-toolbar"><button type="button" data-field="model-refresh">${buttonIconHtml("refresh")}Refresh model limits</button><button type="button" data-field="model-context">${buttonIconHtml("save")}Use model context</button></div>
     <label>Context input budget (tokens)<input data-field="context" type="number" min="256" max="2000000" step="1" required></label>
-    <label>Maximum output tokens<input data-field="output" type="number" min="1" max="131072" step="1" required></label>
-    <p>Use limits supported by your model. The CLI context engine trims older context and shortens older tool results; saved session history remains available. Output includes reasoning tokens.</p>
+    <label><input data-field="auto-output" type="checkbox">Automatic output cap (model maximum)</label>
+    <label>Manual output cap (tokens)<input data-field="output" type="number" min="1" max="${MAX_OUTPUT_TOKENS}" step="1" required></label>
+    <p>Use limits supported by your model. The CLI context engine trims older context and shortens older tool results; saved session history remains available. Output includes reasoning tokens. Automatic uses the advertised model/provider maximum, reserving that capacity from input; when unavailable it uses 65,536 tokens. Uncheck to set a lower manual cap.</p>
     <div class="panel-toolbar"><button type="submit" data-field="save">${buttonIconHtml("save")}Save</button><button type="button" data-field="defaults">${buttonIconHtml("refresh")}Defaults</button></div>
     <p data-field="status" role="status"></p></form>`);
   const input = (name: string) => field<HTMLInputElement>(dialog, name);
@@ -23,18 +24,20 @@ export function createTurnLimitsDialog(transport: LocalTransport) {
     input("timeout").value = String(limits.timeoutMs / 60000);
     input("rounds").value = String(limits.maxRounds); input("retries").value = String(limits.providerRetries);
     input("context").value = String(limits.contextTokens); input("output").value = String(limits.maxOutputTokens);
+    input("auto-output").checked = !!limits.autoOutput; input("output").disabled = !!limits.autoOutput;
   };
   const describe = (): void => {
     const model = transport.modelLimits.value;
     field(dialog, "model-limits").textContent = `${transport.modelLimits.status}. Context maximum: ${model?.context?.toLocaleString() ?? "not reported"}; output maximum: ${model?.output?.toLocaleString() ?? "not reported"}. Effective session input/output: ${transport.effectiveTurnLimits.contextTokens.toLocaleString()} / ${transport.effectiveTurnLimits.maxOutputTokens.toLocaleString()}.`;
     field<HTMLButtonElement>(dialog, "model-context").disabled = !model?.context;
   };
+  input("auto-output").addEventListener("change", () => { input("output").disabled = input("auto-output").checked; });
   field(dialog, "model-refresh").addEventListener("click", async () => { const pending = transport.refreshModelLimits(); describe(); await pending; describe(); });
   field(dialog, "model-context").addEventListener("click", () => {
     const model = transport.modelLimits.value;
     if (!model?.context) return;
-    const limits = effectiveLimits({...transport.turnLimits, contextTokens: 2000000,
-      maxOutputTokens: Math.min(Number(input("output").value) || DEFAULT_TURN_LIMITS.maxOutputTokens, 131072)}, model);
+    const limits = effectiveLimits({...transport.turnLimits, contextTokens: 2000000, autoOutput: input("auto-output").checked,
+      maxOutputTokens: Math.min(Number(input("output").value) || DEFAULT_TURN_LIMITS.maxOutputTokens, MAX_OUTPUT_TOKENS)}, model);
     input("output").value = String(limits.maxOutputTokens);
     input("context").value = String(limits.contextTokens);
     field(dialog, "status").textContent = "Model context filled, reserving output tokens. Save to apply to this session.";
@@ -45,7 +48,8 @@ export function createTurnLimitsDialog(transport: LocalTransport) {
     try {
       transport.setTurnLimits({ timeoutMs: Number(input("timeout").value) * 60000,
         maxRounds: Number(input("rounds").value), providerRetries: Number(input("retries").value),
-        contextTokens: Number(input("context").value), maxOutputTokens: Number(input("output").value) });
+        contextTokens: Number(input("context").value), autoOutput: input("auto-output").checked,
+        maxOutputTokens: input("auto-output").checked ? DEFAULT_TURN_LIMITS.maxOutputTokens : Number(input("output").value) });
       field(dialog, "status").textContent = "Saved for this session. Applies to the next turn.";
     } catch (error) { field(dialog, "status").textContent = errorMessage(error); }
   });

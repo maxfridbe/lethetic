@@ -98,8 +98,8 @@ impl Conversation {
         if !(256..=2_000_000).contains(&tokens) {
             return Err("context budget must be 256–2000000 tokens".into());
         }
-        if !(1..=131_072).contains(&output) {
-            return Err("output budget must be 1–131072 tokens".into());
+        if !(1..=2_000_000).contains(&output) {
+            return Err("output budget must be 1–2000000 tokens".into());
         }
         self.context_limit = tokens;
         self.output_limit = output;

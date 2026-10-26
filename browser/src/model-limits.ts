@@ -1,5 +1,6 @@
 import { modelAuthHeaders, validateConnection } from "./connection.js";
 import type { Connection } from "./connection.js";
+import { MAX_OUTPUT_TOKENS } from "./turn-limits.js";
 import type { TurnLimits } from "./turn-limits.js";
 
 export interface EndpointLimits { name: string; context: number | null; input: number | null; output: number | null }
@@ -44,12 +45,13 @@ export async function fetchModelLimits(connection: Connection, signal: AbortSign
   return result;
 }
 
-/** Reserve output within the advertised total context; never enlarge saved user budgets. */
+/** Automatic output follows advertised capacity; manual budgets remain upper bounds. */
 export function effectiveLimits(configured: TurnLimits, model: ModelLimits | null): TurnLimits {
   // With one provider there is no alternate route to satisfy a larger request.
   const provider = model?.endpoints.length === 1 ? model.endpoints[0] : undefined;
   const context = Math.min(model?.context ?? Infinity, provider?.context ?? Infinity);
-  const output = Math.min(configured.maxOutputTokens, model?.output ?? Infinity, provider?.output ?? Infinity, Math.max(1, context - 256));
+  const requested = configured.autoOutput ? model?.output ?? provider?.output ?? configured.maxOutputTokens : configured.maxOutputTokens;
+  const output = Math.min(requested, MAX_OUTPUT_TOKENS, model?.output ?? Infinity, provider?.output ?? Infinity, Math.max(1, context - 256));
   return { ...configured, maxOutputTokens: output, contextTokens: Math.min(configured.contextTokens, Math.max(256, context - output), provider?.input ?? Infinity) };
 }
 

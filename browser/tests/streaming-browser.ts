@@ -18,6 +18,7 @@ export async function testStreamingControls(evaluate: (source: string) => Promis
       root.querySelector('[id="palette-command-local:turn-limits"]').click();
       const dialog=document.querySelector('dialog[open]');assert(dialog,'Turn limits not opened');
       const field=name=>dialog.querySelector('[data-field="'+name+'"]');
+      field('auto-output').checked=false;field('auto-output').dispatchEvent(new Event('change'));
       field('timeout').value='0';field('rounds').value='64';field('retries').value='0';field('context').value='64000';field('output').value='8192';
       field('limits-form').requestSubmit();assert(field('status').textContent.includes('Saved'),'Limits were not saved');dialog.close();
       const id=JSON.parse(records.get('lethetic.sessions.v1')).sessions[0].id;

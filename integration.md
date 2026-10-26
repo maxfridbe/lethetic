@@ -145,13 +145,14 @@ Metadata is cached in memory for ten minutes, refreshed on connection changes,
 and can be refreshed manually. Missing metadata stays unknown; session budgets
 remain usable. No credential is saved with model metadata.
 
-Requests use the lower of your session budget and the advertised model limit,
-reserving output tokens within the total context. If the model has one provider,
+Manual output caps use the lower of your session budget and the advertised model
+limit. Automatic output follows the advertised maximum. Both reserve output
+tokens within the total context. If the model has one provider,
 its reported input/output/context restrictions also cap requests. Saved budgets
 are preserved.
 **Ctrl+P → Turn limits → Use model context** fills the discovered context minus
 the output budget; **Save** applies it. Browser implementation ceilings still apply
-(2,000,000 input and 131,072 output tokens). Routed providers can have lower limits.
+(2,000,000 input and 2,000,000 output tokens). Routed providers can have lower limits.
 
 ## Turn limits and loop detection
 
@@ -164,7 +165,7 @@ refresh, and apply to its next turn without changing its files or worker variabl
 | Model requests per turn | 32 | 1–1,000 |
 | Transient retries per request | 2 | 0–10 |
 | Context input budget | 131,072 tokens | 256–2,000,000 |
-| Maximum output, including reasoning | 16,384 tokens | 1–131,072 |
+| Maximum output, including reasoning | Automatic: advertised model/provider maximum; 65,536 fallback | Manual: 1–2,000,000, capped by model/provider capacity |
 
 Connections also shows these editable limits. **Test connection** discovers the
 selected model's context/output capacity (including OpenRouter provider caps),
@@ -172,8 +173,14 @@ fills the context budget with room reserved for output, and validates a model
 response. **Apply limits** saves to the current session without replacing its
 history or files. Discovery failure leaves manual budgets available. Stale
 results from a different model or endpoint cannot overwrite the editor.
-Use **Defaults → Apply limits** to give an existing session the new fourfold
-token defaults; saved budgets are otherwise preserved.
+Enable **Automatic output cap → Apply limits** (or **Ctrl+P → Turn limits → Automatic output cap → Save**) to update an existing session. Older numeric caps stay manual until changed. Automatic follows model changes; manual caps are never raised by discovery.
+
+Input and output share the context window. For a 1,048,576-token model advertising
+943,718 output tokens, automatic reserves that output capacity and allows at most
+104,858 input tokens. A lower manual output cap leaves more room for input. The
+cap is a maximum, not a target length; generation can finish earlier. Provider
+limits, timeouts and response-size limits still apply, so truncation cannot be
+guaranteed impossible.
 
 Choose budgets supported by the model. Context estimates use the CLI's approximate
 byte-based accounting, not the provider's tokenizer. The current user turn is

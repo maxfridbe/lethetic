@@ -43,7 +43,7 @@ features are exposed in the browser.
 
 Native CLI and browser use the same prompts, UTF-8-safe transcript windows and
 hierarchical merge plan. Requests contain no executable tools. Each pass uses the configured output budget up to
-8,192 tokens, including hidden reasoning. The browser turn default is 16,384 tokens (compaction still caps each pass at 8,192);
+8,192 tokens, including hidden reasoning. Browser chat defaults to the advertised model/provider output maximum, with a 65,536-token fallback; older saved manual caps remain unchanged. Compaction still caps each pass at 8,192;
 low output budgets can cause reasoning models to exhaust the budget before
 producing a summary. Truncated responses fail rather than replace history. Input windows respect the configured input budget and
 an 80,000-byte ceiling. Empty, oversized or non-shrinking summaries fail without

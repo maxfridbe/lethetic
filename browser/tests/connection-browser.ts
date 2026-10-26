@@ -77,7 +77,7 @@ export async function testConnectionLimits(evaluate: (source: string) => Promise
     let editor;
     try {
       transport.start();const id=transport.state.session.session_id;
-      check(transport.turnLimits.contextTokens===131072 && transport.turnLimits.maxOutputTokens===16384,'Fourfold defaults missing');
+      check(transport.turnLimits.contextTokens===131072 && transport.turnLimits.maxOutputTokens===65536 && transport.turnLimits.autoOutput,'Automatic defaults missing');
       editor=createConnectionsDialog(transport);editor.open();const field=n=>editor.dialog.querySelector('[data-field="'+n+'"]');
       await wait(()=>!field('test').disabled && chatCalls===1);
       check(field('connection-context').value==='80000','Test did not populate context with provider cap and output reservation');
@@ -86,10 +86,18 @@ export async function testConnectionLimits(evaluate: (source: string) => Promise
       check(field('connection-timeout').value==='10' && field('connection-rounds').value==='32','Operational defaults changed');
       check(transport.turnLimits.contextTokens===131072,'Test silently changed saved budget');
       field('connection-limits-form').requestSubmit();
-      check(transport.turnLimits.contextTokens===80000 && transport.turnLimits.maxOutputTokens===8000,'Apply did not persist budgets');
+      check(transport.turnLimits.contextTokens===80000 && transport.turnLimits.maxOutputTokens===65536 && transport.turnLimits.autoOutput && transport.effectiveTurnLimits.maxOutputTokens===8000,'Apply did not persist automatic budgets');
       check(transport.state.session.session_id===id && transport.sessionForExport(id).messages.length===0,'Testing or Apply replaced session/history');
       check(new SessionStore(storage).list()[0].turnLimits.contextTokens===80000,'Limits not saved');
-      field('connection-default-limits').click();check(field('connection-context').value==='131072' && field('connection-output').value==='16384','Defaults button did not restore new budgets');
+      field('connection-auto-output').checked=false;field('connection-auto-output').dispatchEvent(new Event('change'));
+      check(!field('connection-output').disabled,'Manual output field stayed disabled');
+      field('connection-output').value='4096';field('connection-limits-form').requestSubmit();
+      check(transport.effectiveTurnLimits.maxOutputTokens===4096 && !new SessionStore(storage).list()[0].turnLimits.autoOutput,'Manual cap was not preserved');
+      field('connection-auto-output').checked=true;field('connection-auto-output').dispatchEvent(new Event('change'));
+      field('connection-limits-form').requestSubmit();
+      check(transport.effectiveTurnLimits.maxOutputTokens===8000 && new SessionStore(storage).list()[0].turnLimits.autoOutput,'Automatic cap was not persisted');
+
+      field('connection-default-limits').click();check(field('connection-context').value==='131072' && field('connection-output').value==='65536' && field('connection-auto-output').checked,'Defaults button did not restore automatic budgets');
       unavailable=true;field('test').click();await wait(()=>!field('test').disabled && chatCalls===2);
       check(field('connection-model-limits').textContent.includes('unavailable'),'Missing metadata failure status');unavailable=false;
       failMetadata=true;field('test').click();await wait(()=>!!staleResolve);

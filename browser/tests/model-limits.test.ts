@@ -1,9 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { effectiveLimits, fetchModelLimits, isOpenRouter, ModelLimitState } from "../src/model-limits.js";
-import { DEFAULT_TURN_LIMITS } from "../src/turn-limits.js";
+import { DEFAULT_TURN_LIMITS, parseTurnLimits } from "../src/turn-limits.js";
 const connection = { name: "Router", provider: "openai" as const, endpoint: "https://openrouter.ai/api/v1/chat/completions", model: "vendor/model", apiKey: "private-test-key" };
 const catalog = { data: [{ id: "vendor/model", context_length: 10000, top_provider: {max_completion_tokens: 2000} }] };
+
+await test("automatic generation uses advertised capacity while old and explicit manual caps remain bounded", () => {
+  const model = {context:1048576,output:943718,endpoints:[],fetchedAt:0};
+  const automatic = effectiveLimits(DEFAULT_TURN_LIMITS,model);
+  assert.equal(automatic.maxOutputTokens,943718);
+  assert.equal(automatic.contextTokens,104858);
+  assert.equal(parseTurnLimits(automatic).maxOutputTokens,943718);
+  const {autoOutput: _auto, ...legacy} = {...DEFAULT_TURN_LIMITS,maxOutputTokens:40960};
+  assert.deepEqual(parseTurnLimits(legacy),legacy);
+  assert.equal(effectiveLimits(parseTurnLimits(legacy),model).maxOutputTokens,40960);
+  assert.equal(effectiveLimits({...DEFAULT_TURN_LIMITS,autoOutput:false,maxOutputTokens:8192},model).maxOutputTokens,8192);
+  const provider = {name:"smaller",context:128000,input:100000,output:32768};
+  const bounded = effectiveLimits(DEFAULT_TURN_LIMITS,{...model,endpoints:[provider]});
+  assert.equal(bounded.maxOutputTokens,32768);assert.equal(bounded.contextTokens,95232);
+  assert.throws(()=>parseTurnLimits({...DEFAULT_TURN_LIMITS,maxOutputTokens:2000001}),/output/);
+  assert.throws(()=>parseTurnLimits({...DEFAULT_TURN_LIMITS,autoOutput:"true"}),/Invalid|Use/);
+});
 
 await test("OpenRouter model and provider limits use authenticated canonical endpoints", async () => {
   const urls: string[] = [];

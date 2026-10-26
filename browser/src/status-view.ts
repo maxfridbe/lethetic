@@ -20,7 +20,7 @@ export function renderBrowserStatus(transport: LocalTransport | null, pins = new
     { id: "requestUsage", label: "Last reported request input / output", value: `${tokens(metrics?.latestUsage?.input)} / ${tokens(metrics?.latestUsage?.output)}` },
     { id: "contextMax", label: "Model context maximum", value: tokens(model?.context) },
     { id: "inputBudget", label: "Input budget (effective / configured)", value: `${tokens(limits?.contextTokens)} / ${tokens(transport?.turnLimits.contextTokens)}` },
-    { id: "outputBudget", label: "Output budget / model maximum", value: `${tokens(limits?.maxOutputTokens)} / ${tokens(model?.output)}` },
+    { id: "outputBudget", label: "Output budget / model maximum", value: `${tokens(limits?.maxOutputTokens)} / ${tokens(model?.output)}${transport?.turnLimits.autoOutput ? " (automatic)" : ""}` },
     { id: "stop", label: "Stop reason", value: transport?.state.status.stop_reason ?? "Ready" },
     { id: "activity", label: "Activity", value: transport?.state.activity.kind.replaceAll("_", " ") ?? "Idle" },
     { id: "thinking", label: "Thinking", value: transport?.connection?.thinking ?? "Model default" },
