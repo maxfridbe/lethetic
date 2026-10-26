@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Lethetic",
-  "version": "26.1026.8",
+  "version": "26.1026.9",
   "identifier": "io.github.maxfridbe.lethetic",
   "build": {
     "frontendDist": "../dist"
@@ -29,10 +29,10 @@
       "icons/icon.ico"
     ],
     "android": {
-      "versionCode": 26102608
+      "versionCode": 26102609
     },
     "macOS": {
-      "bundleVersion": "2610.26.8",
+      "bundleVersion": "2610.26.9",
       "infoPlist": "Info.plist"
     }
   }

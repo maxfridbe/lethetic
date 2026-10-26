@@ -1,6 +1,6 @@
 [package]
 name = "lethetic-directory"
-version = "26.1026.8"
+version = "26.1026.9"
 edition = "2024"
 [dependencies]
 cap-std = "3.4"

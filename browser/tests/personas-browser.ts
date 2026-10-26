@@ -5,6 +5,7 @@ export async function testPersonas(evaluate: (source: string) => Promise<unknown
     const {BUILTIN_PERSONAS}=await import('./web/src/personas/builtins.js');
     const {parsePersona}=await import('./web/src/personas/schema.js');
     const {PersonaEffects}=await import('./web/src/personas/effects.js');
+    const {avatarImage}=await import('./web/src/personas/avatar-image.js');
     const root=document.createElement('div');root.style.height='900px';document.body.replaceChildren(root);
     const records=new Map(),storage={getItem:key=>records.get(key)??null,setItem:(key,value)=>records.set(key,value)};
     const originalFetch=window.fetch,originalPlay=PersonaEffects.prototype.play,originalUnlock=PersonaEffects.prototype.unlock;
@@ -24,6 +25,38 @@ export async function testPersonas(evaluate: (source: string) => Promise<unknown
     const finish=()=>{const enc=new TextEncoder();stream.enqueue(enc.encode('data: '+JSON.stringify({choices:[{delta:{content:'{"ok":true}'},finish_reason:'stop'}]})+'\\n\\n'+'data: [DONE]\\n\\n'));stream.close();stream=null};
     try {
       for(const p of BUILTIN_PERSONAS)assert(parsePersona(JSON.stringify(p)).id===p.id,'Built-in cannot roundtrip');
+      const skippy=BUILTIN_PERSONAS.find(p=>p.id==='skippy'),animation=skippy.avatar.animations[0];
+      assert(parsePersona(JSON.stringify(skippy)).avatar.animations.length===4,'Skippy animation mappings lost on import');
+      for(const animations of [
+        [{...animation,target:'x}body{display:none}'}],
+        [{...animation,target:'missing-part'}],
+        [{...animation,motion:'url(https://tracker.invalid/)'}],
+        [{...animation,origin:[Infinity,0]}],
+        [animation,animation],
+        Array(9).fill(animation),
+      ]) {
+        let rejected=false;try{parsePersona(JSON.stringify({...skippy,avatar:{...skippy.avatar,animations}}))}catch{rejected=true}
+        assert(rejected,'Unsafe or invalid part animation accepted');
+      }
+      const animationFrame=document.createElement('iframe');
+      animationFrame.setAttribute('sandbox','allow-same-origin');
+      animationFrame.style='position:fixed;left:0;top:0;width:300px;height:330px';
+      const loaded=new Promise(resolve=>animationFrame.onload=resolve);
+      animationFrame.srcdoc=avatarImage(skippy.avatar);document.body.append(animationFrame);
+      try {
+        await loaded;
+        const doc=animationFrame.contentDocument;
+        const loops=doc.getAnimations();
+        assert(loops.length===4 && loops.every(a=>a.effect.getTiming().iterations===Infinity),'Skippy part animations did not start');
+        const face=doc.getElementById('drawn-face');
+        const floating=doc.getElementById('floating-unit');
+        assert(face.getAnimations()[0].effect.getTiming().duration===5000,'Face twitch timing changed');
+        assert(floating.getAnimations()[0].effect.getTiming().duration===4800,'Float timing changed');
+        const before=animationFrame.contentWindow.getComputedStyle(floating).transform;
+        await new Promise(resolve=>setTimeout(resolve,250));
+        assert(animationFrame.contentWindow.getComputedStyle(floating).transform!==before,'Skippy did not float');
+      } finally {animationFrame.remove();}
+
       const badSvg=['<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>','<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>','<svg xmlns="http://www.w3.org/2000/svg"><image href="https://tracker.invalid/pixel"/></svg>','<svg xmlns="http://www.w3.org/2000/svg"><circle style="fill:red"/></svg>'];
       for(const svg of badSvg){let rejected=false;try{parsePersona(JSON.stringify({...BUILTIN_PERSONAS[0],avatar:{svg,events:{}}}))}catch{rejected=true}assert(rejected,'Unsafe avatar accepted')}
       view=mountLethetic(root,options);open();

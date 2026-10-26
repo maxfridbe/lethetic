@@ -1,3 +1,4 @@
+import { avatarImageUrl } from "./avatar-image.js";
 import { buttonIconHtml } from "../icons.js";
 import { h } from "../../lib/snabbdom/build/index.js";
 import type { VNode } from "../../lib/snabbdom/build/index.js";
@@ -8,7 +9,7 @@ import type { PersonaFeatures } from "./store.js";
 import { PersonaEvents } from "./events.js";
 import { PersonaEffects } from "./effects.js";
 import { MAX_PERSONA_BYTES } from "./schema.js";
-import type { Motion, PersonaEvent } from "./schema.js";
+import type { Motion, PersonaEvent, Persona } from "./schema.js";
 
 function preferences(): Storage | undefined { try { return globalThis.localStorage; } catch { return undefined; } }
 export class PersonaController {
@@ -23,7 +24,7 @@ export class PersonaController {
   #disposed = false;
   #generation = 0;
   #unlock = Promise.resolve();
-  #avatarSource = "";
+  #renderedAvatar: Persona["avatar"];
   #avatarUrl = "";
   constructor(readonly changed: () => void, storage = preferences()) { this.store = new PersonaStore(storage); }
   get open(): boolean { return this.#dialog?.open ?? false; }
@@ -61,7 +62,7 @@ export class PersonaController {
   avatar(): VNode | null {
     const p = this.store.current;
     if (!this.store.features.enabled || !this.store.features.avatar || !p.avatar) return null;
-    if (this.#avatarSource !== p.avatar.svg) { this.#avatarSource = p.avatar.svg; this.#avatarUrl = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(p.avatar.svg); }
+    if (this.#renderedAvatar !== p.avatar) { this.#renderedAvatar = p.avatar; this.#avatarUrl = avatarImageUrl(p.avatar); }
     return h("div.persona-companion", {attrs: {"aria-hidden": "true", "data-persona": p.id}}, [h("img#persona-avatar", {attrs: {src: this.#avatarUrl, alt: "", draggable: "false"}})]);
   }
   pause(): void { this.#generation++; this.effects.stop(); this.#pending = null; this.#repeat = false; this.previewEffects.stop(); this.events.reset(); }
@@ -86,7 +87,7 @@ export class PersonaController {
     this.#field("description").textContent = p.description;
     const preview = this.#field<HTMLImageElement>("preview-image");
     preview.hidden = !p.avatar;
-    if (p.avatar) preview.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(p.avatar.svg);
+    if (p.avatar) preview.src = avatarImageUrl(p.avatar);
     else preview.removeAttribute("src");
     this.#field("prompt").textContent = this.section || "Persona narration is disabled. Your base prompt is preserved.";
     this.#field("quips-list").textContent = p.quips.join("\n");

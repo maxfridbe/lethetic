@@ -2,6 +2,8 @@ export const PERSONA_EVENTS = ["when_user_submits_prompt", "when_model_thinking"
 export type PersonaEvent = typeof PERSONA_EVENTS[number];
 export const MOTIONS = ["bounce", "nod", "shake", "spin", "glow", "pace"] as const;
 export type Motion = typeof MOTIONS[number];
+export const PART_MOTIONS = ["float", "twitch", "sway-left", "sway-right"] as const;
+export interface AvatarAnimation { target: string; motion: typeof PART_MOTIONS[number]; origin: [number, number] }
 export interface PersonaSound { notes?: { frequency: number; durationMs: number }[]; src?: string; volume: number }
 export interface Persona {
   version: 1;
@@ -10,7 +12,7 @@ export interface Persona {
   description: string;
   narration: string;
   quips: string[];
-  avatar?: { svg: string; events: Partial<Record<PersonaEvent, Motion>> };
+  avatar?: { svg: string; events: Partial<Record<PersonaEvent, Motion>>; animations?: AvatarAnimation[] };
   audio?: Partial<Record<PersonaEvent, PersonaSound>>;
 }
 export const MAX_PERSONA_BYTES = 2 * 1024 * 1024;
@@ -60,13 +62,28 @@ export function parsePersona(source: string): Persona {
   if (!Array.isArray(p["quips"]) || p["quips"].length < 1 || p["quips"].length > 200) throw Error("Provide 1–200 quips.");
   const result: Persona = {version: 1, id, name: text(p["name"], "name", 80), description: text(p["description"], "description", 500, true), narration: text(p["narration"], "narration", 2000, true), quips: p["quips"].map(line => text(line, "quip", 240))};
   if (p["avatar"] !== undefined) {
-    const avatar = object(p["avatar"], ["svg", "events"]), events = object(avatar["events"], PERSONA_EVENTS);
+    const avatar = object(p["avatar"], ["svg", "events", "animations"]), events = object(avatar["events"], PERSONA_EVENTS);
     const motions: Partial<Record<PersonaEvent, Motion>> = {};
     for (const [event, motion] of Object.entries(events)) {
       if (!MOTIONS.includes(motion as Motion)) throw Error(`Unknown SVG animation: ${String(motion)}`);
       motions[event as PersonaEvent] = motion as Motion;
     }
     result.avatar = {svg: validateAvatar(text(avatar["svg"], "SVG", 32768)), events: motions};
+    if (avatar["animations"] !== undefined) {
+      const animations = avatar["animations"];
+      if (!Array.isArray(animations) || animations.length > 8) throw Error("Use at most 8 SVG part animations.");
+      const doc = new DOMParser().parseFromString(result.avatar.svg, "image/svg+xml"), targets = new Set<string>();
+      result.avatar.animations = animations.map(value => {
+        const entry = object(value, ["target", "motion", "origin"]), target = text(entry["target"], "animation target", 64);
+        if (!/^[A-Za-z][\w-]*$/u.test(target) || targets.has(target) || !doc.getElementById(target)) throw Error("SVG animation target must be a unique existing element ID.");
+        targets.add(target);
+        const motion = entry["motion"];
+        if (!PART_MOTIONS.includes(motion as AvatarAnimation["motion"])) throw Error("Unknown SVG part motion.");
+        const origin = entry["origin"];
+        if (!Array.isArray(origin) || origin.length !== 2) throw Error("SVG animation origin needs two coordinates.");
+        return {target, motion: motion as AvatarAnimation["motion"], origin: [number(origin[0], -10000, 10000), number(origin[1], -10000, 10000)]};
+      });
+    }
   }
   if (p["audio"] !== undefined) {
     const audio = object(p["audio"], PERSONA_EVENTS);

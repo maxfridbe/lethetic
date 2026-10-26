@@ -3310,7 +3310,7 @@ dependencies = [
 
 [[package]]
 name = "lethetic-desktop"
-version = "26.1026.8"
+version = "26.1026.9"
 dependencies = [
  "serde_json",
  "tauri",
@@ -3322,7 +3322,7 @@ dependencies = [
 
 [[package]]
 name = "lethetic-directory"
-version = "26.1026.8"
+version = "26.1026.9"
 dependencies = [
  "base64 0.22.1",
  "cap-std",
@@ -3333,7 +3333,7 @@ dependencies = [
 
 [[package]]
 name = "lethetic-network"
-version = "26.1026.8"
+version = "26.1026.9"
 dependencies = [
  "arti-client",
  "axum",
@@ -6104,7 +6104,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-lethetic-host"
-version = "26.1026.8"
+version = "26.1026.9"
 dependencies = [
  "base64 0.22.1",
  "keepawake",

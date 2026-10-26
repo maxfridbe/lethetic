@@ -1,6 +1,6 @@
 [package]
 name = "lethetic-desktop"
-version = "26.1026.8"
+version = "26.1026.9"
 edition = "2024"
 [lib]
 name = "lethetic_desktop"

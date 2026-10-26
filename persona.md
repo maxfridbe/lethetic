@@ -133,6 +133,25 @@ Scripts, style attributes/stylesheets, event handlers, links, images, external
 resources, SMIL, `foreignObject`, entities, and XML declarations are rejected.
 Use the JSON event map to animate the image instead.
 
+For continuous movement of parts within the image, add an optional
+`avatar.animations` array. Skippy uses this for floating, face twitches, and
+swaying epaulettes. Each target must be an existing SVG element ID, used once:
+
+```json
+"animations": [
+  {"target": "floating-unit", "motion": "float", "origin": [450, 500]},
+  {"target": "drawn-face", "motion": "twitch", "origin": [450, 400]},
+  {"target": "epaulette-left", "motion": "sway-left", "origin": [300, 480]},
+  {"target": "epaulette-right", "motion": "sway-right", "origin": [600, 480]}
+]
+```
+
+The host supplies these four fixed transform animations; imported CSS is still
+rejected. Origins use SVG viewBox coordinates (each from -10,000 to 10,000).
+At most eight parts can animate. These loops work in the companion and preview,
+remain inside an isolated image, and stop under the system's reduced-motion
+preference. JSON exports retain both the artwork and animation mappings.
+
 ## Sounds
 
 A sound has `volume` (0–1) and exactly one of:
