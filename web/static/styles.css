@@ -1824,3 +1824,7 @@ progress {
 @media (max-width: 480px) { .persona-companion { width: 52px; height: 52px; right: 8px; } }
 
 .persona-dialog-preview { float: right; width: 72px; height: 72px; object-fit: contain; pointer-events: none; }
+
+.persona-speech-settings input:not([type="checkbox"]) { width: 100%; box-sizing: border-box; padding: .4rem; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 5px; }
+.persona-speech-action { display: inline-flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+.persona-speech-action [role="status"] { color: var(--theme-warning-fg); font-size: .8rem; max-width: 36rem; overflow-wrap: anywhere; }

@@ -140,6 +140,7 @@ function renderBlock(
   copyContents?: (content: string) => void,
   originalPython = false,
   setPythonOriginal?: (original: boolean) => void,
+  speechAction: VNode | null = null,
 ): VNode {
   if (block.kind === "divider") {
     return (
@@ -216,6 +217,7 @@ function renderBlock(
         </details>
       )}
       <footer attrs={{ class: "chat-block-actions" }}>
+        {speechAction}
         {python === null ? null : <span attrs={{ class: "python-view-controls", role: "group", "aria-label": "Python code display" }}>
           <button attrs={{ type: "button", "data-python-view": "parsed", "aria-pressed": String(parsed), title: "Show code with indentation and syntax highlighting" }}
             props={{ disabled: !setPythonOriginal }} on={{ click: () => setPythonOriginal?.(false) }}>{uiIcon("code")}Parsed</button>
@@ -299,6 +301,7 @@ function renderChat(context: ChatViewContext): VNode {
             context.actions.copyContents,
             context.state.originalPythonBlocks?.has(`${snapshot.session.session_id}:${chatBlockAnchor(snapshot, start + offset) ?? start + offset}`) ?? false,
             context.actions.setPythonOriginal ? original => context.actions.setPythonOriginal?.(`${snapshot.session.session_id}:${chatBlockAnchor(snapshot, start + offset) ?? start + offset}`, original) : undefined,
+            context.state.speechAction?.(block, `${snapshot.session.session_id}:${chatBlockAnchor(snapshot, start + offset) ?? start + offset}`) ?? null,
           ),
         )}
       </div>

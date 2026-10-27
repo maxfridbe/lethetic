@@ -20,10 +20,78 @@ import/export JSON, and independently enable:
 - **Animated SVG companion:** a transparent image above the prompt bar that reacts to events.
 - **Event sounds:** optional tones or embedded audio. Off by default.
 
-**Enable persona features** switches all four off without deleting the selection
+**Enable persona features** switches these features and speech playback off without deleting the selection
 or individual preferences. Display changes apply immediately, including during a
 turn. Narration changes apply on the next submitted message, not halfway through
 a response. Reduced-motion preferences suppress SVG animation and quip rotation.
+
+## Streaming voice playback
+
+In **Personas → Speech playback**, choose **OpenAI-compatible** or
+**ElevenLabs-compatible**, enter the full endpoint URL, model, voice name/ID and
+API key, enable response Play buttons, then **Save voice**. Settings belong to the
+selected persona; switching personas selects its voice. **Test voice** plays a
+short sample. Beside each assistant response, **Play** reads that response (including
+any Markdown/code text) and becomes a **square Stop** control while fetching or
+playing audio. Only an explicit Play/Test click sends text; event sounds remain
+independent. During a streaming model response, Play reads the text present when
+clicked, not later additions. Voices are AI-generated.
+
+Audio starts as bytes arrive, before synthesis finishes. **Stop** cancels the
+request and queued audio immediately; starting another response replaces playback.
+You can also stop playback from the Personas voice panel when a response has
+scrolled out of view. Switching personas/sessions, disabling persona features, or
+unmounting the UI stops playback. Long responses are split into requests of at most
+4,000 characters without dropping text; playback maintains a small audio queue.
+A request with no network progress for 60 seconds stops with a retryable error.
+
+Voice configuration is included in persona JSON, but **API keys stay only in
+memory in the current UI instance**. They are not written to localStorage, session
+databases, debug reports, or exports; re-enter them after a reload. A saved key is
+shown as present, and an empty key field keeps it. **Clear key** removes it. Keys
+are scoped to the persona, API style and exact endpoint; changing an endpoint never
+reuses another endpoint's key. Keyless local speech servers are supported.
+
+The endpoint must allow browser CORS requests and return **raw signed 16-bit,
+little-endian, mono PCM at 24 kHz**. HTTPS is required except for loopback HTTP.
+Redirects are rejected so authentication is never forwarded to another endpoint.
+This works in the shared browser, native-app WebView and remote-control UI; the
+request originates from the UI, not from a Python/.NET runspace. Runspace network
+permissions do not grant or control speech access. Clicking Play sends the response
+to the chosen provider and may incur its normal charges. A compatible server that
+only returns MP3/WAV is not supported by this PCM player.
+
+Add an optional `speech` object to an exported persona:
+
+```json
+"speech": {
+  "enabled": true,
+  "provider": "openai",
+  "endpoint": "https://api.openai.com/v1/audio/speech",
+  "model": "gpt-4o-mini-tts",
+  "voice": "coral"
+}
+```
+
+Or use ElevenLabs (replace `voice` with an ID available to your account):
+
+```json
+"speech": {
+  "enabled": true,
+  "provider": "elevenlabs",
+  "endpoint": "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream",
+  "model": "eleven_multilingual_v2",
+  "voice": "JBFqnCBsd6RMkjVDRZzb"
+}
+```
+
+OpenAI requests use Bearer authentication and `response_format: "pcm"`.
+ElevenLabs requests use `xi-api-key`, `model_id` and
+`output_format=pcm_24000`; `{voice_id}` is substituted with the encoded voice ID.
+See the [OpenAI speech guide](https://developers.openai.com/api/docs/guides/text-to-speech)
+and [ElevenLabs streaming API](https://elevenlabs.io/docs/api-reference/text-to-speech/stream)
+for provider-specific models, voices and account requirements. Endpoint configuration
+and credentials are never added to the persona's system prompt.
 
 ## Narration and session state
 

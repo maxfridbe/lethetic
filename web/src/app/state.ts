@@ -52,6 +52,7 @@ export interface ChatViewState {
   readonly paletteIcon?: VNode | null;
   readonly customStatus?: VNode | null;
   readonly promptPlaceholder?: string | null;
+  readonly speechAction?: (block: RenderBlockView, id: string) => VNode | null;
   readonly blockActions?: (block: RenderBlockView) => VNode | null;
   readonly codeActions?: (code: string, language: string | null) => VNode | null;
   readonly snapshot: WebAppSnapshot | null;

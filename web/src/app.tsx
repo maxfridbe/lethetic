@@ -1237,6 +1237,7 @@ export class SpaApplication implements BrowserTransportEvents {
       state: {
         snapshot,
         originalPythonBlocks: this.#originalPythonBlocks,
+        speechAction: (block, id) => this.#personas.speech.action(block, id),
         headerActions: this.extensions.headerActions?.() ?? null,
         headerStatus: this.extensions.headerStatus?.() ?? null,
         headerStatusContent: this.extensions.headerStatusContent?.() ?? null,

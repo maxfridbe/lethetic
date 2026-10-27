@@ -40,6 +40,8 @@
     "src/personas/meeseeks-art.js",
     "src/personas/schema.js",
     "src/personas/skippy-art.js",
+    "src/personas/speech-controls.js",
+    "src/personas/speech.js",
     "src/personas/store.js",
     "src/protocol.js",
     "src/reducer-fixtures.js",

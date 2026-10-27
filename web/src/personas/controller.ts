@@ -1,3 +1,4 @@
+import { PersonaSpeechControls } from "./speech-controls.js";
 import { avatarImageUrl } from "./avatar-image.js";
 import { buttonIconHtml } from "../icons.js";
 import { h } from "../../lib/snabbdom/build/index.js";
@@ -14,6 +15,7 @@ import type { Motion, PersonaEvent, Persona } from "./schema.js";
 function preferences(): Storage | undefined { try { return globalThis.localStorage; } catch { return undefined; } }
 export class PersonaController {
   readonly store: PersonaStore;
+  readonly speech: PersonaSpeechControls;
   readonly effects = new PersonaEffects(message => { if (this.#dialog?.open) this.#field("status").textContent = message; });
   readonly events = new PersonaEvents();
   readonly previewEffects = new PersonaEffects();
@@ -26,7 +28,7 @@ export class PersonaController {
   #unlock = Promise.resolve();
   #renderedAvatar: Persona["avatar"];
   #avatarUrl = "";
-  constructor(readonly changed: () => void, storage = preferences()) { this.store = new PersonaStore(storage); }
+  constructor(readonly changed: () => void, storage = preferences()) { this.store = new PersonaStore(storage); this.speech = new PersonaSpeechControls(this.store, changed); }
   get open(): boolean { return this.#dialog?.open ?? false; }
   get section(): string { return this.store.section; }
   get lines(): readonly string[] { return this.store.quips; }
@@ -45,6 +47,7 @@ export class PersonaController {
     if (!live || session !== this.#session || snapshot?.activity.kind !== "processing") {
       if (this.#repeat) { this.effects.stopAnimation(); this.#pending = null; this.#repeat = false; }
     }
+    if (session !== this.#session) this.speech.stop();
     this.#session = session;
     const event = this.events.observe(snapshot, live);
     if (event) this.emit(event);
@@ -65,18 +68,19 @@ export class PersonaController {
     if (this.#renderedAvatar !== p.avatar) { this.#renderedAvatar = p.avatar; this.#avatarUrl = avatarImageUrl(p.avatar); }
     return h("div.persona-companion", {attrs: {"aria-hidden": "true", "data-persona": p.id}}, [h("img#persona-avatar", {attrs: {src: this.#avatarUrl, alt: "", draggable: "false"}})]);
   }
-  pause(): void { this.#generation++; this.effects.stop(); this.#pending = null; this.#repeat = false; this.previewEffects.stop(); this.events.reset(); }
-  dispose(): void { this.#disposed = true; this.pause(); this.effects.dispose(); this.previewEffects.dispose(); this.#dialog?.remove(); }
+  pause(): void { this.speech.stop(); this.#generation++; this.effects.stop(); this.#pending = null; this.#repeat = false; this.previewEffects.stop(); this.events.reset(); }
+  dispose(): void { this.#disposed = true; this.pause(); this.effects.dispose(); this.previewEffects.dispose(); this.speech.dispose(); this.#dialog?.remove(); }
   importDialog(): void { this.show(); this.#field<HTMLInputElement>("file").click(); }
   exportCurrent(): void { this.show(); this.#field("export").click(); }
   show(): void {
     if (!this.#dialog) this.#dialog = this.#createDialog();
     this.#refresh(); if (!this.#dialog.open) this.#dialog.showModal();
   }
-  #apply(): void { this.#generation++; this.effects.stop(); this.previewEffects.stop(); this.#pending = null; this.#repeat = false; this.store.save(); this.#refresh(); this.changed(); }
+  #apply(): void { this.speech.stop(); this.#generation++; this.effects.stop(); this.previewEffects.stop(); this.#pending = null; this.#repeat = false; this.store.save(); this.#refresh(); this.changed(); }
   #field<T extends HTMLElement>(name: string): T { return this.#dialog!.querySelector<T>(`[data-persona-field="${name}"]`)!; }
   #refresh(): void {
     if (!this.#dialog) return;
+    this.speech.refresh();
     const select = this.#field<HTMLSelectElement>("select"); select.replaceChildren();
     for (const p of this.store.list) { const option = document.createElement("option"); option.value = p.id; option.textContent = p.name; select.append(option); }
     select.value = this.store.selected;
@@ -105,10 +109,12 @@ export class PersonaController {
       <label>Preview event<select data-persona-field="preview-event"><option value="when_model_done_responding">Model done responding</option><option value="when_user_submits_prompt">User submits prompt</option><option value="when_model_thinking">Model thinking</option><option value="when_tool_started">Tool started</option><option value="when_error">Error</option><option value="when_stopped">Stopped</option></select></label>
       <div class="persona-dialog-actions"><button type="button" data-persona-field="test">${buttonIconHtml("run")} Test sound</button><button type="button" data-persona-field="preview">${buttonIconHtml("preview")} Animate preview</button><button type="button" data-persona-field="import">${buttonIconHtml("upload")} Import JSON</button><button type="button" data-persona-field="export">${buttonIconHtml("download")} Export JSON</button><button type="button" data-persona-field="remove">${buttonIconHtml("refresh")} Reset / delete custom</button></div>
       <input type="file" accept=".json,application/json" data-persona-field="file" hidden>
+      <div data-persona-field="speech-settings"></div>
       <details><summary>Persona section for the next system prompt</summary><pre data-persona-field="prompt"></pre></details>
       <details><summary>Thinking quips</summary><pre data-persona-field="quips-list"></pre></details>
       <p role="status" data-persona-field="status"></p>`;
     document.body.append(dialog); this.#dialog = dialog;
+    this.speech.mount(this.#field("speech-settings"));
     this.#field("close").onclick = () => { this.previewEffects.stop(); this.effects.stopSound(); dialog.close(); };
     dialog.addEventListener("close", () => this.previewEffects.stop());
     this.#field<HTMLSelectElement>("select").onchange = event => { this.store.select((event.target as HTMLSelectElement).value); this.#apply(); };
@@ -125,7 +131,7 @@ export class PersonaController {
       if (motion) this.previewEffects.animate(this.#field("preview-image"), motion, matchMedia("(prefers-reduced-motion: reduce)").matches);
       else this.#field("status").textContent = "No animation mapped to this event.";
     };
-    this.#field("remove").onclick = () => { this.store.remove(); this.#apply(); };
+    this.#field("remove").onclick = () => { this.speech.forgetCurrent(); this.store.remove(); this.#apply(); };
     this.#field("import").onclick = () => this.#field<HTMLInputElement>("file").click();
     this.#field<HTMLInputElement>("file").onchange = () => {
       const input = this.#field<HTMLInputElement>("file"), file = input.files?.[0]; input.value = "";

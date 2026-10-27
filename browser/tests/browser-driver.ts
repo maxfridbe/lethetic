@@ -1,4 +1,5 @@
 import { testUiControls } from "./ui-controls-browser.js";
+import { testPersonaSpeech } from "./persona-speech-browser.js";
 import { testPersonas } from "./personas-browser.js";
 import { testNativeTorControls } from "./native-tor-browser.js";
 import { testVirtualChat } from "./virtual-chat-browser.js";
@@ -68,8 +69,8 @@ function rpc(method: string, params: Record<string, unknown> = {}): Promise<Reco
     browser.stdio[3]?.write(JSON.stringify({ id, method, params, sessionId: session }) + "\0");
   });
 }
-async function evaluate(expression: string): Promise<unknown> {
-  const response = await rpc("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+async function evaluate(expression: string, userGesture = false): Promise<unknown> {
+  const response = await rpc("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true, userGesture });
   if (response["exceptionDetails"]) throw new Error(JSON.stringify(response["exceptionDetails"]));
   return (response["result"] as Record<string, unknown>)["value"];
 }
@@ -893,6 +894,11 @@ try {
     await rpc("Emulation.clearDeviceMetricsOverride");
   });
   process.stdout.write("Persona palette, prompt replacement, events, SVG validation, JSON roundtrip and mobile layout passed.\n");
+  await testPersonaSpeech(source => evaluate(source, true), async () => {
+    const image = await rpc("Page.captureScreenshot", {format: "png"});
+    await writeFile(config.screenshot.replace(".png", "-persona-speech.png"), Buffer.from(String(image["data"]), "base64"));
+  });
+  process.stdout.write("Persona speech streams before EOF, stops, isolates keys, and supports both providers.\n");
   await testUiControls(evaluate);
   await testVirtualChat(evaluate);
   await testNativeTorControls(evaluate);

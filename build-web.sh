@@ -21,6 +21,7 @@ readonly BROWSER_TESTS=(
     thinking-lines
     personas
     persona-effects
+    persona-speech
     json-rendering
     markdown-rendering
     files-pane
