@@ -39,6 +39,7 @@ export interface PythonTool extends Tool {
  * The worker receives any configured relay credential.
  */
 export function createPythonTool(options: {
+  sessionId?: string;
   siteAccess?: boolean;
   networkMode?: NativeNetworkMode;
   networkAccess?: boolean;
@@ -70,7 +71,7 @@ export function createPythonTool(options: {
   let sequence = 0;
   let ready = false;
   let sites: WireSite[] = [];
-  const nativeNetwork = new NativeNetwork();
+  const nativeNetwork = new NativeNetwork(options.sessionId);
   type Reply = { output: string; response?: WireResponse; warning: string };
   const terminate = (): void => { nativeNetwork.reset(); worker?.terminate(); worker = null; ready = false; sites = []; };
   const reset = (): void => {

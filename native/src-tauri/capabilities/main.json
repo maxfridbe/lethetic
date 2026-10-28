@@ -13,6 +13,7 @@
     "lethetic-host:allow-revoke-directory",
     "lethetic-host:allow-set-working",
     "lethetic-host:allow-grant-network",
+    "lethetic-host:allow-network-diagnostics",
     "lethetic-host:allow-revoke-network",
     "lethetic-host:allow-begin-download",
     "lethetic-host:allow-write-download",

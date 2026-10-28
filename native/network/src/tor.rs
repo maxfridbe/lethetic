@@ -62,14 +62,19 @@ impl TorHttp {
             .client
             .connect((host.as_str(), port))
             .await
-            .map_err(|e| upstream(format!("Tor connection failed (no direct fallback): {e}")))?
+            .map_err(|e| {
+                upstream(format!(
+                    "Tor connection failed (no direct fallback): {}",
+                    error_chain(&e)
+                ))
+            })?
             .compat();
         if request.url().scheme() == "https" {
             let name = rustls::pki_types::ServerName::try_from(host).map_err(super::bad)?;
             let tls = TlsConnector::from(self.tls.clone())
                 .connect(name, stream)
                 .await
-                .map_err(upstream)?;
+                .map_err(|e| upstream(format!("Tor TLS handshake failed: {e}")))?;
             exchange(tls, request).await
         } else {
             exchange(stream, request).await

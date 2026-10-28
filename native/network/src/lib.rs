@@ -1,5 +1,6 @@
 //! Revocable loopback HTTP capabilities for the app's WASM runtimes.
 //! Outbound requests and explicitly forwarded virtual sites use separate grants.
+pub mod diagnostics;
 pub mod sites;
 pub mod speech;
 mod tor;
@@ -51,6 +52,8 @@ struct Network {
     cancel: CancellationToken,
     client: Arc<Backend>,
     slots: Semaphore,
+    diagnostics: diagnostics::Diagnostics,
+    mode: NetworkMode,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -89,6 +92,13 @@ impl Grant {
         mode: NetworkMode,
         tor_directory: Option<&std::path::Path>,
     ) -> Result<Self, String> {
+        Self::open_with_diagnostics(mode, tor_directory, diagnostics::Diagnostics::default()).await
+    }
+    pub async fn open_with_diagnostics(
+        mode: NetworkMode,
+        tor_directory: Option<&std::path::Path>,
+        diagnostics: diagnostics::Diagnostics,
+    ) -> Result<Self, String> {
         let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
             .await
             .map_err(|e| e.to_string())?;
@@ -120,6 +130,8 @@ impl Grant {
             cancel: cancel.clone(),
             client: client.clone(),
             slots: Semaphore::new(8),
+            diagnostics,
+            mode,
         });
         let app = Router::new()
             .route("/relay", post(relay).options(preflight))
@@ -172,17 +184,45 @@ async fn relay(State(state): State<Arc<Network>>, headers: HeaderMap, body: Byte
     {
         return cors(StatusCode::UNAUTHORIZED.into_response());
     }
+    let start = std::time::Instant::now();
+    let mut entry = diagnostics::Entry::new(&body, state.mode);
     let Ok(_slot) = state.slots.try_acquire() else {
-        return cors(StatusCode::TOO_MANY_REQUESTS.into_response());
+        entry.relay_status = 429;
+        entry.error = Some("Relay concurrency limit reached (8 requests)".into());
+        state.diagnostics.record(entry);
+        return cors(
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                "Relay concurrency limit reached (8 requests)",
+            )
+                .into_response(),
+        );
     };
     let result = tokio::select! {
         () = state.cancel.cancelled() => Err((StatusCode::FORBIDDEN, "Network permission revoked".into())),
         result = tokio::time::timeout(Duration::from_secs(60), forward(&state.client, &body)) => result.unwrap_or_else(|_| Err(upstream("Network request timed out; Tor-only requests never fall back to direct HTTP"))),
     };
-    cors(match result {
-        Ok(reply) => Json(reply).into_response(),
-        Err(error) => error.into_response(),
-    })
+    entry.duration_ms = diagnostics::millis(start.elapsed());
+    let response = match result {
+        Ok(reply) => {
+            entry.target_status = Some(reply.status);
+            if reply.status >= 400 {
+                entry.error = Some(format!(
+                    "Destination returned HTTP {}; cause not established",
+                    reply.status
+                ));
+            }
+            Json(reply).into_response()
+        }
+        Err((status, error)) => {
+            let message = diagnostics::safe_error(&error, &body);
+            entry.relay_status = status.as_u16();
+            entry.error = Some(message.clone());
+            (status, message).into_response()
+        }
+    };
+    state.diagnostics.record(entry);
+    cors(response)
 }
 type Failure = (StatusCode, String);
 fn bad(error: impl std::fmt::Display) -> Failure {
@@ -252,7 +292,10 @@ async fn forward(client: &Backend, body: &[u8]) -> Result<Reply, Failure> {
     }
     let mut response = match client {
         Backend::Tor(tor) => return tor.send(outgoing).await,
-        Backend::Direct(direct) => direct.execute(outgoing).await.map_err(upstream)?,
+        Backend::Direct(direct) => direct
+            .execute(outgoing)
+            .await
+            .map_err(|e| upstream(transport_error(&e)))?,
     };
     if response
         .content_length()
@@ -274,7 +317,11 @@ async fn forward(client: &Backend, body: &[u8]) -> Result<Reply, Failure> {
         }
     }
     let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(upstream)? {
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| upstream(transport_error(&e)))?
+    {
         if chunk.len() > MAX_BYTES - bytes.len() {
             return Err(upstream("Response exceeds 8 MiB"));
         }
@@ -285,4 +332,25 @@ async fn forward(client: &Backend, body: &[u8]) -> Result<Reply, Failure> {
         headers,
         body_base64: STANDARD.encode(bytes),
     })
+}
+
+fn transport_error(error: &reqwest::Error) -> String {
+    let stage = if error.is_timeout() {
+        "HTTP transport timeout"
+    } else if error.is_connect() {
+        "HTTP connection failed (DNS/TCP/TLS)"
+    } else {
+        "HTTP response transfer failed"
+    };
+    let mut message = stage.to_owned();
+    let mut cause = std::error::Error::source(error);
+    for _ in 0..8 {
+        let Some(error) = cause else {
+            break;
+        };
+        message.push_str(": ");
+        message.push_str(&error.to_string());
+        cause = error.source();
+    }
+    message
 }

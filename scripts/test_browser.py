@@ -60,6 +60,14 @@ class Handler(SimpleHTTPRequestHandler):
             if self.headers.get("Authorization") != "Bearer python-test-relay-token-123456789":
                 self.send_error(401)
                 return
+            if payload.get("url") == "https://python-relay-target.invalid/failure":
+                body = ("Tor connection failed: DNS lookup failed " + self.headers["Authorization"]).encode()
+                self.send_response(502)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             import base64
             body = json.dumps({"status": 200, "headers": {"Content-Type": "application/json"},
                                "bodyBase64": base64.b64encode(json.dumps(payload).encode()).decode()}).encode()

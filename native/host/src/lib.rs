@@ -26,6 +26,7 @@ struct Host {
 struct NetworkGrants {
     epoch: u64,
     grants: HashMap<String, lethetic_network::Grant>,
+    histories: std::collections::VecDeque<(String, lethetic_network::diagnostics::Diagnostics)>,
 }
 fn authorize(host: &Host, token: &str) -> Result<(), String> {
     if token == host.token {
@@ -38,6 +39,7 @@ fn authorize(host: &Host, token: &str) -> Result<(), String> {
 async fn grant_network(
     app: tauri::AppHandle,
     mode: lethetic_network::NetworkMode,
+    session_id: Option<String>,
     state: State<'_, Host>,
     token: String,
 ) -> Result<lethetic_network::Route, String> {
@@ -52,7 +54,31 @@ async fn grant_network(
         .app_local_data_dir()
         .map_err(|e| e.to_string())?
         .join("tor");
-    let grant = lethetic_network::Grant::open_mode(mode, Some(&directory)).await?;
+    let diagnostics = {
+        let mut grants = state.network.lock().map_err(|error| error.to_string())?;
+        if let Some(id) = session_id {
+            if id.is_empty()
+                || id.len() > 128
+                || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+            {
+                return Err("Invalid session identifier".into());
+            }
+            if let Some(index) = grants.histories.iter().position(|(key, _)| key == &id) {
+                let entry = grants.histories.remove(index).expect("history index");
+                grants.histories.push_back(entry);
+            } else {
+                if grants.histories.len() >= 16 {
+                    grants.histories.pop_front();
+                }
+                grants.histories.push_back((id, Default::default()));
+            }
+            grants.histories.back().expect("history inserted").1.clone()
+        } else {
+            Default::default()
+        }
+    };
+    let grant =
+        lethetic_network::Grant::open_with_diagnostics(mode, Some(&directory), diagnostics).await?;
     grant.ready().await?;
     let mut grants = state.network.lock().map_err(|error| error.to_string())?;
     if grants.epoch != epoch {
@@ -64,6 +90,20 @@ async fn grant_network(
     let route = grant.route.clone();
     grants.grants.insert(route.token.clone(), grant);
     Ok(route)
+}
+#[tauri::command]
+fn network_diagnostics(
+    state: State<'_, Host>,
+    token: String,
+    session_id: String,
+) -> Result<Option<lethetic_network::diagnostics::Snapshot>, String> {
+    authorize(&state, &token)?;
+    let grants = state.network.lock().map_err(|error| error.to_string())?;
+    Ok(grants
+        .histories
+        .iter()
+        .find(|(id, _)| id == &session_id)
+        .map(|(_, log)| log.snapshot()))
 }
 #[tauri::command]
 fn revoke_network(
@@ -216,6 +256,7 @@ pub fn init(token: String) -> tauri::plugin::TauriPlugin<tauri::Wry> {
             sync_directory,
             revoke_directory,
             grant_network,
+            network_diagnostics,
             revoke_network,
             set_working
         ])

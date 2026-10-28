@@ -391,6 +391,18 @@
           "markdownDescription": "Denies the grant_network command without any pre-configured scope."
         },
         {
+          "description": "Enables the network_diagnostics command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-network-diagnostics",
+          "markdownDescription": "Enables the network_diagnostics command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the network_diagnostics command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-network-diagnostics",
+          "markdownDescription": "Denies the network_diagnostics command without any pre-configured scope."
+        },
+        {
           "description": "Enables the next_site_request command without any pre-configured scope.",
           "type": "string",
           "const": "allow-next-site-request",

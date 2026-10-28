@@ -16,6 +16,7 @@ fn main() {
         "sync_directory",
         "revoke_directory",
         "grant_network",
+        "network_diagnostics",
         "revoke_network",
         "set_working",
     ])

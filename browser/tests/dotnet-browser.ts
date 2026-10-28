@@ -55,6 +55,12 @@ export async function testDotnetBrowser(evaluate: (expression: string) => Promis
       if((await run(tool,'new FileInfo("large.bin").Length')).trim()!=='3145728')throw Error('Large .NET file not restored');
       if(!(await run(tool,'answer')).includes('CS0103'))throw Error('Variables survived worker termination');
     } finally {tool.reset()}
+    const relay={endpoint:location.origin+'/python-relay',token:'python-test-relay-token-123456789'};
+    const routedTool=createDotnetTool({networkAccess:true,relay});
+    try {
+      const failure=await run(routedTool,'await new System.Net.Http.HttpClient().GetStringAsync("https://python-relay-target.invalid/failure")');
+      if(!failure.includes('HTTP relay failed (502)') || !failure.includes('DNS lookup failed') || failure.includes(relay.token))throw Error('.NET lost or leaked relay details: '+failure);
+    } finally {routedTool.reset()}
     const sitesTool=createDotnetTool({siteAccess:true});
     let debugSites;
     try {

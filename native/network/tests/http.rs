@@ -177,3 +177,54 @@ async fn revocation_cancels_an_in_flight_request() {
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     server.abort();
 }
+
+#[tokio::test]
+async fn diagnostics_distinguish_target_rejections_from_relay_failures_and_survive_revocation() {
+    use lethetic_network::{NetworkMode, diagnostics::Diagnostics};
+    let first = Diagnostics::default();
+    let other = Diagnostics::default();
+    let grant = Grant::open_with_diagnostics(NetworkMode::Direct, None, first.clone())
+        .await
+        .unwrap();
+    let (url, server) = fixture(Router::new().route(
+        "/",
+        any(|| async { (StatusCode::FORBIDDEN, "private target body") }),
+    ))
+    .await;
+    let http = client();
+    let rejected: Value = http
+        .post(&grant.route.endpoint)
+        .bearer_auth(&grant.route.token)
+        .json(&envelope(&(url.clone() + "/?key=private-query"), "GET"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(rejected["status"], 403);
+    server.abort();
+    server.await.unwrap_err();
+    let response = http
+        .post(&grant.route.endpoint)
+        .bearer_auth(&grant.route.token)
+        .json(&envelope(&(url + "/?key=private-query"), "GET"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let error = response.text().await.unwrap();
+    assert!(error.contains("connection failed"), "{error}");
+    assert!(error.contains("refused"), "{error}");
+    assert!(!error.contains("private-query"));
+    drop(grant);
+    let log = first.snapshot();
+    assert_eq!(log.requests.len(), 2);
+    assert_eq!(log.requests[0].target_status, Some(403));
+    assert_eq!(log.requests[0].relay_status, 200);
+    assert_eq!(log.requests[1].target_status, None);
+    assert_eq!(log.requests[1].relay_status, 502);
+    assert_eq!(log.requests[1].error.as_deref(), Some(error.as_str()));
+    assert!(!serde_json::to_string(&log).unwrap().contains("private"));
+    assert!(other.snapshot().requests.is_empty());
+}

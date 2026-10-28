@@ -10,11 +10,20 @@ await test("debug bundles are standard gzip/tar with Unicode paths, binary files
   const capture=new TraceCapture({turnId:"turn",round:1,attempt:1,provider:"openai",model:"test"},"test-secret",["test-secret"]);
   capture.chunk('data: {invalid tool arguments test-secret',40);capture.finish("error","Invalid arguments");
   const log=new ProviderTraceLog();log.add(capture.value);
-  const bundle = await sessionDebugBundle({id:crypto.randomUUID(),name:"Debug",label:"debug",updatedAt:new Date().toISOString(),
+  const id = crypto.randomUUID();
+  const prior=Object.getOwnPropertyDescriptor(globalThis,"window");
+  const host={top:null as unknown,__LETHETIC_HOST_TOKEN__:"main-window-only",__TAURI__:{core:{invoke:async(command:string,args:Record<string,unknown>)=>{
+    assert.equal(command,"plugin:lethetic-host|network_diagnostics"); assert.equal(args.sessionId,id);
+    return {requests:[{hostname:"example.org",method:"GET",mode:"tor",relayStatus:502,targetStatus:null,durationMs:12,error:"Tor connection failed test-secret"}],omittedRequests:3};
+  }}}};host.top=host;
+  Object.defineProperty(globalThis,"window",{configurable:true,value:host});
+  let bundle: Blob;
+  try { bundle = await sessionDebugBundle({id,name:"Debug",label:"debug",updatedAt:new Date().toISOString(),
     providerTrace:log.snapshot(),blocks:[],messages:[{role:"user",content:"key: test-secret"}],inputs:[],system:"help",python:false,mode:"dotnet-wasm",networkAccess:false,dotnetRelayEndpoint:"https://relay.example/relay",theme:"dracula",
     connection:{name:"Example",provider:"openai",endpoint:"https://example.com/v1/chat/completions",model:"test"},
     workspace:parseWorkspace({version:1,directories:["empty"],files:[{path,data:encodeBytes(new TextEncoder().encode("test-secret héllo"))},{path:"image.bin",data:"AP8B"}]})},
     {status:"Failed test-secret",apiKey:"test-secret",relay:{token:"relay-secret",note:"relay-secret"}},["test-secret","relay-secret"]);
+  } finally { if(prior)Object.defineProperty(globalThis,"window",prior);else Reflect.deleteProperty(globalThis,"window"); }
   const bytes = new Uint8Array(await bundle.arrayBuffer()); assert.equal(bundle.type,"application/gzip");
   const encoded = btoa(String.fromCharCode(...bytes));
   await new Promise<void>((resolve,reject) => {
@@ -30,6 +39,11 @@ with tarfile.open(fileobj=io.BytesIO(base64.b64decode(sys.argv[1])),mode='r:gz')
     assert 'providerTrace' not in metadata
     assert metadata['messages'][0]['content']=='key: [REDACTED]'
     assert 'apiKey' not in metadata['connection']
+    network=json.load(archive.extractfile('network-diagnostics.json'))
+    assert network['available'] is True and network['capture']['omittedRequests']==3
+    entry=network['capture']['requests'][0]
+    assert entry['relayStatus']==502 and entry['targetStatus'] is None and entry['mode']=='tor'
+    assert entry['error']=='Tor connection failed [REDACTED]'
     diagnostics=json.load(archive.extractfile('diagnostics.json'))
     assert diagnostics['diagnostics']=={'status':'Failed [REDACTED]', 'relay':{'note':'[REDACTED]'}}
     assert metadata['dotnetRelayEndpoint']=='https://relay.example/relay'

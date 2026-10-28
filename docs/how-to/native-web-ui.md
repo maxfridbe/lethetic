@@ -99,6 +99,24 @@ it does not silently downgrade the permission. The browser distribution retains
 its direct/relay selector. Saved browser relay credentials are ignored by native
 runtimes and remain available when the session is opened in a browser.
 
+**Diagnosing failures:** a destination HTTP 403 means rejection, not proof that
+Network access is disabled, rate limiting occurred, or Tor caused the block. A
+relay HTTP 502 means forwarding failed; the tool now preserves a bounded,
+sanitized explanation such as a DNS, connection, TLS or timeout failure. Requests
+do not carry browser cookies or execute website JavaScript. Use an authorized API
+or another source when a site returns a challenge; Tor-only requests never retry
+over direct HTTP. Save successful search results before issuing further requests.
+
+**Sessions → Export debug (.tar.gz)** includes `network-diagnostics.json` for
+native Python/.NET relay requests: hostname, method, direct/Tor mode, start time,
+duration, relay status, target status and sanitized transport errors. Paths,
+queries, headers, request/response bodies and credentials are not recorded. The
+capture retains the last 200 completed requests per session, across runtime resets,
+for the last 16 sessions used during this app process. It is in memory only and
+resets on app exit. Omission counts identify evicted requests. Direct browser fetch,
+model requests and requests still running are outside this capture; missing capture
+is reported explicitly. Model streams remain in `provider-traces.jsonl`.
+
 Tor-only mode disables **direct NuGet downloads**. Bundled libraries still work;
 additional Python downloads use the runtime's HTTP relay. Forwarded site pages
 cannot fetch external URLs directly in Tor-only mode: page JavaScript should call

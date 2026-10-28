@@ -325,12 +325,12 @@ export class LocalTransport implements ApplicationTransport {
   }
 
   #pythonTool(): PythonTool {
-    return this.#python ??= createPythonTool({ indexURL: this.options.pyodideIndexURL, siteAccess: this.siteAccess, networkMode: this.networkMode, networkAccess: this.networkAccess, relay: this.dotnetRelay,
+    return this.#python ??= createPythonTool({ sessionId: this.state.session.session_id, indexURL: this.options.pyodideIndexURL, siteAccess: this.siteAccess, networkMode: this.networkMode, networkAccess: this.networkAccess, relay: this.dotnetRelay,
       workspace: this.#workspace, onWorkspace: workspace => this.#checkpointWorkspace(workspace) });
   }
 
   #dotnetTool(): DotnetTool {
-    return this.#dotnet ??= createDotnetTool({ networkMode: this.networkMode, networkAccess: this.networkAccess, nugetAccess: this.nugetAccess,
+    return this.#dotnet ??= createDotnetTool({ sessionId: this.state.session.session_id, networkMode: this.networkMode, networkAccess: this.networkAccess, nugetAccess: this.nugetAccess,
       siteAccess: this.siteAccess, relay: this.dotnetRelay, workspace: this.#workspace,
       onWorkspace: workspace => this.#checkpointWorkspace(workspace) });
   }

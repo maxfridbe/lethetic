@@ -33,6 +33,9 @@ export async function testPythonNetwork(evaluate: (expression: string) => Promis
       if(response.status!==200 || data.method!=='PATCH' || data.url!=='https://python-relay-target.invalid/api' || atob(data.bodyBase64)!=='payload' || data.headers['x-target']!=='ok' || data.headers.authorization)throw Error('Relay request failed: '+JSON.stringify(response));
       const xhr=await tool.execute({code:'from js import XMLHttpRequest\\nXMLHttpRequest.new()'},signal());
       if(!xhr.includes('async HTTP fetch only'))throw Error('Relay XHR bypass');
+      const failure=await tool.execute({code:'await pyfetch("https://python-relay-target.invalid/failure")'},signal());
+      if(!failure.includes('HTTP relay failed (502)') || !failure.includes('DNS lookup failed') || failure.includes(relay.token))throw Error('Python lost or leaked relay details: '+failure);
+
     } finally {tool.reset()}
     for(const token of ['', 'incorrect-relay-token-123456789']) {
       const bad=createPythonTool({networkAccess:true,relay:{...relay,token}});

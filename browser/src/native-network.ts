@@ -3,6 +3,7 @@ import type { DotnetRelay, NativeNetworkMode } from "./network-route.js";
 
 /** One revocable HTTP capability per runtime. Never saved in session state. */
 export class NativeNetwork {
+  constructor(private readonly sessionId?: string) {}
   #pending: Promise<DotnetRelay> | null = null;
   #generation = 0;
   #mode: NativeNetworkMode = "direct";
@@ -17,7 +18,7 @@ export class NativeNetwork {
     await nativeNetworkReady();
     signal.throwIfAborted();
     if (generation !== this.#generation) throw new DOMException("Network runtime reset", "AbortError");
-    this.#pending ??= invokeNative<DotnetRelay>("grant_network", {mode});
+    this.#pending ??= invokeNative<DotnetRelay>("grant_network", {mode, sessionId: this.sessionId ?? null});
     const pending = this.#pending;
     let route: DotnetRelay;
     try { route = await pending; }
@@ -31,4 +32,13 @@ export class NativeNetwork {
     const pending = this.#pending; this.#pending = null;
     if (pending) void pending.then(route => invokeNative<void>("revoke_network", { grant: route.token })).catch(() => {});
   }
+}
+
+/** Captures only this session's native relay history; no credentials or URL paths. */
+export async function nativeNetworkDiagnostics(sessionId: string): Promise<unknown> {
+  if (!nativeAvailable()) return { available: false, reason: "Native relay diagnostics require the executable app." };
+  try {
+    const capture = await invokeNative<unknown>("network_diagnostics", {sessionId});
+    return { available: capture !== null, scope: "Native Python/.NET relay; completed requests only; in-memory for the last 16 sessions, 200 requests each; resets on app exit", capture };
+  } catch { return { available: false, reason: "Native relay diagnostics unavailable in this host version." }; }
 }

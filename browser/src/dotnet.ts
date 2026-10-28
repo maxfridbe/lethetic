@@ -64,6 +64,7 @@ const loadRuntime: DotnetLoader = async options => {
 };
 
 export function createDotnetTool(options: {
+  sessionId?: string;
   networkMode?: NativeNetworkMode;
   networkAccess?: boolean; nugetAccess?: boolean; siteAccess?: boolean; relay?: DotnetRelay | null; workspace?: Workspace; timeoutMs?: number;
   onWorkspace?: (workspace: Workspace) => void; loadRuntime?: DotnetLoader;
@@ -74,7 +75,7 @@ export function createDotnetTool(options: {
   const timeout = options.timeoutMs ?? 120_000;
   if (!Number.isFinite(timeout) || timeout < 1 || timeout > 3_600_000) throw new Error(".NET timeout must be between 1 ms and one hour.");
   let sites: WireSite[] = [];
-  const nativeNetwork = new NativeNetwork();
+  const nativeNetwork = new NativeNetwork(options.sessionId);
   const terminate = (): void => { nativeNetwork.reset(); runtime?.terminate(); runtime = null; installed = ""; sites = []; };
   async function perform<T>(signal: AbortSignal, action: (runtime: DotnetRuntime, signal: AbortSignal) => Promise<T>, requestTimeout = timeout): Promise<{ result: T; warning: string }> {
     if (operation) throw new Error(".NET is already running.");
