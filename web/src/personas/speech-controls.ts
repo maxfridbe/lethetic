@@ -40,7 +40,7 @@ export class PersonaSpeechControls {
       <label><input type="checkbox" data-speech="enabled"> Enable response Play buttons for this persona</label>
       <label>API style<select data-speech="provider"><option value="openai">OpenAI-compatible</option><option value="elevenlabs">ElevenLabs-compatible</option></select></label>
       <label>Speech endpoint URL<input type="url" data-speech="endpoint" spellcheck="false"></label>
-      <p>OpenAI: full /v1/audio/speech URL. ElevenLabs: /v1/text-to-speech/{voice_id}/stream. Choose the audio format your server supports. Browser CORS access is required.</p>
+      <p>OpenAI: full /v1/audio/speech URL. ElevenLabs: /v1/text-to-speech/{voice_id}/stream. HTTP and HTTPS are supported. Executable apps connect directly; browser pages obey CORS, mixed-content rules and the page’s connection policy.</p>
       <label>Audio format<select data-speech="format"><option value="pcm">PCM · streaming, starts as audio arrives</option><option value="wav">WAV · file playback after download (OpenAI-style)</option></select></label>
       <p>WAV mode requests the audio file directly, not a JSON download link. Stop cancels downloads and playback. Existing personas default to PCM.</p>
       <label>Model<input data-speech="model" spellcheck="false"></label>

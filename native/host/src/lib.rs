@@ -1,6 +1,7 @@
 mod download;
 mod download_buffer;
 mod sites;
+mod speech;
 use lethetic_directory::{Grant, Workspace};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -15,6 +16,7 @@ struct Host {
     directory: Mutex<Option<Grant>>,
     network: Mutex<NetworkGrants>,
     sites: Mutex<sites::Sites>,
+    speech: lethetic_network::speech::SpeechStreams,
     #[cfg(not(target_os = "android"))]
     awake: Mutex<Option<keepawake::KeepAwake>>,
     #[cfg(target_os = "android")]
@@ -198,6 +200,9 @@ async fn set_working(
 pub fn init(token: String) -> tauri::plugin::TauriPlugin<tauri::Wry> {
     let builder = tauri::plugin::Builder::new("lethetic-host")
         .invoke_handler(tauri::generate_handler![
+            speech::begin_speech,
+            speech::next_speech,
+            speech::cancel_speech,
             sites::forward_site,
             sites::stop_forwarded_sites,
             sites::next_site_request,
@@ -224,6 +229,7 @@ pub fn init(token: String) -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 directory: Mutex::new(None),
                 network: Mutex::new(NetworkGrants::default()),
                 sites: Mutex::default(),
+                speech: Default::default(),
                 #[cfg(not(target_os = "android"))]
                 awake: Mutex::new(None),
                 #[cfg(target_os = "android")]
@@ -245,6 +251,7 @@ mod tests {
             directory: Mutex::new(None),
             network: Mutex::new(NetworkGrants::default()),
             sites: Mutex::default(),
+            speech: Default::default(),
             awake: Mutex::new(None),
         };
         assert!(authorize(&host, "").is_err());

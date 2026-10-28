@@ -307,6 +307,18 @@
           "markdownDescription": "Denies the begin_download command without any pre-configured scope."
         },
         {
+          "description": "Enables the begin_speech command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-begin-speech",
+          "markdownDescription": "Enables the begin_speech command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the begin_speech command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-begin-speech",
+          "markdownDescription": "Denies the begin_speech command without any pre-configured scope."
+        },
+        {
           "description": "Enables the cancel_download command without any pre-configured scope.",
           "type": "string",
           "const": "allow-cancel-download",
@@ -317,6 +329,18 @@
           "type": "string",
           "const": "deny-cancel-download",
           "markdownDescription": "Denies the cancel_download command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the cancel_speech command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-cancel-speech",
+          "markdownDescription": "Enables the cancel_speech command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the cancel_speech command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-cancel-speech",
+          "markdownDescription": "Denies the cancel_speech command without any pre-configured scope."
         },
         {
           "description": "Enables the choose_directory command without any pre-configured scope.",
@@ -377,6 +401,18 @@
           "type": "string",
           "const": "deny-next-site-request",
           "markdownDescription": "Denies the next_site_request command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the next_speech command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-next-speech",
+          "markdownDescription": "Enables the next_speech command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the next_speech command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-next-speech",
+          "markdownDescription": "Denies the next_speech command without any pre-configured scope."
         },
         {
           "description": "Enables the open_site_browser command without any pre-configured scope.",

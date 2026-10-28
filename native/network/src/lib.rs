@@ -1,6 +1,7 @@
 //! Revocable loopback HTTP capabilities for the app's WASM runtimes.
 //! Outbound requests and explicitly forwarded virtual sites use separate grants.
 pub mod sites;
+pub mod speech;
 mod tor;
 
 #[derive(Clone, Copy, Default, Deserialize, Serialize)]

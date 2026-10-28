@@ -6,12 +6,13 @@ import { readSpeechWav, MAX_SPEECH_WAV_BYTES, PcmDecoder, SPEECH_DEFAULTS, speec
 const persona = {version: 1, id: "voice", name: "Voice", description: "", narration: "", quips: ["Working"]};
 test("speech settings roundtrip without secrets and reject unsafe endpoints/unknown fields", () => {
   for (const config of Object.values(SPEECH_DEFAULTS)) assert.deepEqual(parsePersona(JSON.stringify({...persona, speech: config})).speech, config);
-  for (const endpoint of ["javascript:alert(1)", "http://remote.example/speech", "https://user:secret@example.com/speech", "https://example.com/speech?key=secret", "https://example.com/speech#secret"]) {
+  for (const endpoint of ["javascript:alert(1)", "https://user:secret@example.com/speech", "https://example.com/speech?key=secret", "https://example.com/speech#secret"]) {
     assert.throws(() => parseSpeech({...SPEECH_DEFAULTS.openai, endpoint}));
   }
   assert.throws(() => parseSpeech({...SPEECH_DEFAULTS.openai, apiKey: "secret"}), /Unknown/);
   assert.throws(() => parseSpeech({...SPEECH_DEFAULTS.elevenlabs, endpoint: "https://api.example/speech"}), /voice_id/);
   assert.throws(() => parseSpeech({...SPEECH_DEFAULTS.elevenlabs, endpoint: "https://{voice_id}.example/stream"}), /voice_id/);
+  assert.equal(parseSpeech({...SPEECH_DEFAULTS.openai, endpoint: "http://brainiac-nvidia:8000/v1/audio/speech"}).endpoint, "http://brainiac-nvidia:8000/v1/audio/speech");
   assert.equal(parseSpeech({...SPEECH_DEFAULTS.openai, endpoint: "http://localhost:8080/v1/audio/speech"}).provider, "openai");
 });
 test("provider requests use distinct authentication and binary streaming formats", () => {

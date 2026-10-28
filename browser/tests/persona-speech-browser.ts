@@ -73,6 +73,29 @@ export async function testPersonaSpeech(evaluate: (source: string) => Promise<un
       count=requests.length;before=sources.length;speech('test').click();await wait(()=>requests.length===count+1);
       speech('test').click();await new Promise(r=>setTimeout(r,40));
       assert(signal.aborted && sources.length===before,'Stopping WAV download still played audio');
+      const oldToken=globalThis.__LETHETIC_HOST_TOKEN__,oldBridge=globalThis.__TAURI__;
+      let nativeRequest,nativeCancels=0;const events=[];
+      globalThis.__LETHETIC_HOST_TOKEN__='speech-host-test';
+      globalThis.__TAURI__={core:{invoke:async(command,args)=>{
+        assert(args.token==='speech-host-test','Native speech missed host authorization');
+        if(command.endsWith('begin_speech')){
+          nativeRequest=args.request;events.push({kind:'head',status:200,headers:{'content-type':'audio/wav'}});
+          for(let offset=0;offset<wav.length;offset+=48000)events.push({kind:'chunk',data:btoa(String.fromCharCode(...wav.subarray(offset,offset+48000)))});
+          events.push({kind:'done'});
+        }else if(command.endsWith('next_speech'))return events.shift();
+        else if(command.endsWith('cancel_speech'))nativeCancels++;
+      }}};
+      try {
+        speech('endpoint').value='http://brainiac-nvidia:8000/v1/audio/speech';speech('save').click();
+        before=sources.length;speech('test').click();await wait(()=>sources.length===before+1);
+        assert(nativeRequest.url==='http://brainiac-nvidia:8000/v1/audio/speech','Native HTTP endpoint lost');
+        assert(JSON.parse(nativeRequest.body).response_format==='wav','Native WAV request format lost');
+        speech('test').click();assert(nativeCancels>0,'Native stream was not released');
+      } finally {
+        if(oldToken===undefined)delete globalThis.__LETHETIC_HOST_TOKEN__;else globalThis.__LETHETIC_HOST_TOKEN__=oldToken;
+        if(oldBridge===undefined)delete globalThis.__TAURI__;else globalThis.__TAURI__=oldBridge;
+        speech('endpoint').value=endpoint;speech('save').click();
+      }
       badWav=true;speech('test').click();await wait(()=>speech('status').textContent.includes('RIFF/WAVE'));badWav=false;
       field('enabled').checked=false;field('enabled').dispatchEvent(new Event('change'));close();
       assert(!root.querySelector('[data-persona-speech]'),'Disabled personas still have Play buttons');

@@ -1,3 +1,4 @@
+import { fetchSpeech } from "./speech-transport.js";
 import type { PersonaSpeech } from "./schema.js";
 
 export const SPEECH_DEFAULTS: Record<PersonaSpeech["provider"], PersonaSpeech> = {
@@ -105,7 +106,7 @@ export class SpeechPlayer {
       let next = context.currentTime + .08, totalSamples = 0;
       for (const input of splitSpeechText(text)) {
         const {url, init} = speechRequest(settings, key, input);
-        arm(); const response = await fetch(url, {...init, signal}); clearTimeout(idle);
+        arm(); const response = await fetchSpeech(url, init, signal); clearTimeout(idle);
         if (!response.ok) {
           await response.body?.cancel();
           throw Error(`Speech endpoint returned HTTP ${response.status}. Check the API key, voice, model and account quota.`);

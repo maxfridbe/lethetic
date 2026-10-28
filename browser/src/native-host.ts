@@ -42,6 +42,7 @@ export function resetNativeWork(): void {
   turns = 0; responses = 0; hostedSites = 0; void updateNativeWork().catch(() => {});
   if (nativeAvailable()) {
     void invoke<void>("cancel_download", { id: null }).catch(() => {});
+    void invoke<void>("cancel_speech", { id: null }).catch(() => {});
     networkReset = Promise.all([invoke<void>("revoke_network", { grant: null }), invoke<void>("stop_forwarded_sites", { id: null })]).then(() => {});
     void networkReset.catch(() => {});
   }

@@ -34,10 +34,18 @@ recordings play in order, with only one file downloaded/decoded at a time.
 
 For the `nextcuda` API inspected at `http://brainiac-nvidia:8000/openapi.yml`,
 `/v1/audio/speech` advertises the needed `response_format: "wav"` request. Configure
-a speech model and its supported voice. **The original LAN HTTP URL is still
-rejected by Lethetic**: use an HTTPS reverse proxy with a trusted certificate and
-CORS, or a loopback HTTP address reachable from the device. `localhost` on Android
-means the phone, not the server. WAV support does not add a native HTTP bridge.
+a speech model and its supported voice. **In an executable app, use
+`http://brainiac-nvidia:8000/v1/audio/speech` directly**: Rust performs the HTTP
+request and streams the response through the authenticated native bridge, outside
+WebView CORS and mixed-content restrictions. The hostname must resolve from the
+device. `localhost` on Android means the phone, not the server.
+
+In browser-only or remote-control web pages, HTTP URLs are accepted by Lethetic,
+but browser security and the page's Content Security Policy still apply. The
+hosted browser page allows HTTP only to its permitted loopback hosts; an HTTPS
+page may also block HTTP as mixed content. Use an HTTPS reverse proxy with a
+trusted certificate and CORS for the hosted page. This feature does not relax
+the page's connection policy.
 
 ## OpenAI-compatible PCM streaming
 
@@ -100,6 +108,13 @@ Validate authorization, model and voice before sending audio headers. Return a
 non-2xx status on failure (for example 401, 400, 429 or 500), optionally with a JSON
 error body. Do not return `200 OK` with JSON errors disguised as audio.
 
+The native bridge is restricted to the bundled main UI, with the per-launch host
+token checked for every call. It forwards only speech headers, streams in 64 KiB
+chunks with a bounded queue, cancels on Stop/session change, and clears old requests
+on UI reload. Native speech is a direct user-initiated connection; the code runtime's
+network/Tor setting does not route or enable it. No WebView insecure-content toggle
+or browser security bypass is needed.
+
 For browser access, handle `OPTIONS` without requiring an API key and include CORS
 headers on both the preflight and actual/error responses. For GitHub Pages:
 
@@ -113,6 +128,6 @@ Vary: Origin
 Allow the actual UI origin if hosting elsewhere. HTTPS endpoints need a certificate
 trusted by the client device; CORS does not fix an untrusted certificate or HTTP
 mixed content. The server hostname must resolve and be reachable from that device.
-Lethetic permits HTTP only for loopback hosts, omits browser cookies, and rejects
-redirects. Keyless servers work too: leaving the key empty omits authentication.
+Lethetic accepts both HTTP and HTTPS, omits browser cookies, and rejects redirects.
+HTTP is unencrypted, including any API key and text sent to that endpoint. Keyless servers work too: leaving the key empty omits authentication.
 API keys stay in UI memory and are never exported with the persona.

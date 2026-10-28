@@ -58,10 +58,13 @@ reuses another endpoint's key. Keyless local speech servers are supported.
 The endpoint must allow browser CORS requests. PCM mode expects **raw signed
 16-bit, little-endian, mono PCM at 24 kHz**; WAV mode expects a binary RIFF/WAVE
 file in a browser-decodable codec (maximum 64 MiB per request). WAV headers supply
-the sample rate and channel count. HTTPS is required except for loopback HTTP.
+the sample rate and channel count. HTTP and HTTPS endpoints are accepted.
+Executable apps use native HTTP for both WAV and PCM, including LAN addresses;
+browser-only and remote web pages still obey browser CORS and mixed-content rules.
 Redirects are rejected so authentication is never forwarded to another endpoint.
 This works in the shared browser, native-app WebView and remote-control UI; the
-request originates from the UI, not from a Python/.NET runspace. Runspace network
+request is initiated by the UI, not by a Python/.NET runspace. The executable
+uses its authenticated native bridge and Rust HTTP client; web pages use fetch. Runspace network
 permissions do not grant or control speech access. Clicking Play sends the response
 to the chosen provider and may incur its normal charges. JSON file links, base64,
 and MP3 responses are not supported. See [Speech endpoint compatibility](docs/speech-endpoints.md)

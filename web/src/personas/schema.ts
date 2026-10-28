@@ -52,7 +52,7 @@ export function parseSpeech(value: unknown): PersonaSpeech {
   const endpoint = text(p["endpoint"], "speech endpoint", 2048).trim();
   let url: URL;
   try { url = new URL(endpoint); } catch { throw Error("Enter a full speech endpoint URL."); }
-  if ((url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))) || url.username || url.password || url.search || url.hash) throw Error("Speech endpoints require HTTPS (or local HTTP), without credentials, query parameters, or fragments.");
+  if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw Error("Speech endpoints require HTTP or HTTPS, without embedded credentials, query parameters, or fragments.");
   if (p["provider"] === "elevenlabs" && (endpoint.split("{voice_id}").length !== 2 || !decodeURI(url.pathname).includes("{voice_id}"))) throw Error("ElevenLabs endpoints must contain {voice_id} once in the path, for example /v1/text-to-speech/{voice_id}/stream.");
   return {enabled: p["enabled"], provider: p["provider"], endpoint, model: text(p["model"], "speech model", 200).trim(), voice: text(p["voice"], "speech voice", 200).trim(), ...(format === undefined ? {} : {format})};
 }

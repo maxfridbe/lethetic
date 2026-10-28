@@ -5,6 +5,9 @@
     "main"
   ],
   "permissions": [
+    "lethetic-host:allow-begin-speech",
+    "lethetic-host:allow-next-speech",
+    "lethetic-host:allow-cancel-speech",
     "lethetic-host:allow-choose-directory",
     "lethetic-host:allow-sync-directory",
     "lethetic-host:allow-revoke-directory",

@@ -1,5 +1,8 @@
 fn main() {
     tauri_plugin::Builder::new(&[
+        "begin_speech",
+        "next_speech",
+        "cancel_speech",
         "forward_site",
         "stop_forwarded_sites",
         "next_site_request",
