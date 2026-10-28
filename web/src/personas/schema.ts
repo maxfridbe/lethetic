@@ -11,6 +11,7 @@ export interface PersonaSpeech {
   endpoint: string;
   model: string;
   voice: string;
+  format?: "pcm" | "wav";
 }
 export interface Persona {
   version: 1;
@@ -43,14 +44,17 @@ function number(value: unknown, min: number, max: number): number {
 }
 
 export function parseSpeech(value: unknown): PersonaSpeech {
-  const p = object(value, ["enabled", "provider", "endpoint", "model", "voice"]);
+  const p = object(value, ["enabled", "provider", "endpoint", "model", "voice", "format"]);
   if (typeof p["enabled"] !== "boolean" || (p["provider"] !== "openai" && p["provider"] !== "elevenlabs")) throw Error("Choose an OpenAI or ElevenLabs speech endpoint.");
+  const format = p["format"];
+  if (format !== undefined && format !== "pcm" && format !== "wav") throw Error("Choose PCM streaming or WAV file audio.");
+  if (format === "wav" && p["provider"] !== "openai") throw Error("WAV file mode requires an OpenAI-compatible endpoint. ElevenLabs uses PCM streaming.");
   const endpoint = text(p["endpoint"], "speech endpoint", 2048).trim();
   let url: URL;
   try { url = new URL(endpoint); } catch { throw Error("Enter a full speech endpoint URL."); }
   if ((url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))) || url.username || url.password || url.search || url.hash) throw Error("Speech endpoints require HTTPS (or local HTTP), without credentials, query parameters, or fragments.");
   if (p["provider"] === "elevenlabs" && (endpoint.split("{voice_id}").length !== 2 || !decodeURI(url.pathname).includes("{voice_id}"))) throw Error("ElevenLabs endpoints must contain {voice_id} once in the path, for example /v1/text-to-speech/{voice_id}/stream.");
-  return {enabled: p["enabled"], provider: p["provider"], endpoint, model: text(p["model"], "speech model", 200).trim(), voice: text(p["voice"], "speech voice", 200).trim()};
+  return {enabled: p["enabled"], provider: p["provider"], endpoint, model: text(p["model"], "speech model", 200).trim(), voice: text(p["voice"], "speech voice", 200).trim(), ...(format === undefined ? {} : {format})};
 }
 
 /** Image-only SVG subset: no scripts, stylesheets, links, foreignObject, or external resources. */

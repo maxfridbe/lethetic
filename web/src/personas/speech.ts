@@ -5,10 +5,10 @@ export const SPEECH_DEFAULTS: Record<PersonaSpeech["provider"], PersonaSpeech> =
   elevenlabs: {enabled: false, provider: "elevenlabs", endpoint: "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream", model: "eleven_multilingual_v2", voice: "JBFqnCBsd6RMkjVDRZzb"},
 };
 export function speechRequest(settings: PersonaSpeech, key: string, input: string): {url: string; init: RequestInit} {
-  const headers: Record<string, string> = {"Content-Type": "application/json", "Accept": "application/octet-stream"};
+  const headers: Record<string, string> = {"Content-Type": "application/json", "Accept": settings.format === "wav" ? "audio/wav, application/octet-stream" : "application/octet-stream"};
   if (key) headers[settings.provider === "openai" ? "Authorization" : "xi-api-key"] = settings.provider === "openai" ? `Bearer ${key}` : key;
   const url = settings.provider === "openai" ? settings.endpoint : `${settings.endpoint.replace("{voice_id}", encodeURIComponent(settings.voice))}?output_format=pcm_24000`;
-  const body = settings.provider === "openai" ? {model: settings.model, voice: settings.voice, input, response_format: "pcm"} : {model_id: settings.model, text: input};
+  const body = settings.provider === "openai" ? {model: settings.model, voice: settings.voice, input, response_format: settings.format ?? "pcm"} : {model_id: settings.model, text: input};
   return {url, init: {method: "POST", headers, body: JSON.stringify(body), credentials: "omit", redirect: "error", cache: "no-store", referrerPolicy: "no-referrer"}};
 }
 /** Keep requests under provider text limits without dropping text or splitting surrogate pairs. */
@@ -53,6 +53,30 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
     if (signal.aborted) { signal.removeEventListener("abort", abort); abort(); }
   });
 }
+/** WAV decoding needs a complete file. Bound encoded buffering per speech request. */
+export const MAX_SPEECH_WAV_BYTES = 64 * 1024 * 1024;
+export async function readSpeechWav(response: Response, signal: AbortSignal, progress: () => void): Promise<ArrayBuffer> {
+  if (!response.body) throw Error("Speech endpoint returned no WAV file.");
+  if (Number(response.headers.get("Content-Length")) > MAX_SPEECH_WAV_BYTES) {
+    await response.body.cancel(); throw Error("Speech WAV file exceeds 64 MiB. Use shorter responses or PCM streaming.");
+  }
+  const reader = response.body.getReader(), chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      signal.throwIfAborted(); progress();
+      const {value, done} = await abortable(reader.read(), signal);
+      if (done) break;
+      size += value.length;
+      if (size > MAX_SPEECH_WAV_BYTES) throw Error("Speech WAV file exceeds 64 MiB. Use shorter responses or PCM streaming.");
+      if (value.length) chunks.push(value);
+    }
+    const bytes = new Uint8Array(size); let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    if (size < 12 || String.fromCharCode(...bytes.subarray(0, 4)) !== "RIFF" || String.fromCharCode(...bytes.subarray(8, 12)) !== "WAVE") throw Error("Speech endpoint did not return a RIFF/WAVE file. Select a binary WAV response, not JSON or a file URL.");
+    return bytes.buffer;
+  } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+}
 export class SpeechPlayer {
   active: string | null = null;
   error = "";
@@ -87,6 +111,27 @@ export class SpeechPlayer {
           throw Error(`Speech endpoint returned HTTP ${response.status}. Check the API key, voice, model and account quota.`);
         }
         const contentType = response.headers.get("Content-Type")?.split(";", 1)[0]?.trim() ?? "";
+        if (settings.format === "wav") {
+          if (contentType && !/^(application\/octet-stream|audio\/(wav|wave|x-wav|vnd\.wave))$/iu.test(contentType)) {
+            await response.body?.cancel(); throw Error("Speech endpoint must return a binary WAV file, not JSON or a file URL.");
+          }
+          arm();
+          const file = await readSpeechWav(response, signal, arm); clearTimeout(idle);
+          let buffer: AudioBuffer;
+          try { buffer = await abortable(context.decodeAudioData(file), signal); }
+          catch { signal.throwIfAborted(); throw Error("Speech WAV file is corrupt or uses a codec this browser cannot decode."); }
+          signal.throwIfAborted();
+          if (!buffer.length) throw Error("Speech endpoint returned an empty WAV recording.");
+          const source = context.createBufferSource(); source.buffer = buffer; source.connect(context.destination);
+          source.onended = () => source.disconnect();
+          next = Math.max(next, context.currentTime + .02); source.start(next); next += buffer.duration; totalSamples += buffer.length;
+          // Finish this recording before downloading another, so long responses do not queue whole files.
+          while (context.currentTime < next) {
+            if (context.state !== "running") throw Error("Audio playback was interrupted. Press Play to restart.");
+            await pause(50, signal);
+          }
+          continue;
+        }
         if (!response.body || (contentType && !/^(application\/octet-stream|audio\/(pcm|x-pcm|raw))$/iu.test(contentType))) {
           await response.body?.cancel(); throw Error("Speech endpoint must return raw 24 kHz, 16-bit mono PCM audio.");
         }

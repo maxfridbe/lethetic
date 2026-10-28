@@ -37,12 +37,15 @@ playing audio. Only an explicit Play/Test click sends text; event sounds remain
 independent. During a streaming model response, Play reads the text present when
 clicked, not later additions. Voices are AI-generated.
 
-Audio starts as bytes arrive, before synthesis finishes. **Stop** cancels the
+In **PCM** mode, audio starts as bytes arrive, before synthesis finishes.
+For an OpenAI-compatible server that returns files, choose **Audio format → WAV**;
+playback starts after each complete file downloads and decodes. **Stop** cancels the
 request and queued audio immediately; starting another response replaces playback.
 You can also stop playback from the Personas voice panel when a response has
 scrolled out of view. Switching personas/sessions, disabling persona features, or
 unmounting the UI stops playback. Long responses are split into requests of at most
-4,000 characters without dropping text; playback maintains a small audio queue.
+4,000 characters without dropping text. PCM playback maintains a small audio queue;
+WAV mode finishes each recording before downloading the next file.
 A request with no network progress for 60 seconds stops with a retryable error.
 
 Voice configuration is included in persona JSON, but **API keys stay only in
@@ -52,14 +55,17 @@ shown as present, and an empty key field keeps it. **Clear key** removes it. Key
 are scoped to the persona, API style and exact endpoint; changing an endpoint never
 reuses another endpoint's key. Keyless local speech servers are supported.
 
-The endpoint must allow browser CORS requests and return **raw signed 16-bit,
-little-endian, mono PCM at 24 kHz**. HTTPS is required except for loopback HTTP.
+The endpoint must allow browser CORS requests. PCM mode expects **raw signed
+16-bit, little-endian, mono PCM at 24 kHz**; WAV mode expects a binary RIFF/WAVE
+file in a browser-decodable codec (maximum 64 MiB per request). WAV headers supply
+the sample rate and channel count. HTTPS is required except for loopback HTTP.
 Redirects are rejected so authentication is never forwarded to another endpoint.
 This works in the shared browser, native-app WebView and remote-control UI; the
 request originates from the UI, not from a Python/.NET runspace. Runspace network
 permissions do not grant or control speech access. Clicking Play sends the response
-to the chosen provider and may incur its normal charges. A compatible server that
-only returns MP3/WAV is not supported by this PCM player.
+to the chosen provider and may incur its normal charges. JSON file links, base64,
+and MP3 responses are not supported. See [Speech endpoint compatibility](docs/speech-endpoints.md)
+for server request/response examples, PCM streaming, CORS and local-server setup.
 
 Add an optional `speech` object to an exported persona:
 
@@ -85,7 +91,11 @@ Or use ElevenLabs (replace `voice` with an ID available to your account):
 }
 ```
 
-OpenAI requests use Bearer authentication and `response_format: "pcm"`.
+Set the optional persona field `speech.format` to `"wav"` for WAV file endpoints,
+or `"pcm"` (the default when absent) for streaming. WAV is available with the
+OpenAI API style; ElevenLabs continues to request PCM.
+
+OpenAI requests use Bearer authentication and `response_format: "pcm"` or `"wav"`.
 ElevenLabs requests use `xi-api-key`, `model_id` and
 `output_format=pcm_24000`; `{voice_id}` is substituted with the encoded voice ID.
 See the [OpenAI speech guide](https://developers.openai.com/api/docs/guides/text-to-speech)

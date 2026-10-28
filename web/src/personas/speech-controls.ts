@@ -40,7 +40,9 @@ export class PersonaSpeechControls {
       <label><input type="checkbox" data-speech="enabled"> Enable response Play buttons for this persona</label>
       <label>API style<select data-speech="provider"><option value="openai">OpenAI-compatible</option><option value="elevenlabs">ElevenLabs-compatible</option></select></label>
       <label>Speech endpoint URL<input type="url" data-speech="endpoint" spellcheck="false"></label>
-      <p>OpenAI: full /v1/audio/speech URL. ElevenLabs: /v1/text-to-speech/{voice_id}/stream. Endpoint must support raw PCM streaming and browser CORS.</p>
+      <p>OpenAI: full /v1/audio/speech URL. ElevenLabs: /v1/text-to-speech/{voice_id}/stream. Choose the audio format your server supports. Browser CORS access is required.</p>
+      <label>Audio format<select data-speech="format"><option value="pcm">PCM · streaming, starts as audio arrives</option><option value="wav">WAV · file playback after download (OpenAI-style)</option></select></label>
+      <p>WAV mode requests the audio file directly, not a JSON download link. Stop cancels downloads and playback. Existing personas default to PCM.</p>
       <label>Model<input data-speech="model" spellcheck="false"></label>
       <label>Voice name / ID<input data-speech="voice" spellcheck="false"></label>
       <label>API key<input type="password" data-speech="key" autocomplete="off" spellcheck="false"></label>
@@ -74,6 +76,8 @@ export class PersonaSpeechControls {
   #populate(config: PersonaSpeech): void {
     for (const key of ["provider", "endpoint", "model", "voice"] as const) this.#field<HTMLInputElement | HTMLSelectElement>(key).value = config[key];
     this.#field<HTMLInputElement>("enabled").checked = config.enabled;
+    this.#field<HTMLSelectElement>("format").value = config.format ?? "pcm";
+    this.#field<HTMLSelectElement>("format").disabled = config.provider === "elevenlabs";
     this.#field<HTMLInputElement>("key").value = "";
     this.#keyStatus();
   }
@@ -90,12 +94,12 @@ export class PersonaSpeechControls {
   #playbackStatus(): void {
     if (!this.#root) return;
     this.#field("test").innerHTML = this.player.active ? `${buttonIconHtml("stop")} Stop` : `${buttonIconHtml("run")} Test voice`;
-    this.#field("status").textContent = this.player.error || (this.player.active ? "Streaming speech…" : "");
+    this.#field("status").textContent = this.player.error || (this.player.active ? "Loading / playing speech…" : "");
   }
   #save(): boolean {
     try {
       const value = (name: string): string => this.#field<HTMLInputElement>(name).value.trim();
-      const config = parseSpeech({enabled: this.#field<HTMLInputElement>("enabled").checked, provider: value("provider"), endpoint: value("endpoint"), model: value("model"), voice: value("voice")});
+      const config = parseSpeech({enabled: this.#field<HTMLInputElement>("enabled").checked, provider: value("provider"), endpoint: value("endpoint"), model: value("model"), voice: value("voice"), format: value("format")});
       const key = value("key");
       if (/[\r\n]/u.test(key)) throw Error("API keys cannot contain line breaks.");
       this.store.importFile(JSON.stringify({...this.store.current, speech: config}));

@@ -6,15 +6,22 @@ export async function testPersonaSpeech(evaluate: (source: string) => Promise<un
     const root=document.createElement('div');root.style.height='900px';document.body.replaceChildren(root);
     const data=new Map(),storage={getItem:key=>data.get(key)??null,setItem:(key,value)=>data.set(key,value)};
     const originalFetch=window.fetch,createSource=AudioContext.prototype.createBufferSource;
-    const requests=[],sources=[];let held,signal,view,fail=false;
+    const requests=[],sources=[];let held,signal,view,fail=false,badWav=false;
     AudioContext.prototype.createBufferSource=function(){const source=createSource.call(this);sources.push(source);return source};
     const assert=(ok,message)=>{if(!ok)throw Error(message)};
     const wait=async check=>{for(let i=0;i<300;i++){if(check())return;await new Promise(r=>setTimeout(r,20))}throw Error('Speech UI condition timed out')};
     const endpoint=location.origin+'/speech-test';
+    const wav=new Uint8Array(44+44100*2*2*2), w=new DataView(wav.buffer);
+    const ascii=(at,text)=>{for(let i=0;i<text.length;i++)wav[at+i]=text.charCodeAt(i)};
+    ascii(0,'RIFF');w.setUint32(4,wav.length-8,true);ascii(8,'WAVE');ascii(12,'fmt ');w.setUint32(16,16,true);w.setUint16(20,1,true);w.setUint16(22,2,true);w.setUint32(24,44100,true);w.setUint32(28,44100*4,true);w.setUint16(32,4,true);w.setUint16(34,16,true);ascii(36,'data');w.setUint32(40,wav.length-44,true);
     window.fetch=async(url,init)=>{
       if(String(url).startsWith(endpoint)){
         requests.push({url:String(url),headers:new Headers(init.headers),body:JSON.parse(init.body)});signal=init.signal;
         if(fail)return new Response('provider echoed secret',{status:401});
+        if(requests.at(-1).body.response_format==='wav'){
+          if(badWav)return new Response('not a WAV file',{headers:{'Content-Type':'audio/wav'}});
+          return new Response(new ReadableStream({start(c){held=c;c.enqueue(wav.subarray(0,12));signal.addEventListener('abort',()=>{try{c.error(signal.reason)}catch{}},{once:true})}}),{headers:{'Content-Type':'audio/wav'}});
+        }
         return new Response(new ReadableStream({start(c){held=c;c.enqueue(new Uint8Array(9600));signal.addEventListener('abort',()=>{try{c.error(signal.reason)}catch{}},{once:true})}}),{headers:{'Content-Type':'application/octet-stream'}});
       }
       if(String(url)===location.origin+'/speech-chat')return new Response('data: '+JSON.stringify({choices:[{delta:{content:'Hello from the assistant.'},finish_reason:'stop'}]})+'\\n\\ndata: [DONE]\\n\\n',{headers:{'Content-Type':'text/event-stream'}});
@@ -55,10 +62,22 @@ export async function testPersonaSpeech(evaluate: (source: string) => Promise<un
       fail=true;speech('test').click();await wait(()=>speech('status').textContent.includes('401'));
       assert(!speech('status').textContent.includes('secret'),'Error echoed provider response');
       speech('clear').click();assert(speech('key-status').textContent.includes('No API key'),'Clear key failed');
+      fail=false;speech('provider').value='openai';speech('provider').dispatchEvent(new Event('change'));
+      speech('endpoint').value=endpoint;speech('format').value='wav';speech('save').click();
+      let count=requests.length,before=sources.length;
+      speech('test').click();await wait(()=>requests.length===count+1);await new Promise(r=>setTimeout(r,60));
+      assert(sources.length===before,'WAV played before the complete file arrived');
+      held.enqueue(wav.subarray(12));held.close();held=null;await wait(()=>sources.length===before+1);
+      assert(sources.at(-1).buffer.numberOfChannels===2 && Math.abs(sources.at(-1).buffer.duration-2)<.01,'WAV sample rate/channel metadata lost');
+      speech('test').click();assert(signal.aborted,'WAV playback Stop did not cancel');
+      count=requests.length;before=sources.length;speech('test').click();await wait(()=>requests.length===count+1);
+      speech('test').click();await new Promise(r=>setTimeout(r,40));
+      assert(signal.aborted && sources.length===before,'Stopping WAV download still played audio');
+      badWav=true;speech('test').click();await wait(()=>speech('status').textContent.includes('RIFF/WAVE'));badWav=false;
       field('enabled').checked=false;field('enabled').dispatchEvent(new Event('change'));close();
       assert(!root.querySelector('[data-persona-speech]'),'Disabled personas still have Play buttons');
       view.destroy();view=mountLethetic(root,{storage});open();
-      assert(speech('provider').value==='elevenlabs' && speech('key-status').textContent.includes('No API key'),'Voice settings not restored independently of keys');
+      assert(speech('provider').value==='openai' && speech('format').value==='wav' && speech('key-status').textContent.includes('No API key'),'Voice settings not restored independently of keys');
       field('enabled').checked=true;field('enabled').dispatchEvent(new Event('change'));
       document.querySelector('.persona-speech-settings').open=true;
       speech('provider').scrollIntoView({block:'start'});
