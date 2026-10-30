@@ -1,3 +1,4 @@
+import type { DictationController } from "../dictation/controller.js";
 import type { ChatWindow } from "./chat-virtual.js";
 import type { VNode } from "../../lib/snabbdom/build/index.js";
 import type {
@@ -64,6 +65,7 @@ export interface ChatViewState {
   readonly debuggerWide: boolean;
   readonly debuggerDrawerDismissed: boolean;
   readonly draft: string;
+  readonly dictation?: DictationController;
   readonly chatStart: number;
   readonly chatWindow?: ChatWindow;
   readonly personaAvatar?: VNode | null;

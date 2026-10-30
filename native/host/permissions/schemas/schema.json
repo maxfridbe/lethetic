@@ -319,6 +319,18 @@
           "markdownDescription": "Denies the begin_speech command without any pre-configured scope."
         },
         {
+          "description": "Enables the cancel_dictation command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-cancel-dictation",
+          "markdownDescription": "Enables the cancel_dictation command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the cancel_dictation command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-cancel-dictation",
+          "markdownDescription": "Denies the cancel_dictation command without any pre-configured scope."
+        },
+        {
           "description": "Enables the cancel_download command without any pre-configured scope.",
           "type": "string",
           "const": "allow-cancel-download",
@@ -353,6 +365,30 @@
           "type": "string",
           "const": "deny-choose-directory",
           "markdownDescription": "Denies the choose_directory command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the dictation_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-dictation-status",
+          "markdownDescription": "Enables the dictation_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the dictation_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-dictation-status",
+          "markdownDescription": "Denies the dictation_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the finish_dictation command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-finish-dictation",
+          "markdownDescription": "Enables the finish_dictation command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the finish_dictation command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-finish-dictation",
+          "markdownDescription": "Denies the finish_dictation command without any pre-configured scope."
         },
         {
           "description": "Enables the finish_download command without any pre-configured scope.",
@@ -439,6 +475,18 @@
           "markdownDescription": "Denies the open_site_browser command without any pre-configured scope."
         },
         {
+          "description": "Enables the prepare_dictation command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-prepare-dictation",
+          "markdownDescription": "Enables the prepare_dictation command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the prepare_dictation command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-prepare-dictation",
+          "markdownDescription": "Denies the prepare_dictation command without any pre-configured scope."
+        },
+        {
           "description": "Enables the reply_site_request command without any pre-configured scope.",
           "type": "string",
           "const": "allow-reply-site-request",
@@ -485,6 +533,18 @@
           "type": "string",
           "const": "deny-set-working",
           "markdownDescription": "Denies the set_working command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the start_dictation command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-start-dictation",
+          "markdownDescription": "Enables the start_dictation command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the start_dictation command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-start-dictation",
+          "markdownDescription": "Denies the start_dictation command without any pre-configured scope."
         },
         {
           "description": "Enables the stop_forwarded_sites command without any pre-configured scope.",

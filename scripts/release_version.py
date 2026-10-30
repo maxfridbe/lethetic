@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFESTS = (
     "Cargo.toml", "lethetic-wasm/Cargo.toml", "gemma-chat/Cargo.toml",
     "native/src-tauri/Cargo.toml", "native/host/Cargo.toml", "native/workspace/Cargo.toml",
-    "native/network/Cargo.toml",
+    "native/network/Cargo.toml", "native/dictation/Cargo.toml",
 )
 
 

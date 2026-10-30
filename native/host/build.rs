@@ -1,5 +1,10 @@
 fn main() {
     tauri_plugin::Builder::new(&[
+        "prepare_dictation",
+        "dictation_status",
+        "start_dictation",
+        "finish_dictation",
+        "cancel_dictation",
         "begin_speech",
         "next_speech",
         "cancel_speech",

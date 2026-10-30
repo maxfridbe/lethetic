@@ -8,7 +8,7 @@ import {
 } from "./generated/contracts.js";
 // UI-only actions do not change the native protocol's icon vocabulary.
 export const BUTTON_ICONS = { ...ICON_GLYPHS, ...UI_ICON_GLYPHS,
-  run: "\uf04b", site: "\uf0ac",
+  microphone: "\uf130", run: "\uf04b", site: "\uf0ac",
   keyboard: "\uf11c", persona: "\uf118", timer: "\uf017", compact: "\uf066",
   terminal: "\uf120", python: "\ue73c", dotnet: "\ue70c", chip: "\uf2db",
   desktop: "\uf108", network: "\uf0e8", lock: "\uf023", tor: "\uf21b",
@@ -79,6 +79,7 @@ export function fileTypeIcon(path: string): VNode {
 
 /** Distinct UI glyphs without widening the remote command protocol. */
 export function commandIcon(id: string, fallback: ButtonIcon): ButtonIcon {
+  if (id === "local:dictation") return "microphone";
   const icons: Record<string, ButtonIcon> = {
     hotkeys: "keyboard", themes: "theme", "input-history": "history",
     "loop-detection": "refresh", "system-prompt": "edit", "clear-ui": "trash",

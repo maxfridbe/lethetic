@@ -1,3 +1,4 @@
+import { testDictation } from "./dictation-browser.js";
 import { testUiControls } from "./ui-controls-browser.js";
 import { testPersonaSpeech } from "./persona-speech-browser.js";
 import { testPersonas } from "./personas-browser.js";
@@ -899,6 +900,11 @@ try {
     await writeFile(config.screenshot.replace(".png", "-persona-speech.png"), Buffer.from(String(image["data"]), "base64"));
   });
   process.stdout.write("Persona speech streams before EOF, stops, isolates keys, and supports both providers.\n");
+  await testDictation(evaluate, async () => {
+    const image = await rpc("Page.captureScreenshot", {format: "png"});
+    await writeFile(config.screenshot.replace(".png", "-dictation.png"), Buffer.from(String(image["data"]), "base64"));
+  });
+  process.stdout.write("Desktop hold-to-talk preserves drafts, cancels safely and never submits on release.\n");
   await testUiControls(evaluate);
   await testVirtualChat(evaluate);
   await testNativeTorControls(evaluate);

@@ -1,3 +1,4 @@
+import { DictationController } from "./dictation/controller.js";
 import { PersonaController } from "./personas/controller.js";
 import { ThinkingLines } from "./app/thinking-lines.js";
 import { ChatVirtualizer, type ChatWindow } from "./app/chat-virtual.js";
@@ -187,6 +188,7 @@ export class SpaApplication implements BrowserTransportEvents {
   #confirmationRequestId: string | null = null;
   #approvalConfirmation: ApprovalConfirmation | null = null;
   readonly #personas: PersonaController;
+  readonly #dictation: DictationController;
   readonly #thinkingLines = new ThinkingLines(() => this.#render());
   #thinkingLine: string | null = null;
   #disposed = false;
@@ -232,6 +234,14 @@ export class SpaApplication implements BrowserTransportEvents {
   } = {}) {
     restoreUiScale();
     this.#tree = root;
+    this.#dictation = new DictationController(() => this.#render(), text => {
+      const draft = this.#draft + (this.#draft && !/\s$/.test(this.#draft) ? " " : "") + text;
+      if (draft.length > MAX_DRAFT_LENGTH || utf8Length(draft) > MAX_PROMPT_BYTES) {
+        this.#showToast("Dictation exceeds the prompt limit. Shorten the draft before dictating again."); return;
+      }
+      this.#draft = draft; this.#draftVersion++; this.#render();
+      document.getElementById("composer-input")?.focus();
+    });
     this.#personas = new PersonaController(() => this.#render(), extensions.personaStorage);
     this.#chatFollow = new ChatFollowController(
       CHAT_FOLLOW_SCHEDULER,
@@ -265,6 +275,7 @@ export class SpaApplication implements BrowserTransportEvents {
   resetFiles(): void { this.#files.reset(); }
 
   readonly #onPageHide = (): void => {
+    this.#dictation.pause();
     this.#personas.pause();
     this.#files.reset();
     this.#fileEditor.dispose();
@@ -275,6 +286,7 @@ export class SpaApplication implements BrowserTransportEvents {
   dispose(): void {
     this.#disposed = true;
     this.#thinkingLines.dispose();
+    this.#dictation.dispose();
     this.#personas.dispose();
     globalThis.removeEventListener("keydown", this.#onGlobalKeyDown);
     globalThis.removeEventListener("pagehide", this.#onPageHide);
@@ -937,6 +949,7 @@ export class SpaApplication implements BrowserTransportEvents {
   }
 
   #submitPrompt(): void {
+    if (this.#dictation.active) return;
     const snapshot = this.#remote.view;
     const prompt = this.#draft.trim();
     if (
@@ -978,6 +991,7 @@ export class SpaApplication implements BrowserTransportEvents {
   }
 
   #openPalette(): void {
+    this.#dictation.pause();
     if (this.#palette !== null || this.#activePanel() !== null) {
       return;
     }
@@ -1066,6 +1080,7 @@ export class SpaApplication implements BrowserTransportEvents {
   #render(): void {
     if (this.#disposed) return;
     const snapshot = this.#remote.view;
+    this.#dictation.observe(snapshot?.session.session_id ?? null, this.#remote.phase === "live" && snapshot?.activity.fully_idle === true);
     this.#personas.observe(snapshot, this.#remote.phase === "live");
     this.#thinkingLine = this.#thinkingLines.current(
       this.#remote.phase === "live" && snapshot?.activity.kind === "processing"
@@ -1254,6 +1269,7 @@ export class SpaApplication implements BrowserTransportEvents {
         debuggerWide: this.#debuggerWide,
         debuggerDrawerDismissed: this.#narrowDebuggerDismissed,
         draft: this.#draft,
+        dictation: this.#dictation,
         chatStart: this.#chatStart,
         chatWindow: this.#chatWindow,
         thinkingLine: this.#thinkingLine,
@@ -1328,6 +1344,7 @@ export class SpaApplication implements BrowserTransportEvents {
         paletteCommands: [{id: "local:personas", label: "Personas", description: "Narration, thinking quips, animated companions, sounds, and JSON import/export", icon: "command", behavior: "open_panel", accelerator: null, enabled: true, disabled_reason: null, run: () => this.#personas.show()},
           {id: "local:persona-import", label: "Import persona JSON", description: "Add or update a persona from a JSON file", icon: "command", behavior: "open_panel", accelerator: null, enabled: true, disabled_reason: null, run: () => this.#personas.importDialog()},
           {id: "local:persona-export", label: "Export persona JSON", description: "Download the selected persona, including its artwork and sounds", icon: "command", behavior: "execute", accelerator: null, enabled: true, disabled_reason: null, run: () => this.#personas.exportCurrent()},
+          ...this.#dictation.commands(),
           ...(this.extensions.paletteCommands?.() ?? [])],
         ...(this.extensions.paletteCommandVisible ? { paletteCommandVisible: this.extensions.paletteCommandVisible } : {}),
         sessionsNotice: this.extensions.sessionsNotice?.() ?? null,
@@ -1679,6 +1696,7 @@ export class SpaApplication implements BrowserTransportEvents {
         paletteCommands: [{id: "local:personas", label: "Personas", description: "Narration, thinking quips, animated companions, sounds, and JSON import/export", icon: "command", behavior: "open_panel", accelerator: null, enabled: true, disabled_reason: null, run: () => this.#personas.show()},
           {id: "local:persona-import", label: "Import persona JSON", description: "Add or update a persona from a JSON file", icon: "command", behavior: "open_panel", accelerator: null, enabled: true, disabled_reason: null, run: () => this.#personas.importDialog()},
           {id: "local:persona-export", label: "Export persona JSON", description: "Download the selected persona, including its artwork and sounds", icon: "command", behavior: "execute", accelerator: null, enabled: true, disabled_reason: null, run: () => this.#personas.exportCurrent()},
+          ...this.#dictation.commands(),
           ...(this.extensions.paletteCommands?.() ?? [])],
         ...(this.extensions.paletteCommandVisible ? { paletteCommandVisible: this.extensions.paletteCommandVisible } : {}),
         palette: this.#palette,
@@ -1719,7 +1737,7 @@ export class SpaApplication implements BrowserTransportEvents {
   };
 
   readonly #onGlobalKeyDown = (event: KeyboardEvent): void => {
-    if (this.#personas.open || this.extensions.externalDialogOpen?.()) return;
+    if (this.#dictation.open || this.#personas.open || this.extensions.externalDialogOpen?.()) return;
     if (this.#files.state.fullPreview) {
       if (event.key === "Escape") { event.preventDefault(); this.#files.expandPreview(); }
       if (event.key === "Tab") {

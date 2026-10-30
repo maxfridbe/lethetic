@@ -1,0 +1,10 @@
+[env]
+# The crate bundles bindings matching its vendored whisper.cpp; no libclang install.
+WHISPER_DONT_GENERATE_BINDINGS = "1"
+# Ship portable CPU code, not instructions selected from the CI build machine.
+GGML_NATIVE = "OFF"
+GGML_AVX = "OFF"
+GGML_AVX2 = "OFF"
+GGML_F16C = "OFF"
+GGML_FMA = "OFF"
+GGML_AVX512 = "OFF"

@@ -1828,3 +1828,18 @@ progress {
 .persona-speech-settings input:not([type="checkbox"]) { width: 100%; box-sizing: border-box; padding: .4rem; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 5px; }
 .persona-speech-action { display: inline-flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
 .persona-speech-action [role="status"] { color: var(--theme-warning-fg); font-size: .8rem; max-width: 36rem; overflow-wrap: anywhere; }
+
+/* Native desktop hold-to-talk. Keep short-click Send and keyboard operation intact. */
+.dictation-active { touch-action: none; user-select: none; }
+.dictation-status { grid-column: 1 / -1; display: flex; align-items: center; gap: .5rem; font-size: .8rem; opacity: .85; }
+.dictation-status meter { width: 6rem; height: .7rem; }
+.dictation-status button { margin-left: auto; }
+.dictation-dialog { background: var(--theme-terminal-bg); color: var(--theme-output-fg); border: 1px solid var(--border); border-radius: .5rem; max-width: min(36rem, 90vw); padding: 1rem; }
+.dictation-dialog::backdrop { background: #0008; }
+.dictation-dialog label { display: block; margin: .75rem 0; }
+.dictation-dialog input:not([type=checkbox]), .dictation-dialog select { display: block; width: 100%; margin-top: .25rem; }
+.dictation-dialog button { margin-right: .5rem; }
+
+.dictation-dialog { max-height: 90dvh; overflow: auto; }
+.dictation-dialog input[type="checkbox"] { display: inline-block; width: auto; margin-right: .4rem; }
+.dictation-dialog select { background: var(--surface-raised); color: var(--theme-output-fg); border: 1px solid var(--border); border-radius: .25rem; padding: .4rem; font: inherit; }

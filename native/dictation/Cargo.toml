@@ -1,0 +1,16 @@
+[package]
+name = "lethetic-dictation"
+version = "26.1030.1"
+edition = "2024"
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+cpal = "0.18"
+whisper-rs = "0.16"
+serde = { version = "1", features = ["derive"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "stream"] }
+sha2 = "0.10"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs", "io-util", "time"] }
+
+[dev-dependencies]
+tempfile = "3"
+hound = "3.5"

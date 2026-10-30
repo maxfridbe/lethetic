@@ -13,6 +13,7 @@ pub fn run() {
             // A per-launch secret is injected only into the top-level bundled document.
             // Sandboxed previews and workers receive neither this secret nor a filesystem API.
             let script = format!("if (window === window.top && ['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost'].includes(location.protocol + '//' + location.host) && ['/', '/index.html'].includes(location.pathname)) Object.defineProperty(window, '__LETHETIC_HOST_TOKEN__', {{ value: {} }});", serde_json::to_string(&token)?);
+            let script = format!("{script} if (window === window.top && typeof window.__LETHETIC_HOST_TOKEN__ === 'string') Object.defineProperty(window, '__LETHETIC_DESKTOP__', {{ value: {} }});", cfg!(not(target_os = "android")));
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("Lethetic").inner_size(1200.0, 800.0)
                 .initialization_script(&script)

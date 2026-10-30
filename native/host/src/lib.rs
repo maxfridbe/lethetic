@@ -1,3 +1,4 @@
+mod dictation;
 mod download;
 mod download_buffer;
 mod sites;
@@ -17,6 +18,8 @@ struct Host {
     network: Mutex<NetworkGrants>,
     sites: Mutex<sites::Sites>,
     speech: lethetic_network::speech::SpeechStreams,
+    #[cfg(not(target_os = "android"))]
+    dictation: lethetic_dictation::Dictation,
     #[cfg(not(target_os = "android"))]
     awake: Mutex<Option<keepawake::KeepAwake>>,
     #[cfg(target_os = "android")]
@@ -240,6 +243,11 @@ async fn set_working(
 pub fn init(token: String) -> tauri::plugin::TauriPlugin<tauri::Wry> {
     let builder = tauri::plugin::Builder::new("lethetic-host")
         .invoke_handler(tauri::generate_handler![
+            dictation::prepare_dictation,
+            dictation::dictation_status,
+            dictation::start_dictation,
+            dictation::finish_dictation,
+            dictation::cancel_dictation,
             speech::begin_speech,
             speech::next_speech,
             speech::cancel_speech,
@@ -272,6 +280,8 @@ pub fn init(token: String) -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 sites: Mutex::default(),
                 speech: Default::default(),
                 #[cfg(not(target_os = "android"))]
+                dictation: Default::default(),
+                #[cfg(not(target_os = "android"))]
                 awake: Mutex::new(None),
                 #[cfg(target_os = "android")]
                 mobile,
@@ -293,6 +303,7 @@ mod tests {
             network: Mutex::new(NetworkGrants::default()),
             sites: Mutex::default(),
             speech: Default::default(),
+            dictation: Default::default(),
             awake: Mutex::new(None),
         };
         assert!(authorize(&host, "").is_err());

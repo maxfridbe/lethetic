@@ -23,6 +23,11 @@
     "lethetic-host:allow-stop-forwarded-sites",
     "lethetic-host:allow-next-site-request",
     "lethetic-host:allow-reply-site-request",
-    "lethetic-host:allow-open-site-browser"
+    "lethetic-host:allow-open-site-browser",
+    "lethetic-host:allow-prepare-dictation",
+    "lethetic-host:allow-dictation-status",
+    "lethetic-host:allow-start-dictation",
+    "lethetic-host:allow-finish-dictation",
+    "lethetic-host:allow-cancel-dictation"
   ]
 }

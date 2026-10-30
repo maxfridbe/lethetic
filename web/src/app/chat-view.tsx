@@ -383,11 +383,12 @@ function renderActivity(context: ChatViewContext): VNode {
 }
 
 function renderComposer(context: ChatViewContext): VNode {
-  const { snapshot, live, draft } = context.state;
+  const { snapshot, live, draft, dictation } = context.state;
+  const voice = dictation?.available && dictation.enabled ? dictation : null;
   const canSubmit =
     live &&
     snapshot?.activity.fully_idle === true &&
-    draft.trim().length > 0;
+    draft.trim().length > 0 && !voice?.active;
   const rows = Math.max(
     2,
     Math.min(10, draft.split("\n").length + Math.floor(draft.length / 96)),
@@ -441,13 +442,30 @@ function renderComposer(context: ChatViewContext): VNode {
           </button>
         ) : null}
         <button
-          attrs={{ type: "submit", class: "primary-button" }}
-          props={{ disabled: !canSubmit }}
+          attrs={{ type: voice ? "button" : "submit", class: `primary-button${voice?.active ? " dictation-active" : ""}`,
+            title: voice ? "Click to send · hold to dictate · release to add text" : "Send prompt",
+            ...(voice ? {"aria-pressed": String(voice.active), "data-dictation-send": ""} : {}) }}
+          props={{ disabled: voice?.hold.phase === "transcribing" || (!canSubmit && !voice?.usable) }}
+          on={voice ? {
+            pointerdown: (event: PointerEvent) => voice.down(event),
+            pointerup: (event: PointerEvent) => voice.up(event),
+            pointercancel: (event: PointerEvent) => voice.pointerCancel(event),
+            lostpointercapture: (event: PointerEvent) => voice.pointerCancel(event),
+            keydown: (event: KeyboardEvent) => voice.keyDown(event),
+            keyup: (event: KeyboardEvent) => voice.keyUp(event),
+            contextmenu: (event: Event) => { if (voice.active) event.preventDefault(); },
+            click: (event: MouseEvent) => { event.preventDefault(); if (!voice.click()) context.actions.submitPrompt(); },
+          } : {}}
         >
-          {uiIcon("send")}
-          Send
+          {voice?.hold.phase === "transcribing" ? activitySpinner("regular") : uiIcon(voice?.active ? "microphone" : "send")}
+          {voice?.label ?? "Send"}
         </button>
       </div>
+      {voice ? <div attrs={{class: "dictation-status", role: "status", "aria-live": "polite"}}>
+        <span>{voice.status}</span>
+        {voice.hold.phase === "recording" ? <meter attrs={{min: "0", max: "1", value: String(voice.level), "aria-label": "Microphone level"}} /> : null}
+        {voice.active ? <button attrs={{type: "button", title: "Cancel dictation"}} on={{click: () => voice.hold.cancel()}}>{uiIcon("close")} Cancel</button> : null}
+      </div> : null}
     </form>
   );
 }

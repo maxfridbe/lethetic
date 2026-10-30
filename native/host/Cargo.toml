@@ -1,6 +1,6 @@
 [package]
 name = "tauri-plugin-lethetic-host"
-version = "26.1028.3"
+version = "26.1030.1"
 edition = "2024"
 links = "tauri-plugin-lethetic-host"
 [build-dependencies]
@@ -15,5 +15,6 @@ serde_json = "1"
 lethetic-directory = { path = "../workspace" }
 lethetic-network = { path = "../network" }
 [target.'cfg(not(target_os = "android"))'.dependencies]
+lethetic-dictation = { path = "../dictation" }
 tauri-plugin-dialog = "2"
 keepawake = "0.6.1"

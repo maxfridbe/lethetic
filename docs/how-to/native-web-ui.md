@@ -73,6 +73,14 @@ origin has an IPC grant. This is the browser runtime's isolation model with a
 narrow directory bridge, not Podman/container isolation or a defense against a
 compromised operating system/document provider.
 
+## Hold Send to dictate
+
+Windows, macOS and Linux builds include local Whisper speech to text. Open
+**Speech to text · hold Send** in the command palette and download/load a model.
+Hold Send to record, release to append the transcript to your draft, then review
+and click Send. Escape or leaving the window cancels. Audio stays on your device;
+only the model needs a one-time download. See [setup, permissions and testing](../speech-to-text.md).
+
 ## Network access without proxy setup
 
 In Connections → Runtime & security, choose **Code network access**:
