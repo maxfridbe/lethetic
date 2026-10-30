@@ -5,7 +5,7 @@ plugins {
 android {
     namespace = "io.github.maxfridbe.lethetic.host"
     compileSdk = 36
-    defaultConfig { minSdk = 24 }
+    defaultConfig { minSdk = 26 }
     testOptions { unitTests.isIncludeAndroidResources = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
@@ -26,4 +26,5 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("com.fasterxml.jackson.core:jackson-databind:2.15.3")
 }

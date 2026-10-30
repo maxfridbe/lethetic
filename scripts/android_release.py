@@ -70,6 +70,13 @@ def check_icons(apk: Path) -> None:
         raise ValueError("APK is missing Lethetic adaptive/themed icons; copy src-tauri/icons/android into the generated Android res directory after init")
 
 
+def check_dictation_runtime(apk: Path) -> None:
+    with zipfile.ZipFile(apk) as archive:
+        for name in ("lib/arm64-v8a/liblethetic_desktop.so", "lib/arm64-v8a/libc++_shared.so"):
+            if name not in archive.namelist():
+                raise ValueError(f"APK is missing dictation runtime library {name}")
+
+
 def package(sign: bool) -> Path:
     key_bytes = signing_key() if sign else None
     root = Path("src-tauri/gen/android/app/build/outputs/apk")
@@ -80,6 +87,7 @@ def package(sign: bool) -> Path:
     badging = subprocess.check_output([sdk / "aapt", "dump", "badging", apks[0]], text=True)
     check_manifest(badging)
     check_icons(apks[0])
+    check_dictation_runtime(apks[0])
     destination = Path("android-release")
     destination.mkdir(exist_ok=True)
     if any(destination.iterdir()):

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { HoldToTalk, type HoldClock } from "../src/dictation/hold.js";
-import { desktopDictationAvailable, dictationCommand } from "../src/dictation/native.js";
+import { nativeDictationAvailable, dictationCommand } from "../src/dictation/native.js";
 const flush = async (): Promise<void> => { for(let n=0;n<8;n++)await Promise.resolve(); };
 function fixture() {
   let n=0;
@@ -46,15 +46,17 @@ await test("the maximum recording deadline transcribes once",async()=>{
   const f=fixture();f.hold.press();f.tick();await flush();f.tick();await flush();
   assert.deepEqual(f.texts,['dictated text']);f.hold.release();await flush();assert.equal(f.texts.length,1);
 });
-await test("dictation is desktop-only and requires the top-level native capability",async()=>{
-  assert.equal(desktopDictationAvailable(),false);
+await test("dictation is native-only and requires the top-level native capability",async()=>{
+  assert.equal(nativeDictationAvailable(),false);
   const old=Object.getOwnPropertyDescriptor(globalThis,'window');
-  const host={top:null as unknown,__LETHETIC_DESKTOP__:true,__LETHETIC_HOST_TOKEN__:'private',__TAURI__:{core:{invoke:async(command:string,args:Record<string,unknown>)=>{
+  const host={top:null as unknown,__LETHETIC_DESKTOP__:true,__LETHETIC_ANDROID__:false,__LETHETIC_HOST_TOKEN__:'private',__TAURI__:{core:{invoke:async(command:string,args:Record<string,unknown>)=>{
     assert.equal(command,'plugin:lethetic-host|start_dictation');assert.equal(args["token"],'private');assert.equal(args["id"],'one');return 'ok';
   }}}};host.top=host;Object.defineProperty(globalThis,'window',{configurable:true,value:host});
   try {
-    assert.equal(desktopDictationAvailable(),true);assert.equal(await dictationCommand('start_dictation',{id:'one'}),'ok');
-    host.top={};assert.equal(desktopDictationAvailable(),false);await assert.rejects(()=>dictationCommand('start_dictation'),/desktop/);
-    host.top=host;host.__LETHETIC_DESKTOP__=false;assert.equal(desktopDictationAvailable(),false);
+    assert.equal(nativeDictationAvailable(),true);assert.equal(await dictationCommand('start_dictation',{id:'one'}),'ok');
+    host.top={};assert.equal(nativeDictationAvailable(),false);await assert.rejects(()=>dictationCommand('start_dictation'),/native/);
+    host.top=host;host.__LETHETIC_DESKTOP__=false;assert.equal(nativeDictationAvailable(),false);
+    host.__LETHETIC_ANDROID__=true;assert.equal(nativeDictationAvailable(),true);
+    host.top={};assert.equal(nativeDictationAvailable(),false);
   } finally {if(old)Object.defineProperty(globalThis,'window',old);else Reflect.deleteProperty(globalThis,'window');}
 });

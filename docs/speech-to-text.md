@@ -1,9 +1,15 @@
-# Desktop speech to text
+# Native speech to text
 
-Lethetic's Windows, macOS and Linux apps support local hold-to-talk dictation,
+Lethetic's Windows, macOS, Linux and Android apps support local hold-to-talk dictation,
 inspired by [sttme](https://github.com/maxfridbe/sttme). Microphone capture uses
-CPAL and transcription runs inside the executable through whisper-rs/whisper.cpp.
+CPAL (AAudio on Android) and transcription runs inside the executable through whisper-rs/whisper.cpp.
 The model stays loaded between recordings.
+
+Capture incorporates the [sttme 0.1.1 microphone fixes](https://github.com/maxfridbe/sttme/commit/6928497):
+DC-bias filtering, startup-pop suppression and a short fade-in. The level meter
+uses speech energy and peaks, retains brief peaks between UI updates, and avoids
+false zero readings when no new audio packet has arrived. Lethetic uses direct
+CPAL capture, so sttme's `pw-record` pipe buffering workaround is unnecessary here.
 
 1. Open the command palette and choose **Speech to text · hold Send**.
 2. Choose **Tiny** (~75 MiB, faster) or **Base** (~142 MiB, more accurate), then
@@ -28,6 +34,14 @@ Privacy settings. Linux uses the system's default ALSA input (normally routed by
 PipeWire/PulseAudio). No global keyboard hook, virtual keyboard, shell helper,
 Python installation or sttme daemon is required.
 
+On Android 8.0+ (ARM64), Tiny is the default model. Setup requests Microphone
+permission when you choose **Download / load model**. Grant it and return to
+Lethetic before holding Send. If denied, chat still works; enable Microphone
+in Android app settings or retry setup. Permission is checked again for every
+recording. App switching, locking the screen and destroying the Activity cancel
+recording and inference through a native lifecycle hook, even if the WebView is
+paused. No background microphone service or Android/cloud speech service is used.
+
 Language is detected automatically, or enter a Whisper language code such as `en`,
 `es`, `fr` or `de` before loading the model. Turn off **Enable hold-to-talk** to
 restore a plain Send button. Settings contain only enabled/model/language values;
@@ -39,16 +53,21 @@ speech into process logs. Once you click Send, the transcript becomes normal pro
 text and follows the session's usual history and provider behavior. Models live in
 the native application's local-data `whisper` folder. Explicit model downloads use
 HTTPS separately from the code runtime's Direct/Tor permission; dictation itself
-needs neither Network access nor Tor. Browser-only and Android builds do not expose
-this desktop feature.
+needs neither Network access nor Tor. Browser-only builds do not expose this native feature.
 
 ## Development and validation
 
 Build from `native/` so its Cargo configuration applies portable CPU settings and
-uses whisper-rs's bundled bindings. A C++ compiler and CMake are required; Linux
-also needs ALSA development headers (`libasound2-dev` on Debian/Ubuntu). The native
+generates bindings for the target ABI. A C++ compiler, CMake and libclang are required; Linux
+also needs ALSA development headers (`libasound2-dev` and `libclang-dev` on Debian/Ubuntu).
+Do not set `WHISPER_DONT_GENERATE_BINDINGS`: upstream bundled Linux bindings do not
+match Windows types. Android uses the NDK sysroot for both CMake and bindgen. The native
 CI workflow builds Windows, macOS and Linux and runs a real speech fixture on each.
-Whisper is a desktop-only dependency, excluded from the Android application graph.
+Android builds compile the same engine for ARM64 with the NDK CMake toolchain
+and package its matching `libc++_shared.so`; APK validation rejects missing libraries.
+The Android minimum is API 26 because CPAL uses AAudio. See the
+[CPAL platform requirements](https://docs.rs/crate/cpal/0.18.2/source/README.md) and
+[Android runtime permission guidance](https://developer.android.com/training/permissions/requesting).
 
 ```sh
 cd native
@@ -61,9 +80,11 @@ then checks offline recognition, silence handling and cancellation during infere
 It never opens your microphone. Browser acceptance tests use a fake native audio
 bridge to check quick clicks, holds, release during startup, error handling, Escape,
 window blur and discarded late results. Hardware microphone access still needs a
-smoke test on the actual desktop/OS.
+smoke test on the actual device/OS. Android should also be checked with permission denied,
+revoked, the system microphone privacy toggle off, and while backgrounding or locking
+the device during capture.
 
 The lifecycle and local inference approach follow sttme. License notices for
 [sttme](licenses/STTME-MIT.txt), [whisper.cpp](licenses/WHISPER-CPP-MIT.txt),
 [whisper-rs](licenses/WHISPER-RS-UNLICENSE.txt) and [CPAL](licenses/CPAL-APACHE-2.0.txt)
-are included with desktop bundles.
+are included with native bundles.

@@ -1,6 +1,5 @@
 [env]
-# The crate bundles bindings matching its vendored whisper.cpp; no libclang install.
-WHISPER_DONT_GENERATE_BINDINGS = "1"
+# Generate bindings for each target ABI; upstream's bundled bindings use Linux types.
 # Ship portable CPU code, not instructions selected from the CI build machine.
 GGML_NATIVE = "OFF"
 GGML_AVX = "OFF"

@@ -12,10 +12,35 @@ from unittest.mock import patch
 
 import android_release
 import package_native_release
+import prepare_android_dictation
 from release_version import Version
 
 
 class AndroidReleaseTests(unittest.TestCase):
+    def test_android_whisper_setup_copies_runtime_and_uses_target_sysroot(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with self.assertRaisesRegex(ValueError, "libc\\+\\+_shared"):
+                prepare_android_dictation.prepare(root / "ndk", root / "app")
+            sysroot = root / "ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+            library = sysroot / "usr/lib/aarch64-linux-android/libc++_shared.so"
+            library.parent.mkdir(parents=True)
+            library.write_bytes(b"matching-ndk-runtime")
+            env = prepare_android_dictation.prepare(root / "ndk", root / "app")
+            self.assertIn(f"--sysroot={sysroot}", env["BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android"])
+            self.assertEqual((root / "app/app/src/main/jniLibs/arm64-v8a/libc++_shared.so").read_bytes(), library.read_bytes())
+
+    def test_dictation_requires_packaged_cpp_runtime(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            apk = Path(temporary) / "test.apk"
+            with zipfile.ZipFile(apk, "w") as archive:
+                archive.writestr("lib/arm64-v8a/liblethetic_desktop.so", b"test")
+            with self.assertRaisesRegex(ValueError, "libc\\+\\+_shared"):
+                android_release.check_dictation_runtime(apk)
+            with zipfile.ZipFile(apk, "a") as archive:
+                archive.writestr("lib/arm64-v8a/libc++_shared.so", b"test")
+            android_release.check_dictation_runtime(apk)
+
     def setUp(self):
         for module in (android_release, package_native_release):
             replacement = patch.object(module, "current", return_value=Version("26.1024.01"))
@@ -121,7 +146,9 @@ class AndroidReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, chdir(tmp), patch.dict(os.environ, values, clear=True):
             apk = Path("src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-release-unsigned.apk")
             apk.parent.mkdir(parents=True)
-            apk.write_bytes(b"input")
+            with zipfile.ZipFile(apk, "w") as archive:
+                archive.writestr("lib/arm64-v8a/liblethetic_desktop.so", b"test")
+                archive.writestr("lib/arm64-v8a/libc++_shared.so", b"test")
             with patch.object(android_release, "check_icons"), patch.object(android_release.subprocess, "check_output", return_value="package: name='app'"), patch.object(android_release.subprocess, "run", side_effect=run):
                 with self.assertRaisesRegex(RuntimeError, "Signing failed"):
                     android_release.package(True)

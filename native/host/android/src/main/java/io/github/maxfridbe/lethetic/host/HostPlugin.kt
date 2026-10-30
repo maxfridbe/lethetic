@@ -1,6 +1,8 @@
 package io.github.maxfridbe.lethetic.host
 
 import android.app.Activity
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.Intent
 import android.os.Build
 import android.webkit.WebView
@@ -11,6 +13,10 @@ import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
+import app.tauri.annotation.Permission
+import app.tauri.annotation.PermissionCallback
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
@@ -19,8 +25,9 @@ import java.util.concurrent.Executors
 @InvokeArg class WorkArgs { var working: Boolean = false; var active: Boolean = false }
 @InvokeArg class SiteArgs { var url: String = "" }
 @InvokeArg class SaveArgs { var path: String = ""; var name: String = ""; var mime: String = "application/octet-stream" }
-@TauriPlugin
+@TauriPlugin(permissions = [Permission(strings = [Manifest.permission.RECORD_AUDIO], alias = "microphone")])
 class HostPlugin(private val activity: Activity) : Plugin(activity) {
+    private external fun setDictationForegroundNative(active: Boolean)
     private val io = Executors.newSingleThreadExecutor()
     private var directory: TreeWorkspace? = null
     private var webView: WebView? = null
@@ -29,8 +36,20 @@ class HostPlugin(private val activity: Activity) : Plugin(activity) {
     private var serviceRunning = false
     override fun load(webView: WebView) {
         this.webView = webView
+        setDictationForegroundNative((activity as? LifecycleOwner)?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true)
         activity.runOnUiThread { SafeWebViewInsets.install(activity) }
     }
+    @Command fun checkMicrophone(invoke: Invoke) {
+        invoke.resolve(JSObject().put("granted", activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) as JSObject)
+    }
+    @Command fun requestMicrophone(invoke: Invoke) {
+        if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            checkMicrophone(invoke)
+        } else {
+            requestPermissionForAlias("microphone", invoke, "microphoneResult")
+        }
+    }
+    @PermissionCallback fun microphoneResult(invoke: Invoke) { checkMicrophone(invoke) }
     private fun task(invoke: Invoke, work: () -> JSObject) {
         io.execute { try { invoke.resolve(work()) } catch (error: Exception) { invoke.reject(error.message ?: "Workspace operation failed") } }
     }
@@ -99,8 +118,13 @@ class HostPlugin(private val activity: Activity) : Plugin(activity) {
     }
     // Tauri pauses its WebView with the Activity. Resume while a turn or explicitly hosted site
     // is active, without changing global timers or granting native code tools.
-    override fun onPause(activity: AppCompatActivity) { if (waiting) webView?.post { if (waiting) webView?.onResume() } }
+    override fun onResume(activity: AppCompatActivity) { setDictationForegroundNative(true) }
+    override fun onPause(activity: AppCompatActivity) {
+        setDictationForegroundNative(false)
+        if (waiting) webView?.post { if (waiting) webView?.onResume() }
+    }
     override fun onDestroy(activity: AppCompatActivity) {
+        setDictationForegroundNative(false)
         waiting = false; activity.stopService(Intent(activity, ResponseService::class.java))
         webView = null; io.shutdown()
     }

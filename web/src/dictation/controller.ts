@@ -1,15 +1,15 @@
 import { buttonIconHtml } from "../icons.js";
 import { HoldToTalk } from "./hold.js";
-import { desktopDictationAvailable, dictationCommand } from "./native.js";
+import { nativeDictationAvailable, androidDictation, dictationCommand } from "./native.js";
 import type { LocalPaletteCommand } from "../app/state.js";
 
 const KEY = "lethetic.dictation.v1";
 type Model = "tiny" | "base";
 export class DictationController {
-  readonly available = desktopDictationAvailable();
+  readonly available = nativeDictationAvailable();
   readonly hold: HoldToTalk;
   enabled = true;
-  model: Model = "base";
+  model: Model = androidDictation() ? "tiny" : "base";
   language = "";
   ready = false;
   preparing = false;
@@ -23,6 +23,7 @@ export class DictationController {
   #storage?: Storage;
   #pointer: number | null = null;
   readonly #cancel = (): void => { if (this.hold.phase !== "idle") this.hold.cancel(); };
+  readonly #visibility = (): void => { if (document.hidden) this.#cancel(); };
   readonly #key = (event: KeyboardEvent): void => { if (event.key === "Escape" && this.hold.active) { event.preventDefault(); this.hold.cancel(); } };
   constructor(private readonly changed: () => void, private readonly receive: (text: string) => void) {
     this.hold = new HoldToTalk({
@@ -41,10 +42,12 @@ export class DictationController {
     try {
       this.#storage = localStorage;
       const saved = JSON.parse(this.#storage.getItem(KEY) ?? "{}");
-      this.enabled = saved.enabled !== false; this.model = saved.model === "tiny" ? "tiny" : "base";
+      this.enabled = saved.enabled !== false;
+      if (saved.model === "tiny" || saved.model === "base") this.model = saved.model;
       this.language = typeof saved.language === "string" && /^[a-z]{2,3}$/.test(saved.language) ? saved.language : "";
     } catch { /* Preferences are optional. */ }
     globalThis.addEventListener("blur", this.#cancel);
+    document.addEventListener("visibilitychange", this.#visibility);
     globalThis.addEventListener("keydown", this.#key, true);
     // Warm an already downloaded model without making any network request.
     queueMicrotask(() => { void dictationCommand("cancel_dictation", {id: null}).then(() => {
@@ -92,15 +95,17 @@ export class DictationController {
     this.#disposed = true; this.hold.cancel(); this.#dialog?.remove();
     if (this.#meter !== null) globalThis.clearInterval(this.#meter);
     globalThis.removeEventListener("blur", this.#cancel); globalThis.removeEventListener("keydown", this.#key, true);
+    document.removeEventListener("visibilitychange", this.#visibility);
   }
   commands(): LocalPaletteCommand[] {
     return this.available ? [{id: "local:dictation", label: "Speech to text · hold Send", description: "Local Whisper microphone dictation, model download and language", icon: "command", behavior: "open_panel", accelerator: null, enabled: true, disabled_reason: null, run: () => this.show()}] : [];
   }
   #update(): void {
     if (this.#disposed) return;
+    if (this.hold.phase === "idle" || this.hold.phase === "transcribing") this.#pointer = null;
     if (this.hold.phase === "recording" && this.#meter === null) {
-      this.#meter = globalThis.setInterval(() => { void dictationCommand<{level: number}>("dictation_status").then(state => {
-        if (this.#disposed || this.hold.phase !== "recording") return;
+      this.#meter = globalThis.setInterval(() => { void dictationCommand<{level: number | null}>("dictation_status").then(state => {
+        if (this.#disposed || this.hold.phase !== "recording" || state.level === null) return;
         this.level = Math.max(0, Math.min(1, state.level)); this.changed();
       }).catch(() => {}); }, 100);
     } else if (this.hold.phase !== "recording" && this.#meter !== null) {
@@ -130,6 +135,7 @@ export class DictationController {
         <label>Local Whisper model<select data-field="model"><option value="tiny">Tiny · ~75 MiB · faster</option><option value="base">Base · ~142 MiB · more accurate</option></select></label>
         <label>Language code (blank = automatic)<input data-field="language" placeholder="en" maxlength="3" spellcheck="false"></label>
         <p>Uses the default system microphone. Audio is transcribed on this device, never uploaded or saved. The model downloads once from Hugging Face; later use is offline. No sttme daemon is required.</p>
+        ${androidDictation() ? '<p>Android: setup requests Microphone permission. Tiny is recommended for phones. Return here after granting permission, then hold Send. Switching apps or locking the screen cancels recording.</p>' : ''}
         <p role="status" data-field="status"></p><div><button type="button" data-field="prepare">${buttonIconHtml("download")} Download / load model</button><button type="button" data-field="close">${buttonIconHtml("close")} Close</button></div>`;
       document.body.append(dialog); this.#dialog = dialog;
       this.#field<HTMLInputElement>("enabled").checked = this.enabled;

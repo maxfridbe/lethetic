@@ -905,6 +905,8 @@ try {
     await writeFile(config.screenshot.replace(".png", "-dictation.png"), Buffer.from(String(image["data"]), "base64"));
   });
   process.stdout.write("Desktop hold-to-talk preserves drafts, cancels safely and never submits on release.\n");
+  await testDictation(evaluate, undefined, true);
+  process.stdout.write("Android hold-to-talk uses Tiny, touch gestures and native microphone guidance.\n");
   await testUiControls(evaluate);
   await testVirtualChat(evaluate);
   await testNativeTorControls(evaluate);

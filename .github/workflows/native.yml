@@ -4,9 +4,9 @@ on:
   push:
     branches: [master]
     tags: ['v*']
-    paths: ['native/**', 'browser/**', 'web/**', 'docs/licenses/**', 'lethetic-wasm/**', 'src/engine/**', 'src/storage/**', 'scripts/prepare_native.py', 'scripts/package_native_release.py', 'scripts/test_dictation.py', 'scripts/*android_release.py', 'scripts/*release_version.py', 'VERSION', 'Cargo.toml', 'gemma-chat/Cargo.toml', 'build-browser.sh', '.github/workflows/native.yml', 'Cargo.lock']
+    paths: ['native/**', 'browser/**', 'web/**', 'docs/licenses/**', 'lethetic-wasm/**', 'src/engine/**', 'src/storage/**', 'scripts/prepare_native.py', 'scripts/prepare_android_dictation.py', 'scripts/package_native_release.py', 'scripts/test_dictation.py', 'scripts/*android_release.py', 'scripts/*release_version.py', 'VERSION', 'Cargo.toml', 'gemma-chat/Cargo.toml', 'build-browser.sh', '.github/workflows/native.yml', 'Cargo.lock']
   pull_request:
-    paths: ['native/**', 'browser/**', 'docs/licenses/**', 'scripts/prepare_native.py', 'scripts/package_native_release.py', 'scripts/test_dictation.py', 'scripts/*android_release.py', 'scripts/*release_version.py', 'VERSION', 'Cargo.toml', 'gemma-chat/Cargo.toml', '.github/workflows/native.yml']
+    paths: ['native/**', 'browser/**', 'docs/licenses/**', 'scripts/prepare_native.py', 'scripts/prepare_android_dictation.py', 'scripts/package_native_release.py', 'scripts/test_dictation.py', 'scripts/*android_release.py', 'scripts/*release_version.py', 'VERSION', 'Cargo.toml', 'gemma-chat/Cargo.toml', '.github/workflows/native.yml']
 permissions:
   contents: read
 jobs:
@@ -60,7 +60,19 @@ jobs:
         with:
           workspaces: native
       - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libasound2-dev cmake
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libasound2-dev cmake libclang-dev
+      - name: Configure Windows Clang for native Whisper bindings
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $clang = 'C:\Program Files\LLVM\bin'
+          if (!(Test-Path "$clang\libclang.dll")) { throw 'LLVM libclang.dll is required for Whisper bindings' }
+          "LIBCLANG_PATH=$clang" >> $env:GITHUB_ENV
+      - name: Configure macOS Clang for native Whisper bindings
+        if: runner.os == 'macOS'
+        run: echo "LIBCLANG_PATH=$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib" >> "$GITHUB_ENV"
+      - name: Discard bindings cached before target-specific generation
+        run: cargo clean -p whisper-rs-sys
       - run: cargo install tauri-cli --version 2.12.4 --locked
       - run: cargo test -p lethetic-directory --locked
       - run: cargo test -p lethetic-network --locked
@@ -112,11 +124,14 @@ jobs:
           workspaces: native
       - run: cargo install tauri-cli --version 2.12.4 --locked
       - run: cargo tauri android init --ci
+      - run: sudo apt-get update && sudo apt-get install -y libclang-dev cmake
+      - name: Configure Android Whisper and bundle its C++ runtime
+        run: python3 ../scripts/prepare_android_dictation.py
       - name: Install Lethetic adaptive and themed launcher icons
         run: cp -R src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
       - name: Build optimized Android release APK
         run: cargo tauri android build --target aarch64 --apk
-      - name: Android downloads, system bars, keyboard and cutout regression tests
+      - name: Android downloads, microphone permissions, system bars, keyboard and cutout regression tests
         run: ./src-tauri/gen/android/gradlew -p src-tauri/gen/android :tauri-plugin-lethetic-host:testDebugUnitTest
       - uses: actions/upload-artifact@v4
         if: always()

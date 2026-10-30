@@ -1,9 +1,9 @@
 [package]
 name = "lethetic-dictation"
-version = "26.1030.1"
+version = "26.1030.2"
 edition = "2024"
 
-[target.'cfg(not(target_os = "android"))'.dependencies]
+[dependencies]
 cpal = "0.18"
 whisper-rs = "0.16"
 serde = { version = "1", features = ["derive"] }

@@ -1,9 +1,9 @@
 /** Real shared composer with a deterministic native bridge. Never opens a test machine's mic. */
-export async function testDictation(evaluate: (source: string) => Promise<unknown>, capture?: () => Promise<void>): Promise<void> {
+export async function testDictation(evaluate: (source: string) => Promise<unknown>, capture?: () => Promise<void>, android = false): Promise<void> {
   await evaluate(`(async()=>{
     const {mountLethetic}=await import('./src/embed.js');
     const root=document.createElement('div');root.style.height='900px';document.body.replaceChildren(root);
-    const names=['__LETHETIC_DESKTOP__','__LETHETIC_HOST_TOKEN__','__TAURI__'];
+    const names=['__LETHETIC_DESKTOP__','__LETHETIC_ANDROID__','__LETHETIC_HOST_TOKEN__','__TAURI__'];
     const prior=names.map(name=>Object.getOwnPropertyDescriptor(window,name));
     const preference=localStorage.getItem('lethetic.dictation.v1');localStorage.removeItem('lethetic.dictation.v1');
     const calls=[];let finish,view,fail=false,chatRequests=0;
@@ -21,14 +21,14 @@ export async function testDictation(evaluate: (source: string) => Promise<unknow
       if(command.endsWith('|set_working') || command.endsWith('|revoke_network') || command.endsWith('|stop_forwarded_sites') || command.endsWith('|cancel_download') || command.endsWith('|cancel_speech') || command.endsWith('|revoke_directory'))return;
       throw Error('Unexpected native command '+command);
     }}};
-    for(const [name,value] of [['__LETHETIC_DESKTOP__',true],['__LETHETIC_HOST_TOKEN__','dictation-test-capability'],['__TAURI__',host]])Object.defineProperty(window,name,{configurable:true,value});
+    for(const [name,value] of [['__LETHETIC_DESKTOP__',${!android}],['__LETHETIC_ANDROID__',${android}],['__LETHETIC_HOST_TOKEN__','dictation-test-capability'],['__TAURI__',host]])Object.defineProperty(window,name,{configurable:true,value});
     window.fetch=async(url,init)=>{
       if(String(url)===location.origin+'/dictation-chat'){chatRequests++;return new Response('data: '+JSON.stringify({choices:[{delta:{content:'Received.'},finish_reason:'stop'}]})+'\\n\\ndata: [DONE]\\n\\n',{headers:{'Content-Type':'text/event-stream'}})}
       return originalFetch(url,init);
     };
     const button=()=>root.querySelector('[data-dictation-send]');
     const input=()=>root.querySelector('#composer-input');
-    const pointer=type=>button().dispatchEvent(new PointerEvent(type,{bubbles:true,button:0,pointerId:1,isPrimary:true}));
+    const pointer=type=>button().dispatchEvent(new PointerEvent(type,{bubbles:true,button:0,pointerId:1,isPrimary:true,pointerType:${JSON.stringify(android ? 'touch' : 'mouse')}}));
     // Synthetic pointer tests use the same handlers; native capture is tested separately.
     const pointerCapture=HTMLElement.prototype.setPointerCapture;
     HTMLElement.prototype.setPointerCapture=function(){};
@@ -36,6 +36,8 @@ export async function testDictation(evaluate: (source: string) => Promise<unknow
       view=mountLethetic(root,{connections:[{name:'Dictation',provider:'openai',endpoint:location.origin+'/dictation-chat',model:'test'}]});
       await wait(()=>button() && root.querySelector('.dictation-status').textContent.includes('Hold Send to dictate locally'));
       assert(!button().disabled,'Empty draft must still allow holding Send');
+      assert(calls.find(c=>c.command.endsWith('|prepare_dictation')).args.model===${JSON.stringify(android ? 'tiny' : 'base')},'Wrong default speech model');
+      assert(getComputedStyle(button()).touchAction==='none','Hold gesture must not become a page scroll');
       input().value='Existing draft';input().dispatchEvent(new Event('input',{bubbles:true}));
       pointer('pointerdown');await new Promise(r=>setTimeout(r,350));await wait(()=>button().textContent.includes('Listening'));
       await wait(()=>root.querySelector('meter'));
@@ -47,6 +49,9 @@ export async function testDictation(evaluate: (source: string) => Promise<unknow
       pointer('pointerdown');await new Promise(r=>setTimeout(r,350));await wait(()=>button().textContent.includes('Listening'));
       window.dispatchEvent(new Event('blur'));await wait(()=>button().textContent.trim().endsWith('Send'));
       assert(input().value==='Existing draft new spoken words','Cancellation altered the draft');
+      pointer('pointerdown');await new Promise(r=>setTimeout(r,350));await wait(()=>button().textContent.includes('Listening'));
+      pointer('pointercancel');button().click();await wait(()=>button().textContent.trim().endsWith('Send'));
+      assert(!chatRequests,'Cancelled touch gesture submitted the draft');
       fail=true;pointer('pointerdown');await new Promise(r=>setTimeout(r,350));await wait(()=>root.querySelector('.dictation-status').textContent.includes('permission denied'));
       pointer('pointerup');button().click();assert(!chatRequests,'Mic error accidentally sent the draft');fail=false;
       // Space works without a pointer and a late result after Escape must be discarded.
@@ -61,6 +66,7 @@ export async function testDictation(evaluate: (source: string) => Promise<unknow
       root.querySelector('[id="palette-command-local:dictation"]').click();
       assert(document.querySelector('.dictation-dialog[open]'),'Dictation settings missing');
       assert(document.querySelector('.dictation-dialog').textContent.includes('never uploaded'),'Local privacy explanation missing');
+      if (${android}) assert(document.querySelector('.dictation-dialog').textContent.includes('Microphone permission'),'Android permission help missing');
       globalThis.dictationTestView=view;
     } finally {
       window.fetch=originalFetch;HTMLElement.prototype.setPointerCapture=pointerCapture;

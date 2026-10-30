@@ -18,7 +18,6 @@ struct Host {
     network: Mutex<NetworkGrants>,
     sites: Mutex<sites::Sites>,
     speech: lethetic_network::speech::SpeechStreams,
-    #[cfg(not(target_os = "android"))]
     dictation: lethetic_dictation::Dictation,
     #[cfg(not(target_os = "android"))]
     awake: Mutex<Option<keepawake::KeepAwake>>,
@@ -279,8 +278,7 @@ pub fn init(token: String) -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 network: Mutex::new(NetworkGrants::default()),
                 sites: Mutex::default(),
                 speech: Default::default(),
-                #[cfg(not(target_os = "android"))]
-                dictation: Default::default(),
+                dictation: dictation::engine(),
                 #[cfg(not(target_os = "android"))]
                 awake: Mutex::new(None),
                 #[cfg(target_os = "android")]

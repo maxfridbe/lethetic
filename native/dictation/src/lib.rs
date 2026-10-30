@@ -1,12 +1,15 @@
-//! Desktop-only local Whisper dictation. No microphone audio is written to disk or sent over HTTP.
-#![cfg(not(target_os = "android"))]
+//! Local Whisper dictation. No microphone audio is written to disk or sent over HTTP.
 mod audio;
+mod conditioning;
 mod model;
 use audio::{Capture, Control};
 use serde::Serialize;
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, atomic::Ordering},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 use tokio::sync::Semaphore;
@@ -24,6 +27,7 @@ impl Drop for Job {
     }
 }
 struct Inner {
+    foreground: AtomicBool,
     loaded: Mutex<Option<(String, Loaded)>>,
     job: Mutex<Option<Arc<Job>>>,
     gate: Arc<Semaphore>,
@@ -33,6 +37,7 @@ pub struct Dictation(Arc<Inner>);
 impl Default for Dictation {
     fn default() -> Self {
         Self(Arc::new(Inner {
+            foreground: AtomicBool::new(true),
             loaded: Mutex::new(None),
             job: Mutex::new(None),
             gate: Arc::new(Semaphore::new(1)),
@@ -44,9 +49,16 @@ impl Default for Dictation {
 pub struct Status {
     pub ready: bool,
     pub model: Option<String>,
-    pub level: f32,
+    pub level: Option<f32>,
 }
 impl Dictation {
+    /// Native activity lifecycle gate, independent of WebView timers and events.
+    pub fn set_foreground(&self, active: bool) {
+        self.0.foreground.store(active, Ordering::Release);
+        if !active {
+            let _ = self.cancel(None);
+        }
+    }
     pub fn status(&self) -> Result<Status, String> {
         let model = self
             .0
@@ -61,9 +73,7 @@ impl Dictation {
             .lock()
             .map_err(|_| "Microphone state unavailable")?
             .as_ref()
-            .map_or(0.0, |job| {
-                f32::from_bits(job.control.level.load(Ordering::Relaxed))
-            });
+            .and_then(|job| job.control.level.take());
         Ok(Status {
             ready: model.is_some(),
             model,
@@ -98,6 +108,9 @@ impl Dictation {
         Ok(())
     }
     pub async fn start(&self, id: String) -> Result<(), String> {
+        if !self.0.foreground.load(Ordering::Acquire) {
+            return Err("Return to Lethetic before recording".into());
+        }
         if id.is_empty() || id.len() > 64 {
             return Err("Invalid dictation identifier".into());
         }
@@ -124,6 +137,11 @@ impl Dictation {
             .job
             .lock()
             .map_err(|_| "Microphone state unavailable")? = Some(job.clone());
+        // Pause may have raced registration after the first foreground check.
+        if !self.0.foreground.load(Ordering::Acquire) {
+            self.cancel(Some(&job.id))?;
+            return Err("Return to Lethetic before recording".into());
+        }
         let state = job.control.clone();
         let captured = tokio::task::spawn_blocking(move || Capture::start(state))
             .await
@@ -244,9 +262,10 @@ fn transcribe(
     }
     let mut state = context.create_state().map_err(|e| e.to_string())?;
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-    params.set_n_threads(
-        std::thread::available_parallelism().map_or(4, |n| n.get().clamp(1, 8)) as i32,
-    );
+    params.set_n_threads(std::thread::available_parallelism().map_or(4, |n| {
+        n.get()
+            .clamp(1, if cfg!(target_os = "android") { 4 } else { 8 })
+    }) as i32);
     params.set_print_special(false);
     params.set_print_progress(false);
     params.set_print_realtime(false);
@@ -307,6 +326,36 @@ unsafe extern "C" fn abort_inference(data: *mut std::ffi::c_void) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn native_backgrounding_cancels_without_any_webview_callback() {
+        let engine = Dictation::default();
+        let control = Arc::new(Control::default());
+        *engine.0.job.lock().unwrap() = Some(Arc::new(Job {
+            id: "android-recording".into(),
+            control: control.clone(),
+            capture: Mutex::new(None),
+        }));
+        engine.set_foreground(false);
+        assert!(control.stop.load(Ordering::Acquire));
+        assert!(control.cancelled.load(Ordering::Acquire));
+        assert!(
+            engine
+                .start("late-start".into())
+                .await
+                .unwrap_err()
+                .contains("Return")
+        );
+        engine.set_foreground(true);
+        assert!(engine.0.job.lock().unwrap().is_none());
+        // Returning to the app never resumes a recording automatically.
+        assert!(
+            engine
+                .start("fresh".into())
+                .await
+                .unwrap_err()
+                .contains("Load")
+        );
+    }
     #[test]
     fn cancelled_capture_keeps_its_lease_until_the_audio_worker_exits() {
         let engine = Dictation::default();
@@ -358,9 +407,10 @@ mod tests {
         let mut reader = hound::WavReader::open(wav).unwrap();
         assert_eq!(reader.spec().sample_rate, 16000);
         assert_eq!(reader.spec().channels, 1);
+        let mut conditioner = conditioning::Conditioner::new(16000);
         let samples: Vec<f32> = reader
             .samples::<i16>()
-            .map(|s| f32::from(s.unwrap()) / 32768.0)
+            .map(|s| conditioner.process(f32::from(s.unwrap()) / 32768.0))
             .collect();
         let context = load(Path::new(&model)).unwrap();
         let text = transcribe(&context, &samples, Some("en"), Arc::default()).unwrap();

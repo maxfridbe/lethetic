@@ -442,7 +442,7 @@ function renderComposer(context: ChatViewContext): VNode {
           </button>
         ) : null}
         <button
-          attrs={{ type: voice ? "button" : "submit", class: `primary-button${voice?.active ? " dictation-active" : ""}`,
+          attrs={{ type: voice ? "button" : "submit", class: `primary-button${voice ? " dictation-send" : ""}${voice?.active ? " dictation-active" : ""}`,
             title: voice ? "Click to send · hold to dictate · release to add text" : "Send prompt",
             ...(voice ? {"aria-pressed": String(voice.active), "data-dictation-send": ""} : {}) }}
           props={{ disabled: voice?.hold.phase === "transcribing" || (!canSubmit && !voice?.usable) }}

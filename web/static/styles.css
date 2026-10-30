@@ -1831,6 +1831,7 @@ progress {
 
 /* Native desktop hold-to-talk. Keep short-click Send and keyboard operation intact. */
 .dictation-active { touch-action: none; user-select: none; }
+.dictation-send { touch-action: none; user-select: none; -webkit-touch-callout: none; min-width: 48px; min-height: 48px; }
 .dictation-status { grid-column: 1 / -1; display: flex; align-items: center; gap: .5rem; font-size: .8rem; opacity: .85; }
 .dictation-status meter { width: 6rem; height: .7rem; }
 .dictation-status button { margin-left: auto; }

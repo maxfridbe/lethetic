@@ -1,8 +1,9 @@
+use crate::conditioning::{Conditioner, Meter};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::{
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, Ordering},
         mpsc,
     },
     thread,
@@ -51,7 +52,7 @@ pub(crate) struct Control {
     pub _lease: Option<Arc<tokio::sync::OwnedSemaphorePermit>>,
     pub stop: AtomicBool,
     pub cancelled: AtomicBool,
-    pub level: AtomicU32,
+    pub level: Meter,
 }
 pub(crate) struct Capture {
     control: Arc<Control>,
@@ -181,6 +182,7 @@ where
     f32: cpal::FromSample<T>,
 {
     let channels = usize::from(config.channels);
+    let mut conditioner = Conditioner::new(config.sample_rate);
     let on_error = control.clone();
     device
         .build_input_stream(
@@ -193,6 +195,7 @@ where
                     return;
                 };
                 let mut energy = 0_f32;
+                let mut peak = 0_f32;
                 let mut count = 0_usize;
                 for frame in input.chunks_exact(channels) {
                     let mono = frame
@@ -200,17 +203,17 @@ where
                         .map(|sample| sample.to_sample::<f32>())
                         .sum::<f32>()
                         / channels as f32;
+                    let mono = conditioner.process(mono);
                     data.push(mono);
                     energy += mono * mono;
+                    peak = peak.max(mono.abs());
                     count += 1;
                 }
                 if count > 0 {
-                    control.level.store(
-                        ((energy / count as f32).sqrt() * 8.0)
-                            .clamp(0.0, 1.0)
-                            .to_bits(),
-                        Ordering::Relaxed,
-                    );
+                    let envelope = 0.60 * (energy / count as f32).sqrt() + 0.40 * peak;
+                    control
+                        .level
+                        .record(((envelope - 0.0038).max(0.0) * 8.0).clamp(0.0, 1.0));
                 }
                 if data.values.len() >= MAX_SAMPLES {
                     control.stop.store(true, Ordering::Release);
