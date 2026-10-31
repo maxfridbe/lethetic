@@ -17,7 +17,11 @@ export class PersonaSpeechControls {
     this.player = new SpeechPlayer(() => { this.#playbackStatus(); this.changed(); });
   }
   #persistKeys(): Promise<void> {
-    const storage = nativeCredentials(); if (!storage) return Promise.resolve();
+    const storage = nativeCredentials();
+    if (!storage) {
+      if (androidHost()) throw Error("Android credential storage is not ready. Reopen the app before saving a key.");
+      return Promise.resolve();
+    }
     storage.setItem("lethetic.speech-keys.v1", JSON.stringify([...this.#keys]));
     return flushCredentials(storage);
   }
@@ -57,7 +61,7 @@ export class PersonaSpeechControls {
       <label>Voice name / ID<input data-speech="voice" spellcheck="false"></label>
       <label>API key<input type="password" data-speech="key" autocomplete="off" spellcheck="false"></label>
       <p data-speech="key-status"></p>
-      <p>${androidHost() ? "Keys are encrypted on this Android device and survive app restarts." : "Keys stay in memory in this tab until reload."} Keys are excluded from persona exports and sessions. Play sends that response to the configured endpoint and may incur provider charges. Voices are AI-generated; event sounds are separate.</p>
+      <p>${androidHost() ? "Saved keys are encrypted on this Android device and survive app restarts. The key field is intentionally blank; “API key present” confirms a restored key." : "Keys stay in memory in this tab until reload."} Keys are excluded from persona exports and sessions. Play sends that response to the configured endpoint and may incur provider charges. Voices are AI-generated; event sounds are separate.</p>
       <div class="persona-dialog-actions"><button type="button" data-speech="save">${buttonIconHtml("save")} Save voice</button><button type="button" data-speech="test">${buttonIconHtml("run")} Test voice</button><button type="button" data-speech="clear">${buttonIconHtml("close")} Clear key</button></div>
       <p role="status" data-speech="status"></p>
       </details>`;
@@ -94,6 +98,7 @@ export class PersonaSpeechControls {
   }
   #keyStatus(): void {
     const config = {...SPEECH_DEFAULTS.openai, provider: this.#field<HTMLSelectElement>("provider").value as PersonaSpeech["provider"], endpoint: this.#field<HTMLInputElement>("endpoint").value.trim()};
+    this.#field<HTMLInputElement>("key").placeholder = this.#key(config) ? "Saved key present · leave blank to keep" : "API key (optional for keyless servers)";
     this.#field("key-status").textContent = this.#field<HTMLInputElement>("key").value ? "New key entered. Save voice to use it for this endpoint." : this.#key(config) ? "API key present for this persona and endpoint. Leave blank to keep it." : "No API key stored for this endpoint. Keyless local endpoints are supported.";
   }
   refresh(): void {

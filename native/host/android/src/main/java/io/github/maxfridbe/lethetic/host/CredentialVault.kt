@@ -48,5 +48,8 @@ internal class CredentialVault(private val file: File, private val key: () -> Se
         val atomic = AtomicFile(file); val output = atomic.startWrite()
         try { output.write(bytes); atomic.finishWrite(output) }
         catch (error: Exception) { atomic.failWrite(output); throw error }
+        // Verify the encrypted file can be reopened before acknowledging Save.
+        val restored = read()
+        check(if (value == null) !restored.has(name) else restored.optString(name) == value) { "Credential save verification failed" }
     }
 }

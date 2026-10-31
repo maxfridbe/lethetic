@@ -1,3 +1,4 @@
+import { testNativeCredentialRestart } from "./native-credentials-browser.js";
 import { testDictation } from "./dictation-browser.js";
 import { testUiControls } from "./ui-controls-browser.js";
 import { testPersonaSpeech } from "./persona-speech-browser.js";
@@ -162,13 +163,14 @@ try {
     globalThis.modelRequests[0].resolve(Response.json({data:[{id:'stale'}]}));`);
   check(await evaluate("document.querySelector('[data-field=model-picker]').hidden && globalThis.modelRequests[0].signal.aborted"), "stale model discovery survived endpoint change");
   await evaluate("globalThis.fetch=globalThis.originalFetch");
-  check(await evaluate(`(() => {
+  await evaluate(`(() => {
     const set = (name, value) => document.querySelector('[data-field='+name+']').value=value;
     set('name','Browser test'); set('endpoint',location.origin+'/v1/chat/completions');
     set('model','test'); set('key','secret-never-persisted');
     document.querySelector('[data-field=connection-form]').requestSubmit();
-    return document.querySelector('dialog[open] [data-field=status]').textContent.includes('Connection saved');
-  })()`), "connection could not be saved");
+  })()`);
+  // Native credential saves are asynchronous and must finish before success is reported.
+  await until("document.querySelector('dialog[open] [data-field=status]').textContent.includes('Connection saved')");
   check(await evaluate("!JSON.stringify(localStorage).includes('secret-never-persisted')"), "key persisted");
   await evaluate("document.querySelector('[data-field=test]').click()");
   await until("document.querySelector('dialog[open] [data-field=status]').textContent.includes('valid response')");
@@ -895,6 +897,7 @@ try {
     await rpc("Emulation.clearDeviceMetricsOverride");
   });
   process.stdout.write("Persona palette, prompt replacement, events, SVG validation, JSON roundtrip and mobile layout passed.\n");
+  await testNativeCredentialRestart(source => evaluate(source, true));
   await testPersonaSpeech(source => evaluate(source, true), async () => {
     const image = await rpc("Page.captureScreenshot", {format: "png"});
     await writeFile(config.screenshot.replace(".png", "-persona-speech.png"), Buffer.from(String(image["data"]), "base64"));

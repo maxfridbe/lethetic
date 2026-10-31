@@ -131,3 +131,9 @@ mixed content. The server hostname must resolve and be reachable from that devic
 Lethetic accepts both HTTP and HTTPS, omits browser cookies, and rejects redirects.
 HTTP is unencrypted, including any API key and text sent to that endpoint. Keyless servers work too: leaving the key empty omits authentication.
 API keys stay in UI memory and are never exported with the persona.
+
+Android native playback accepts streamed PCM WAV with `0xffffffff` for an unknown
+data length, as well as ordinary WAV files with a declared size. End-of-stream
+completes an unknown-length recording only at a complete audio frame; the cached
+WAV is rewritten with its actual size for downloading. An ordinary WAV that ends
+before its declared size remains an error.

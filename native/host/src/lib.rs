@@ -1,4 +1,6 @@
 mod android_media;
+#[cfg(target_os = "android")]
+mod android_speech_http;
 mod dictation;
 mod download;
 mod download_buffer;

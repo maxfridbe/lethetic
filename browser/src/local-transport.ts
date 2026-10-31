@@ -7,7 +7,7 @@ import { ModelLimitState, effectiveLimits } from "./model-limits.js";
 import { DEFAULT_TURN_LIMITS, parseTurnLimits, LOOP_MODES, parseLoopMode } from "./turn-limits.js";
 import type { TurnLimits } from "./turn-limits.js";
 import { RelayKeys, relayEndpoint, relayToken } from "./network-route.js";
-import { connectionHealthIdentity, type ConnectionHealth, connectionMetadata } from "./connection.js";
+import { connectionHealthIdentity, type ConnectionHealth, connectionMetadata, restoreConnectionKeys } from "./connection.js";
 import type { DotnetRelay } from "./network-route.js";
 import { summarizeContext } from "./compaction.js";
 import { WFE_PROTOCOL_SCHEMA_SHA256, WFE_PROTOCOL_VERSION } from "../../web/src/generated/contracts.js";
@@ -719,7 +719,15 @@ if (!fileRun.Success) throw new Exception(fileRun.Error?.Message ?? $"Program fa
           const candidates = this.options.connections.map((item, index) => ({item,index})).filter(({item}) => matches(item));
           if (candidates.length === 1) index = candidates[0]!.index;
         }
-        if (index < 0) { index = this.options.connections.length; this.options.connections.push(session.connection); }
+        if (index < 0) {
+          index = this.options.connections.length;
+          // Session imports/recovery may reconstruct a connection after the preferences
+          // list was loaded. Apply the same endpoint-bound vault lookup as initial boot.
+          const restored = this.options.credentialStorage
+            ? restoreConnectionKeys(this.options.credentialStorage, [session.connection])[0]!
+            : session.connection;
+          this.options.connections.push(restored);
+        }
         this.selected = index;
       }
       this.options.onSessionChanged?.(session.id);

@@ -65,7 +65,8 @@ with a device-bound Android Keystore key** and restored before the UI initialize
 They survive normal app restarts and upgrades, but not uninstalling or clearing
 app data; they are excluded from backups. Browser/desktop voice keys remain in
 memory until reload. Keys never enter session databases, debug reports or exports. A saved key is
-shown as present, and an empty key field keeps it. **Clear key** removes it. Keys
+shown as present (including a “Saved key present” placeholder), and an empty key
+field keeps it. Android verifies encrypted readback before confirming a save. **Clear key** removes it. Keys
 are scoped to the persona, API style and exact endpoint; changing an endpoint never
 reuses another endpoint's key. Keyless local speech servers are supported.
 
@@ -79,7 +80,7 @@ browser-only and remote web pages still obey browser CORS and mixed-content rule
 Redirects are rejected so authentication is never forwarded to another endpoint.
 This works in the shared browser, native-app WebView and remote-control UI; the
 request is initiated by the UI, not by a Python/.NET runspace. The executable
-uses its authenticated native bridge (Android media service / desktop Rust HTTP); web pages use fetch. Runspace network
+uses its authenticated native bridge (Rust HTTP, with Android playback owned by its media service); web pages use fetch. Runspace network
 permissions do not grant or control speech access. Clicking Play sends the response
 to the chosen provider and may incur its normal charges. JSON file links, base64,
 and MP3 responses are not supported. See [Speech endpoint compatibility](docs/speech-endpoints.md)

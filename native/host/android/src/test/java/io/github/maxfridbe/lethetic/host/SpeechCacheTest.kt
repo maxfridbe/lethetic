@@ -56,6 +56,20 @@ class SpeechCacheTest {
         assertArrayEquals(pcm, result.toByteArray())
         try { SpeechCache.readAudio(ByteArrayInputStream(wav.dropLast(1).toByteArray()), true, {}) { _,_,_ -> }; fail("Truncated WAV accepted") } catch (_: IllegalArgumentException) { }
     }
+    @Test fun unknownLengthStreamingWavFinishesAtEofAndCachesAStandardWav() {
+        val dir = Files.createTempDirectory("streaming-wav").toFile()
+        try {
+            val samples = byteArrayOf(0, -128, -1, 127, 0, 0)
+            val header = SpeechCache.wavHeader(AudioFormat(), samples.size)
+            val view = java.nio.ByteBuffer.wrap(header).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            view.putInt(4, -1); view.putInt(40, -1)
+            val cache = SpeechCache(dir); var count = 0
+            val file = cache.stream(plan(true), { ByteArrayInputStream(header + samples) }, {}) { _, _, size -> count += size }
+            assertEquals(samples.size, count)
+            assertArrayEquals(SpeechCache.wavHeader(AudioFormat(), samples.size) + samples, file.readBytes())
+            try { SpeechCache.readAudio(ByteArrayInputStream(header + byteArrayOf(1)), true, {}) { _,_,_ -> }; fail("Partial streamed sample accepted") } catch (_: IllegalArgumentException) { }
+        } finally { dir.deleteRecursively() }
+    }
     @Test fun requestValidationRejectsUnsafeUrlsHeadersAndUnboundedWork() {
         fun request(url: String, headers: JSONObject = JSONObject()) = JSONObject().put("id", "turn").put("format", "pcm")
             .put("requests", org.json.JSONArray().put(JSONObject().put("url", url).put("body", "{}").put("headers", headers)))

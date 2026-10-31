@@ -194,12 +194,18 @@ Existing keys still in the current tab migrate automatically; keys already lost
 by an older build must be entered once and saved. Leave a key field blank to keep
 its saved value. Clearing a key removes it from the vault. Normal signed upgrades
 preserve the vault; uninstalling or clearing app data removes it. Session exports
-and persona JSON never contain these keys. Storage/decryption failures are shown
-rather than silently replacing the vault or falling back to plaintext.
+and persona JSON never contain these keys. Connections rebuilt from saved sessions also look up their matching vault key,
+even when absent from the preferences list. Each save is verified by reopening
+the encrypted vault before success is shown.
+Storage/decryption failures are shown rather than silently replacing the vault
+or falling back to plaintext. A blank voice-key field can still have a saved key:
+the “Saved key present” placeholder and status explicitly identify that state.
 
 **Play** beside a response starts native Android media playback. Its own foreground
 media service fetches, caches and plays audio independently of the WebView, so
-switching apps or locking the screen does not stop it. The media notification and
+switching apps or locking the screen does not stop it. HTTP uses the same Rust
+client as desktop speech, including user-selected LAN HTTP endpoints; the
+Android WebView’s global network policy remains restricted. The media notification and
 lock-screen controls provide Pause, Play and Stop. Audio focus loss and unplugging
 headphones pause playback. Force-stop or OS process termination still ends playback;
 it does not restart unexpectedly.

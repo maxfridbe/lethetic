@@ -272,3 +272,25 @@ await test("older sessions follow an edited named connection without creating ke
     assert.equal(isolated.state.session.session_id,id);isolated.dispose();
   }
 });
+
+await test("session-restored connections recover their native credential even without the preferences list", async () => {
+  const { saveConnectionKeys } = await import("../src/connection.js");
+  const records = new Map<string, string>(), keys = new Map<string, string>();
+  const memory = (data: Map<string, string>) => ({getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); }} as Storage);
+  const storage = memory(records), credentialStorage = memory(keys);
+  const connection = {name: "Restored account", provider: "openai" as const, endpoint: "https://example.com/v1/chat/completions", model: "test", apiKey: "persisted-native-key"};
+  saveConnectionKeys(credentialStorage, [connection]);
+  const events = {socketOpened(){},authenticationEpochChanged(){},transportStatus(){},protocolFault(){},serverMessage(){},commandResponse(){}};
+  const first = new LocalTransport(events, {connections: [connection], storage, credentialStorage});
+  first.start(); const id = first.state.session.session_id; first.dispose();
+  const reopened = new LocalTransport(events, {connections: [], storage, credentialStorage, initialSession: id});
+  try {
+    reopened.start(); assert.equal(reopened.state.session.session_id, id);
+    assert.equal(reopened.connection?.apiKey, "persisted-native-key");
+    assert.ok(!JSON.stringify([...records]).includes("persisted-native-key"));
+  } finally { reopened.dispose(); }
+  saveConnectionKeys(credentialStorage, [{...connection, endpoint: "https://different.example/v1/chat/completions"}]);
+  const changedEndpoint = new LocalTransport(events, {connections: [], storage, credentialStorage, initialSession: id});
+  try { changedEndpoint.start(); assert.equal(changedEndpoint.connection?.apiKey, undefined); }
+  finally { changedEndpoint.dispose(); }
+});

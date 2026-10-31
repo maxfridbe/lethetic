@@ -99,6 +99,7 @@ internal class SpeechCache(private val directory: File, private val limit: Long 
         }
         fun readAudio(input: InputStream, wav: Boolean, check: () -> Unit, sink: (AudioFormat, ByteArray, Int) -> Unit) {
             var format = AudioFormat(); var bits = 16; var codec = 1; var remaining = Long.MAX_VALUE
+            var streamingWav = false
             if (wav) {
                 val header = exact(input, 12)
                 require(String(header, 0, 4, Charsets.US_ASCII) == "RIFF" && String(header, 8, 4, Charsets.US_ASCII) == "WAVE") { "Endpoint must return a WAV file" }
@@ -106,7 +107,12 @@ internal class SpeechCache(private val directory: File, private val limit: Long 
                 while (true) {
                     check(); val chunk = exact(input, 8); val kind = String(chunk, 0, 4, Charsets.US_ASCII)
                     val size = ByteBuffer.wrap(chunk, 4, 4).order(ByteOrder.LITTLE_ENDIAN).int.toLong() and 0xffffffffL
-                    if (kind == "data") { require(found) { "WAV format header is missing" }; remaining = size; break }
+                    if (kind == "data") {
+                        require(found) { "WAV format header is missing" }
+                        streamingWav = size == 0xffffffffL
+                        remaining = if (streamingWav) Long.MAX_VALUE else size
+                        break
+                    }
                     skipped += size + 8; require(skipped <= 1024 * 1024) { "WAV metadata is too large" }
                     if (kind == "fmt ") {
                         require(size in 16..4096); val fmt = ByteBuffer.wrap(exact(input, size.toInt())).order(ByteOrder.LITTLE_ENDIAN)
@@ -123,7 +129,7 @@ internal class SpeechCache(private val directory: File, private val limit: Long 
             val bytes = ByteArray(8192 + frame); var carry = 0
             while (remaining > 0) {
                 check(); val n = input.read(bytes, carry, minOf(8192L, remaining).toInt())
-                if (n < 0) { require(!wav) { "Truncated WAV audio" }; break }
+                if (n < 0) { require(!wav || streamingWav) { "Truncated WAV audio" }; break }
                 if (n == 0) continue
                 remaining -= n; val length = n + carry; val usable = length - length % frame
                 val pcm = ByteArray(usable / sampleBytes * 2); val source = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN); val out = ByteBuffer.wrap(pcm).order(ByteOrder.LITTLE_ENDIAN)

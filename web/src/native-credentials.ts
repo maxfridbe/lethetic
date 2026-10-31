@@ -12,7 +12,7 @@ export async function androidCommand<T>(command: string, args: Record<string, un
 }
 const ALLOWED = ["lethetic.connection-keys.v1", "lethetic.relay-keys.v1", "lethetic.speech-keys.v1"];
 let current: CredentialStorage | undefined;
-export function nativeCredentials(): CredentialStorage | undefined { return current; }
+export function nativeCredentials(): CredentialStorage | undefined { return androidHost() ? current : undefined; }
 export class CredentialStorage implements Storage {
   #values: Map<string, string>;
   #pending: Promise<void> = Promise.resolve();
@@ -38,7 +38,11 @@ export class CredentialStorage implements Storage {
 }
 export async function openNativeCredentials(previous?: Storage): Promise<CredentialStorage> {
   const values = await androidCommand<Record<string, string>>("load_credentials");
-  const store = new CredentialStorage(values, (key, value) => androidCommand("save_credentials", {key, value}));
+  const store = new CredentialStorage(values, async (key, value) => {
+    await androidCommand("save_credentials", {key, value});
+    const restored = await androidCommand<Record<string, string>>("load_credentials");
+    if ((restored[key] ?? null) !== value) throw Error("Native credential save could not be verified");
+  });
   // Migrate only keys still present in the current tab, then remove the unencrypted copies.
   for (const key of ALLOWED) {
     const value = previous?.getItem(key);

@@ -7,8 +7,6 @@ import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.*
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
 
@@ -30,13 +28,14 @@ class SpeechService : Service() {
     private class Playback(val plan: SpeechPlan) {
         @Volatile var cancelled = false
         @Volatile var paused = false
-        @Volatile var connection: HttpURLConnection? = null
+        @Volatile var connection: java.io.InputStream? = null
         @Volatile var track: AudioTrack? = null
         var frames = 0L
         fun check() { if (cancelled) throw InterruptedException() }
         fun waitPlaying() { check(); while (paused) { Thread.sleep(100); check() } }
-        fun cancel() { cancelled = true; connection?.disconnect(); track?.let { runCatching { it.pause(); it.flush() } } }
+        fun cancel() { cancelled = true; runCatching { connection?.close() }; track?.let { runCatching { it.pause(); it.flush() } } }
     }
+    internal var http: (SpeechCall, Boolean) -> java.io.InputStream = { call, wav -> NativeSpeechInputStream(call, wav) }
     private val handler = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private var current: Playback? = null
@@ -107,26 +106,20 @@ class SpeechService : Service() {
     }
     private fun play(playback: Playback) {
         var failure = ""
+        var stage = "cache access"
         try {
             val cache = SpeechCache(java.io.File(cacheDir, "audio"))
             cache.stream(playback.plan, { call ->
                 playback.waitPlaying()
-                val connection = URL(call.url).openConnection() as HttpURLConnection
-                playback.connection = connection
-                connection.instanceFollowRedirects = false; connection.connectTimeout = 60000; connection.readTimeout = 60000
-                connection.requestMethod = "POST"; connection.doOutput = true; connection.useCaches = false
-                call.headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
-                val body = call.body.toByteArray(Charsets.UTF_8); connection.setFixedLengthStreamingMode(body.size)
-                connection.outputStream.use { it.write(body) }; playback.check()
-                require(connection.responseCode in 200..299) { "Speech endpoint returned HTTP ${connection.responseCode}. Check voice settings and credentials." }
-                val mime = connection.contentType?.substringBefore(';')?.trim()?.lowercase().orEmpty()
-                val accepted = if (playback.plan.wav) setOf("audio/wav", "audio/wave", "audio/x-wav", "audio/vnd.wave") else setOf("audio/pcm", "audio/x-pcm", "audio/raw")
-                require(mime.isEmpty() || mime == "application/octet-stream" || mime in accepted) { "Speech endpoint returned the wrong audio format. Check PCM / WAV voice settings." }
-                object : java.io.FilterInputStream(connection.inputStream) {
-                    override fun close() { try { super.close() } finally { connection.disconnect(); if (playback.connection === connection) playback.connection = null } }
-                }
+                stage = "endpoint connection"
+                val input = http(call, playback.plan.wav)
+                playback.connection = input
+                playback.check()
+                stage = "stream decoding"
+                input
             }, { playback.waitPlaying() }) { format, bytes, length ->
                 playback.waitPlaying()
+                stage = "audio output"
                 val track = playback.track ?: AudioTrack.Builder().setAudioAttributes(attributes())
                     .setAudioFormat(android.media.AudioFormat.Builder().setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
                         .setSampleRate(format.rate).setChannelMask(if (format.channels == 1) android.media.AudioFormat.CHANNEL_OUT_MONO else android.media.AudioFormat.CHANNEL_OUT_STEREO).build())
@@ -138,6 +131,7 @@ class SpeechService : Service() {
                     require(n > 0) { "Android audio output failed" }; offset += n
                 }
                 playback.frames += length / (format.channels * 2)
+                stage = "stream decoding"
             }
             handler.post { if (current === playback) publish(playback, true) }
             while ((playback.track?.playbackHeadPosition?.toLong()?.and(0xffffffffL) ?: 0) < playback.frames) { playback.waitPlaying(); Thread.sleep(30) }
@@ -145,11 +139,10 @@ class SpeechService : Service() {
             // Do not expose provider bodies, URLs or header values in diagnostics.
             failure = when (error) {
                 is IllegalArgumentException -> error.message ?: "Unsupported speech audio"
-                is java.net.SocketTimeoutException -> "Speech endpoint did not respond for 60 seconds. Retry playback."
-                else -> "Speech playback failed. Check endpoint connectivity and audio settings."
+                else -> SpeechFailure.describe(error, stage)
             }
         } finally {
-            playback.connection?.disconnect(); playback.track?.let { runCatching { it.stop(); it.release() } }; playback.track = null
+            runCatching { playback.connection?.close() }; playback.track?.let { runCatching { it.stop(); it.release() } }; playback.track = null
             handler.post { if (current === playback) finish(playback, if (playback.cancelled) "" else failure) }
         }
     }

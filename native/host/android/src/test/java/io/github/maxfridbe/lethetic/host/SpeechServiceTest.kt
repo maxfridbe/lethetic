@@ -40,6 +40,12 @@ class SpeechServiceTest {
         val cache = SpeechCache(java.io.File(app.cacheDir, "audio"))
         cache.file(plan.key).delete()
         val controller = Robolectric.buildService(SpeechService::class.java, Intent(app, SpeechService::class.java).setAction("start")).create()
+        controller.get().http = { call, _ ->
+            val connection = java.net.URL(call.url).openConnection() as java.net.HttpURLConnection
+            connection.requestMethod = "POST"; connection.doOutput = true
+            connection.outputStream.use { it.write(call.body.toByteArray()) }
+            connection.inputStream
+        }
         fun until(condition: () -> Boolean) {
             repeat(200) { shadowOf(Looper.getMainLooper()).idle(); if (condition()) return; Thread.sleep(10) }
             fail("Native audio condition timed out: ${SpeechService.status()}")

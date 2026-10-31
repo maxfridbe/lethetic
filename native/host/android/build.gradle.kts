@@ -5,7 +5,7 @@ plugins {
 android {
     namespace = "io.github.maxfridbe.lethetic.host"
     compileSdk = 36
-    defaultConfig { minSdk = 26 }
+    defaultConfig { minSdk = 26; consumerProguardFiles("consumer-rules.pro") }
     testOptions { unitTests.isIncludeAndroidResources = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
