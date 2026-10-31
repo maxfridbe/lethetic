@@ -1,4 +1,5 @@
 import { fitViewport } from "./viewport.js";
+import { androidHost, openNativeCredentials } from "../../web/src/native-credentials.js";
 import type { mountLethetic } from "./embed.js";
 
 const root = document.getElementById("browser-root");
@@ -28,6 +29,7 @@ async function start(): Promise<void> {
     if (!view) {
       report("Loading application…");
       const { mountLethetic, openBrowserStorage } = await import("./embed.js");
+      if (androidHost()) { report("Unlocking saved endpoint credentials…"); credentialStorage = await openNativeCredentials(credentialStorage); }
       report("Loading saved sessions…");
       const persistent = storage ? await openBrowserStorage(storage) : undefined;
       view = mountLethetic(root!, {storage: persistent, credentialStorage, sessionRouting: true,

@@ -28,6 +28,7 @@ import java.util.concurrent.Executors
 @TauriPlugin(permissions = [Permission(strings = [Manifest.permission.RECORD_AUDIO], alias = "microphone")])
 class HostPlugin(private val activity: Activity) : Plugin(activity) {
     private external fun setDictationForegroundNative(active: Boolean)
+    private val vault by lazy { CredentialVault.open(activity) }
     private val io = Executors.newSingleThreadExecutor()
     private var directory: TreeWorkspace? = null
     private var webView: WebView? = null
@@ -38,6 +39,37 @@ class HostPlugin(private val activity: Activity) : Plugin(activity) {
         this.webView = webView
         setDictationForegroundNative((activity as? LifecycleOwner)?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true)
         activity.runOnUiThread { SafeWebViewInsets.install(activity) }
+    }
+    @Command fun loadCredentials(invoke: Invoke) {
+        task(invoke) { try { JSObject(vault.read().toString()) } catch (_: Exception) { error("Could not unlock saved credentials; existing data was kept") } }
+    }
+    @Command fun saveCredentials(invoke: Invoke) {
+        task(invoke) {
+            val args = invoke.getArgs()
+            try { vault.write(args.getString("key"), if (args.isNull("value")) null else args.getString("value")) }
+            catch (_: Exception) { error("Could not save credentials securely; retry Save") }
+            JSObject()
+        }
+    }
+    @Command fun startResponseAudio(invoke: Invoke) {
+        try { SpeechService.start(activity, SpeechPlan.parse(invoke.getArgs())); invoke.resolve() }
+        catch (_: Exception) { invoke.reject("Could not start Android audio. Check voice settings and retry with the app open.") }
+    }
+    @Command fun responseAudioStatus(invoke: Invoke) { invoke.resolve(JSObject(SpeechService.status().toString())) }
+    @Command fun stopResponseAudio(invoke: Invoke) { SpeechService.stop(activity); invoke.resolve() }
+    @Command fun saveResponseAudio(invoke: Invoke) {
+        try {
+            val key = invoke.getArgs().getString("key")
+            SpeechCache(java.io.File(activity.cacheDir, "audio")).ready(key)
+            startActivityForResult(invoke, SaveDocument.intent("lethetic-response.wav", "audio/wav"), "audioDownloadResult")
+        } catch (_: Exception) { invoke.reject("Play the complete response first to download its audio") }
+    }
+    @ActivityCallback fun audioDownloadResult(invoke: Invoke, result: ActivityResult) {
+        task(invoke) {
+            val source = SpeechCache(java.io.File(activity.cacheDir, "audio")).ready(invoke.getArgs().getString("key"))
+            val saved = SaveDocument.complete(result.resultCode, result.data?.data, source) { uri -> activity.contentResolver.openOutputStream(uri, "wt") }
+            JSObject().apply { put("saved", saved) }
+        }
     }
     @Command fun checkMicrophone(invoke: Invoke) {
         invoke.resolve(JSObject().put("granted", activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) as JSObject)

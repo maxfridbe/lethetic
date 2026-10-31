@@ -31,7 +31,7 @@ export interface EmbedOptions {
   connections?: Connection[];
   /** Optional device-local persistence for connections, sessions and files. */
   storage?: Storage;
-  /** Optional tab-scoped key storage; use sessionStorage to survive reloads. */
+  /** Optional credential storage; sessionStorage in browsers, encrypted native storage on Android. */
   credentialStorage?: Storage;
   tools?: Tool[];
   systemPrompt?: string;

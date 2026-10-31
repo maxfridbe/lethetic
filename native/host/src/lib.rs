@@ -1,3 +1,4 @@
+mod android_media;
 mod dictation;
 mod download;
 mod download_buffer;
@@ -242,6 +243,9 @@ async fn set_working(
 pub fn init(token: String) -> tauri::plugin::TauriPlugin<tauri::Wry> {
     let builder = tauri::plugin::Builder::new("lethetic-host")
         .invoke_handler(tauri::generate_handler![
+            android_media::load_credentials,
+            android_media::save_credentials,
+            android_media::response_audio,
             dictation::prepare_dictation,
             dictation::dictation_status,
             dictation::start_dictation,

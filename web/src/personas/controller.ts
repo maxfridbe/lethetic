@@ -47,7 +47,7 @@ export class PersonaController {
     if (!live || session !== this.#session || snapshot?.activity.kind !== "processing") {
       if (this.#repeat) { this.effects.stopAnimation(); this.#pending = null; this.#repeat = false; }
     }
-    if (session !== this.#session) this.speech.stop();
+    if (this.#session !== null && session !== this.#session) this.speech.stop();
     this.#session = session;
     const event = this.events.observe(snapshot, live);
     if (event) this.emit(event);
@@ -68,7 +68,7 @@ export class PersonaController {
     if (this.#renderedAvatar !== p.avatar) { this.#renderedAvatar = p.avatar; this.#avatarUrl = avatarImageUrl(p.avatar); }
     return h("div.persona-companion", {attrs: {"aria-hidden": "true", "data-persona": p.id}}, [h("img#persona-avatar", {attrs: {src: this.#avatarUrl, alt: "", draggable: "false"}})]);
   }
-  pause(): void { this.speech.stop(); this.#generation++; this.effects.stop(); this.#pending = null; this.#repeat = false; this.previewEffects.stop(); this.events.reset(); }
+  pause(): void { this.speech.background(); this.#generation++; this.effects.stop(); this.#pending = null; this.#repeat = false; this.previewEffects.stop(); this.events.reset(); }
   dispose(): void { this.#disposed = true; this.pause(); this.effects.dispose(); this.previewEffects.dispose(); this.speech.dispose(); this.#dialog?.remove(); }
   importDialog(): void { this.show(); this.#field<HTMLInputElement>("file").click(); }
   exportCurrent(): void { this.show(); this.#field("export").click(); }

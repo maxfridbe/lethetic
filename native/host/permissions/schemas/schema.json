@@ -427,6 +427,18 @@
           "markdownDescription": "Denies the grant_network command without any pre-configured scope."
         },
         {
+          "description": "Enables the load_credentials command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-load-credentials",
+          "markdownDescription": "Enables the load_credentials command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the load_credentials command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-load-credentials",
+          "markdownDescription": "Denies the load_credentials command without any pre-configured scope."
+        },
+        {
           "description": "Enables the network_diagnostics command without any pre-configured scope.",
           "type": "string",
           "const": "allow-network-diagnostics",
@@ -499,6 +511,18 @@
           "markdownDescription": "Denies the reply_site_request command without any pre-configured scope."
         },
         {
+          "description": "Enables the response_audio command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-response-audio",
+          "markdownDescription": "Enables the response_audio command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the response_audio command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-response-audio",
+          "markdownDescription": "Denies the response_audio command without any pre-configured scope."
+        },
+        {
           "description": "Enables the revoke_directory command without any pre-configured scope.",
           "type": "string",
           "const": "allow-revoke-directory",
@@ -521,6 +545,18 @@
           "type": "string",
           "const": "deny-revoke-network",
           "markdownDescription": "Denies the revoke_network command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save_credentials command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-credentials",
+          "markdownDescription": "Enables the save_credentials command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_credentials command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-credentials",
+          "markdownDescription": "Denies the save_credentials command without any pre-configured scope."
         },
         {
           "description": "Enables the set_working command without any pre-configured scope.",

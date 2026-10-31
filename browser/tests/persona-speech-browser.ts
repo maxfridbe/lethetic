@@ -43,6 +43,7 @@ export async function testPersonaSpeech(evaluate: (source: string) => Promise<un
       const input=root.querySelector('#composer-input');input.value='Say hello.';input.dispatchEvent(new Event('input',{bubbles:true}));root.querySelector('form.composer').requestSubmit();
       await wait(()=>root.querySelector('.activity-idle') && root.querySelector('[aria-label="Play response"]'));
       assert(!root.querySelector('.chat-block-user [data-persona-speech]'),'User text got speech button');
+      assert(root.querySelector('[aria-label="Download audio"]').disabled,'Uncreated audio was downloadable');
       root.querySelector('[aria-label="Play response"]').click();
       await wait(()=>sources.length>0);
       assert(held && !signal.aborted,'Speech waited for EOF or aborted early');
@@ -96,6 +97,19 @@ export async function testPersonaSpeech(evaluate: (source: string) => Promise<un
         if(oldBridge===undefined)delete globalThis.__TAURI__;else globalThis.__TAURI__=oldBridge;
         speech('endpoint').value=endpoint;speech('save').click();
       }
+      close();count=requests.length;root.querySelector('[aria-label="Play response"]').click();await wait(()=>requests.length===count+1);
+      held.enqueue(wav.subarray(12));held.close();held=null;
+      await wait(()=>!root.querySelector('[aria-label="Download audio"]').disabled);
+      let downloaded;const originalObjectUrl=URL.createObjectURL,originalAnchorClick=HTMLAnchorElement.prototype.click;
+      URL.createObjectURL=blob=>{downloaded=blob;return originalObjectUrl(blob)};
+      HTMLAnchorElement.prototype.click=function(){};
+      try {
+        count=requests.length;root.querySelector('[aria-label="Download audio"]').click();await wait(()=>!!downloaded);
+        assert(downloaded.type==='audio/wav' && downloaded.size>44,'Download did not contain cached WAV audio');
+        assert(requests.length===count,'Download requested another synthesis');
+        const header=new Uint8Array(await downloaded.slice(0,44).arrayBuffer());assert(new TextDecoder().decode(header.subarray(0,4))==='RIFF','Missing WAV header');
+      } finally {URL.createObjectURL=originalObjectUrl;HTMLAnchorElement.prototype.click=originalAnchorClick;}
+      await wait(()=>!!root.querySelector('[aria-label="Play response"]'));open();
       badWav=true;speech('test').click();await wait(()=>speech('status').textContent.includes('RIFF/WAVE'));badWav=false;
       field('enabled').checked=false;field('enabled').dispatchEvent(new Event('change'));close();
       assert(!root.querySelector('[data-persona-speech]'),'Disabled personas still have Play buttons');

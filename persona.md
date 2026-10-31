@@ -39,18 +39,32 @@ clicked, not later additions. Voices are AI-generated.
 
 In **PCM** mode, audio starts as bytes arrive, before synthesis finishes.
 For an OpenAI-compatible server that returns files, choose **Audio format → WAV**;
-playback starts after each complete file downloads and decodes. **Stop** cancels the
+browser/desktop playback starts after each complete file downloads and decodes.
+Android streams PCM WAV samples as they arrive. **Stop** cancels the
 request and queued audio immediately; starting another response replaces playback.
 You can also stop playback from the Personas voice panel when a response has
 scrolled out of view. Switching personas/sessions, disabling persona features, or
-unmounting the UI stops playback. Long responses are split into requests of at most
+unmounting the browser/desktop UI stops playback. Android audio continues when
+the app is backgrounded or its WebView is recreated; use Android media controls
+to pause, resume or stop it. Phone calls and headphone disconnection pause audio. Long responses are split into requests of at most
 4,000 characters without dropping text. PCM playback maintains a small audio queue;
 WAV mode finishes each recording before downloading the next file.
 A request with no network progress for 60 seconds stops with a retryable error.
 
-Voice configuration is included in persona JSON, but **API keys stay only in
-memory in the current UI instance**. They are not written to localStorage, session
-databases, debug reports, or exports; re-enter them after a reload. A saved key is
+**Download audio**, next to Play, saves a WAV recording once the response has
+finished downloading. It uses cached audio without another provider request.
+Browser/desktop caches live in memory (64 MiB per recording, 128 MiB total).
+Android writes a private disk cache as audio streams (128 MiB per recording,
+512 MiB total, oldest recordings evicted first). Replaying unchanged text with
+the same endpoint, voice and credentials reuses that cache. Interrupted downloads
+are discarded; completed recordings survive app restarts but Android can reclaim
+cache storage. Cached audio is not included in session or debugging exports.
+
+Voice configuration is included in persona JSON. **Android API keys are encrypted
+with a device-bound Android Keystore key** and restored before the UI initializes.
+They survive normal app restarts and upgrades, but not uninstalling or clearing
+app data; they are excluded from backups. Browser/desktop voice keys remain in
+memory until reload. Keys never enter session databases, debug reports or exports. A saved key is
 shown as present, and an empty key field keeps it. **Clear key** removes it. Keys
 are scoped to the persona, API style and exact endpoint; changing an endpoint never
 reuses another endpoint's key. Keyless local speech servers are supported.
@@ -58,13 +72,14 @@ reuses another endpoint's key. Keyless local speech servers are supported.
 The endpoint must allow browser CORS requests. PCM mode expects **raw signed
 16-bit, little-endian, mono PCM at 24 kHz**; WAV mode expects a binary RIFF/WAVE
 file in a browser-decodable codec (maximum 64 MiB per request). WAV headers supply
-the sample rate and channel count. HTTP and HTTPS endpoints are accepted.
+the sample rate and channel count. Android supports mono/stereo PCM WAV
+(8/16/24/32-bit integer or 32-bit float, 8–192 kHz), normalized to 16-bit PCM. HTTP and HTTPS endpoints are accepted.
 Executable apps use native HTTP for both WAV and PCM, including LAN addresses;
 browser-only and remote web pages still obey browser CORS and mixed-content rules.
 Redirects are rejected so authentication is never forwarded to another endpoint.
 This works in the shared browser, native-app WebView and remote-control UI; the
 request is initiated by the UI, not by a Python/.NET runspace. The executable
-uses its authenticated native bridge and Rust HTTP client; web pages use fetch. Runspace network
+uses its authenticated native bridge (Android media service / desktop Rust HTTP); web pages use fetch. Runspace network
 permissions do not grant or control speech access. Clicking Play sends the response
 to the chosen provider and may incur its normal charges. JSON file links, base64,
 and MP3 responses are not supported. See [Speech endpoint compatibility](docs/speech-endpoints.md)

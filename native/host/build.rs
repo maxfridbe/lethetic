@@ -1,5 +1,8 @@
 fn main() {
     tauri_plugin::Builder::new(&[
+        "load_credentials",
+        "save_credentials",
+        "response_audio",
         "prepare_dictation",
         "dictation_status",
         "start_dictation",

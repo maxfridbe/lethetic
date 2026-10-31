@@ -1,3 +1,4 @@
+import { androidHost, flushCredentials } from "../../web/src/native-credentials.js";
 import { connectionLimits, connectionLimitsHtml } from "./connection-limits.js";
 import { nativeAvailable } from "./native-host.js";
 import { buttonIconHtml } from "../../web/src/icons.js";
@@ -75,7 +76,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     </div>
     ${nativeAvailable() ? '<p class="browser-note">Direct network uses the app’s HTTP client; Tor only uses its embedded Rust Tor client. No proxy setup or destination CORS required. Mode and permission changes keep chat and files; code variables restart.</p>' : ""}
     </fieldset>
-    <p class="connection-hint">${credentialStorage ? "Default key storage survives refresh, but closing the tab or restarting the app can clear it. Re-enter the key and Save & use to resume the same session." : "Keys stay in memory."} Switching connections keeps this session’s history, files, and code variables.</p>
+    <p class="connection-hint">${androidHost() ? "Keys are encrypted on this Android device and survive app restarts. They are excluded from session exports." : credentialStorage ? "Default key storage survives refresh, but closing the tab or restarting the app can clear it. Re-enter the key and Save & use to resume the same session." : "Keys stay in memory."} Switching connections keeps this session’s history, files, and code variables.</p>
     <p data-field="status" role="status"></p>`);
   dialog.classList.add("browser-connections");
   const select = (name: string): HTMLSelectElement => field<HTMLSelectElement>(dialog, name);
@@ -216,11 +217,13 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
     button("show-key").setAttribute("aria-label", "Show API key"); button("show-key").innerHTML = buttonIconHtml("preview") + "Show";
     limitsEditor.fill(); updateEditor(); renderCards(); fillRoute();
   };
-  const persist = (): void => {
+  const persist = async (): Promise<boolean> => {
     try {
       if (credentialStorage) saveConnectionKeys(credentialStorage, transport.options.connections);
       if (storage) saveConnections(storage, transport.options.connections);
-    } catch { status("Changes are active in memory. Browser storage is unavailable; they may not survive refresh."); }
+      await flushCredentials(credentialStorage);
+      return true;
+    } catch (error) { status(androidHost() ? errorMessage(error) : "Changes are active in memory. Browser storage is unavailable; they may not survive refresh."); return false; }
   };
   const activate = (index: number): void => {
     try {
@@ -230,7 +233,7 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
       status(`Now using ${transport.connection?.name} for this session. History and files are unchanged.`);
     } catch (error) { status(errorMessage(error)); updateEditor(); renderCards(); }
   };
-  const save = (use: boolean): void => {
+  const save = async (use: boolean): Promise<void> => {
     const form = field<HTMLFormElement>(dialog, "connection-form");
     updateEditor(); // Revalidate programmatic/autofill changes even without an input event.
     if (!form.reportValidity()) return;
@@ -243,7 +246,8 @@ export function createConnectionsDialog(transport: LocalTransport, storage?: Sto
       transport.setConnections(connections, use || !transport.connection ? index : transport.selected); selected = index;
       fill();
       if (transport.connection && selected === transport.selected) checkConnection(transport.connection);
-      status(`Connection saved. ${transport.connection?.name ?? "No connection"} is active for this session.`); persist();
+      status("Saving connection…");
+      if (await persist()) status(`Connection saved. ${transport.connection?.name ?? "No connection"} is active for this session.`);
     } catch (error) { status(errorMessage(error)); }
   };
   field(dialog, "connection-form").addEventListener("submit", event => { event.preventDefault(); save(false); });

@@ -186,11 +186,38 @@ The service has the same 30-minute lease ceiling as background turns; device sle
 or process termination can interrupt hosting. Browser-only builds cannot bind a
 real TCP port and keep the existing sandboxed Sites preview.
 
+## Android credentials and response audio
+
+Saved connection and persona voice API keys persist between Android runs. They
+are encrypted using Android Keystore in app-private, backup-excluded storage.
+Existing keys still in the current tab migrate automatically; keys already lost
+by an older build must be entered once and saved. Leave a key field blank to keep
+its saved value. Clearing a key removes it from the vault. Normal signed upgrades
+preserve the vault; uninstalling or clearing app data removes it. Session exports
+and persona JSON never contain these keys. Storage/decryption failures are shown
+rather than silently replacing the vault or falling back to plaintext.
+
+**Play** beside a response starts native Android media playback. Its own foreground
+media service fetches, caches and plays audio independently of the WebView, so
+switching apps or locking the screen does not stop it. The media notification and
+lock-screen controls provide Pause, Play and Stop. Audio focus loss and unplugging
+headphones pause playback. Force-stop or OS process termination still ends playback;
+it does not restart unexpectedly.
+
+**Download audio** beside Play saves the completed cached WAV through Android's
+file picker. No second synthesis request is needed. The private audio cache is
+bounded to 128 MiB per response and 512 MiB total, evicting older recordings; it
+contains audio, not endpoint credentials, and is omitted from session/debug exports.
+Android may reclaim cached files. Response audio has its own CPU wake lease while
+playing, released on pause/completion/stop; this is separate from model keep-awake.
+See [persona voice settings](../../persona.md#streaming-voice-playback) for formats
+and endpoint configuration.
+
 ## Background responses
 
-Keep-awake is acquired **only while awaiting or streaming a model response**. It
+For model work, keep-awake is acquired **only while awaiting or streaming a model response**. It
 is released before tool execution, during retry backoff, at idle, on cancellation
-and on error. Closing the app does not leave a background daemon running.
+and on error. Idle model sessions do not leave a background daemon running.
 
 Desktop builds request an OS idle-sleep inhibitor; the display can turn off.
 macOS also disables webview background throttling where supported. Android uses
@@ -218,6 +245,9 @@ including transcript and file effects. If the process disappears, reopening the
 session shows a recovery checkpoint. Review files and explicitly continue;
 Lethetic never automatically replays an uncertain tool call. Variables reset
 when runtimes restart. Debug exports include bounded page lifecycle events.
+
+macOS builds require macOS 11 or later; this also supplies the C++ filesystem
+runtime used by local Whisper dictation.
 
 ## Build without a Node dependency tree
 

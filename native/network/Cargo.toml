@@ -1,6 +1,6 @@
 [package]
 name = "lethetic-network"
-version = "26.1030.2"
+version = "26.1031.1"
 edition = "2024"
 
 [dependencies]

@@ -7,7 +7,7 @@ export interface Connection {
   model: string;
   /** OpenRouter-compatible reasoning control. Omit to keep the model default. */
   thinking?: "enabled" | "disabled";
-  /** Kept out of saved sessions and WASM/Python. The hosted UI retains keys in sessionStorage for this tab. */
+  /** Kept out of saved sessions and WASM/Python. The hosted UI uses sessionStorage; Android uses its encrypted native vault. */
   apiKey?: string;
 }
 

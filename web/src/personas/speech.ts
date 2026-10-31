@@ -1,3 +1,7 @@
+import { androidHost } from "../native-credentials.js";
+import { downloadBlob } from "../download.js";
+import { AndroidSpeech } from "./speech-android.js";
+import { SpeechAudioCache, pcm16 } from "./speech-cache.js";
 import { fetchSpeech } from "./speech-transport.js";
 import type { PersonaSpeech } from "./schema.js";
 
@@ -84,14 +88,35 @@ export class SpeechPlayer {
   errorTarget: string | null = null;
   #request: AbortController | null = null;
   #context: AudioContext | null = null;
-  constructor(readonly changed: () => void) {}
+  #cache = new SpeechAudioCache();
+  #native: AndroidSpeech | undefined;
+  constructor(readonly changed: () => void) {
+    if (androidHost()) this.#native = new AndroidSpeech(() => {
+      if (!this.#native) return;
+      this.active = this.#native.active; this.error = this.#native.error; this.errorTarget = this.#native.errorTarget; this.changed();
+    });
+  }
+  background(): void { if (!this.#native) this.stop(false); }
+  dispose(): void { if (this.#native) this.#native.dispose(); else this.stop(false); }
+  downloadable(id: string): boolean { return this.#native ? this.#native.available(id) : !!this.#cache.get(id); }
+  async download(id: string): Promise<void> {
+    try {
+      if (this.#native) await this.#native.download(id);
+      else { const file = this.#cache.get(id); if (!file) throw Error("Play the complete response first to download its audio."); await downloadBlob(file, "lethetic-response.wav"); }
+    } catch (error) { this.error = error instanceof Error ? error.message : "Audio download failed."; this.errorTarget = id; this.changed(); }
+  }
   stop(notify = true): void {
+    this.#native?.stop();
     this.#request?.abort(); this.#request = null;
     if (this.#context) void this.#context.close().catch(() => {});
     this.#context = null; this.active = null;
     if (notify) this.changed();
   }
   async play(id: string, text: string, settings: PersonaSpeech, key: string): Promise<void> {
+    if (this.#native) {
+      const requests = splitSpeechText(text).map(input => { const {url, init} = speechRequest(settings, key, input); return {url, headers: init.headers, body: init.body}; });
+      await this.#native.play(id, settings.format ?? "pcm", requests); return;
+    }
     this.stop(false); this.error = ""; this.errorTarget = null;
     const request = new AbortController(); this.#request = request; this.active = id;
     const signal = request.signal;
@@ -104,6 +129,11 @@ export class SpeechPlayer {
       const resumed = context.resume(); this.changed(); arm(); await abortable(resumed, signal); clearTimeout(idle);
       signal.throwIfAborted();
       let next = context.currentTime + .08, totalSamples = 0;
+      let captured: Uint8Array<ArrayBuffer>[] = [], capturedSize = 0, rate = 24000;
+      const capture = (samples: Float32Array): void => {
+        capturedSize += samples.length * 2;
+        if (capturedSize <= 64 * 1024 * 1024) captured.push(pcm16(samples)); else captured = [];
+      };
       for (const input of splitSpeechText(text)) {
         const {url, init} = speechRequest(settings, key, input);
         arm(); const response = await fetchSpeech(url, init, signal); clearTimeout(idle);
@@ -123,6 +153,10 @@ export class SpeechPlayer {
           catch { signal.throwIfAborted(); throw Error("Speech WAV file is corrupt or uses a codec this browser cannot decode."); }
           signal.throwIfAborted();
           if (!buffer.length) throw Error("Speech endpoint returned an empty WAV recording.");
+          rate = buffer.sampleRate;
+          const mono = new Float32Array(buffer.length);
+          for (let channel = 0; channel < buffer.numberOfChannels; channel++) { const values = buffer.getChannelData(channel); for (let i = 0; i < mono.length; i++) mono[i]! += values[i]! / buffer.numberOfChannels; }
+          capture(mono);
           const source = context.createBufferSource(); source.buffer = buffer; source.connect(context.destination);
           source.onended = () => source.disconnect();
           next = Math.max(next, context.currentTime + .02); source.start(next); next += buffer.duration; totalSamples += buffer.length;
@@ -150,6 +184,7 @@ export class SpeechPlayer {
               signal.throwIfAborted();
               const samples = decoder.decode(value.subarray(start, start + 9600));
               if (!samples.length) continue;
+              capture(samples);
               const buffer = context.createBuffer(1, samples.length, 24000); buffer.copyToChannel(samples, 0);
               const source = context.createBufferSource(); source.buffer = buffer; source.connect(context.destination);
               source.onended = () => source.disconnect();
@@ -160,6 +195,7 @@ export class SpeechPlayer {
         } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
       }
       if (!totalSamples) throw Error("Speech endpoint returned no audio.");
+      if (captured.length) { this.#cache.put(id, captured, rate); this.changed(); }
       while (context.currentTime < next) {
         if (context.state !== "running") throw Error("Audio playback was interrupted. Press Play to restart.");
         await pause(50, signal);

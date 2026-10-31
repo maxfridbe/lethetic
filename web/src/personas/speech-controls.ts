@@ -1,3 +1,4 @@
+import { androidHost, nativeCredentials, flushCredentials } from "../native-credentials.js";
 import { h } from "../../lib/snabbdom/build/index.js";
 import type { VNode } from "../../lib/snabbdom/build/index.js";
 import { buttonIconHtml, uiIcon } from "../icons.js";
@@ -12,17 +13,25 @@ export class PersonaSpeechControls {
   #keys = new Map<string, string>();
   #root: HTMLElement | null = null;
   constructor(readonly store: PersonaStore, readonly changed: () => void) {
+    try { this.#keys = new Map(JSON.parse(nativeCredentials()?.getItem("lethetic.speech-keys.v1") ?? "[]")); } catch { /* Empty until explicitly saved. */ }
     this.player = new SpeechPlayer(() => { this.#playbackStatus(); this.changed(); });
   }
+  #persistKeys(): Promise<void> {
+    const storage = nativeCredentials(); if (!storage) return Promise.resolve();
+    storage.setItem("lethetic.speech-keys.v1", JSON.stringify([...this.#keys]));
+    return flushCredentials(storage);
+  }
+  #keySaveError(error: unknown): void { if (this.#root) this.#field("status").textContent = String(error); }
   #identity(config: PersonaSpeech): string { return JSON.stringify([this.store.current.id, config.provider, config.endpoint]); }
   #key(config: PersonaSpeech): string { return this.#keys.get(this.#identity(config)) ?? ""; }
   stop(): void { this.player.stop(false); this.player.error = ""; this.player.errorTarget = null; this.#playbackStatus(); }
   forgetCurrent(): void {
     const prefix = JSON.stringify([this.store.current.id]).slice(0, -1) + ",";
     for (const key of this.#keys.keys()) if (key.startsWith(prefix)) this.#keys.delete(key);
-    this.stop();
+    void this.#persistKeys().catch(error => this.#keySaveError(error)); this.stop();
   }
-  dispose(): void { this.stop(); this.#keys.clear(); this.#root = null; }
+  background(): void { this.player.background(); }
+  dispose(): void { this.player.dispose(); this.#keys.clear(); this.#root = null; }
   action(block: RenderBlockView, id: string): VNode | null {
     const config = this.store.current.speech;
     if (!this.store.features.enabled || !config?.enabled || !["markdown", "text"].includes(block.kind) || !block.content.trim() || block.success === false) return null;
@@ -31,6 +40,7 @@ export class PersonaSpeechControls {
       h("button", {attrs: {type: "button", "data-persona-speech": id, "aria-label": active ? "Stop speech" : "Play response", title: active ? "Stop speech playback" : "Read this response with the persona’s AI-generated voice"}, on: {click: () => {
         if (active) this.player.stop(); else void this.player.play(id, block.content, config, this.#key(config));
       }}}, [uiIcon(active ? "stop" : "run"), active ? "Stop" : "Play"]),
+      h("button", {attrs: {type: "button", "data-persona-speech-download": id, "aria-label": "Download audio", disabled: !this.player.downloadable(id), title: this.player.downloadable(id) ? "Download cached response as WAV" : "Play the complete response to enable audio download"}, on: {click: () => { void this.player.download(id); }}}, [uiIcon("download"), "Download audio"]),
       ...(this.player.errorTarget === id && this.player.error ? [h("span", {attrs: {role: "status"}}, this.player.error)] : []),
     ]);
   }
@@ -47,7 +57,7 @@ export class PersonaSpeechControls {
       <label>Voice name / ID<input data-speech="voice" spellcheck="false"></label>
       <label>API key<input type="password" data-speech="key" autocomplete="off" spellcheck="false"></label>
       <p data-speech="key-status"></p>
-      <p>Keys stay in memory in this tab until reload; they are excluded from persona exports and sessions. Play sends that response to the configured endpoint and may incur provider charges. Voices are AI-generated; event sounds are separate.</p>
+      <p>${androidHost() ? "Keys are encrypted on this Android device and survive app restarts." : "Keys stay in memory in this tab until reload."} Keys are excluded from persona exports and sessions. Play sends that response to the configured endpoint and may incur provider charges. Voices are AI-generated; event sounds are separate.</p>
       <div class="persona-dialog-actions"><button type="button" data-speech="save">${buttonIconHtml("save")} Save voice</button><button type="button" data-speech="test">${buttonIconHtml("run")} Test voice</button><button type="button" data-speech="clear">${buttonIconHtml("close")} Clear key</button></div>
       <p role="status" data-speech="status"></p>
       </details>`;
@@ -68,6 +78,7 @@ export class PersonaSpeechControls {
     this.#field("clear").onclick = () => {
       const config = this.store.current.speech;
       if (config) this.#keys.delete(this.#identity(config));
+      void this.#persistKeys().catch(error => this.#keySaveError(error));
       this.#field<HTMLInputElement>("key").value = ""; this.refresh(); this.player.stop();
     };
     this.refresh();
@@ -104,10 +115,12 @@ export class PersonaSpeechControls {
       if (/[\r\n]/u.test(key)) throw Error("API keys cannot contain line breaks.");
       this.store.importFile(JSON.stringify({...this.store.current, speech: config}));
       if (key) this.#keys.set(this.#identity(config), key);
+      const saved = this.#persistKeys();
       this.stop(); this.refresh(); this.changed();
       const reset = this.#root?.closest("dialog")?.querySelector<HTMLButtonElement>('[data-persona-field="remove"]');
       if (reset) reset.disabled = false;
-      this.#field("status").textContent = this.store.error || "Voice saved. Use Play beside an assistant response.";
+      this.#field("status").textContent = this.store.error || "Saving voice…";
+      void saved.then(() => { if (this.#root && !this.player.active) this.#field("status").textContent = this.store.error || "Voice saved. Use Play beside an assistant response."; }).catch(error => this.#keySaveError(error));
       return true;
     } catch (error) { this.#field("status").textContent = error instanceof Error ? error.message : "Could not save voice settings."; return false; }
   }

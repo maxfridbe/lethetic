@@ -14,6 +14,9 @@ readonly VERIFY="$WEB/static/build-support/verify-web-assets.py"
 readonly TEST_TSCONFIG="$WEB/tests/tsconfig.json"
 # TypeScript tests in web/tests, run in this order after compilation.
 readonly BROWSER_TESTS=(
+    native-credentials
+    speech-cache
+    speech-android
     transport-auth
     approval-flow
     app-layout-status
